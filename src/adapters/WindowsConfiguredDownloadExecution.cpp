@@ -1,4 +1,5 @@
 #include "WindowsConfiguredDownloadExecution.hpp"
+#include "WindowsNativeMediaProfile.hpp"
 
 #include <utility>
 
@@ -37,19 +38,27 @@ WindowsDownloadJobSessionConfig copiedJob(const WindowsDownloadJobSessionConfig&
 std::unique_ptr<WindowsDownloadExecution>
 makeWindowsConfiguredDownloadExecution(WindowsDownloadExecutionProfile profile,
                                        WindowsDownloadExecutionPreparers preparers) {
-    if (profile.job.ownership_store || (profile.youtube && !profile.youtube->epoch_clock))
+    if (profile.job.ownership_store || (profile.youtube && !profile.youtube->epoch_clock) ||
+        (profile.provision_media_profile && profile.media.app_container))
         return {};
 
+    WindowsMediaProfilePlatformFactory media_profile;
+    if (profile.provision_media_profile) {
+        media_profile = std::move(preparers.media_profile);
+        if (!media_profile)
+            media_profile = [] { return WindowsNativeMediaProfile::system(); };
+    }
     // Ordinary Qt value copies may still borrow fromRawData storage. Detach
     // all configuration bytes before returning or starting the worker thread.
     WindowsDownloadExecution::TaskFactory destination =
         [network = copiedNetwork(profile.network), media = copiedMedia(profile.media), job = copiedJob(profile.job),
          journal = owned(profile.journal_directory), network_prepare = std::move(preparers.network),
-         media_prepare = std::move(preparers.media)] {
+         media_prepare = std::move(preparers.media), media_profile = std::move(media_profile)] {
             // This factory is invoked only on the existing execution worker.
             // Construction stays inert; start owns journal validation/preparation
             // and the first uncancelled poll owns the session launch.
-            return makeWindowsOwnedPreparedDownloadTask(network, media, job, journal, network_prepare, media_prepare);
+            return makeWindowsOwnedPreparedDownloadTask(network, media, job, journal, network_prepare, media_prepare,
+                                                        media_profile);
         };
     if (!profile.youtube)
         return std::make_unique<WindowsDownloadExecution>(std::move(destination));

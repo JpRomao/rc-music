@@ -1,5 +1,8 @@
 #include "adapters/WindowsConfiguredDownloadExecution.hpp"
 #include "adapters/WindowsDownloadArtifactPins.hpp"
+#include "adapters/WindowsDownloadMediaProfileStore.hpp"
+#include "adapters/WindowsDownloadNativeUseFence.hpp"
+#include "adapters/WindowsMediaProfileOwner.hpp"
 #include "adapters/YoutubeAudioCodec.hpp"
 
 #include <QCoreApplication>
@@ -20,6 +23,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -87,12 +91,56 @@ struct Gate final {
 };
 struct Observations final {
     std::atomic<int> networks{}, media{}, youtubes{}, clocks{};
+    std::atomic<int> profile_factories{}, profiles_created{}, profiles_removed{};
     std::atomic<bool> on_ui{}, matched{};
+    std::atomic<bool> removed_created_profile{};
     void thread() {
         if (QThread::currentThread() == QCoreApplication::instance()->thread())
             on_ui = true;
     }
 };
+QByteArray fixtureProfileSid() {
+    QByteArray sid(40, '\0');
+    sid[0] = 1;
+    sid[1] = 8;
+    sid[7] = 15;
+    sid[8] = 2;
+    sid[12] = 7;
+    return sid;
+}
+class FakeMediaProfile final : public WindowsMediaProfilePlatform {
+  public:
+    FakeMediaProfile(std::shared_ptr<Observations> state, bool created, bool removed)
+        : state_(std::move(state)), created_(created), removed_(removed) {}
+    WindowsMediaProfileCreateResult create(const QString& name) override {
+        state_->thread();
+        ++state_->profiles_created;
+        if (!created_)
+            return {WindowsMediaProfileCreateStatus::AlreadyExists};
+        created_name_ = name;
+        return {WindowsMediaProfileCreateStatus::Created, fixtureProfileSid()};
+    }
+    WindowsMediaProfileRemovalResult remove(const QString& name, const QByteArray& sid) override {
+        state_->thread();
+        ++state_->profiles_removed;
+        state_->removed_created_profile =
+            !created_name_.isEmpty() && name == created_name_ && sid == fixtureProfileSid();
+        return {removed_, removed_ ? WindowsMediaProfileAbsence::Absent : WindowsMediaProfileAbsence::Unknown};
+    }
+
+  private:
+    std::shared_ptr<Observations> state_;
+    QString created_name_;
+    bool created_, removed_;
+};
+std::function<std::unique_ptr<WindowsMediaProfilePlatform>()>
+fakeMediaProfile(const std::shared_ptr<Observations>& state, bool created = true, bool removed = true) {
+    return [state, created, removed] {
+        state->thread();
+        ++state->profile_factories;
+        return std::make_unique<FakeMediaProfile>(state, created, removed);
+    };
+}
 struct Fixture final {
     QTemporaryDir directory{QDir::tempPath() + QStringLiteral("/RC Music configured 日本-XXXXXX")};
     WindowsDownloadExecutionProfile profile;
@@ -148,13 +196,18 @@ struct Fixture final {
         };
         profile.youtube = std::move(youtube);
     }
-    bool clean() const {
-        for (const auto& path :
-             {profile.network.runtime_parent, profile.media.runtime_parent, profile.job.workspace.staging_parent,
-              profile.job.workspace.publish_parent, profile.journal_directory})
+    bool runtimeArtifactsAbsent() const {
+        for (const auto& path : {profile.network.runtime_parent, profile.media.runtime_parent,
+                                 profile.job.workspace.staging_parent, profile.job.workspace.publish_parent})
             if (!QDir{path}.entryList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot).isEmpty())
                 return false;
         return true;
+    }
+    bool clean() const {
+        return runtimeArtifactsAbsent() &&
+               QDir{profile.journal_directory}
+                   .entryList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot)
+                   .isEmpty();
     }
 };
 struct Drain final {
@@ -254,6 +307,179 @@ class WindowsConfiguredDownloadExecutionTests final : public QObject {
         QCOMPARE(state->clocks.load(), 0);
         QVERIFY(h.clean());
     }
+    void protectedMediaConflictingCapabilitiesFailBeforeCallingAnyPort() {
+        Fixture h;
+        QVERIFY(h.initialize());
+        h.profile.provision_media_profile = true;
+        h.profile.media.app_container = WindowsDownloadAppContainer::fromTrustedSid(fixtureProfileSid());
+        QVERIFY(h.profile.media.app_container);
+        const auto state = std::make_shared<Observations>();
+        auto preparers = rejecting(state);
+        preparers.media_profile = fakeMediaProfile(state);
+        QVERIFY(!makeWindowsConfiguredDownloadExecution(h.profile, std::move(preparers)));
+        QCOMPARE(state->profile_factories.load(), 0);
+        QCOMPARE(state->networks.load(), 0);
+        QCOMPARE(state->media.load(), 0);
+        QVERIFY(h.clean());
+    }
+    void protectedMediaOwnerFailureCannotStartEitherRuntime() {
+        Fixture h;
+        QVERIFY(h.initialize());
+        h.profile.provision_media_profile = true;
+        const auto state = std::make_shared<Observations>();
+        auto preparers = rejecting(state);
+        preparers.media_profile = fakeMediaProfile(state, false);
+        auto execution = makeWindowsConfiguredDownloadExecution(h.profile, std::move(preparers));
+        QVERIFY(execution);
+        Drain drain{*execution, h};
+        QCOMPARE(state->profile_factories.load(), 0);
+        QVERIFY(h.clean());
+        QVERIFY(execution->start("protected_failed", direct));
+        QVERIFY(waitFor([&] { return execution->poll("protected_failed").state == DownloadExecutionState::Failed; }));
+        QCOMPARE(state->profile_factories.load(), 1);
+        QCOMPARE(state->profiles_created.load(), 1);
+        QCOMPARE(state->profiles_removed.load(), 0);
+        QCOMPARE(state->networks.load(), 0);
+        QCOMPARE(state->media.load(), 0);
+        QVERIFY(!state->on_ui);
+        QVERIFY(h.runtimeArtifactsAbsent());
+        const auto journal = WindowsDownloadMediaProfileStore(h.profile.journal_directory).load();
+        QCOMPARE(journal.status, DownloadCheckpointLoadStatus::Loaded);
+        QVERIFY(journal.record);
+        QCOMPARE(journal.record->stage, DownloadMediaProfileStage::Planned);
+    }
+    void protectedMediaClosesTheOwnedProfileAtPreparationEnd_data() {
+        QTest::addColumn<bool>("cancel");
+        QTest::addColumn<bool>("removed");
+        QTest::addColumn<bool>("legacy_lease");
+        QTest::newRow("media-preparation-failed") << false << true << false;
+        QTest::newRow("cancel-before-first-poll") << true << true << false;
+        QTest::newRow("uncertain-removal") << false << false << false;
+        QTest::newRow("unprotected-lease-refused") << false << true << true;
+    }
+    void protectedMediaClosesTheOwnedProfileAtPreparationEnd() {
+        QFETCH(bool, cancel);
+        QFETCH(bool, removed);
+        QFETCH(bool, legacy_lease);
+        Fixture h;
+        QVERIFY(h.initialize());
+        h.profile.provision_media_profile = true;
+        const auto state = std::make_shared<Observations>();
+        const auto gate = std::make_shared<Gate>();
+        auto preparers = rejecting(state);
+        preparers.media_profile = fakeMediaProfile(state, true, removed);
+        preparers.network = [state](const auto& snapshot) {
+            state->thread();
+            ++state->networks;
+            return WindowsDownloadNetworkLaunch::prepare(snapshot);
+        };
+        preparers.media = [state, gate, cancel, legacy_lease](const auto& snapshot) {
+            state->thread();
+            ++state->media;
+            const auto fence = snapshot.app_container ? snapshot.app_container->nativeUseFence() : nullptr;
+            state->matched = snapshot.require_app_container && snapshot.app_container &&
+                             snapshot.app_container->sidBytes() == fixtureProfileSid() && fence &&
+                             fence->state() == WindowsDownloadNativeUseFence::State::OpenIdle;
+            if (legacy_lease) {
+                auto unprotected = snapshot;
+                unprotected.app_container.reset();
+                unprotected.require_app_container = false;
+                return WindowsMediaFoundationLaunch::prepare(unprotected);
+            }
+            if (!cancel)
+                return std::shared_ptr<const WindowsMediaFoundationLaunch>{};
+            gate->hold();
+            return WindowsMediaFoundationLaunch::prepare(snapshot);
+        };
+        auto execution = makeWindowsConfiguredDownloadExecution(h.profile, std::move(preparers));
+        QVERIFY(execution);
+        Drain drain{*execution, h, gate};
+        QVERIFY(execution->start("protected_first", direct));
+        if (cancel) {
+            QVERIFY(waitFor([&] { return gate->entered.load(); }));
+            QCOMPARE(state->profiles_removed.load(), 0);
+            execution->cancel("protected_first");
+            gate->release();
+        }
+        const auto terminal = cancel ? DownloadExecutionState::Cancelled : DownloadExecutionState::Failed;
+        QVERIFY(waitFor([&] { return execution->poll("protected_first").state == terminal; }));
+        if (legacy_lease)
+            QCOMPARE(execution->poll("protected_first").error, DownloadFailure::Unavailable);
+        QCOMPARE(state->profile_factories.load(), 1);
+        QCOMPARE(state->profiles_created.load(), 1);
+        QCOMPARE(state->profiles_removed.load(), 1);
+        QCOMPARE(state->networks.load(), 1);
+        QCOMPARE(state->media.load(), 1);
+        QVERIFY(state->matched);
+        QVERIFY(state->removed_created_profile);
+        QVERIFY(!state->on_ui);
+        QVERIFY(h.runtimeArtifactsAbsent());
+        const auto journal = WindowsDownloadMediaProfileStore(h.profile.journal_directory).load();
+        QCOMPARE(journal.status, DownloadCheckpointLoadStatus::Loaded);
+        QVERIFY(journal.record);
+        QCOMPARE(journal.record->stage,
+                 removed ? DownloadMediaProfileStage::Removed : DownloadMediaProfileStage::CleanupPending);
+
+        if (!cancel) {
+            QVERIFY(execution->start("protected_next", direct));
+            QVERIFY(waitFor([&] { return execution->poll("protected_next").state == DownloadExecutionState::Failed; }));
+            QCOMPARE(state->profiles_created.load(), removed ? 2 : 1);
+            QCOMPARE(state->profiles_removed.load(), removed ? 2 : 1);
+            QCOMPARE(state->networks.load(), removed ? 2 : 1);
+            QCOMPARE(state->media.load(), removed ? 2 : 1);
+            QVERIFY(h.runtimeArtifactsAbsent());
+        }
+    }
+    void protectedMediaWaitsForNativeUseAcknowledgementBeforeRemovingProfile() {
+        Fixture h;
+        QVERIFY(h.initialize());
+        h.profile.provision_media_profile = true;
+        const auto state = std::make_shared<Observations>();
+        using Fence = WindowsDownloadNativeUseFence;
+        std::mutex mutex;
+        std::shared_ptr<Fence> fence;
+        std::optional<Fence::Ticket> ticket;
+        bool abandon = false;
+        auto preparers = rejecting(state);
+        preparers.media_profile = fakeMediaProfile(state);
+        preparers.network = [](const auto& snapshot) { return WindowsDownloadNetworkLaunch::prepare(snapshot); };
+        preparers.media = [&](const auto& snapshot) {
+            const std::lock_guard lock(mutex);
+            if (!abandon && snapshot.app_container) {
+                fence = snapshot.app_container->nativeUseFence();
+                if (fence)
+                    ticket = fence->begin();
+            }
+            return std::shared_ptr<const WindowsMediaFoundationLaunch>{};
+        };
+        auto execution = makeWindowsConfiguredDownloadExecution(h.profile, std::move(preparers));
+        QVERIFY(execution);
+        Drain drain{*execution, h};
+        const auto release_ticket = qScopeGuard([&] {
+            const std::lock_guard lock(mutex);
+            abandon = true;
+            ticket.reset();
+        });
+        QVERIFY(execution->start("protected_drain", direct));
+        QVERIFY(waitFor([&] {
+            const std::lock_guard lock(mutex);
+            return fence && ticket && fence->state() == Fence::State::ClosingBusy;
+        }));
+        QCOMPARE(execution->poll("protected_drain").state, DownloadExecutionState::Running);
+        QCOMPARE(state->profiles_removed.load(), 0);
+
+        bool acknowledged;
+        {
+            const std::lock_guard lock(mutex);
+            acknowledged = ticket && ticket->acknowledgeNoChild();
+            ticket.reset();
+        }
+        QVERIFY(acknowledged);
+        QVERIFY(waitFor([&] { return execution->poll("protected_drain").state == DownloadExecutionState::Failed; }));
+        QCOMPARE(state->profiles_removed.load(), 1);
+        QVERIFY(state->removed_created_profile);
+        QVERIFY(h.runtimeArtifactsAbsent());
+    }
     void borrowedOwnershipStoreIsRejectedWithoutCallingAnyPort() {
         Fixture h;
         QVERIFY(h.initialize());
@@ -295,7 +521,9 @@ class WindowsConfiguredDownloadExecutionTests final : public QObject {
         QVERIFY(h.initialize());
         const auto state = std::make_shared<Observations>();
         h.enableYoutube(state);
-        auto execution = makeWindowsConfiguredDownloadExecution(h.profile, rejecting(state));
+        auto preparers = rejecting(state);
+        preparers.media_profile = fakeMediaProfile(state);
+        auto execution = makeWindowsConfiguredDownloadExecution(h.profile, std::move(preparers));
         QVERIFY(execution);
         Drain drain{*execution, h};
         QVERIFY(execution->start("direct_job", direct));
@@ -305,6 +533,7 @@ class WindowsConfiguredDownloadExecutionTests final : public QObject {
         QCOMPARE(state->media.load(), 0);
         QCOMPARE(state->youtubes.load(), 0);
         QCOMPARE(state->clocks.load(), 0);
+        QCOMPARE(state->profile_factories.load(), 0);
         QVERIFY(!state->on_ui);
         QVERIFY(h.clean());
     }

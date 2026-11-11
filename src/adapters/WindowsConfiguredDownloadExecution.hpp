@@ -23,12 +23,17 @@ struct WindowsDownloadExecutionProfile final {
     WindowsDownloadJobSessionConfig job{};
     QString journal_directory{};
     std::optional<WindowsYoutubeDownloadProfile> youtube{};
+    // Explicit trusted opt-in for a per-job AppContainer. Conflicts with a
+    // borrowed media.app_container and is off for the current package profile.
+    bool provision_media_profile{false};
 };
 
 struct WindowsDownloadExecutionPreparers final {
     WindowsDownloadRuntimePreparer network{};
     WindowsMediaFoundationRuntimePreparer media{};
     WindowsYoutubeRuntimePreparer youtube{};
+    // Consulted only for the per-job opt-in. Empty selects the native backend.
+    WindowsMediaProfilePlatformFactory media_profile{};
 };
 
 // Trusted C++ composition only, never a page, environment or manifest loader.

@@ -3,7 +3,9 @@
 #include "DownloadNetworkPolicy.hpp"
 #include "WindowsDownloadArtifactPins.hpp"
 #include "WindowsDownloadExecutionValidation.hpp"
+#include "WindowsDownloadMediaProfileStore.hpp"
 #include "WindowsDownloadOwnershipStore.hpp"
+#include "WindowsMediaProfileOwner.hpp"
 #include "YoutubeAudioResolution.hpp"
 
 #include <QElapsedTimer>
@@ -126,6 +128,15 @@ class SessionTask final : public WindowsDownloadTask {
     WindowsProcessDownloadIo io_; // borrowed by session; destroyed AFTER session
     WindowsDownloadJobSession session_;
 };
+struct JobMediaProfile final {
+    WindowsDownloadMediaProfileStore store;
+    std::unique_ptr<WindowsMediaProfilePlatform> platform;
+    WindowsMediaProfileOwner owner;
+
+    JobMediaProfile(const QString& directory, std::unique_ptr<WindowsMediaProfilePlatform> native,
+                    const std::string& job_id)
+        : store(directory), platform(std::move(native)), owner(store, *platform, {.job_id = job_id}) {}
+};
 class PreparedSessionTask final : public WindowsDownloadTask {
   public:
     PreparedSessionTask(WindowsDownloadNetworkLaunchConfig launch, WindowsDownloadJobSessionConfig job,
@@ -140,10 +151,12 @@ class PreparedSessionTask final : public WindowsDownloadTask {
     }
     PreparedSessionTask(WindowsDownloadNetworkLaunchConfig launch, WindowsMediaFoundationLaunchConfig media,
                         WindowsDownloadJobSessionConfig job, QString journal_directory,
-                        WindowsDownloadRuntimePreparer prepare, WindowsMediaFoundationRuntimePreparer media_prepare)
+                        WindowsDownloadRuntimePreparer prepare, WindowsMediaFoundationRuntimePreparer media_prepare,
+                        WindowsMediaProfilePlatformFactory media_profile)
         : PreparedSessionTask(std::move(launch), std::move(media), std::move(job), std::move(prepare),
                               std::move(media_prepare)) {
         journal_directory_ = std::move(journal_directory);
+        media_profile_factory_ = std::move(media_profile);
     }
 
     bool start(const std::string& id, const DownloadItem& item, const qint64 now_ms) override {
@@ -153,7 +166,8 @@ class PreparedSessionTask final : public WindowsDownloadTask {
         update_.job_id = id;
         if (!validId(id) || (resolved_ ? resolved_->jobId() != id || resolved_epoch_ < 0 : !validItem(item)) ||
             now_ms < 0 || job_.total_timeout_ms <= 0 ||
-            (!media_ && job_.converter.backend == WindowsLocalMediaBackend::MediaFoundation)) {
+            (!media_ && job_.converter.backend == WindowsLocalMediaBackend::MediaFoundation) ||
+            (media_profile_factory_ && media_->app_container)) {
             fail(DownloadFailure::InvalidResult);
             return false;
         }
@@ -175,10 +189,19 @@ class PreparedSessionTask final : public WindowsDownloadTask {
                 }
                 job_.ownership_store = ownership_store_.get();
             }
+            if (media_profile_factory_ && !prepareMediaProfile(id)) {
+                fail(DownloadFailure::Unavailable);
+                return false;
+            }
             lease_ = prepare_ ? prepare_(launch_) : WindowsDownloadNetworkLaunch::prepare(launch_);
             if (lease_ && media_) {
                 media_lease_ =
                     media_prepare_ ? media_prepare_(*media_) : WindowsMediaFoundationLaunch::prepare(*media_);
+                if (media_profile_ && media_lease_) {
+                    const auto process = media_lease_->processConfig();
+                    if (!process.require_app_container || process.app_container != media_->app_container)
+                        media_lease_.reset();
+                }
                 if (media_lease_) {
                     job_.converter.backend = WindowsLocalMediaBackend::MediaFoundation;
                     job_.converter.ffmpeg_executable.clear();
@@ -220,6 +243,63 @@ class PreparedSessionTask final : public WindowsDownloadTask {
             update_.state = DownloadExecutionState::Cancelled;
     }
     DownloadExecutionUpdate poll(const qint64 now_ms) override {
+        if (!media_profile_)
+            return advance(now_ms);
+        if (!terminal(update_.state)) {
+            auto update = advance(now_ms);
+            if (!terminal(update.state))
+                return update;
+            update_ = std::move(update);
+        }
+        return closeMediaProfile();
+    }
+    std::filesystem::path retainedPublicationPath() const override {
+        return session_ ? session_->retainedPublicationPath() : retained_publication_;
+    }
+
+  private:
+    bool prepareMediaProfile(const std::string& id) {
+        auto platform = media_profile_factory_();
+        if (!platform)
+            return false;
+        media_profile_.emplace(*journal_directory_, std::move(platform), id);
+        if (!media_profile_->owner.prepare())
+            return false;
+        media_->app_container = media_profile_->owner.capability();
+        media_->require_app_container = true;
+        return media_->app_container != nullptr;
+    }
+    DownloadExecutionUpdate closeMediaProfile() {
+        // Only entered before child start or after SessionTask's terminal ACK.
+        // Release the runtime pins before requesting profile removal.
+        if (session_) {
+            retained_publication_ = update_.state == DownloadExecutionState::Published
+                                        ? update_.published_mp3
+                                        : session_->retainedPublicationPath();
+            session_.reset();
+        }
+        job_.converter.prepared_launch.reset();
+        media_lease_.reset();
+        lease_.reset();
+        media_->app_container.reset();
+        const bool closed = media_profile_->owner.close();
+        if (!closed && media_profile_->owner.state() == WindowsMediaProfileOwnerState::Draining) {
+            return {.job_id = update_.job_id,
+                    .phase = update_.phase,
+                    .completed_units = update_.completed_units,
+                    .total_units = update_.total_units};
+        }
+        if (!closed) {
+            if (!retained_publication_.empty())
+                fail(DownloadFailure::Publication);
+            else if (update_.state != DownloadExecutionState::Failed)
+                fail(DownloadFailure::Unavailable);
+            update_.published_mp3.clear();
+        }
+        media_profile_.reset();
+        return update_;
+    }
+    DownloadExecutionUpdate advance(const qint64 now_ms) {
         if (terminal(update_.state))
             return update_;
         if (!session_) {
@@ -265,11 +345,6 @@ class PreparedSessionTask final : public WindowsDownloadTask {
         }
         return session_->poll(now_ms); // only its real terminal ACK releases work
     }
-    std::filesystem::path retainedPublicationPath() const override {
-        return session_ ? session_->retainedPublicationPath() : std::filesystem::path{};
-    }
-
-  private:
     void fail(const DownloadFailure error) {
         update_.state = DownloadExecutionState::Failed;
         update_.error = error;
@@ -279,8 +354,10 @@ class PreparedSessionTask final : public WindowsDownloadTask {
     WindowsDownloadRuntimePreparer prepare_;
     std::optional<WindowsMediaFoundationLaunchConfig> media_;
     WindowsMediaFoundationRuntimePreparer media_prepare_;
+    WindowsMediaProfilePlatformFactory media_profile_factory_;
     std::optional<QString> journal_directory_;
     DownloadExecutionUpdate update_;
+    std::filesystem::path retained_publication_;
     DownloadItem item_;
     std::shared_ptr<const ResolvedYoutubeAudioCapability> resolved_;
     qint64 resolved_epoch_{0};
@@ -290,6 +367,7 @@ class PreparedSessionTask final : public WindowsDownloadTask {
     // capabilities retain their existing owners. The executor observes terminal
     // ACK and destroys this task before publishing the terminal snapshot.
     std::unique_ptr<WindowsDownloadOwnershipStore> ownership_store_;
+    std::optional<JobMediaProfile> media_profile_;
     std::shared_ptr<const WindowsDownloadNetworkLaunch> lease_;
     std::shared_ptr<const WindowsMediaFoundationLaunch> media_lease_;
     std::unique_ptr<SessionTask> session_;
@@ -313,14 +391,13 @@ makeWindowsPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig network, Wind
                                                  std::move(network_prepare), std::move(media_prepare));
 }
 
-std::unique_ptr<WindowsDownloadTask>
-makeWindowsOwnedPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig network,
-                                     WindowsMediaFoundationLaunchConfig media, WindowsDownloadJobSessionConfig job,
-                                     QString journal_directory, WindowsDownloadRuntimePreparer network_prepare,
-                                     WindowsMediaFoundationRuntimePreparer media_prepare) {
+std::unique_ptr<WindowsDownloadTask> makeWindowsOwnedPreparedDownloadTask(
+    WindowsDownloadNetworkLaunchConfig network, WindowsMediaFoundationLaunchConfig media,
+    WindowsDownloadJobSessionConfig job, QString journal_directory, WindowsDownloadRuntimePreparer network_prepare,
+    WindowsMediaFoundationRuntimePreparer media_prepare, WindowsMediaProfilePlatformFactory media_profile) {
     return std::make_unique<PreparedSessionTask>(std::move(network), std::move(media), std::move(job),
                                                  std::move(journal_directory), std::move(network_prepare),
-                                                 std::move(media_prepare));
+                                                 std::move(media_prepare), std::move(media_profile));
 }
 
 struct WindowsDownloadExecution::Impl final {

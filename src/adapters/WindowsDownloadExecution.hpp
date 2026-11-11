@@ -9,6 +9,7 @@
 #include <memory>
 
 namespace music_player::m0 {
+class WindowsMediaProfilePlatform;
 
 // Slow, worker-only seam. A terminal poll acknowledges stopped native work.
 // A false/throwing start is NOT an acknowledgement: cancel + poll must drain it.
@@ -38,6 +39,7 @@ using WindowsDownloadRuntimePreparer =
     std::function<std::shared_ptr<const WindowsDownloadNetworkLaunch>(const WindowsDownloadNetworkLaunchConfig&)>;
 using WindowsMediaFoundationRuntimePreparer =
     std::function<std::shared_ptr<const WindowsMediaFoundationLaunch>(const WindowsMediaFoundationLaunchConfig&)>;
+using WindowsMediaProfilePlatformFactory = std::function<std::unique_ptr<WindowsMediaProfilePlatform>()>;
 [[nodiscard]] std::unique_ptr<WindowsDownloadTask>
 makeWindowsPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig launch, WindowsDownloadJobSessionConfig job,
                                 WindowsDownloadRuntimePreparer prepare = {});
@@ -48,12 +50,12 @@ makeWindowsPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig network, Wind
                                 WindowsMediaFoundationRuntimePreparer media_prepare = {});
 // Owns the synchronous journal on the task's worker, after inert construction.
 // A borrowed job.ownership_store is rejected; the private existing directory is
-// validated before preparing either runtime. The store outlives the session.
-[[nodiscard]] std::unique_ptr<WindowsDownloadTask>
-makeWindowsOwnedPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig network,
-                                     WindowsMediaFoundationLaunchConfig media, WindowsDownloadJobSessionConfig job,
-                                     QString journal_directory, WindowsDownloadRuntimePreparer network_prepare = {},
-                                     WindowsMediaFoundationRuntimePreparer media_prepare = {});
+// validated before preparing either runtime. An explicit media-profile factory
+// provisions a fresh owned AppContainer before starting any child.
+[[nodiscard]] std::unique_ptr<WindowsDownloadTask> makeWindowsOwnedPreparedDownloadTask(
+    WindowsDownloadNetworkLaunchConfig network, WindowsMediaFoundationLaunchConfig media,
+    WindowsDownloadJobSessionConfig job, QString journal_directory, WindowsDownloadRuntimePreparer network_prepare = {},
+    WindowsMediaFoundationRuntimePreparer media_prepare = {}, WindowsMediaProfilePlatformFactory media_profile = {});
 
 // Prompt UI port with one pending task and one coalesced snapshot. Factory,
 // task methods, filesystem/native I/O and destruction run in a private Qt loop.

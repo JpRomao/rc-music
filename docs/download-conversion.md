@@ -98,6 +98,14 @@ O [probe manual](../tests/windows/sandbox/README.md) está compilado e revisado 
 
 Ainda não há prova de execução AppContainer/MF no host. Recursos de sistema e armazenamento próprio do perfil continuam no modelo do AppContainer comum; cotas dos sinks não limitam esse armazenamento. Política de escrita/disco/resíduos, perfil de distribuição, identidade/ingresso e ativação no aplicativo continuam gates. Não aprovar LPAC, isolamento universal ou mídia da internet por esses testes. Produção remota permanece OFF.
 
+### Perfil AppContainer por trabalho
+
+O executor configurado aceita `provision_media_profile` no perfil C++ confiável. Com essa opção, o worker de downloads cria um perfil por trabalho usando o owner e o registro privado existentes. O owner precisa confirmar sua criação e fornecer o SID e a autorização vinculados à operação antes de preparar a rede ou o conversor. O runtime preparado de Media Foundation precisa portar a mesma credencial e exigir AppContainer. Uma credencial emprestada é incompatível com esse modo.
+
+Falha de preparação e cancelamento anterior ao lançamento passam pelo mesmo encerramento do perfil. Depois do lançamento, o executor aguarda o término da sessão e libera as capacidades do conversor antes de solicitar remoção. Enquanto houver um uso nativo pendente, o trabalho continua em drenagem. Um resultado inconclusivo preserva o registro e impede outro perfil naquele armazenamento. Se já houver um MP3 publicado, o arquivo e seu registro de ownership ficam preservados para inspeção e o serviço registra falha de publicação.
+
+Os testes usam um backend falso de perfil, SID sintético e registro privado em TEMP. O Red de compilação identificou a configuração ausente. O fechamento passou **6/6 CTest, 220 casos Qt**, incluindo credencial obrigatória, recusa de runtime sem AppContainer, cancelamento antes do lançamento, drenagem e retenção do registro incerto. O build Windows Release da Completa passou. Evidência em `out/product/test-runs/owned-media-profile-worker-20261110/`. A qualificação física de storage, rede e do caso de publicação com remoção inconclusiva continua pendente. O perfil empacotado mantém a opção desligada.
+
 ## Área privada, cota e publicação
 
 O [incremento durável de ownership](download-ownership.md) acrescenta overload opt-in do workspace/store emprestado pela sessão. Planned/Ready/Prepared/Published são gates antes de criação/sinks/rename/retorno importável. Após rename durável, final físico é preservado mesmo em falha de journal/verificação; somente legado volátil conserva o rollback por handle descrito abaixo. Assessment no restart é somente leitura, sem reimportação/cleanup automático. O app ainda não compõe esse serviço.
