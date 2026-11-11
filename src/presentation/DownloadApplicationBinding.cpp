@@ -541,6 +541,15 @@ void DownloadApplicationBinding::setLyrics(QObject* value) {
         connect(value, &QObject::destroyed, this, [this] { emit stateChanged(); });
     emit stateChanged();
 }
+void DownloadApplicationBinding::finishPublishedLyricsReview(const QString& job_id) {
+    if (impl_->closing || !impl_->download_service.finishPublishedLyricsReview(job_id.toStdString()))
+        return;
+    const QPointer<DownloadApplicationBinding> guard{this};
+    // The projected job fields stay the same, but the archive selection may expand.
+    invalidateArchiveConsent();
+    if (guard)
+        refreshProjection();
+}
 QString DownloadApplicationBinding::statusText() const { return impl_->projection.status; }
 QString DownloadApplicationBinding::warningText() const { return impl_->projection.warning; }
 QString DownloadApplicationBinding::historyCapacityText() const { return impl_->projection.capacity; }

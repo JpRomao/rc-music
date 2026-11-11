@@ -1,6 +1,7 @@
 #include "DownloadLyricsBinding.hpp"
 #include "LyricsBinding.hpp"
 
+#include <QPointer>
 #include <QUuid>
 #include <QVariantMap>
 
@@ -301,6 +302,8 @@ bool DownloadLyricsBinding::dismiss() {
     auto& value = *impl_;
     if (!value.canDismiss())
         return false;
+    const auto job_id = QString::fromStdString(value.request->job_id);
+    const QPointer<DownloadLyricsBinding> guard(this);
     value.request.reset();
     value.preview.reset();
     value.token.clear();
@@ -310,7 +313,11 @@ bool DownloadLyricsBinding::dismiss() {
     // A FIFO owner can offer the next request from changed(). All mutation of
     // the dismissed identity precedes that callback; never clear a new offer.
     value.lookup.clear();
-    emit changed();
+    if (!guard)
+        return true;
+    emit reviewFinished(job_id);
+    if (guard)
+        emit changed();
     return true;
 }
 bool DownloadLyricsBinding::prepareExit() {

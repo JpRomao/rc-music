@@ -11,14 +11,18 @@ Este incremento liga um MP3 com publicação reconhecida ao catálogo de [versõ
 3. Em Downloads, **Revisar letras** abre o diálogo da aquisição apresentada. Escolha uma das versões encontradas e confira a prévia em texto simples. Conteúdos sincronizados e sem tempos distintos ficam disponíveis separadamente. A ação **Colar letra** aceita texto simples ou LRC, inclusive quando a busca falha ou não encontra uma versão.
 4. Informe o nome e escolha explicitamente **Original** ou **Romanizada**. Idioma e escrita são opcionais. O app não detecta idioma/alfabeto, não converte a escrita e não traduz o texto.
 5. **Guardar como nova versão** grava uma letra por vez no catálogo do arquivo publicado. Versões existentes são preservadas. Conteúdo canônico já guardado para a mesma forma não é duplicado.
-6. Após a confirmação, outra versão encontrada pode ser guardada. **Próxima** dispensa a revisão atual e permite oferecer outro job elegível; **Fechar** apenas fecha o diálogo, que pode ser reaberto. Uma gravação sem confirmação precisa ser resolvida antes de dispensar sua aquisição.
-7. Ao tocar esse arquivo depois, abra **Versões** junto à letra e selecione a versão desejada. Guardar uma letra não troca a faixa, não seleciona automaticamente a nova versão nem altera a letra atualmente exibida de outra faixa.
+6. Após a confirmação, outra versão encontrada pode ser guardada. **Fechar** deixa a revisão disponível para reabrir. **Concluir revisão** encerra essa revisão e libera sua reserva de arquivamento. O próximo job elegível pode então aparecer. Resolva qualquer gravação pendente antes de concluir.
+7. Para selecionar ou acrescentar uma versão mais tarde, abra o mesmo MP3 e use **Versões** junto à letra. O catálogo fica associado ao arquivo e as versões guardadas continuam disponíveis após arquivar o pedido ou reiniciar o RC Music.
 
 Falha, ausência ou resultado instrumental da letra conservam o MP3 e a importação de áudio. Repetir a consulta não pede novo download de áudio. **Tentar guardar novamente** repete somente a gravação do candidato retido, sem HTTP e sem adquirir áudio novamente.
 
 ## Contratos de execução e persistência
 
 `DownloadService::publishedYoutubeAudio` fornece o job, o MP3 com publicação reconhecida e seu contexto original vivo. `WindowsPlayerDownloads` só oferece letra para esse contexto com `fetch_lyrics=true`, uma vez por job durante o lifetime do owner e com uma revisão ativa por vez. Histórico recuperado permanece inerte; o checkpoint não passa a guardar os metadados completos do pedido nem URLs assinadas. Não há retomada automática da consulta após reiniciar.
+
+A conclusão explícita libera a reserva apenas do job daquela revisão. Se outro pedido já estiver com um arquivamento em andamento, a liberação acompanha o job retido para a próxima operação. O arquivamento continua exigindo o salvamento do checkpoint e todos os itens daquele pedido encerrados.
+
+O teste do owner Windows confirmou o arquivamento na mesma sessão, preservou a versão salva no catálogo temporário e recuperou os mesmos IDs no reenvio. Outra regressão confirmou a revogação da confirmação de arquivamento quando uma segunda revisão foi concluída. Passaram o build Release, lint QML, **191 casos do núcleo**, **3/3 CTest** e **64 casos Qt Quick** dos dois painéis. Logs em `out/product/test-runs/finish-download-lyrics-review-20261111/`.
 
 `DownloadLyricsLookup` usa um `QtLyricsService` exclusivo, separado da letra da faixa em reprodução. `setLookupTrack` configura somente metadados: não abre o áudio nem lê um `.lrc` irmão. O mesmo serviço permanece entre consultas, preservando cooldown, limites e cancelamento; resultados antigos são revogados por geração. A página Letras não é consultada enquanto esse adapter estiver indisponível. A origem dos candidatos deste incremento é LRCLIB.
 

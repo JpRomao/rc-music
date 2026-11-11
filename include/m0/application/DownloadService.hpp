@@ -83,8 +83,11 @@ class DownloadService final : public DownloadSubmission {
     // later execution. Port failure cannot revoke the checkpoint evidence.
     void retireArchivedImportReceipts() noexcept;
     // Live, matching publication acknowledgement plus original typed source
-    // only. Historical candidate paths/receipts never authorize a new lookup.
+    // only. Finished reviews and historical candidate paths cannot offer lyrics.
     [[nodiscard]] std::optional<PublishedYoutubeAudio> publishedYoutubeAudio(std::string_view job_id) const;
+    // Trusted owner only, after the user dismisses or completes that review.
+    // Releases its archive hold without changing the request or checkpoint.
+    [[nodiscard]] bool finishPublishedLyricsReview(std::string_view job_id);
     // These methods do not perform I/O. Restore is only for a pristine owner with
     // a fresh prefix and identity port. It never starts work or trusts stored paths.
     [[nodiscard]] std::optional<DownloadCheckpoint> checkpoint();

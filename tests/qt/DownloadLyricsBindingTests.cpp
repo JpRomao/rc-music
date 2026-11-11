@@ -12,6 +12,7 @@
 #include <QNetworkRequest>
 #include <QPointer>
 #include <QSemaphore>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUuid>
@@ -287,6 +288,34 @@ class DownloadLyricsBindingTests final : public QObject {
         QCOMPARE(h.binding.title(), second.title);
         QCOMPARE(h.network.requests.size(), 2);
     }
+    void finishingAReviewReportsItsCapturedJobOnceAcrossReentrantOffers() {
+        Harness h;
+        QVERIFY(h.ready());
+        QSignalSpy finished(&h.binding, &DownloadLyricsBinding::reviewFinished);
+        QVERIFY(finished.isValid());
+        const auto first = h.request();
+        auto next = h.request("published_2");
+        next.title = "Next review";
+        bool observed_reset{}, offered{};
+        connect(&h.binding, &DownloadLyricsBinding::changed, &h.binding, [&] {
+            if (observed_reset || h.binding.hasRequest())
+                return;
+            observed_reset = true;
+            QVERIFY(h.binding.requestToken().isEmpty());
+            QVERIFY(h.binding.candidates().isEmpty());
+            offered = h.binding.offerPublished(next);
+        });
+        QVERIFY(h.binding.dismiss());
+        QVERIFY(observed_reset);
+        QVERIFY(offered);
+        QCOMPARE(h.binding.title(), next.title);
+        QCOMPARE(finished.size(), 1);
+        QCOMPARE(finished.front().front().toString(), QString::fromStdString(first.job_id));
+        QVERIFY(h.binding.dismiss());
+        QVERIFY(!h.binding.dismiss());
+        QCOMPARE(finished.size(), 2);
+        QCOMPARE(finished.back().front().toString(), QString::fromStdString(next.job_id));
+    }
     void explicitFormsAreSavedOneAtATimeWithoutChangingPlaybackOrLosingOtherCandidates() {
         Harness h;
         const auto current = h.directory.filePath("current.mp3");
@@ -489,8 +518,12 @@ class DownloadLyricsBindingTests final : public QObject {
     void aFailedSaveRetainsItsExactTicketAndCandidateForRetryWithoutHttpOrDismissal() {
         Harness h;
         QVERIFY(h.ready());
+        QSignalSpy finished(&h.binding, &DownloadLyricsBinding::reviewFinished);
+        QVERIFY(finished.isValid());
         h.store->save_status = LyricsVariantsSaveStatus::Failed;
         QVERIFY(h.binding.saveCandidate(0, "Explicit", "", "", "original"));
+        QVERIFY(!h.binding.dismiss());
+        QVERIFY(finished.isEmpty());
         QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::SaveFailed);
         const auto pending = h.writer.acquiredLyricsSave();
         QVERIFY(!h.binding.busy());
@@ -498,6 +531,7 @@ class DownloadLyricsBindingTests final : public QObject {
         QVERIFY(!h.binding.canSave());
         QVERIFY(!h.binding.canDismiss());
         QVERIFY(!h.binding.dismiss());
+        QVERIFY(finished.isEmpty());
         QVERIFY(!h.binding.offerPublished(h.request("replacement")));
         QVERIFY(!h.binding.retry("Other title", "Other artist"));
         const auto before = h.store->attempts();
@@ -513,6 +547,10 @@ class DownloadLyricsBindingTests final : public QObject {
         QCOMPARE(h.network.requests.size(), 1);
         QVERIFY(h.binding.canDismiss());
         QCOMPARE(h.binding.candidates().size(), 2);
+        QVERIFY(finished.isEmpty());
+        QVERIFY(h.binding.dismiss());
+        QCOMPARE(finished.size(), 1);
+        QCOMPARE(finished.front().front().toString(), QString::fromStdString(h.request().job_id));
     }
     void loadFailureRetainsTheSameSaveTicketAndCanRetryOnlyTheSharedWriter() {
         Harness h;

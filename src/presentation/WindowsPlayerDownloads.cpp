@@ -247,7 +247,9 @@ struct WindowsPlayerDownloads::Impl final : AsyncDownloadSubmission {
         QObject::connect(&view, &DownloadApplicationBinding::stateChanged, &view, [this] { offerLyrics(); });
         QObject::connect(view.jobsModel(), &QAbstractItemModel::dataChanged, &view, [this] { offerLyrics(); });
         QObject::connect(view.jobsModel(), &QAbstractItemModel::rowsInserted, &view, [this] { offerLyrics(); });
-        if (lyrics_view)
+        if (lyrics_view) {
+            QObject::connect(lyrics_view.get(), &DownloadLyricsBinding::reviewFinished, &view,
+                             &DownloadApplicationBinding::finishPublishedLyricsReview, Qt::QueuedConnection);
             QObject::connect(lyrics_view.get(), &DownloadLyricsBinding::changed, &view, [this] {
                 if (lyrics_wake_queued)
                     return;
@@ -257,6 +259,7 @@ struct WindowsPlayerDownloads::Impl final : AsyncDownloadSubmission {
                     offerLyrics();
                 });
             });
+        }
     }
     ~Impl() { closeIngress(); }
 };

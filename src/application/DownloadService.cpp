@@ -199,6 +199,7 @@ struct DownloadService::Impl {
         std::int64_t started_at{0};
         std::int64_t last_observed_at{0};
         bool awaiting_confirmation{false};
+        bool lyrics_review_finished{false};
         // Recovery telemetry remains Interrupted until the durable receipt is
         // acknowledged; it is not reconstructed transfer progress.
         std::optional<DownloadImportState> recovered_import{};
@@ -267,8 +268,19 @@ struct DownloadService::Impl {
         }
     }
 
+    const YoutubeAudioItem* livePublishedYoutubeSource(const Job& job) const noexcept {
+        if (job.lyrics_review_finished || job.view.completed_mp3.empty() || job.receipt_index >= receipts.size() ||
+            (job.view.state != DownloadJobState::Completed && job.view.state != DownloadJobState::Importing &&
+             job.view.state != DownloadJobState::Imported && job.view.state != DownloadJobState::ImportFailed))
+            return nullptr;
+        const auto& receipt = receipts[job.receipt_index];
+        if (receipt.recovered || job.item_index >= receipt.request.items.size())
+            return nullptr;
+        const auto& source = receipt.request.items[job.item_index].youtube;
+        return source ? &*source : nullptr;
+    }
+
     bool eligibleForArchive(const std::size_t receipt_index) const {
-        const auto& receipt = receipts[receipt_index];
         return std::ranges::all_of(jobs, [&](const Job& job) {
             if (job.receipt_index != receipt_index)
                 return true;
@@ -282,9 +294,7 @@ struct DownloadService::Impl {
                 return false;
             }
             // A live YouTube publication can still supply a lyric offer.
-            if (job.view.completed_mp3.empty() || receipt.recovered)
-                return true;
-            const auto& source = receipt.request.items[job.item_index].youtube;
+            const auto* source = livePublishedYoutubeSource(job);
             return !source || !source->fetch_lyrics;
         });
     }
@@ -491,24 +501,40 @@ DownloadService::DownloadService(DownloadExecution& execution, DownloadImport& i
 DownloadService::~DownloadService() = default;
 
 std::optional<PublishedYoutubeAudio> DownloadService::publishedYoutubeAudio(const std::string_view job_id) const {
-    const auto& state = *impl_;
+    auto& state = *impl_;
     if (state.calling_port || job_id.empty() || job_id.size() > 64)
         return {};
-    const auto job = std::find_if(state.jobs.begin(), state.jobs.end(),
-                                  [job_id](const auto& item) { return item.view.job_id == job_id; });
-    if (job == state.jobs.end() ||
-        (job->view.state != DownloadJobState::Completed && job->view.state != DownloadJobState::Importing &&
-         job->view.state != DownloadJobState::Imported && job->view.state != DownloadJobState::ImportFailed) ||
-        !validPublishedPath(job->view.completed_mp3) || job->receipt_index >= state.receipts.size())
+    const auto* job = state.find(job_id);
+    if (!job)
         return {};
-    const auto& receipt = state.receipts[job->receipt_index];
-    if (receipt.recovered || job->item_index >= receipt.request.items.size())
-        return {};
-    const auto& source = receipt.request.items[job->item_index].youtube;
-    if (!source)
+    const auto* source = state.livePublishedYoutubeSource(*job);
+    if (!source || !validPublishedPath(job->view.completed_mp3))
         return {};
     return PublishedYoutubeAudio{job->view.job_id, job->view.completed_mp3, *source};
 }
+bool DownloadService::finishPublishedLyricsReview(const std::string_view job_id) {
+    auto& state = *impl_;
+    if (state.calling_port || state.closed || job_id.empty() || job_id.size() > 64)
+        return false;
+    auto* job = state.find(job_id);
+    if (!job)
+        return false;
+    const auto* source = state.livePublishedYoutubeSource(*job);
+    if (!source || !source->fetch_lyrics)
+        return false;
+    if (state.staged_archive) {
+        // An unfinished review kept this job in the archive's survivor set.
+        auto& jobs = state.staged_archive->jobs;
+        const auto survivor =
+            std::ranges::find_if(jobs, [job_id](const auto& item) { return item.view.job_id == job_id; });
+        if (survivor == jobs.end())
+            return false;
+        survivor->lyrics_review_finished = true;
+    }
+    job->lyrics_review_finished = true;
+    return true;
+}
+
 std::optional<DownloadCheckpoint> DownloadService::checkpoint() {
     const auto& state = *impl_;
     if (state.calling_port || !state.valid_configuration || state.identity == nullptr)

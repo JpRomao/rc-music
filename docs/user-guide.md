@@ -110,6 +110,8 @@ Após instalar o candidato com a opção escolhida, abra `brave://extensions`, `
 
 Quando o componente de downloads está ativo, abra **Downloads** no player para acompanhar pedidos, progresso e histórico. Use **Cancelar** em um pedido que ainda permite cancelamento e **Tentar importar novamente** se o MP3 já estiver pronto e a importação para a fila falhar. As opções de repetir o carregamento ou o salvamento aparecem conforme o erro.
 
+Em **Revisar letras**, use **Fechar** para voltar ao diálogo depois na mesma sessão ou **Concluir revisão** para liberar o pedido para arquivamento. Para acrescentar outra letra depois de concluir ou reiniciar, abra o mesmo MP3 e use **Versões**.
+
 Em um item interrompido, use **Verificar arquivos**. Se aparecer **Encerrar recuperação…**, confirme para remover os temporários reconhecidos e encerrar o item. Se o app fechou depois de registrar a limpeza, faça a mesma verificação para concluir o encerramento ao reabrir. A ação preserva a fila e qualquer MP3 final. Quando todos os itens do pedido estiverem encerrados, use **Arquivar pedidos encerrados** para liberar espaço no histórico ativo.
 
 **Recuperar histórico** aparece quando o app pode restaurar registros preservados e reservar outra identificação para futuros pedidos. Se houver divergência entre o histórico e as confirmações da fila, os dados ficam preservados para revisão. Repetir a leitura não resolve essa divergência. Veja os [estados e ações de recuperação](download-jobs.md#painel-compartilhado-e-preparação-de-saída).

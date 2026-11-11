@@ -74,6 +74,7 @@ class DownloadApplicationBinding final : public QObject {
     [[nodiscard]] QObject* lyrics() const;
     // Trusted optional composition; never an invokable path/source setter.
     void setLyrics(QObject* lyrics);
+    void finishPublishedLyricsReview(const QString& job_id);
     [[nodiscard]] QString statusText() const;
     [[nodiscard]] QString warningText() const;
     [[nodiscard]] QString historyCapacityText() const;

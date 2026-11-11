@@ -293,8 +293,10 @@ TestCase {
         compare(backend.saveCalls, 0);
         compare(backend.dismissCalls, 0);
     }
-    function test_nextRequiresDismissCapabilityAndOnlyAnExplicitClickDismisses() {
+    function test_finishReviewRequiresDismissCapabilityAndExplicitAction() {
         const dismiss = field("dismiss");
+        compare(dismiss.text, "Concluir revisão");
+        compare(dismiss.Accessible.name, dismiss.text);
         backend.canDismiss = false;
         backend.changed();
         verify(!dismiss.enabled);

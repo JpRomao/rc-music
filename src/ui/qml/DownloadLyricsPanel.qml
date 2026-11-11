@@ -426,7 +426,7 @@ Dialog {
                 id: dismissButton
                 objectName: "download-lyrics-dismiss"
                 contract: root.contract
-                text: qsTr("Próxima")
+                text: qsTr("Concluir revisão")
                 enabled: root.actionsCurrent && root.requestOwner.canDismiss
                 KeyNavigation.tab: closeButton
                 onClicked: {

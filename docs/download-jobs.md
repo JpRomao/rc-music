@@ -329,7 +329,7 @@ O recorte de 2026-11-11 teve Red por API/projeção ausente e dois casos Quick f
 
 ### Arquivar pedidos encerrados
 
-Quando a fila de downloads está ociosa, **Arquivar pedidos encerrados** pede confirmação e remove do histórico ativo somente lotes inteiros que já terminaram. Pedidos com itens interrompidos, importações pendentes ou falhas de importação ficam disponíveis para recuperação. Uma publicação YouTube em memória que solicitou letras continua disponível até que o aplicativo seja reiniciado.
+Quando a fila de downloads está ociosa, **Arquivar pedidos encerrados** pede confirmação e remove do histórico ativo somente lotes inteiros que já terminaram. Pedidos com itens interrompidos, importações pendentes ou falhas de importação ficam disponíveis para recuperação. Uma publicação YouTube que solicitou letras mantém o pedido disponível enquanto a revisão está aberta ou adiada na sessão atual. **Concluir revisão** libera essa reserva para o arquivamento.
 
 O histórico só libera os pedidos, itens e bytes depois que o salvamento é confirmado. Em caso de falha, o painel mantém as linhas e oferece **Tentar salvar o arquivamento novamente**. A ação conserva os áudios publicados, a biblioteca, a fila de reprodução e as playlists.
 

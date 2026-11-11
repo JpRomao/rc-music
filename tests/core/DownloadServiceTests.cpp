@@ -1169,7 +1169,7 @@ TEST_CASE("Execution receives only acknowledged archived jobs and current durabl
     REQUIRE(retirement_evidence_queries == 2);
 }
 
-TEST_CASE("A live published YouTube lyric offer remains available until restart", "[download][archive]") {
+TEST_CASE("An unfinished live published YouTube lyric offer does not survive restart", "[download][archive]") {
     FakeExecution execution;
     FakeImport importer;
     RecoveryIdentity identity;
@@ -1190,7 +1190,101 @@ TEST_CASE("A live published YouTube lyric offer remains available until restart"
     DownloadService restored(execution, importer, "restored", {}, &identity);
     REQUIRE(restored.restore(*history, confirmed));
     REQUIRE_FALSE(restored.publishedYoutubeAudio(id));
+    REQUIRE_FALSE(restored.finishPublishedLyricsReview(id));
     REQUIRE(restored.canArchiveSettled());
+}
+
+TEST_CASE("Finishing a live YouTube lyric review releases only that job's hold on whole-batch archival",
+          "[download][archive][published-lyrics]") {
+    FakeExecution execution;
+    FakeImport importer;
+    RecoveryIdentity identity;
+    DownloadService service(execution, importer, "live", {}, &identity);
+    auto input = youtubeRequest();
+    auto sibling = input.items.front();
+    sibling.youtube->video_id = "ZbCdEf_12-3";
+    sibling.url = "https://www.youtube.com/watch?v=" + sibling.youtube->video_id;
+    input.items.push_back(sibling);
+    const auto admitted = service.submit(input);
+    REQUIRE(admitted.error == DownloadSubmissionError::None);
+    REQUIRE(admitted.job_ids.size() == 2);
+    const auto& first = admitted.job_ids.front();
+    const auto& second = admitted.job_ids.back();
+    REQUIRE_FALSE(service.finishPublishedLyricsReview(first));
+    REQUIRE_FALSE(service.finishPublishedLyricsReview("unknown"));
+    service.tick(0);
+    published(execution, first);
+    service.tick(1);
+    REQUIRE(service.publishedYoutubeAudio(first));
+    execution.on_start = [&] { REQUIRE_FALSE(service.finishPublishedLyricsReview(first)); };
+    service.tick(2);
+    published(execution, second);
+    service.tick(3);
+    REQUIRE(service.publishedYoutubeAudio(second));
+    const auto before = service.checkpoint();
+    REQUIRE(before);
+    REQUIRE_FALSE(service.canArchiveSettled());
+
+    REQUIRE(service.finishPublishedLyricsReview(first));
+    REQUIRE_FALSE(service.finishPublishedLyricsReview(first));
+    REQUIRE_FALSE(service.publishedYoutubeAudio(first));
+    REQUIRE(service.publishedYoutubeAudio(second));
+    REQUIRE_FALSE(service.canArchiveSettled());
+    REQUIRE(service.finishPublishedLyricsReview(second));
+    REQUIRE_FALSE(service.publishedYoutubeAudio(second));
+    REQUIRE(service.canArchiveSettled());
+    REQUIRE(service.checkpoint() == before);
+    REQUIRE(service.submit(input).job_ids == admitted.job_ids);
+    auto changed = input;
+    changed.items.front().youtube->fetch_lyrics = false;
+    REQUIRE(service.submit(changed).error == DownloadSubmissionError::InvalidRequest);
+    const auto archive = service.stageSettledArchive();
+    REQUIRE(archive);
+    REQUIRE(archive->jobs.empty());
+    REQUIRE(archive->archived_receipts.size() == 1);
+    REQUIRE(archive->archived_receipts.front().job_ids == admitted.job_ids);
+    REQUIRE(archive->archived_receipts.front().fingerprint == before->receipts.front().fingerprint);
+    REQUIRE(service.capacity().jobs == 2);
+    REQUIRE(service.confirmSettledArchive());
+    REQUIRE(service.capacity().jobs == 0);
+    REQUIRE(service.submit(input).job_ids == admitted.job_ids);
+    REQUIRE(execution.starts.size() == 2);
+    REQUIRE(importer.imports.size() == 2);
+}
+
+TEST_CASE("A lyric review completed while another batch awaits archive confirmation remains complete",
+          "[download][archive][published-lyrics]") {
+    FakeExecution execution;
+    FakeImport importer;
+    RecoveryIdentity identity;
+    DownloadService service(execution, importer, "live", {}, &identity);
+    const auto retired = service.submit(request(1));
+    REQUIRE(retired.error == DownloadSubmissionError::None);
+    REQUIRE(service.cancel(retired.job_ids.front()));
+    const auto held = service.submit(youtubeRequest(2));
+    REQUIRE(held.error == DownloadSubmissionError::None);
+    const auto& id = held.job_ids.front();
+    service.tick(0);
+    published(execution, id);
+    service.tick(1);
+    REQUIRE(service.publishedYoutubeAudio(id));
+    const auto archive = service.stageSettledArchive();
+    REQUIRE(archive);
+    REQUIRE(archive->jobs.size() == 1);
+    REQUIRE(archive->jobs.front().job_id == id);
+    REQUIRE(archive->archived_receipts.front().job_ids == retired.job_ids);
+
+    REQUIRE(service.finishPublishedLyricsReview(id));
+    REQUIRE_FALSE(service.publishedYoutubeAudio(id));
+    REQUIRE(service.confirmSettledArchive());
+    REQUIRE(service.checkpoint() == archive);
+    REQUIRE_FALSE(service.publishedYoutubeAudio(id));
+    REQUIRE_FALSE(service.finishPublishedLyricsReview(id));
+    REQUIRE(service.canArchiveSettled());
+    const auto second = service.stageSettledArchive();
+    REQUIRE(second);
+    REQUIRE(second->jobs.empty());
+    REQUIRE(second->archived_receipts.back().job_ids == held.job_ids);
 }
 
 TEST_CASE("A full replay archive never evicts receipts or releases unrecorded history", "[download][archive]") {
@@ -1243,7 +1337,7 @@ TEST_CASE("Published YouTube context requires a live publication and survives pe
     REQUIRE(h.service.publishedYoutubeAudio(id));
     REQUIRE_FALSE(h.service.publishedYoutubeAudio("unknown"));
 }
-TEST_CASE("Direct or cancelled jobs cannot provide a published YouTube lookup target", "[download][published-lyrics]") {
+TEST_CASE("Only live jobs requesting lyrics can finish a published YouTube review", "[download][published-lyrics]") {
     Harness h;
     SECTION("direct") {
         const auto ids = h.admit();
@@ -1251,12 +1345,25 @@ TEST_CASE("Direct or cancelled jobs cannot provide a published YouTube lookup ta
         published(h.execution, ids.front());
         h.service.tick(1);
         REQUIRE_FALSE(h.service.publishedYoutubeAudio(ids.front()));
+        REQUIRE_FALSE(h.service.finishPublishedLyricsReview(ids.front()));
     }
     SECTION("cancelled") {
         const auto result = h.service.submit(youtubeRequest());
         REQUIRE(result.error == DownloadSubmissionError::None);
         REQUIRE(h.service.cancel(result.job_ids.front()));
         REQUIRE_FALSE(h.service.publishedYoutubeAudio(result.job_ids.front()));
+        REQUIRE_FALSE(h.service.finishPublishedLyricsReview(result.job_ids.front()));
+    }
+    SECTION("lyrics not requested") {
+        auto input = youtubeRequest();
+        input.items.front().youtube->fetch_lyrics = false;
+        const auto result = h.service.submit(input);
+        REQUIRE(result.error == DownloadSubmissionError::None);
+        h.service.tick(0);
+        published(h.execution, result.job_ids.front());
+        h.service.tick(1);
+        REQUIRE(h.service.publishedYoutubeAudio(result.job_ids.front()));
+        REQUIRE_FALSE(h.service.finishPublishedLyricsReview(result.job_ids.front()));
     }
 }
 TEST_CASE("Recovered YouTube receipts do not acquire publication authority even after explicit replay",

@@ -57,6 +57,7 @@ class DownloadLyricsBinding final : public QObject {
     [[nodiscard]] bool drained() const;
   signals:
     void changed();
+    void reviewFinished(const QString& job_id);
 
   private:
     struct Impl;
