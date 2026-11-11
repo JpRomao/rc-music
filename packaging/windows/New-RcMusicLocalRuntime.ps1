@@ -45,6 +45,7 @@ if ($componentEnabled -and (-not $PSBoundParameters.ContainsKey('DownloadPackage
 Import-Module (Join-Path $PSScriptRoot 'RcMusicRuntimePlan.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'PeDependencyReport.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'RcMusicFfmpegRuntime.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'RcMusicQtNetworkRuntime.psm1') -Force
 $downloadComponent = $null
 if ($componentEnabled) {
     Import-Module (Join-Path $PSScriptRoot 'RcMusicDownloadComponent.psm1') -Force
@@ -67,6 +68,7 @@ function Get-RuntimeRecipeFiles {
         [switch] $DownloadComponent, [switch] $NativeHostComponent)
     $names = @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
         'qt.conf', 'LOCAL-DEVELOPMENT.txt', 'RcMusicFfmpegRuntime.psm1', 'ffmpeg-runtime.v1.json',
+        'RcMusicQtNetworkRuntime.psm1', 'qt-network-runtime.v1.json',
         'notices/ffmpeg/NOTICE.txt', 'notices/ffmpeg/FFmpeg-COPYING.LGPLv2.1.txt',
         'notices/ffmpeg/FFmpeg-LICENSE.txt', 'notices/ffmpeg/FFmpeg-CREDITS.txt',
         'notices/ffmpeg/FFmpeg-IJG.txt', 'notices/ffmpeg/Boost-LICENSE.txt', 'notices/ffmpeg/zlib-LICENSE.txt',
@@ -160,6 +162,8 @@ $payload = Join-Path $OutputDirectory 'app'
 $ffmpeg = Get-RcMusicFfmpegRuntime -ManifestPath (Join-Path $PSScriptRoot 'ffmpeg-runtime.v1.json') `
     -DllDirectory (Join-Path $multimedia 'bin') `
     -PluginPath (Join-Path $multimedia 'plugins/multimedia/ffmpegmediaplugin.dll') -Destination $payload
+$qtNetwork = Get-RcMusicQtNetworkRuntime -ManifestPath (Join-Path $PSScriptRoot 'qt-network-runtime.v1.json') `
+    -DllDirectory (Join-Path $qt 'bin') -Destination $payload
 $dumpbin = Join-Path ([IO.Path]::GetDirectoryName($cache.CMAKE_CXX_COMPILER)) 'dumpbin.exe'
 $sourceSnapshot = Get-RcMusicSourceSnapshot -RepositoryRoot $repository -EntryPoint $configuration.entrypoint
 # This is an incremental application build, never a Qt SDK rebuild or benchmark.
@@ -309,11 +313,11 @@ foreach ($notice in $runtimeNotices) {
         throw "Collected runtime notice differs from its recipe: $($notice.path)"
     }
 }
-foreach ($expected in $ffmpeg.files) {
+foreach ($expected in @($ffmpeg.files) + $qtNetwork) {
     $collected = @($plan.files | Where-Object relative_path -CEQ $expected.relative_path)
     if ($collected.Count -ne 1 -or $collected[0].source -cne $expected.source -or
         $collected[0].size_bytes -ne $expected.size_bytes -or $collected[0].sha256 -cne $expected.sha256) {
-        throw "Collected FFmpeg runtime differs from its qualified input: $($expected.relative_path)"
+        throw "Collected runtime differs from its qualified input: $($expected.relative_path)"
     }
 }
 if ($componentEnabled) {
@@ -354,6 +358,9 @@ $manifest = [ordered]@{
     ffmpeg_runtime = [ordered]@{
         product_version = $ffmpeg.product_version
         qualified_build_receipt_sha256 = $ffmpeg.qualified_build_receipt_sha256
+    }
+    qt_network_runtime = [ordered]@{
+        qualified_build_receipt_sha256 = $qtNetwork.qualified_build_receipt_sha256
     }
     files = $plan.files; pe_imports = @($reports); external_prerequisites = @($external | Sort-Object)
 }

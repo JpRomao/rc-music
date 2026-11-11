@@ -7,6 +7,7 @@ $testRoot = Join-Path $repository ('out/product/runtime-recipe-' + [guid]::NewGu
 $sourceNames = @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
     'qt.conf', 'LOCAL-DEVELOPMENT.txt')
 $ffmpegRecipeNames = @('RcMusicFfmpegRuntime.psm1', 'ffmpeg-runtime.v1.json')
+$networkRecipeNames = @('RcMusicQtNetworkRuntime.psm1', 'qt-network-runtime.v1.json')
 $noticeNames = @('notices/ffmpeg/NOTICE.txt', 'notices/ffmpeg/FFmpeg-COPYING.LGPLv2.1.txt',
     'notices/ffmpeg/FFmpeg-LICENSE.txt', 'notices/ffmpeg/FFmpeg-CREDITS.txt',
     'notices/ffmpeg/FFmpeg-IJG.txt', 'notices/ffmpeg/Boost-LICENSE.txt', 'notices/ffmpeg/zlib-LICENSE.txt',
@@ -16,8 +17,9 @@ $noticeNames = @('notices/ffmpeg/NOTICE.txt', 'notices/ffmpeg/FFmpeg-COPYING.LGP
     'notices/taglib/NOTICE.txt', 'notices/taglib/TagLib-AUTHORS.txt',
     'notices/taglib/TagLib-COPYING.LGPL.txt', 'notices/taglib/TagLib-COPYING.MPL.txt',
     'notices/taglib/utfcpp-LICENSE.txt')
-$requiredRecipeNames = $sourceNames + $ffmpegRecipeNames + $noticeNames
+$requiredRecipeNames = $sourceNames + $ffmpegRecipeNames + $networkRecipeNames + $noticeNames
 $multimediaStagerName = 'New-RcMusicQtMultimediaSdk.ps1'
+$networkStagerName = 'New-RcMusicQtNetworkSdk.ps1'
 $ffmpegNames = @('avcodec-61.dll', 'avformat-61.dll', 'avutil-59.dll', 'swresample-5.dll', 'swscale-8.dll')
 $componentNames = @('RcMusicDownloadComponent.psm1', 'RcMusicDownloadComponentPe.psm1')
 $nativeNames = @('RcMusicNativeHostComponent.psm1', 'RcMusicYoutubeNativeManifest.psm1')
@@ -122,7 +124,9 @@ try {
     $buildDirectory = Join-Path $exportRoot 'out/product/build inválido'
     $foreignDirectory = Join-Path $testRoot 'cwd alheio'
     $null = New-Item -ItemType Directory -Path $exportDirectory, $buildDirectory, $foreignDirectory
-    foreach ($name in $sourceNames + @(($ffmpegRecipeNames + $noticeNames + $multimediaStagerName + $componentNames + $nativeNames) | Where-Object {
+    $exportedInputs = $ffmpegRecipeNames + $networkRecipeNames + $noticeNames + $multimediaStagerName +
+        $networkStagerName + $componentNames + $nativeNames
+    foreach ($name in $sourceNames + @($exportedInputs | Where-Object {
         Test-Path -LiteralPath (Join-Path $repository ('packaging/windows/' + $_))
     })) {
         $original = Join-Path $repository ('packaging/windows/' + $name)
@@ -137,7 +141,7 @@ try {
     [IO.File]::WriteAllText((Join-Path $buildDirectory 'CMakeCache.txt'), $cache, [Text.UTF8Encoding]::new($false))
     Test-Case 'exported PowerShell files parse without historical files' {
         Assert-Equal (Test-Path -LiteralPath (Join-Path $exportRoot 'experiments')) $false
-        foreach ($name in ($sourceNames + $ffmpegRecipeNames) | Where-Object {
+        foreach ($name in ($sourceNames + $ffmpegRecipeNames + $networkRecipeNames) | Where-Object {
             $_ -match '\.ps(?:1|m1)$' -and (Test-Path -LiteralPath (Join-Path $exportDirectory $_))
         }) {
             $null = Read-Ast (Join-Path $exportDirectory $name)
@@ -319,7 +323,7 @@ try {
             Assert-Rejected { Read-TestFfmpegRuntime } 'ffmpegmediaplugin\.dll'
         } finally { [IO.File]::WriteAllBytes($ffmpegPlugin, $original) }
     }
-    Test-Case 'the standard Lite recipe rejects a stale FFmpeg DLL before running build tools or creating output' {
+    Test-Case 'the standard Lite recipe rejects stale multimedia and network DLLs before running tools or creating output' {
         $cachePath = Join-Path $buildDirectory 'CMakeCache.txt'
         $previousCache = [IO.File]::ReadAllText($cachePath)
         $dll = Join-Path $ffmpegBin $ffmpegNames[0]
@@ -339,6 +343,13 @@ try {
             Assert-Equal $result.Stdout ''
             if ($result.Stderr -notmatch 'avcodec-61\.dll') { throw "Wrong FFmpeg preflight: $($result.Stderr)" }
             Assert-Equal (Test-Path -LiteralPath (Join-Path $exportRoot 'out/product/rejected-ffmpeg')) $false
+            [IO.File]::WriteAllBytes($dll, $original)
+            [IO.File]::WriteAllText((Join-Path $ffmpegBin 'Qt6Network.dll'), 'Unqualified Qt Network')
+            $result = Invoke-RecipeChild @('-BuildDirectory', $buildDirectory, '-OutputDirectory', 'out/product/rejected-network')
+            Assert-Equal $result.ExitCode 1
+            Assert-Equal $result.Stdout ''
+            if ($result.Stderr -notmatch 'Qt6Network\.dll') { throw "Wrong Qt Network preflight: $($result.Stderr)" }
+            Assert-Equal (Test-Path -LiteralPath (Join-Path $exportRoot 'out/product/rejected-network')) $false
         } finally {
             [IO.File]::WriteAllBytes($dll, $original)
             [IO.File]::WriteAllText($cachePath, $previousCache, [Text.UTF8Encoding]::new($false))
@@ -375,6 +386,48 @@ try {
         foreach ($entry in $ffmpegFiles) {
             Assert-Equal (Get-TestFilePin (Join-Path $output ('bin/' + $entry.name))).sha256 $entry.sha256
         }
+    }
+    Test-Case 'Qt Network verification rejects same-size changes and stages the qualified DLL without altering the SDK' {
+        $vendorRoot = Join-Path $testRoot 'vendor Qt 日本'
+        $vendorBin = Join-Path $vendorRoot 'bin'
+        $vendorConfig = Join-Path $vendorRoot 'lib/cmake/Qt6'
+        $candidate = Join-Path $testRoot 'candidate Qt 日本'
+        $null = New-Item -ItemType Directory -Path $vendorBin, $vendorConfig, $candidate
+        $config = Join-Path $vendorConfig 'Qt6Config.cmake'
+        $vendorDll = Join-Path $vendorBin 'Qt6Network.dll'
+        $candidateDll = Join-Path $candidate 'Qt6Network.dll'
+        $vendorSymbols = Join-Path $vendorBin 'Qt6Network.pdb'
+        $candidateSymbols = Join-Path $candidate 'Qt6Network.pdb'
+        [IO.File]::WriteAllText($config, '# Synthetic Qt config')
+        [IO.File]::WriteAllText($vendorDll, 'Original Qt Network')
+        [IO.File]::WriteAllText($candidateDll, 'Patched! Qt Network')
+        [IO.File]::WriteAllText($vendorSymbols, 'Original symbols')
+        [IO.File]::WriteAllText($candidateSymbols, 'Patched symbols')
+        $vendorPin = Get-TestFilePin $vendorDll
+        $candidatePin = Get-TestFilePin $candidateDll
+        Assert-Equal $vendorPin.size_bytes $candidatePin.size_bytes
+        $manifest = Join-Path $exportDirectory $networkRecipeNames[1]
+        $pins = [ordered]@{ schema_version = 1; qualified_build_receipt_sha256 = 'b' * 64 } + $candidatePin
+        [IO.File]::WriteAllText($manifest, ($pins | ConvertTo-Json))
+        $output = Join-Path $exportRoot 'out/product/corrected Qt 日本'
+        $module = Join-Path $exportDirectory $networkRecipeNames[0]
+        if (-not [IO.File]::Exists($module)) { throw 'Required Qt Network validator module is absent.' }
+        Import-Module $module -Force
+        Assert-Rejected {
+            Get-RcMusicQtNetworkRuntime -ManifestPath $manifest -DllDirectory $vendorBin -Destination $output
+        } 'Qt6Network\.dll'
+        Assert-Equal (Test-Path -LiteralPath $output) $false
+        $qualified = Get-RcMusicQtNetworkRuntime -ManifestPath $manifest -DllDirectory $candidate -Destination $output
+        Assert-Equal $qualified.sha256 $candidatePin.sha256
+        Assert-Equal $qualified.qualified_build_receipt_sha256 $pins.qualified_build_receipt_sha256
+        Assert-Equal (Test-Path -LiteralPath $output) $false
+        $null = & (Join-Path $exportDirectory $networkStagerName) -VendorSdkRoot $vendorRoot `
+            -DllDirectory $candidate -OutputDirectory $output
+        Assert-Equal (Get-TestFilePin $vendorDll).sha256 $vendorPin.sha256
+        Assert-Equal (Get-TestFilePin (Join-Path $output 'bin/Qt6Network.dll')).sha256 $candidatePin.sha256
+        Assert-Equal ([IO.File]::ReadAllText($vendorSymbols)) 'Original symbols'
+        Assert-Equal ([IO.File]::ReadAllText((Join-Path $output 'bin/Qt6Network.pdb'))) 'Patched symbols'
+        Assert-Equal (Get-TestFilePin (Join-Path $output 'lib/cmake/Qt6/Qt6Config.cmake')).sha256 (Get-TestFilePin $config).sha256
     }
 } finally {
     Assert-SafeTestRoot

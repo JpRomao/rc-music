@@ -49,10 +49,13 @@ try {
         $packaging = Join-Path $repository 'packaging/windows'
         Import-Module (Join-Path $packaging 'RcMusicFfmpegRuntime.psm1')
         $multimedia = [IO.Path]::GetFullPath((Join-Path $tools.QtMultimediaPackage '../../..'))
-        $preflightDestination = Join-Path $BuildDirectory ('.ffmpeg-preflight-' + [guid]::NewGuid().ToString('N'))
+        $preflightDestination = Join-Path $BuildDirectory ('.runtime-preflight-' + [guid]::NewGuid().ToString('N'))
         $null = Get-RcMusicFfmpegRuntime -ManifestPath (Join-Path $packaging 'ffmpeg-runtime.v1.json') `
             -DllDirectory (Join-Path $multimedia 'bin') `
             -PluginPath (Join-Path $multimedia 'plugins/multimedia/ffmpegmediaplugin.dll') -Destination $preflightDestination
+        Import-Module (Join-Path $packaging 'RcMusicQtNetworkRuntime.psm1')
+        $null = Get-RcMusicQtNetworkRuntime -ManifestPath (Join-Path $packaging 'qt-network-runtime.v1.json') `
+            -DllDirectory (Join-Path $tools.QtPrefix 'bin') -Destination $preflightDestination
         $devShell = Join-Path $tools.VisualStudioRoot 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll'
         if (-not (Test-Path -LiteralPath $devShell -PathType Leaf)) { throw 'Visual Studio developer shell is unavailable' }
         Import-Module $devShell

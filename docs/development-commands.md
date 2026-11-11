@@ -16,11 +16,12 @@ O runner não instala nem baixa dependências. A configuração é um `.psd1` de
 Com o SDK original e as DLLs qualificadas já disponíveis, execute uma vez na raiz do projeto:
 
 ```powershell
+pwsh -NoProfile -File packaging/windows/New-RcMusicQtNetworkSdk.ps1
 pwsh -NoProfile -File packaging/windows/New-RcMusicQtMultimediaSdk.ps1
 pwsh -NoProfile -File scripts/develop.ps1 build -ToolchainFile tools/windows.example.psd1 -BuildDirectory out/product/desktop-ffmpeg-release
 ```
 
-O primeiro comando cria um SDK separado em `out/product/qt-multimedia-6.11.2-rcmusic2` a partir do Qt Multimedia 6.11.2 e dos binários de `out/product/fffix2/install/bin`. A cópia ocupa cerca de 485 MB. Em outro host, forneça os caminhos dos dois insumos com `-VendorSdkRoot` e `-FfmpegBinDirectory`. Se já houver `.tools/windows.psd1`, atualize `QtMultimediaPackage` para o caminho retornado pelo primeiro comando e use um diretório de build novo. Ações `build`, `test`, `lint` e `validate` exigem os hashes qualificados das cinco DLLs e do plugin do Qt antes de configurar ou compilar. [Proveniência e montagem do runtime](delivery/windows-f8a593b-ffmpeg.md#uso-no-fluxo-windows)
+O primeiro comando prepara `out/product/qt-network-sdk`, uma cópia do SDK Qt com a DLL Qt Network qualificada. Use `-VendorSdkRoot` e `-DllDirectory` para indicar os insumos em outro host. O segundo comando prepara `out/product/qt-multimedia-6.11.2-rcmusic2` a partir do Qt Multimedia 6.11.2 e do FFmpeg em `out/product/fffix2/install/bin`. Ele aceita `-VendorSdkRoot` e `-FfmpegBinDirectory`. Em `.tools/windows.psd1`, use os caminhos retornados para `QtPrefix` e `QtMultimediaPackage` e configure um diretório de build novo. As ações `build`, `test`, `lint` e `validate` conferem os hashes qualificados antes de configurar ou compilar. [Proveniência do FFmpeg](delivery/windows-f8a593b-ffmpeg.md#uso-no-fluxo-windows)
 
 Versões desta receita:
 

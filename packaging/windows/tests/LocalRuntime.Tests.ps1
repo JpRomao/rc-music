@@ -17,6 +17,12 @@ foreach ($relative in @('RCMusic.exe', 'qt.conf', 'Qt6Core.dll', 'Qt6Gui.dll', '
 }
 $manifest = Get-Content -LiteralPath $result.manifest -Raw | ConvertFrom-Json
 if ($manifest.build_testing -ne $false -or $manifest.architecture -cne 'x64') { throw 'Not a production-mode x64 payload' }
+$networkPin = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../qt-network-runtime.v1.json') -Raw | ConvertFrom-Json
+$network = @($manifest.files | Where-Object relative_path -CEQ 'Qt6Network.dll')
+if ($network.Count -ne 1 -or $network[0].sha256 -cne $networkPin.sha256 -or
+    $manifest.qt_network_runtime.qualified_build_receipt_sha256 -cne $networkPin.qualified_build_receipt_sha256) {
+    throw 'The runtime manifest does not bind the qualified Qt6Network.dll'
+}
 foreach ($relative in @('notices/ffmpeg/NOTICE.txt', 'notices/ffmpeg/FFmpeg-COPYING.LGPLv2.1.txt',
         'notices/ffmpeg/FFmpeg-LICENSE.txt', 'notices/ffmpeg/FFmpeg-CREDITS.txt',
         'notices/ffmpeg/FFmpeg-IJG.txt', 'notices/ffmpeg/Boost-LICENSE.txt', 'notices/ffmpeg/zlib-LICENSE.txt',

@@ -830,7 +830,7 @@ O build Windows também exige TagLib 2.3.2, com os avisos do TagLib e do utf8cpp
 
 As requisições de letras e Lidarr agora desabilitam HTTP/2 no Qt Network 6.11.2, conforme a mitigação do CVE-2026-96432. As três assertions falharam antes da mudança em uma consulta de letras, um GET do Lidarr e um POST do Lidarr. Depois da mudança passaram 6/6 CTest, com 166 casos Qt usando respostas simuladas, e o build Release Windows. Logs em `out/product/r9/out/product/http2-*.log`. [Aviso do Qt](https://www.qt.io/blog/security-advisory-cve-2026-96432) · [Protocolo do Lidarr](lidarr-integration.md#conexão-e-api)
 
-Para o CVE-2026-116337, os dois patches oficiais do Qt 6.11 passaram na aplicação sequencial em uma cópia das fontes do SDK atual. O recibo está em `out/product/qtbase-cve-2026-116337-applicability/`. Build e qualificação da DLL Qt Network com esses patches seguem pendentes. [Aviso e patches do Qt](https://www.qt.io/blog/security-issue-cve-2026-116337?hsLang=en)
+O build Windows de Qt Network 6.11.2 incorpora os dois patches da CVE-2026-116337 e o backport da CVE-2026-96432. A ABI passou na comparação com o runtime atual e o teste HTTP/1.1 local confirmou o carregamento e as respostas GET/POST. A receita e o runner exigem a nova DLL pelo hash. Licenças, fontes e SBOMs do pacote completo continuam em M5.7. [Proveniência e checks do Qt Network](desktop-build.md#qt-network-no-sdk-windows)
 
 Em M2.6, a extração de metadados observa troca de faixa, cancelamento explícito, o prazo de 2 s e saída entre as operações de leitura e de capa. A próxima faixa pode receber seus detalhes assim que a extração anterior atingir um desses pontos. [Cancelamento e limites](audio-tests.md#cancelamento-cooperativo-de-metadados)
 

@@ -3100,6 +3100,10 @@
           "marker": "## Fronteiras e fonte única"
         },
         {
+          "path": "docs/desktop-build.md",
+          "marker": "## Qt Network no SDK Windows"
+        },
+        {
           "path": "docs/architecture/decisions/0005-windows-product-stack.md",
           "marker": "Distribuição permanece privada/experimental até seus próprios gates"
         }

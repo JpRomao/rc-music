@@ -9,7 +9,7 @@
     ClangFormat = 'C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64/bin/clang-format.exe'
     QmlFormat = 'out/m0/toolchains/qt-6.11.2-msvc2022_64/bin/qmlformat.exe'
     VisualStudioRoot = 'C:/Program Files/Microsoft Visual Studio/18/BuildTools'
-    QtPrefix = 'q/f75eb9bea8280844c6d1a2b3f4/sdk'
+    QtPrefix = 'out/product/qt-network-sdk'
     QtMultimediaPackage = 'out/product/qt-multimedia-6.11.2-rcmusic2/lib/cmake/Qt6Multimedia'
     QtHost = 'out/m0/toolchains/qt-6.11.2-msvc2022_64'
     TagLibPrefix = 'out/product/taglib-2.3.2-msvc144/install'

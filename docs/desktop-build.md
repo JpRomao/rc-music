@@ -29,7 +29,7 @@ Import-Module (Join-Path $rcVsRoot 'Common7\Tools\Microsoft.VisualStudio.DevShel
 Enter-VsDevShell -VsInstallPath $rcVsRoot -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64 -vcvars_ver=14.44 -winsdk=10.0.22621.0'
 $rcRepo = (Resolve-Path .).Path
 $rcNinja = 'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'
-$rcQt = Join-Path $rcRepo 'q/f75eb9bea8280844c6d1a2b3f4/sdk'
+$rcQt = Join-Path $rcRepo 'out/product/qt-network-sdk'
 $rcTagLib = Join-Path $rcRepo 'out/product/taglib-2.3.2-msvc144/install'
 $rcMultimedia = Join-Path $rcRepo 'out/product/qt-multimedia-6.11.2-rcmusic2/lib/cmake/Qt6Multimedia'
 $rcQtHost = Join-Path $rcRepo 'out/m0/toolchains/qt-6.11.2-msvc2022_64'
@@ -59,6 +59,14 @@ if ($LASTEXITCODE -ne 0) { throw 'QML lint falhou.' }
 Qt **6.11.2** e TagLib **2.3.2** são exigidos exatamente. Catch2 **3.15.3** só entra com testes. `RC_MUSIC_BUILD_DESKTOP=OFF` é o default e conserva os comandos core-only. O desktop raiz recusa plataformas diferentes de Windows neste incremento, sem alegar validação Linux.
 
 O executável produzido fica diretamente no diretório de build, mas não é um pacote autossuficiente: precisa das DLLs/plugins Qt/FFmpeg/TagLib existentes ou de runtime montado pelo builder local. O builder reconhece explicitamente os entrypoints raiz e histórico, usa o QML promovido e inclui `assets`/`tools` na proveniência. Não foi gerado novo runtime/instalador por esta promoção.
+
+## Qt Network no SDK Windows
+
+A DLL do Qt Network 6.11.2 inclui os dois patches oficiais para a CVE-2026-116337 e as mudanças de produção do patch da CVE-2026-96432. Este último foi adaptado ao literal de texto da revisão local. A mitigação HTTP/1.1 das integrações de letras e Lidarr permanece ativa. [CVE-2026-116337](https://www.qt.io/blog/security-issue-cve-2026-116337?hsLang=en) · [CVE-2026-96432](https://www.qt.io/blog/security-advisory-cve-2026-96432)
+
+O build RelWithDebInfo x64 recompilou `Network` e suas dependências a partir de 22.856 arquivos autenticados do snapshot Qtbase com o backport FreeType. As 1.007 opções Qt correspondem ao SDK de origem. A comparação de 71 PEs confirmou os exports existentes e a resolução dos imports do RC Music, Qt QML, Qt Quick, Qt Multimedia e Qt Core. O teste com respostas HTTP válidas em loopback obteve GET 200 e POST 201 e confirmou o carregamento da nova DLL. [Origem do Qtbase](m0/evidence/m0-2-qtbase-refresh.md)
+
+O recibo de `q/n2/build-receipt.json` tem SHA-256 `b8aad24e7bd0a08c764bbfdce418c162b10e5650c214a46ff92836e33cc8bd06`. O preparador copia o SDK e substitui a DLL e os símbolos correspondentes. O runner e o empacotador exigem o hash da DLL qualificada e o manifesto do runtime registra o recibo. [Comandos de preparo](development-commands.md#qt-multimedia-com-ffmpeg-corrigido) · [Identidade da DLL](../packaging/windows/qt-network-runtime.v1.json)
 
 ## TagLib no runtime Windows
 
