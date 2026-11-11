@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-**Estado:** setups privados Lite e Completa experimental atualizados e conferidos em 2026-11-11, com ferramentas e preparação separada das extensões. Associações OFF, sem assinatura. Execução/lifecycle e gates de distribuição permanecem pendentes.
+**Estado:** setups privados Lite e Completa experimental de `ebb093a` conferidos em 2026-11-11, com ferramentas e preparação separada das extensões. Associações OFF, sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes.
 **Data:** 2026-11-05.
 
 A [limpeza de 2026-11-11](development-commands.md#remoção-de-versões-substituídas-e-caches) preservou os dois setups de `a469f8d` e retirou os executáveis substituídos de `cf34cd8` e `26cc641`. Os recibos, as configurações e as evidências continuam disponíveis. Os registros históricos abaixo documentam a geração original.
@@ -91,6 +91,17 @@ Fechamento proporcional em `out/product/test-runs/installer-extensions-20261105/
 O [harness nativo separado](../packaging/windows/tests/InstallerExtensions.Native.ps1) exige explicitamente `-PrepareOnly` ou `-RunPrepared` com recibo/hash revisado. A preparação compila cinco setups sintéticos com a receita corrente e mudanças de seleção somente em cópias privadas do template. Ela concluiu sem executar setup, abrir Registro ou alterar o produto: recibo `out/product/test-runs/installer-extensions-native/4c0a15fe23fa43e7a8367120a41f99f9/prepared.json`, SHA-256 `2b6be63ecfe3befcb9d05c014cda4ee3967d881e3a7d26dd2f8650d7e10f8517`.
 
 A execução preparada ainda exige autorização específica: testa as cinco combinações, `/VERIFY`, upgrade principal → YouTube e remoção/preservação de valores alheios, somente sob `HKCU\Software\RCMusicExtensionTests\4c0a15fe23fa43e7a8367120a41f99f9` e sua árvore GUID em `out/product/test-runs`. Não inicia app/hosts/navegador, mídia, UAC ou AppContainer. Registro real, checkbox físico e jornada Brave continuam pendentes; compilar não os comprova nem autoriza aquisição pública.
+
+### Setups de ebb093a
+
+Os setups incluem localização de arquivos em playlists salvas, recuperação da faixa após aviso de remoção da unidade no Windows, arquivamento de pedidos encerrados e colagem de letras na revisão de downloads. As opções de ferramentas e extensões continuam inicialmente desmarcadas. [Runtimes de ebb093a](windows-runtime.md#runtimes-de-ebb093a)
+
+| Edição | Pasta em `out/product/rc-music-installer` | Bytes do setup | SHA-256 |
+| --- | --- | ---: | --- |
+| Lite | `rc-music-ebb093a-extensions-Lite-20261111` | 89.996.285 | `05554edc425b9016ea9dfec78c0be4c2e31bb082d14b5d0203ddd9901648d671` |
+| Completa experimental | `rc-music-ebb093a-extensions-CompleteExperimental-20261111` | 90.066.854 | `00207f80abebbf01b84dd506fc24ed4e0d22fce2314b1f9a22006427d34e3b78` |
+
+A inspeção confirmou inventários de 619 e 622 arquivos, cinco variantes de seleção e os hashes dos players, hosts, manifestos e 16 arquivos das extensões dentro de cada setup. Os três arquivos de avisos do WebView2 constam na Completa. Os setups são PE x86 GUI sem assinatura e os players são x64 GUI. A validação foi estática. Recibos em `out/product/test-runs/windows-candidates-ebb093a-20261111/`.
 
 ### Setups atualizados em 2026-11-11
 

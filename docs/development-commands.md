@@ -183,6 +183,14 @@ A [promoção dos processos](process-tests.md) registra os cinco drivers em sete
 
 ## Limpeza de artefatos gerados — 2026-11-11
 
+### Builds dos instaladores de ebb093a
+
+Após a inspeção dos [setups de `ebb093a`](windows-installer.md#setups-de-ebb093a), foram removidos **496 objetos e bibliotecas intermediárias**, totalizando **265.959.934 bytes**. A seleção usou as saídas `.obj` e `.lib` declaradas nos grafos Ninja de `out/product/r4/out/product/{l,c}`.
+
+A limpeza conferiu **1.598 arquivos protegidos** por tamanho e SHA-256, incluindo os dois setups atuais, os anteriores, os executáveis e recibos. Os dois grafos Ninja continuaram legíveis. O plano e o resultado estão em `out/product/test-runs/windows-candidates-ebb093a-20261111/`.
+
+### Builds dos instaladores de a469f8d
+
 Após conferir os [setups de `a469f8d`](windows-installer.md#setups-atualizados-em-2026-11-11), a limpeza removeu **494 objetos e bibliotecas intermediárias**, somando **260.727.866 bytes**. A seleção se limitou às saídas `.obj` e `.lib` declaradas pelos grafos Ninja dos dois builds de empacotamento em `out/product/r3/out/product/{l,c}`.
 
 A operação conferiu **1.771 arquivos protegidos** por tamanho e SHA-256, incluindo o trabalho em andamento, os executáveis, instaladores e recibos. Os dois grafos Ninja continuam legíveis. Os próximos builds desses caches recriam os intermediários removidos. Plano e resultado em `out/product/test-runs/windows-candidates-a469f8d-20261111/`.

@@ -1,6 +1,6 @@
 # Runtime Windows — receita de produto
 
-**Estado:** runtimes privados Lite e Completa experimental atualizados em 2026-11-11. Uso nativo, lifecycle e gates de distribuição continuam abertos.
+**Estado:** runtimes privados Lite e Completa experimental de `ebb093a` conferidos em 2026-11-11. Uso nativo, lifecycle e gates de distribuição continuam abertos.
 
 A [limpeza de 2026-11-11](development-commands.md#remoção-de-versões-substituídas-e-caches) preservou os dois runtimes de `a469f8d` e retirou os payloads substituídos de `7601247` e `26cc641`. Os manifestos e as evidências continuam disponíveis. Os registros históricos abaixo documentam a geração original.
 **Data:** 2026-11-05.
@@ -52,6 +52,17 @@ Os hosts são copiados ao lado de `RCMusic.exe`, com dependências verificadas p
 O instalador conserva esses quatro arquivos sob a mesma escolha desmarcada das ferramentas, exige metadados correspondentes e verifica os hashes dos manifestos canônicos. Ausência de metadados não pode promover um host a arquivo obrigatório. Não registra o host no Windows, carrega a extensão ou publica o marcador durante a montagem. As [identidades públicas locais](youtube-extension-package.md#identidades-públicas-estáveis) já estão definidas; registro, seleção independente das extensões e aceitação instalada continuam pendentes. Os setups anteriores permanecem intactos.
 
 TDD e fechamento proporcional: reader **14 passados/7 falhos → 21/21**, componente **0/13 → 13/13**, configuração **142/8 → 150/150**, receita **12/8 → 20/20**, instalador/componente **17/2 → 19/19**, mais **97/97** do plano e **6/6** da receita do instalador. São **326 casos PowerShell** verdes, além dos checks documentais/rastreabilidade. Evidências em `out/product/test-runs/native-host-packaging-20261105/`. As fixtures usam IDs sintéticos e arquivos próprios, sem executar hosts, setup, GUI, rede ou Registro. Não houve nova montagem física ou compilação do app; C++/QML não foram alterados. Esses checks não qualificam aquisição pública ou um runtime instalado no Brave.
+
+### Runtimes de ebb093a
+
+As duas edições foram compiladas em Release/x64 a partir da worktree limpa de `ebb093ad5eeb59ad6e2c249ae26883e114ce5f74`, com lint QML aprovado e zero testes registrados no build de produção. O perfil mantém desligados o provisionamento AppContainer e o envio pelo navegador integrado. [Setups de ebb093a](windows-installer.md#setups-de-ebb093a)
+
+| Pasta em `out/product/rc-music-local` | Arquivos / bytes do payload | SHA-256 do manifesto |
+| --- | ---: | --- |
+| `rc-music-ebb093a-native-Lite-20261111` | 603 / 232.010.974 | `100d0bdac18bf19a5bda991049956ed5c511a333e385c85d14d095e0cbd9ad76` |
+| `rc-music-ebb093a-native-CompleteExperimental-20261111` | 606 / 232.232.693 | `e91a64188a020176ad4b1643c7793fe44ee553c5f8c4b484aae9a0c269d473d1` |
+
+A inspeção comparou os arquivos físicos com os manifestos, conferiu 110 PEs x64 por edição, as identidades dos dois hosts e a ausência do marcador de ativação no runtime. Os dois players diferem dos candidatos de `a469f8d`. Os arquivos das extensões foram reaproveitados com os mesmos hashes, pois suas fontes permanecem iguais. Recibos em `out/product/test-runs/windows-candidates-ebb093a-20261111/`.
 
 ### Runtimes atualizados em 2026-11-11
 
