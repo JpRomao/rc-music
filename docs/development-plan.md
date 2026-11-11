@@ -802,7 +802,11 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Checkpoint atual — extensões opcionais no instalador
+### Checkpoint atual — candidatos Windows atualizados
+
+Os instaladores Lite e Completa de `26cc641` incluem a adição direta de arquivos às playlists e as correções da fila restaurada e das miniaturas de capas estreitas. Os dois runtimes foram compilados em Release com testes desligados. Inventários, hashes, PE e arquivos embutidos dos setups passaram na verificação independente. A geração preservou os candidatos anteriores e os seis arquivos AppContainer em andamento. A aceitação instalada, o diálogo nativo e os demais gates permanecem pendentes. [Instaladores atualizados](windows-installer.md#setups-atualizados-em-2026-11-10)
+
+### Checkpoint anterior — extensões opcionais no instalador
 
 O [instalador](windows-installer.md#extensões-principal-e-youtube-como-opções-separadas) aceita os dois pacotes-fonte pinados, oferece escolhas independentes inicialmente desmarcadas e conserva a dependência das ferramentas. Cinco variantes vinculam seleção, inventários e ownership; os hosts HKCU são registrados/removidos somente nos canais selecionados, com preservação de valores estrangeiros e falhas parciais. A tela final orienta o carregamento manual. Os [setups reais de `cf34cd8`](windows-installer.md#setups-com-extensões-preparados-em-2026-11-05), Lite/Completa, foram compilados/conferidos sem executar, preservando os runtimes de `7601247`. O fechamento tem 165 casos estáticos/de compilação; o ensaio nativo preparado exige autorização própria. Instalação, Registro, Brave, aquisição pública e demais gates continuam pendentes; não retoma AppContainer ou benchmarks.
 

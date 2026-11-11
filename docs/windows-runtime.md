@@ -1,6 +1,6 @@
 # Runtime Windows — receita de produto
 
-**Estado:** runtimes privados Lite e Completa experimental com hosts Native montados em 2026-11-05 e preservados na limpeza posterior. O smoke de startup/codecs abaixo pertence a um runtime anterior. Uso nativo, lifecycle e gates de distribuição continuam abertos.
+**Estado:** runtimes privados Lite e Completa experimental atualizados em 2026-11-10. Uso nativo, lifecycle e gates de distribuição continuam abertos.
 
 A [retenção após a limpeza de 2026-11-05](development-commands.md#limpeza-de-artefatos-gerados--2026-11-05) mantém os dois runtimes Native `7601247`; payloads substituídos tiveram seus arquivos removidos, conservando manifests e evidências. Os registros históricos abaixo documentam sua geração original.
 **Data:** 2026-11-05.
@@ -52,6 +52,17 @@ Os hosts são copiados ao lado de `RCMusic.exe`, com dependências verificadas p
 O instalador conserva esses quatro arquivos sob a mesma escolha desmarcada das ferramentas, exige metadados correspondentes e verifica os hashes dos manifestos canônicos. Ausência de metadados não pode promover um host a arquivo obrigatório. Não registra o host no Windows, carrega a extensão ou publica o marcador durante a montagem. As [identidades públicas locais](youtube-extension-package.md#identidades-públicas-estáveis) já estão definidas; registro, seleção independente das extensões e aceitação instalada continuam pendentes. Os setups anteriores permanecem intactos.
 
 TDD e fechamento proporcional: reader **14 passados/7 falhos → 21/21**, componente **0/13 → 13/13**, configuração **142/8 → 150/150**, receita **12/8 → 20/20**, instalador/componente **17/2 → 19/19**, mais **97/97** do plano e **6/6** da receita do instalador. São **326 casos PowerShell** verdes, além dos checks documentais/rastreabilidade. Evidências em `out/product/test-runs/native-host-packaging-20261105/`. As fixtures usam IDs sintéticos e arquivos próprios, sem executar hosts, setup, GUI, rede ou Registro. Não houve nova montagem física ou compilação do app; C++/QML não foram alterados. Esses checks não qualificam aquisição pública ou um runtime instalado no Brave.
+
+### Runtimes atualizados em 2026-11-10
+
+O commit limpo `26cc641b4f760e51b971e2ceefe56b800821aa64` foi compilado em uma nova worktree, preservando as alterações AppContainer e as fontes dos candidatos anteriores. As duas edições usam Release/x64 com testes desligados e zero CTest registrados. Os pacotes de ferramentas e extensões já conferidos foram reutilizados. O player incorpora a adição direta de arquivos às playlists e as correções dos IDs da fila restaurada e das miniaturas de capas estreitas.
+
+| Diretório em `out/product/rc-music-local/` | Arquivos/bytes do app | SHA-256 do manifesto |
+|---|---|---|
+| `rc-music-26cc641-native-Lite-20261110` | 603 / 231.852.254 | `e8d6ee105514bd834a9e6130a13db2726f4c7dfd4e0cb69320a40301e11f2c38` |
+| `rc-music-26cc641-native-CompleteExperimental-20261110` | 606 / 232.062.709 | `26f822f87c037b14934cfce637a740a4b3bfc8ba75e3481e88bea7096ff2a63b` |
+
+A verificação independente conferiu o inventário físico fechado e todos os tamanhos/hashes, os 110 PEs x64 de cada edição, o subsistema GUI do player, as identidades Native/Chromium e a ausência do marcador de ativação. Os notices WebView2 pertencem somente à Completa. Os recibos ficam em `out/product/test-runs/windows-candidates-26cc641-20261110/`. A configuração inicial foi corrigida para localizar o LinguistTools já provisionado. Player, hosts e navegador aguardam aceitação nativa deste pacote.
 
 ### Runtimes com hosts montados em 2026-11-05
 

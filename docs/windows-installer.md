@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-**Estado:** setups privados Lite e Completa experimental com ferramentas e preparação separada das extensões compilados e conferidos em 2026-11-05, sem executar ou instalar, com associações OFF e sem assinatura. Execução/lifecycle e gates de distribuição ainda pendentes.
+**Estado:** setups privados Lite e Completa experimental atualizados e conferidos em 2026-11-10, com ferramentas e preparação separada das extensões. Associações OFF, sem assinatura. Execução/lifecycle e gates de distribuição permanecem pendentes.
 **Data:** 2026-11-05.
 
 A [limpeza de 2026-11-05](development-commands.md#limpeza-de-artefatos-gerados--2026-11-05) preservou os dois setups `cf34cd8` e retirou os executáveis substituídos, mantendo recibos, configurações e evidências. Os registros históricos abaixo documentam a geração original.
@@ -91,6 +91,17 @@ Fechamento proporcional em `out/product/test-runs/installer-extensions-20261105/
 O [harness nativo separado](../packaging/windows/tests/InstallerExtensions.Native.ps1) exige explicitamente `-PrepareOnly` ou `-RunPrepared` com recibo/hash revisado. A preparação compila cinco setups sintéticos com a receita corrente e mudanças de seleção somente em cópias privadas do template. Ela concluiu sem executar setup, abrir Registro ou alterar o produto: recibo `out/product/test-runs/installer-extensions-native/4c0a15fe23fa43e7a8367120a41f99f9/prepared.json`, SHA-256 `2b6be63ecfe3befcb9d05c014cda4ee3967d881e3a7d26dd2f8650d7e10f8517`.
 
 A execução preparada ainda exige autorização específica: testa as cinco combinações, `/VERIFY`, upgrade principal → YouTube e remoção/preservação de valores alheios, somente sob `HKCU\Software\RCMusicExtensionTests\4c0a15fe23fa43e7a8367120a41f99f9` e sua árvore GUID em `out/product/test-runs`. Não inicia app/hosts/navegador, mídia, UAC ou AppContainer. Registro real, checkbox físico e jornada Brave continuam pendentes; compilar não os comprova nem autoriza aquisição pública.
+
+### Setups atualizados em 2026-11-10
+
+A receita limpa `26cc641` empacotou os [runtimes atualizados](windows-runtime.md#runtimes-atualizados-em-2026-11-10), preservando os dois candidatos anteriores. As duas edições incluem a adição direta de arquivos às playlists e a correção da fila restaurada. Ferramentas e preparação das extensões principal e YouTube continuam opcionais.
+
+| Edição | Diretório em `out/product/rc-music-installer/` | Bytes de `RCMusic-Setup.exe` | SHA-256 |
+|---|---|---:|---|
+| Lite | `rc-music-26cc641-extensions-Lite-20261110` | 89.938.956 | `913eed0eada6a1ed66f810b89dff99e5a5bf7b631257bb43038b79dce33c656a` |
+| Completa experimental | `rc-music-26cc641-extensions-CompleteExperimental-20261110` | 90.004.365 | `3b975657b7a0ced4f9447759bd0d430b54846ef9da6b9f117a52e3c92e525a61` |
+
+O verificador conferiu recibos, fontes da receita, inventários de 619/622 arquivos, cinco variantes de seleção e PE x86 GUI dos setups. A leitura dos arquivos embutidos por 7-Zip confirmou os hashes dos players novos, dos dois hosts e dos manifestos das extensões. Na Completa, também confirmou o notice WebView2. Evidências em `out/product/test-runs/windows-candidates-26cc641-20261110/`. Os setups aguardam execução e aceitação instalada.
 
 ### Setups com extensões preparados em 2026-11-05
 

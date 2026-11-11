@@ -1,6 +1,6 @@
 # Playlists locais do RC Music
 
-**Estado:** recurso implementado no código Windows e validado automaticamente em 2026-11-04. Aceitação nativa e instalador atualizado permanecem pendentes.
+**Estado:** recurso implementado no código Windows, com adição direta de arquivos validada automaticamente em 2026-11-10. Os [instaladores atualizados](windows-installer.md#setups-atualizados-em-2026-11-10) incluem o recurso. Aceitação nativa e instalada permanecem pendentes.
 
 O mantenedor colocou playlists nomeadas como próxima prioridade em FR-056/M6.6. O [ADR-0015](architecture/decisions/0015-named-playlists.md) registra o domínio puro, a persistência local e a composição do painel. Lite e Completa usam o mesmo recurso, independente da fila em reprodução.
 
@@ -75,4 +75,4 @@ Não houve instalação, registro no host, uso de perfis AppContainer, benchmark
 
 ### Adição direta de arquivos — 2026-11-10
 
-O Red do painel teve **14 passagens e 4 falhas** pela ausência do botão. O Red do binding falhou ao compilar pela ausência da porta na composição e das operações de seleção. Após a implementação, o build Windows Release do player e `all_qmllint` passaram. A seleção final passou **4/4 CTest**, com **358 casos Quick**, **17 do binding**, **4 de restart** e **35 do store**. O caso de restart abre um catálogo salvo em outro processo e confere Unicode, ordem, IDs e duplicatas com zero leituras ou alterações da fila. Os logs estão em `out/product/test-runs/playlist-direct-files-20261110/`. A validação automatizada usa um seletor falso e mantém pendentes a interação com o diálogo nativo e o pacote atualizado.
+O Red do painel teve **14 passagens e 4 falhas** pela ausência do botão. O Red do binding falhou ao compilar pela ausência da porta na composição e das operações de seleção. Após a implementação, o build Windows Release do player e `all_qmllint` passaram. A seleção final passou **4/4 CTest**, com **358 casos Quick**, **17 do binding**, **4 de restart** e **35 do store**. O caso de restart abre um catálogo salvo em outro processo e confere Unicode, ordem, IDs e duplicatas com zero leituras ou alterações da fila. Os logs estão em `out/product/test-runs/playlist-direct-files-20261110/`. A validação automatizada usa um seletor falso e mantém pendentes a interação com o diálogo nativo e a aceitação instalada.
