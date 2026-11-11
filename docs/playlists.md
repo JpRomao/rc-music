@@ -8,7 +8,7 @@ O mantenedor colocou playlists nomeadas como próxima prioridade em FR-056/M6.6.
 
 1. Abra **Playlists** no player e escolha **Nova playlist** para criar uma lista vazia. Informe o nome e confirme **Salvar**.
 2. Para copiar a fila que está no player, escolha **Salvar fila como…** e informe o nome da nova lista. A fila e a música atual são preservadas.
-3. Selecione uma playlist e use **Adicionar arquivos…** para escolher faixas locais diretamente. Use **Adicionar fila atual** para copiar as faixas que já estão no player. As duas ações acrescentam as faixas na ordem recebida e permitem duplicatas.
+3. Selecione uma playlist e use **Adicionar arquivos…** para escolher faixas locais diretamente. Quando a fila tiver faixas, use **Adicionar fila atual** para copiá-las. As duas ações acrescentam as faixas na ordem recebida e permitem duplicatas.
 4. Selecione uma faixa da lista e use os controles de mover para cima/baixo ou **Remover**. Se o arquivo mudou de lugar, use **Localizar arquivo…** e selecione o novo caminho. A ação atualiza só a entrada selecionada e mantém sua posição e as duplicatas. A edição preserva a fila em reprodução e os arquivos de áudio.
 5. Use **Renomear** para alterar o nome da lista escolhida. **Excluir** pede confirmação do alvo; somente a playlist é removida.
 
@@ -88,3 +88,5 @@ O Red confirmou a ausência da substituição no núcleo, no binding, no restart
 ### Navegação por teclado
 
 O teste Quick do painel reproduziu a falha de **End** na versão anterior. A regressão agora navega até listas e faixas fora da área visível, reordena as entradas entre o movimento do foco e a seleção e verifica o ID enviado à ação **Mover para cima**. A reprodução, o volume e a fila conservam o estado durante a navegação. O painel passou **20 casos Qt Quick**, além do build Release e lint QML. Logs em `out/product/test-runs/playlist-keyboard-lidarr-results-20261111/`.
+
+O teste de cópia da fila reproduziu o botão ativo com a fila vazia. O painel passou **20 casos Qt Quick**, incluindo a transição de fila vazia para preenchida e de volta a vazia. Logs em `out/product/test-runs/lidarr-auth-recovery-20261111/quick-registered-playlists.log`.

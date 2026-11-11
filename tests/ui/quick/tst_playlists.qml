@@ -283,14 +283,26 @@ TestCase {
     }
     function test_queueIngressRequiresItsOwnAction() {
         openPanel();
+        const addQueue = findChild(shell, "playlist-add-queue");
+        verify(addQueue && addQueue.visible);
+        verify(!presenter.queueLoaded);
+        verify(!addQueue.enabled);
         mouseClick(rowAt("playlists-list", 1));
         compare(lastCall("select").args[0], "2");
         compare(backend.calls.filter(function (call) {
             return call.action === "enqueue";
         }).length, 0);
         backend.selectedPlaylistId = "1";
-        mouseClick(findChild(shell, "playlist-add-queue"));
+
+        driver.enqueueLocalSelection(["C:/Music/queued.mp3"]);
+        verify(presenter.openAudio());
+        tryCompare(presenter, "queueLoaded", true);
+        tryCompare(addQueue, "enabled", true);
+        mouseClick(addQueue);
         compare(lastCall("addQueue").args[0], "1");
+
+        verify(presenter.clearQueue());
+        tryCompare(addQueue, "enabled", false);
         mouseClick(findChild(shell, "playlist-enqueue"));
         compare(lastCall("enqueue").args[0], "1");
     }

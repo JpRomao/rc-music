@@ -9,6 +9,7 @@ Dialog {
     id: root
     objectName: "playlists-panel"
     required property ShellUiContract contract
+    required property bool queueHasTracks
     property var playlists: null
     property string selectedEntryId: ""
     property string nameMode: ""
@@ -441,7 +442,7 @@ Dialog {
                 objectName: "playlist-add-queue"
                 contract: root.contract
                 text: qsTr("Adicionar fila atual")
-                enabled: root.canEdit && root.selectedPlaylist !== null
+                enabled: root.canEdit && root.selectedPlaylist !== null && root.queueHasTracks
                 onClicked: root.playlists.addQueueToPlaylist(root.selectedPlaylistId)
             }
             AccessibleTransportButton {

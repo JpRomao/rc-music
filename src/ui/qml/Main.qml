@@ -604,6 +604,7 @@ ApplicationWindow {
     PlaylistsPanel {
         id: playlistsPanel
         contract: window.uiContract
+        queueHasTracks: !window.presenter.usesFrozenFixture && window.presenter.queueLoaded
         playlists: window.playlists
         enabled: !window.presenter.exiting
         onClosed: {
