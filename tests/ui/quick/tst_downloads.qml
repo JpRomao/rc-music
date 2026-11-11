@@ -565,6 +565,69 @@ TestCase {
         });
         verify(shell.windowShortcutsEnabled);
     }
+    function test_keyboardShowsWhichVisibleDownloadOwnsItsActions() {
+        addJob("cancel-first", "queued", "Na fila", true, false, true, 0);
+        addJob("retry-second", "import_failed", "Importação pendente", false, true, false, 1);
+        openDownloads();
+        const list = findChild(shell, "downloads-list");
+        keyClick(Qt.Key_Tab);
+        tryCompare(list, "activeFocus", true);
+        const first = rowAt(0);
+        const second = rowAt(1);
+        compare(first.children[0].border.width, 3);
+        compare(second.children[0].border.width, 1);
+        compare(first.Accessible.role, Accessible.ListItem);
+        compare(first.Accessible.focused, true);
+        compare(first.Accessible.name, "Áudio cancel-first");
+        compare(second.Accessible.focused, false);
+
+        keyClick(Qt.Key_Down);
+        tryCompare(list, "currentIndex", 1);
+        compare(first.children[0].border.width, 1);
+        compare(second.children[0].border.width, 3);
+        compare(first.Accessible.focused, false);
+        compare(second.Accessible.focused, true);
+        compare(second.Accessible.name, "Áudio retry-second");
+        keyClick(Qt.Key_Tab);
+        tryCompare(second.retryControl, "activeFocus", true);
+        compare(second.Accessible.focused, false);
+        keyClick(Qt.Key_Home);
+        compare(list.currentIndex, 1);
+        keyClick(Qt.Key_Return);
+        compare(jobs.cancelledIds.length, 0);
+        compare(jobs.retriedIds, ["retry-second"]);
+    }
+    function test_keyboardHomeAndEndReachDownloadsOutsideTheVisibleRows() {
+        const count = 40;
+        for (let index = 0; index < count; ++index)
+            addJob("job-" + index, "queued", "Na fila", true, false, true, 0);
+        openDownloads();
+        const list = findChild(shell, "downloads-list");
+        keyClick(Qt.Key_Tab);
+        tryCompare(list, "activeFocus", true);
+        verify(list.itemAtIndex(count - 1) === null);
+        keyClick(Qt.Key_End);
+        tryCompare(list, "currentIndex", count - 1);
+        tryVerify(function () {
+            const row = list.itemAtIndex(count - 1);
+            return row && row.mapToItem(list, 0, row.height).y <= list.height + 1;
+        });
+        compare(jobs.cancelledIds.length, 0);
+        const last = list.currentItem;
+        keyClick(Qt.Key_Tab);
+        tryCompare(last.cancelControl, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(jobs.cancelledIds, ["job-39"]);
+        keyClick(Qt.Key_Backtab);
+        tryCompare(shell, "activeFocusItem", last);
+        keyClick(Qt.Key_Home);
+        tryCompare(list, "currentIndex", 0);
+        tryVerify(function () {
+            const row = list.itemAtIndex(0);
+            return row && row.mapToItem(list, 0, 0).y >= -1;
+        });
+        compare(jobs.cancelledIds, ["job-39"]);
+    }
     function test_ownerRetryActionsFollowLiveCapabilities() {
         downloads.canRetryStartup = true;
         downloads.canRetryAdmission = true;

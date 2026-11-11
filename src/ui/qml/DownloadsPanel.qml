@@ -188,7 +188,7 @@ Popup {
     }
     function lastRowControl() {
         const controls = rowControls(jobsList.currentItem);
-        return controls.length > 0 ? controls[controls.length - 1] : jobsList;
+        return controls.length > 0 ? controls[controls.length - 1] : (jobsList.currentItem || jobsList);
     }
     function rowControls(row) {
         if (!row)
@@ -201,7 +201,7 @@ Popup {
         const controls = rowControls(row);
         const index = controls.indexOf(item);
         if (backwards)
-            return index > 0 ? controls[index - 1] : jobsList;
+            return index > 0 ? controls[index - 1] : row;
         return index >= 0 && index + 1 < controls.length ? controls[index + 1] : closeButton;
     }
     function nextTopControl(item, backwards) {
@@ -209,7 +209,7 @@ Popup {
         const index = controls.indexOf(item);
         if (backwards)
             return index > 0 ? controls[index - 1] : lastRowControl();
-        return index >= 0 && index + 1 < controls.length ? controls[index + 1] : jobsList;
+        return index >= 0 && index + 1 < controls.length ? controls[index + 1] : (jobsList.currentItem || jobsList);
     }
     function lastTopControl() {
         const controls = topControls();
@@ -438,8 +438,10 @@ Popup {
         ListView {
             id: jobsList
 
+            readonly property bool navigationFocused: activeFocus && (Window.activeFocusItem === jobsList || (currentItem !== null && Window.activeFocusItem === currentItem))
+
             Accessible.focusable: true
-            Accessible.focused: activeFocus
+            Accessible.focused: navigationFocused && currentItem === null
             Accessible.name: labels.title
             Accessible.role: Accessible.List
             KeyNavigation.backtab: root.lastTopControl()
@@ -483,8 +485,16 @@ Popup {
                 required property string validationText
                 required property string statusText
                 required property string title
+                readonly property bool cursorFocused: jobsList.navigationFocused && ListView.isCurrentItem
                 property var validationOwner: null
                 property string validationJobId: ""
+
+                Accessible.focusable: true
+                Accessible.focused: cursorFocused
+                Accessible.name: row.title
+                Accessible.role: Accessible.ListItem
+                KeyNavigation.backtab: root.lastTopControl()
+                KeyNavigation.tab: root.firstRowControl()
 
                 function validationIdentityCurrent() {
                     return root.downloads !== null && validationOwner === root.downloads && validationJobId.length > 0 && validationJobId === jobId;
@@ -500,8 +510,8 @@ Popup {
 
                 Rectangle {
                     anchors.fill: parent
-                    border.color: root.contract.borderColor
-                    border.width: 1
+                    border.color: row.cursorFocused ? root.contract.focusColor : root.contract.borderColor
+                    border.width: row.cursorFocused ? 3 : 1
                     color: root.contract.surfaceColor
                     radius: root.contract.radiusSmall
                 }
@@ -760,15 +770,19 @@ Popup {
             }
 
             Keys.onPressed: event => {
-                if (event.key === Qt.Key_Space || event.key === Qt.Key_M || event.key === Qt.Key_F1 || event.key === Qt.Key_F2)
+                if (navigationFocused && count > 0 && (event.modifiers === Qt.NoModifier || event.modifiers === Qt.KeypadModifier) && (event.key === Qt.Key_Home || event.key === Qt.Key_End)) {
+                    root.showRow(event.key === Qt.Key_Home ? 0 : count - 1);
                     event.accepted = true;
+                } else if (event.key === Qt.Key_Space || event.key === Qt.Key_M || event.key === Qt.Key_F1 || event.key === Qt.Key_F2) {
+                    event.accepted = true;
+                }
             }
 
             Rectangle {
                 Accessible.ignored: true
                 anchors.fill: parent
                 border.color: root.contract.focusColor
-                border.width: jobsList.activeFocus ? 3 : 0
+                border.width: jobsList.navigationFocused && jobsList.currentItem === null ? 3 : 0
                 color: "transparent"
                 radius: root.contract.radiusSmall
                 z: 2
