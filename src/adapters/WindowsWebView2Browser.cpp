@@ -13,6 +13,7 @@
 #include "adapters/BrowserNavigationPolicy.hpp"
 #include "adapters/BrowserNavigationTracker.hpp"
 #include "adapters/WindowsWebView2Options.hpp"
+#include "adapters/WindowsWebView2Surface.hpp"
 #include "presentation/BrowserMediaPanel.hpp"
 
 #include <QApplication>
@@ -24,10 +25,12 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMoveEvent>
+#include <QPointer>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QResource>
 #include <QStandardPaths>
+#include <QStyleHints>
 #include <QThread>
 #include <QUuid>
 #include <QVBoxLayout>
@@ -40,33 +43,50 @@
 static void initializeBrowserMediaResource() { Q_INIT_RESOURCE(rc_music_browser_media); }
 
 namespace music_player::m0 {
+void WindowsWebView2Surface::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    if (resized)
+        resized();
+}
+
+void WindowsWebView2Surface::moveEvent(QMoveEvent* event) {
+    QWidget::moveEvent(event);
+    if (resized)
+        resized();
+}
+
+void WindowsWebView2Surface::focusInEvent(QFocusEvent* event) {
+    QWidget::focusInEvent(event);
+    if (!focused)
+        return;
+    const auto reason = event->reason();
+    focused(reason == Qt::TabFocusReason || reason == Qt::BacktabFocusReason ? reason : Qt::OtherFocusReason);
+}
+
+bool WindowsWebView2Surface::moveFocusOut(Qt::FocusReason reason) {
+    if (reason != Qt::TabFocusReason && reason != Qt::BacktabFocusReason)
+        return false;
+
+    // Native WebView2 focus can change without updating the Qt focus widget.
+    const auto advance = reason == Qt::TabFocusReason ? &QWidget::nextInFocusChain : &QWidget::previousInFocusChain;
+    auto* host = window();
+    const auto tab_policy =
+        QApplication::styleHints()->tabFocusBehavior() == Qt::TabFocusAllControls ? Qt::TabFocus : Qt::StrongFocus;
+    for (auto* widget = (this->*advance)(); widget != this; widget = (widget->*advance)()) {
+        if (widget->isWindow() || !widget->isVisibleTo(host) || !widget->isEnabled() ||
+            (widget->focusPolicy() & tab_policy) != tab_policy)
+            continue;
+
+        const QPointer<QWidget> target{widget};
+        target->setFocus(reason);
+        return target && target->hasFocus();
+    }
+    return false;
+}
+
 namespace {
 using Microsoft::WRL::Callback;
 using Microsoft::WRL::ComPtr;
-
-class Surface final : public QWidget {
-  public:
-    using QWidget::QWidget;
-    std::function<void()> resized;
-    std::function<void()> focused;
-
-  protected:
-    void resizeEvent(QResizeEvent* event) override {
-        QWidget::resizeEvent(event);
-        if (resized)
-            resized();
-    }
-    void moveEvent(QMoveEvent* event) override {
-        QWidget::moveEvent(event);
-        if (resized)
-            resized();
-    }
-    void focusInEvent(QFocusEvent* event) override {
-        QWidget::focusInEvent(event);
-        if (focused)
-            focused();
-    }
-};
 
 class BrowserWindow final : public QWidget {
   public:
@@ -109,7 +129,7 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
     QPushButton* go{};
     BrowserMediaPanel* media{};
     AsyncDownloadSubmission* download_submission{};
-    Surface* surface{};
+    WindowsWebView2Surface* surface{};
     ComPtr<ICoreWebView2Environment> environment;
     ComPtr<ICoreWebView2Controller> controller;
     ComPtr<ICoreWebView2> webview;
@@ -449,8 +469,16 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
                 Callback<ICoreWebView2MoveFocusRequestedEventHandler>(
                     [weak, epoch](ICoreWebView2Controller*, ICoreWebView2MoveFocusRequestedEventArgs* args) noexcept {
                         return dispatch(weak, epoch, [&](BrowserState& state) {
-                            state.address->setFocus(Qt::TabFocusReason);
-                            (void)args->put_Handled(TRUE);
+                            COREWEBVIEW2_MOVE_FOCUS_REASON reason{};
+                            if (FAILED(args->get_Reason(&reason)) ||
+                                (reason != COREWEBVIEW2_MOVE_FOCUS_REASON_NEXT &&
+                                 reason != COREWEBVIEW2_MOVE_FOCUS_REASON_PREVIOUS))
+                                return;
+                            const auto direction = reason == COREWEBVIEW2_MOVE_FOCUS_REASON_NEXT
+                                                       ? Qt::TabFocusReason
+                                                       : Qt::BacktabFocusReason;
+                            if (state.surface->moveFocusOut(direction))
+                                (void)args->put_Handled(TRUE);
                         });
                     })
                     .Get(),
@@ -584,7 +612,7 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
         toolbar->addWidget(go);
         toolbar->addWidget(show_media);
         layout->addLayout(toolbar);
-        surface = new Surface(window.get());
+        surface = new WindowsWebView2Surface(window.get());
         surface->setAttribute(Qt::WA_NativeWindow);
         surface->setFocusPolicy(Qt::StrongFocus);
         auto* content = new QHBoxLayout;
@@ -622,9 +650,16 @@ struct BrowserState final : std::enable_shared_from_this<BrowserState> {
             if (const auto state = weak.lock())
                 state->resize();
         };
-        surface->focused = [weak] {
-            if (const auto state = weak.lock(); state && state->controller)
-                (void)state->controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+        surface->focused = [weak](Qt::FocusReason reason) {
+            const auto state = weak.lock();
+            if (!state || !state->controller)
+                return;
+            auto direction = COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC;
+            if (reason == Qt::TabFocusReason)
+                direction = COREWEBVIEW2_MOVE_FOCUS_REASON_NEXT;
+            else if (reason == Qt::BacktabFocusReason)
+                direction = COREWEBVIEW2_MOVE_FOCUS_REASON_PREVIOUS;
+            (void)state->controller->MoveFocus(direction);
         };
         QObject::connect(address, &QLineEdit::returnPressed, window.get(), [weak] {
             if (const auto state = weak.lock())

@@ -51,6 +51,7 @@ set_target_properties(rc_music_webview2_loader PROPERTIES IMPORTED_LOCATION
 add_library(rc_music_embedded_browser STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsWebView2Browser.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsWebView2Browser.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsWebView2Surface.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsWebView2Options.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsWebView2Options.cpp")
 target_include_directories(rc_music_embedded_browser SYSTEM PRIVATE
@@ -68,7 +69,7 @@ target_compile_definitions(m0_qt_shell PRIVATE RC_MUSIC_EMBEDDED_BROWSER_AVAILAB
 if(BUILD_TESTING)
     find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Test)
     foreach(unit IN ITEMS BrowserNavigationPolicy EmbeddedBrowserBinding WindowsWebView2Browser
-            BrowserMediaSnapshotCodec BrowserMediaSelection BrowserMediaPanel BrowserNavigationTracker)
+            BrowserMediaSnapshotCodec BrowserMediaSelection BrowserMediaPanel BrowserNavigationTracker WindowsWebView2Focus)
         set(target "rc_music_${unit}_tests")
         add_executable(${target} "${RC_MUSIC_SOURCE_ROOT}/tests/qt/${unit}Tests.cpp")
         target_link_libraries(${target} PRIVATE rc_music_embedded_browser_binding Qt6::Test)
@@ -76,6 +77,8 @@ if(BUILD_TESTING)
             target_link_libraries(${target} PRIVATE rc_music_embedded_browser)
             target_include_directories(${target} SYSTEM PRIVATE
                 "${RC_MUSIC_WEBVIEW2_SDK_ROOT}/build/native/include")
+        elseif(unit STREQUAL "WindowsWebView2Focus")
+            target_link_libraries(${target} PRIVATE rc_music_embedded_browser)
         elseif(unit STREQUAL "BrowserMediaPanel")
             target_link_libraries(${target} PRIVATE rc_music_browser_media_panel)
         endif()
@@ -92,5 +95,6 @@ if(BUILD_TESTING)
         cmake_path(CONVERT "$ENV{WINDIR}/Fonts" TO_CMAKE_PATH_LIST panel_font_dir NORMALIZE)
         list(APPEND panel_environment "QT_QPA_FONTDIR=${panel_font_dir}")
     endif()
-    set_tests_properties(rc_music.embedded-browser.BrowserMediaPanel PROPERTIES ENVIRONMENT "${panel_environment}")
+    set_tests_properties(rc_music.embedded-browser.BrowserMediaPanel rc_music.embedded-browser.WindowsWebView2Focus
+        PROPERTIES ENVIRONMENT "${panel_environment}")
 endif()

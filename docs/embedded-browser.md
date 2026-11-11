@@ -33,6 +33,12 @@ A factory compartilhada `makeWindowsWebView2Options` configura `ReleaseChannels=
 
 Os testes de contrato usam janela falsa e não iniciam WebView2. Build ON comprova compilação/link da composição; grafo OFF comprova ausência do módulo. Smoke visual com runtime real, sites, foco/DPI/acessibilidade, privacidade, permissões, autenticação do runtime e distribuição permanecem evidências separadas. Nenhum teste falso comprova essas propriedades do engine real.
 
+### Foco entre a página e os controles
+
+Na edição Completa, Tab entra no primeiro elemento da página e Shift+Tab entra pelo último. Ao sair da página, o adaptador continua na direção solicitada pela cadeia de foco Qt. Com o painel de mídia visível, Tab pode alcançar seus controles após a página. O retorno por Shift+Tab alcança a toolbar. Controles ocultos e desabilitados são pulados, e o foco programático continua pedindo ao WebView2 que restaure o elemento anterior. [Referência do WebView2 Win32](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2controller?view=webview2-1.0.4129.50#add_movefocusrequested)
+
+O Red offscreen reproduziu três falhas, incluindo a perda da direção e o salto para a barra de endereço. O Green Release passou em 3/3 CTest e 43 casos Qt com a superfície e o painel reais e o WebView2 inerte. Logs em `out/product/webview2-focus-20261111/`. A aceitação com o runtime WebView2 ativo continua pendente.
+
 ## Detecção e seleção de mídia
 
 Na janela experimental, **Mídia → Detectar mídia** coleta candidatos da página principal, de Shadow DOM aberto e de frames cujo `contentDocument` esteja acessível pela política de mesma origem. A lista permite escolher até 20 itens. **Conferir seleção** faz uma nova coleta e exige URL, título e tipo iguais para cada item escolhido. Mudanças em itens alheios ou na ordem preservam a escolha. Fonte selecionada alterada ou removida exige nova detecção e seleção.

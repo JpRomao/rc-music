@@ -840,6 +840,8 @@ Em M2.6, a extração de metadados observa troca de faixa, cancelamento explíci
 
 Em R1.9, a janela da Completa reconfere a seleção no clique de download e envia os itens ao controlador durável quando o perfil confiável concede acesso. O serviço confirma aceitação após o salvamento e mantém os pedidos independentemente da janela. Os perfis atuais conservam o envio desabilitado. [Fluxo e validação do navegador](embedded-browser.md#envio-para-a-fila-de-downloads)
 
+A navegação por Tab e Shift+Tab da Completa agora mantém a direção entre a toolbar, a página e o painel de mídia. Os testes offscreen passaram com a superfície e o painel de produção. A confirmação no WebView2 real permanece pendente. [Contrato de foco e checks](embedded-browser.md#foco-entre-a-página-e-os-controles)
+
 Em R1.8, o worker passou a aceitar provisionamento explícito de AppContainer por trabalho. O conversor precisa receber a credencial do owner e o perfil só é retirado após a drenagem. A opção permanece desligada no perfil instalável enquanto a qualificação física estiver pendente. [Composição e validação do worker](download-conversion.md#perfil-appcontainer-por-trabalho)
 
 A receita de empacotamento agora aceita opções explícitas para esse provisionamento e para o ingresso do navegador integrado. O header compilado e o recibo registram as escolhas, e o leitor Windows aceita tanto as receitas anteriores quanto as novas. Os gates físicos e de produção continuam abertos. [Opções e evidência do perfil](packaged-download-profile.md#opções-do-perfil--2026-11-11)
