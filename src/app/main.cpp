@@ -786,7 +786,8 @@ int main(int argc, char* argv[]) {
                 return;
             }
             lyrics_binding.setTrack(presenter.detailsFilePath(), presenter.currentTitle(), presenter.currentArtist(),
-                                    presenter.currentAlbum(), presenter.hasDuration() ? presenter.durationMs() : 0);
+                                    presenter.currentAlbum(), presenter.hasDuration() ? presenter.durationMs() : 0,
+                                    presenter.currentOccurrenceId());
             lyrics_binding.setPosition(presenter.confirmedPositionMs());
         };
         QObject::connect(&presenter, &PlayerPresenter::stateChanged, &lyrics_binding, update_lyrics);

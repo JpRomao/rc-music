@@ -147,7 +147,7 @@ struct QtLyricsService::Impl final {
     QFutureWatcher<LocalResult> watcher;
     QTimer timeout, cooldown;
     QByteArray client, response;
-    QString path, title, artist, album, message;
+    QString path, title, artist, album, message, occurrence_id;
     qint64 duration_ms{};
     quint64 generation{};
     bool stopping{}, local_running{}, cooldown_forever{}, lookup_only{};
@@ -365,7 +365,8 @@ QtLyricsService::QtLyricsService(QNetworkAccessManager* borrowed_network, QObjec
     : QObject(parent),
       impl_(std::make_unique<Impl>(*this, borrowed_network, std::move(client_identifier), request_timeout_ms)) {}
 QtLyricsService::~QtLyricsService() = default;
-void QtLyricsService::setTrack(QString path, QString title, QString artist, QString album, const qint64 duration_ms) {
+void QtLyricsService::setTrack(QString path, QString title, QString artist, QString album, const qint64 duration_ms,
+                               const QString& occurrence_id) {
     auto& value = *impl_;
     if (value.stopping)
         return;
@@ -374,6 +375,7 @@ void QtLyricsService::setTrack(QString path, QString title, QString artist, QStr
     artist = owned(artist);
     album = owned(album);
     const bool same_path = path == value.path && !value.lookup_only;
+    const bool occurrence_changed = occurrence_id != value.occurrence_id;
     const bool changed_metadata =
         title != value.title || artist != value.artist || album != value.album || duration_ms != value.duration_ms;
     value.title = std::move(title);
@@ -381,8 +383,16 @@ void QtLyricsService::setTrack(QString path, QString title, QString artist, QStr
     value.album = std::move(album);
     value.duration_ms = duration_ms;
     value.lookup_only = false;
+    if (occurrence_changed)
+        value.occurrence_id = owned(occurrence_id);
     if (same_path) {
-        if (changed_metadata)
+        const bool cancel_search = occurrence_changed && value.status == Status::Searching;
+        if (cancel_search) {
+            value.revoke();
+            value.status = content(value.document) ? Status::Ready : Status::NotFound;
+            value.message.clear();
+        }
+        if (changed_metadata || cancel_search)
             emit this->changed();
         return;
     }

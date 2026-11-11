@@ -26,6 +26,8 @@ A consulta preserva sinais de mais e sequências literais como `%2B` no título,
 
 O player exibe a versão salva selecionada acima da barra de progresso. Se a opção, o resultado da busca ou a faixa mudar com o formulário aberto, reabra o formulário para confirmar a letra atual.
 
+Se a reprodução avançar para outra ocorrência do mesmo arquivo, uma consulta ainda em andamento é cancelada. A letra local e o catálogo continuam associados ao arquivo. A regressão preservou as versões já guardadas, descartou a resposta anterior e confirmou uma nova busca. Passaram 112 casos Qt nas quatro suítes afetadas. Logs em `out/product/test-runs/lyrics-duplicate-occurrence-20261111/`.
+
 ## Salvamento e recuperação
 
 As versões pertencem ao caminho exato do arquivo e ficam na pasta de configuração do RC Music, dentro de `lyrics`. Mover ou renomear o áudio não transfere essas associações automaticamente. Lite e Completa usam os mesmos dados. A escolha exibida é da sessão; as versões salvas sobrevivem ao reinício.

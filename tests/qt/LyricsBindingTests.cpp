@@ -558,6 +558,41 @@ class LyricsBindingTests final : public QObject {
         binding.setTrack({}, {}, {}, {}, 0);
         QVERIFY(!binding.canSearch());
     }
+    void switchingDuplicateOccurrencesRevokesOnlyThePendingOnlineSearch() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        save(temp.filePath("song.lrc"), "[00:00.00]Local verse");
+        const auto path = temp.filePath("song.mp3");
+        auto store = std::make_shared<MemoryVariantsStore>();
+        OnlineNetwork network;
+        QtLyricsService service(&network);
+        LyricsBinding binding(service, store);
+        binding.setTrack(path, "Song", "Artist", {}, 1000, "local-1");
+        QTRY_COMPARE(service.status(), QtLyricsService::Status::Ready);
+        QTRY_VERIFY(binding.variantsReady());
+        QVERIFY(binding.addVariant("Saved", {}, {}, {}, "original", "[00:00.00]Saved verse", false));
+        QTRY_COMPARE(binding.variants().size(), 1);
+        const auto saved = binding.variants();
+        QVERIFY(binding.search("Different recording", "Artist"));
+        QCOMPARE(network.requests, 1);
+
+        binding.setTrack(path, "Song", "Artist", {}, 2000, "local-1");
+        QVERIFY(binding.busy()); // A metadata refresh belongs to the same occurrence.
+        binding.setTrack(path, "Song", "Artist", {}, 2000, "local-2");
+        QTRY_VERIFY(!binding.busy());
+        QTRY_VERIFY(binding.canSearch());
+        QCOMPARE(binding.currentLine(), QStringLiteral("Local verse"));
+        QVERIFY(binding.onlineLyricsCandidates().isEmpty());
+        QCOMPARE(binding.variants(), saved);
+        QCOMPARE(store->load_calls.load(), 1);
+        QCOMPARE(network.requests, 1);
+
+        QVERIFY(binding.search("Song", "Artist"));
+        QCOMPARE(network.requests, 2);
+        QTRY_COMPARE(service.source(), QtLyricsService::Source::Online);
+        binding.setPosition(1000);
+        QCOMPARE(binding.currentLine(), QStringLiteral("Online original"));
+    }
     void plainLyricsStayUnsynchronizedAndShutdownDrainsTheReader() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());

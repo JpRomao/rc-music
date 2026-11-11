@@ -646,7 +646,7 @@ const LyricsDocument& LyricsBinding::displayedDocument() const {
     return index >= 0 ? service_.onlineDocuments()[static_cast<std::size_t>(index)] : service_.document();
 }
 void LyricsBinding::setTrack(const QString& path, const QString& title, const QString& artist, const QString& album,
-                             const qint64 duration) {
+                             const qint64 duration, const QString& occurrence_id) {
     if (shutting_down_)
         return;
     const bool resuming = exit_preparing_;
@@ -663,7 +663,7 @@ void LyricsBinding::setTrack(const QString& path, const QString& title, const QS
     path_ = owned(path);
     title_ = owned(title);
     artist_ = owned(artist);
-    service_.setTrack(path_, title_, artist_, album, duration);
+    service_.setTrack(path_, title_, artist_, album, duration, occurrence_id);
     if ((track_changed || resuming) && !variants_->ready)
         static_cast<void>(variants_->load());
     if (metadata_changed || track_changed || resuming)

@@ -65,7 +65,7 @@ class LyricsBinding final : public QObject {
                   QObject* parent = nullptr);
     ~LyricsBinding() override;
     void setTrack(const QString& path, const QString& title, const QString& artist, const QString& album,
-                  qint64 duration_ms);
+                  qint64 duration_ms, const QString& occurrence_id = {});
     void setPosition(qint64 confirmed_position_ms);
     // Resolves queue occurrence IDs in trusted C++. QML receives only a form token.
     void setQueueLyricsSource(std::function<QString(const QString&)> source);
