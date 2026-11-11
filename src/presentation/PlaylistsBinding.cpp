@@ -85,19 +85,25 @@ struct PlaylistsBinding::Impl final {
         if (loading) {
             loading = false;
             const auto status = result.loaded.status;
-            if (status == PlaylistLoadStatus::Loaded || status == PlaylistLoadStatus::RecoveredFromBackup ||
-                status == PlaylistLoadStatus::Missing) {
-                ready = library.restore(result.loaded.snapshot);
-                if (ready) {
-                    selected = 0;
-                    notice = status == PlaylistLoadStatus::RecoveredFromBackup
-                                 ? PlaylistsBinding::tr("Playlists recuperadas do backup.")
-                                 : PlaylistsBinding::tr("Suas playlists estão prontas.");
-                }
+            const bool load_succeeded =
+                (status == PlaylistLoadStatus::Loaded || status == PlaylistLoadStatus::RecoveredFromBackup ||
+                 status == PlaylistLoadStatus::Missing) &&
+                library.restore(result.loaded.snapshot);
+            if (load_succeeded) {
+                ready = true;
+                selected = 0;
+                pending.reset();
+                notice = status == PlaylistLoadStatus::RecoveredFromBackup
+                             ? PlaylistsBinding::tr("Playlists recuperadas do backup.")
+                             : PlaylistsBinding::tr("Suas playlists estão prontas.");
+            } else if (pending) {
+                notice = status == PlaylistLoadStatus::FutureVersion
+                             ? PlaylistsBinding::tr("O disco tem uma versão mais recente das playlists. "
+                                                    "A edição continua em memória.")
+                             : PlaylistsBinding::tr("Não foi possível recarregar as playlists. "
+                                                    "A edição continua em memória.");
             } else {
                 ready = false;
-            }
-            if (!ready) {
                 notice =
                     status == PlaylistLoadStatus::FutureVersion
                         ? PlaylistsBinding::tr(
@@ -122,6 +128,27 @@ struct PlaylistsBinding::Impl final {
                                                 "recarregue as listas do disco.");
         }
         emit owner.changed();
+    }
+    bool load() {
+        if (!allowed() || busy || file_selection || !store)
+            return false;
+        const auto retained_store = store;
+        busy = true;
+        if (!pending)
+            ready = false;
+        loading = true;
+        notice = PlaylistsBinding::tr("Carregando playlists…");
+        watcher.setFuture(QtConcurrent::run([retained_store] {
+            Job result;
+            try {
+                result.loaded = retained_store->load();
+            } catch (...) {
+                result.loaded.status = PlaylistLoadStatus::Unavailable;
+            }
+            return result;
+        }));
+        emit owner.changed();
+        return true;
     }
     bool save() {
         if (!allowed() || busy || !pending || !store)
@@ -416,31 +443,10 @@ bool PlaylistsBinding::enqueuePlaylist(const QString& value) {
 }
 bool PlaylistsBinding::retrySave() { return impl_->save(); }
 void PlaylistsBinding::discardPending() {
-    if (!impl_->allowed() || impl_->busy || !impl_->pending)
-        return;
-    impl_->pending.reset();
-    static_cast<void>(retryLoad());
+    if (impl_->pending)
+        static_cast<void>(impl_->load());
 }
-bool PlaylistsBinding::retryLoad() {
-    if (!impl_->allowed() || busy() || impl_->pending || !impl_->store)
-        return false;
-    const auto retained_store = impl_->store;
-    impl_->busy = true;
-    impl_->ready = false;
-    impl_->loading = true;
-    impl_->notice = tr("Carregando playlists…");
-    impl_->watcher.setFuture(QtConcurrent::run([retained_store] {
-        Job result;
-        try {
-            result.loaded = retained_store->load();
-        } catch (...) {
-            result.loaded.status = PlaylistLoadStatus::Unavailable;
-        }
-        return result;
-    }));
-    emit changed();
-    return true;
-}
+bool PlaylistsBinding::retryLoad() { return !impl_->pending && impl_->load(); }
 bool PlaylistsBinding::prepareExit() {
     if (!impl_->exiting) {
         impl_->exiting = true;

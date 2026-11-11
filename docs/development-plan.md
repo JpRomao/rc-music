@@ -960,6 +960,8 @@ O painel de playlists aceita navegação por teclado até linhas fora da área v
 
 O player aguarda a confirmação do salvamento da playlist antes de preparar a saída. Falha ou prazo vencido restauram a janela e devolvem o usuário ao painel, com a edição pendente preservada. [Recuperação ao sair](playlists.md#recuperação-ao-sair)
 
+**Recarregar do disco** conserva a edição pendente, o catálogo confirmado e a seleção até obter uma leitura válida. Uma falha de leitura mantém a recuperação disponível. [Recarga após falha de salvamento](playlists.md#recarga-após-falha-de-salvamento)
+
 Lidarr e as demais integrações continuam registrados com seus limites e pendências. Os seis arquivos de integração AppContainer em andamento permanecem preservados; não executar novos ensaios físicos ou instalar componentes por consequência desta mudança de prioridade.
 
 ### Checkpoint anterior — integração Lidarr

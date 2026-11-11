@@ -409,6 +409,63 @@ class PlaylistsBindingTests final : public QObject {
         QVERIFY(!binding.prepareExit());
         QVERIFY(binding.prepareExit());
     }
+    void failedReloadRetainsTheConfirmedCatalogAndOriginalEdit_data() {
+        QTest::addColumn<PlaylistLoadStatus>("status");
+        QTest::newRow("unavailable") << PlaylistLoadStatus::Unavailable;
+        QTest::newRow("invalid") << PlaylistLoadStatus::Invalid;
+        QTest::newRow("future") << PlaylistLoadStatus::FutureVersion;
+    }
+    void failedReloadRetainsTheConfirmedCatalogAndOriginalEdit() {
+        QFETCH(PlaylistLoadStatus, status);
+        const PlaylistLibrarySnapshot confirmed{
+            {{7, "First", {}}, {9, "Second", {{21, path("a.mp3")}, {22, path("b.flac")}}}}};
+        auto store = std::make_shared<Store>();
+        store->disk = {confirmed, PlaylistLoadStatus::Loaded};
+        PlaylistsBinding binding(store, [] { return PlaylistsBinding::Paths{}; }, [](auto) { return true; });
+        load(binding);
+        QVERIFY(binding.selectPlaylist("9"));
+        const auto lists = binding.playlists();
+        const auto entries = binding.entries();
+
+        store->setOutcome(PlaylistSaveStatus::Failed);
+        QVERIFY(binding.renamePlaylist("9", "Renamed 日本"));
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QVERIFY(binding.hasPendingChange());
+
+        {
+            const std::lock_guard lock(store->mutex);
+            store->disk = {{}, status};
+        }
+        binding.discardPending();
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QCOMPARE(store->loads.load(), 2);
+        QCOMPARE(store->saves.load(), 1);
+        QVERIFY(binding.hasPendingChange());
+        QVERIFY(binding.ready());
+        QVERIFY(binding.canRetrySave());
+        QCOMPARE(binding.selectedPlaylistId(), "9");
+        QCOMPARE(binding.playlists(), lists);
+        QCOMPARE(binding.entries(), entries);
+        QVERIFY(!binding.prepareExit());
+        QVERIFY(!binding.prepareExit());
+        binding.resume();
+
+        {
+            const std::lock_guard lock(store->mutex);
+            store->disk = {confirmed, PlaylistLoadStatus::Loaded};
+        }
+        store->setOutcome(PlaylistSaveStatus::Saved);
+        QVERIFY(binding.retrySave());
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QVERIFY(!binding.hasPendingChange());
+        QCOMPARE(binding.selectedPlaylistId(), "9");
+        QCOMPARE(binding.entries(), entries);
+        QCOMPARE(store->saves.load(), 2);
+        auto expected = confirmed;
+        expected.playlists[1].name = "Renamed 日本";
+        const std::lock_guard lock(store->mutex);
+        QVERIFY(store->disk.snapshot == expected);
+    }
     void reloadResolvesAnUncertainWriteWithoutClaimingRollback() {
         auto store = std::make_shared<Store>();
         PlaylistsBinding binding(store, [] { return PlaylistsBinding::Paths{}; }, [](auto) { return true; });
@@ -421,6 +478,8 @@ class PlaylistsBindingTests final : public QObject {
             store->disk = {{{NamedPlaylist{7, "Actual disk", {}}}}, PlaylistLoadStatus::Loaded};
         }
         binding.discardPending();
+        QVERIFY(binding.busy());
+        QVERIFY(binding.hasPendingChange());
         QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
         QCOMPARE(binding.playlists().size(), 1);
         QCOMPARE(binding.playlists().front().toMap().value("name").toString(), "Actual disk");

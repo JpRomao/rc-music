@@ -30,9 +30,9 @@ O seletor de arquivos abre de forma assíncrona e vincula a seleção à playlis
 
 **Localizar arquivo…** abre um seletor de um único arquivo e vincula o resultado à entrada escolhida. O novo caminho só aparece após a confirmação do salvamento. Use **Adicionar à fila** para incluir as faixas com os caminhos atualizados.
 
-Se o salvamento falhar, **Tentar salvar** submete novamente o mesmo candidato. A opção de recarregar do disco abandona esse candidato em memória e consulta o estado realmente armazenado. Uma falha de confirmação pode acontecer depois da gravação física; por isso, recarregar pode reencontrar a alteração e não promete desfazê-la.
+Se o salvamento falhar, **Tentar salvar** submete novamente a mesma edição. **Recarregar do disco** só substitui o catálogo exibido e descarta a edição pendente após uma leitura válida. Se a leitura falhar, a edição continua disponível em memória e o catálogo confirmado permanece visível com a seleção atual. Uma gravação sem confirmação pode já estar no disco e reaparecer após uma recarga bem-sucedida.
 
-Ao escolher **Sair** durante um salvamento, o app aguarda a confirmação por até 2 segundos antes de iniciar o encerramento. Se a gravação falhar ou o prazo acabar, o player reabre **Playlists** e conserva a edição em memória. Quando a falha já é conhecida, o painel abre imediatamente com foco em **Tentar salvar**. Também é possível escolher **Recarregar do disco**. Se a gravação terminar depois do prazo, escolha **Sair** novamente quando quiser encerrar.
+Ao escolher **Sair** durante o salvamento ou a recarga de uma edição pendente, o app aguarda o resultado por até 2 segundos antes de iniciar o encerramento. Se a operação falhar ou o prazo acabar, o player reabre **Playlists** e conserva a edição em memória. Quando a falha já é conhecida, o painel abre imediatamente com foco em **Tentar salvar**. Também é possível escolher **Recarregar do disco**. Se a operação terminar depois do prazo, escolha **Sair** novamente quando quiser encerrar.
 
 Quando não for possível carregar o catálogo, use **Tentar abrir novamente** depois de conferir a disponibilidade dos arquivos na pasta de configuração. Versão futura e dados inválidos são preservados; o app não grava uma lista vazia sobre esses documentos por consequência do erro.
 
@@ -94,3 +94,7 @@ O teste de cópia da fila reproduziu o botão ativo com a fila vazia. O painel p
 ### Recuperação ao sair
 
 No Red, três regressões do presenter e três do painel falharam porque a saída avançava antes da confirmação da gravação. O Green verificou a falha já conhecida, a falha durante a espera, a saída após salvamento confirmado e o vencimento do prazo sem encerrar o app após um resultado tardio. O teste do painel conserva a faixa em reprodução e confirma o foco e a ação por teclado em **Tentar salvar**. Os checks passaram **3/3 CTest**, com **313 casos do presenter**, **19 do binding** e **388 Quick**. O build Release do player, o lint QML e a inspeção do grafo de produção também passaram. Logs em `out/product/test-runs/playlist-exit-20261111/`. A jornada instalada e a validação com leitor de tela permanecem pendentes.
+
+### Recarga após falha de salvamento
+
+Quatro regressões reproduziram o descarte prematuro da edição no início da leitura. O binding agora mantém o catálogo confirmado, a seleção e a edição enquanto a recarga está ativa. Uma leitura indisponível, inválida ou de versão futura conserva a edição e mantém disponível a tentativa explícita de salvar. A recarga válida substitui o catálogo e encerra a edição pendente. Passaram **22 casos Qt** do binding e o build Release Windows. Logs em `out/product/test-runs/playlist-reload-20261111/`. Esta correção está no build local posterior aos setups de `f8a593b`.

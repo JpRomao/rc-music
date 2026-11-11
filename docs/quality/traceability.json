@@ -2446,6 +2446,7 @@
         { "path": "tests/qt/QtJsonPlaylistStoreTests.cpp", "marker": "firstWriteAndRestartRoundTripUnicodeDuplicatesAndExactIds" },
         { "path": "tests/qt/PlaylistsRestartTests.cpp", "marker": "namedPlaylistsSurviveTwoProcessesWithoutAutomaticQueueActions" },
         { "path": "tests/qt/PlaylistsBindingTests.cpp", "marker": "failedSaveRetainsTheCandidateForExplicitRetryAndBlocksExit" },
+        { "path": "tests/qt/PlaylistsBindingTests.cpp", "marker": "failedReloadRetainsTheConfirmedCatalogAndOriginalEdit" },
         { "path": "tests/qt/PlaylistsBindingTests.cpp", "marker": "exitDuringTheQueueCallbackCannotCreateAnUnsaveablePendingChange" },
         { "path": "tests/ui/qtest/PlayerPresenterTests.cpp", "marker": "playlistBatchAppendsWithoutSelectionOrPlaybackAndCopiesTheQueue" },
         { "path": "tests/ui/qtest/PlayerPresenterTests.cpp", "marker": "playlistSaveExitTimeoutCannotCommitAfterLateSuccess" },
@@ -2458,6 +2459,7 @@
         { "path": "docs/architecture/decisions/0015-named-playlists.md", "marker": "## Decisão" },
         { "path": "docs/playlists.md", "marker": "## Evidência de implementação" },
         { "path": "docs/playlists.md", "marker": "### Recuperação ao sair" },
+        { "path": "docs/playlists.md", "marker": "### Recarga após falha de salvamento" },
         { "path": "docs/windows-installer.md", "marker": "### Setups de f8a593b" }
       ],
       "remaining": [
