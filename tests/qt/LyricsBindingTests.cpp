@@ -3,6 +3,7 @@
 #include "presentation/LyricsBinding.hpp"
 
 #include <QFile>
+#include <QMetaProperty>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -90,7 +91,8 @@ struct ReleaseBlockedStore final {
 };
 class OnlineReply final : public QNetworkReply {
   public:
-    OnlineReply(const QNetworkRequest& request, QObject* parent) : QNetworkReply(parent) {
+    OnlineReply(const QNetworkRequest& request, QByteArray bytes, QObject* parent)
+        : QNetworkReply(parent), bytes_(std::move(bytes)) {
         setRequest(request);
         setUrl(request.url());
         setOperation(QNetworkAccessManager::GetOperation);
@@ -123,26 +125,124 @@ class OnlineReply final : public QNetworkReply {
     }
 
   private:
-    const QByteArray bytes_{
-        R"({"syncedLyrics":"[00:01.000]Online original\n[00:04.000]Online next","plainLyrics":"Online original\nOnline next","instrumental":false})"};
+    const QByteArray bytes_;
     qint64 offset_{};
 };
 class OnlineNetwork final : public QNetworkAccessManager {
   public:
     int requests{};
+    QByteArray body{
+        R"({"syncedLyrics":"[00:01.000]Online original\n[00:04.000]Online next","plainLyrics":"Online original\nOnline next","instrumental":false})"};
 
   protected:
     QNetworkReply* createRequest(Operation operation, const QNetworkRequest& request, QIODevice*) override {
         if (operation != GetOperation)
             return nullptr;
         ++requests;
-        return new OnlineReply(request, this);
+        return new OnlineReply(request, body, this);
     }
 };
 } // namespace
 class LyricsBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void oneSearchPreviewsAndSavesTheTwoDistinctOnlineDocuments() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto path = temp.filePath("song.mp3");
+        save(path, "preserved audio bytes");
+        auto store = std::make_shared<MemoryVariantsStore>();
+        OnlineNetwork network;
+        network.body =
+            R"({"syncedLyrics":"[00:01.000]風\n[00:04.000]空","plainLyrics":"Kaze\nSora","instrumental":false})";
+        QtLyricsService service(&network);
+        LyricsBinding binding(service, store);
+        binding.setTrack(path, "Song", "Artist", {}, 9000);
+        QTRY_VERIFY(binding.variantsReady());
+        QCOMPARE(binding.selectedOnlineLyricsCandidate(), -1);
+        QVERIFY(binding.search("Song", "Artist"));
+        QTRY_COMPARE(service.status(), QtLyricsService::Status::Ready);
+        QCOMPARE(binding.onlineLyricsCandidates().size(), 2);
+        QCOMPARE(binding.selectedOnlineLyricsCandidate(), 0);
+        QVERIFY(binding.hasSyncedLyrics());
+        const auto candidate_property =
+            binding.metaObject()->property(binding.metaObject()->indexOfProperty("onlineLyricsCandidates"));
+        QSignalSpy candidates_changed(&binding, candidate_property.notifySignal());
+        QVERIFY(candidates_changed.isValid());
+        binding.setPosition(4500);
+        QCOMPARE(binding.currentLine(), QStringLiteral("空"));
+        QCOMPARE(candidates_changed.count(), 0);
+        const auto synced_revision = binding.currentLyricsRevision();
+        QVERIFY(!synced_revision.isEmpty());
+
+        QVERIFY(!binding.selectOnlineLyricsCandidate(2));
+        QVERIFY(binding.selectOnlineLyricsCandidate(1));
+        QCOMPARE(binding.selectedOnlineLyricsCandidate(), 1);
+        QCOMPARE(binding.plainText(), QStringLiteral("Kaze\nSora"));
+        QVERIFY(!binding.hasSyncedLyrics());
+        QVERIFY(binding.currentLine().isEmpty());
+        QVERIFY(!binding.saveCurrentLyrics("Stale", "ja", "Jpan", "original", synced_revision));
+        QCOMPARE(store->save_calls.load(), 0);
+        QVERIFY(binding.saveCurrentLyrics("Romanizada", "ja", "Latn", "romanized", binding.currentLyricsRevision()));
+        QTRY_COMPARE(binding.variants().size(), 1);
+        QVERIFY(!binding.selectedVariantId().isEmpty());
+        QCOMPARE(binding.selectedOnlineLyricsCandidate(), -1);
+        QVERIFY(binding.selectVariant({}));
+        QVERIFY(binding.selectOnlineLyricsCandidate(0));
+        QCOMPARE(binding.currentLine(), QStringLiteral("空"));
+        QVERIFY(binding.saveCurrentLyrics("Original", "ja", "Jpan", "original", binding.currentLyricsRevision()));
+        QTRY_COMPARE(binding.variants().size(), 2);
+        QCOMPARE(network.requests, 1);
+        QCOMPARE(store->save_calls.load(), 2);
+        QCOMPARE(binding.title(), QStringLiteral("Song"));
+        const auto saved = store->read(nativePath(path));
+        QCOMPARE(saved[0].source, std::string{"LRCLIB"});
+        QCOMPARE(saved[1].source, std::string{"LRCLIB"});
+        const auto plain = parseLrc(saved[0].content);
+        QVERIFY(plain.document.lines.empty());
+        QCOMPARE(plain.document.plain_text, std::string{"Kaze\nSora"});
+        QCOMPARE(parseLrc(saved[1].content).document.lines, service.onlineDocuments()[0].lines);
+
+        QVERIFY(binding.reloadVariants());
+        QTRY_COMPARE(binding.variants().size(), 2);
+        QFile audio(path);
+        QVERIFY(audio.open(QIODevice::ReadOnly));
+        QCOMPARE(audio.readAll(), QByteArray("preserved audio bytes"));
+    }
+    void onlineSaveRevisionRejectsAnOldChoiceAfterASearchOrTrackChange() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        auto store = std::make_shared<MemoryVariantsStore>();
+        OnlineNetwork network;
+        QtLyricsService service(&network);
+        LyricsBinding binding(service, store);
+        const auto first = temp.filePath("first.mp3");
+        binding.setTrack(first, "First", "Artist", {}, 0);
+        QTRY_VERIFY(binding.variantsReady());
+        QVERIFY(binding.search("First", "Artist"));
+        QTRY_COMPARE(service.status(), QtLyricsService::Status::Ready);
+        QCOMPARE(binding.onlineLyricsCandidates().size(), 1);
+        QCOMPARE(binding.selectedOnlineLyricsCandidate(), 0);
+        const auto previous_revision = binding.currentLyricsRevision();
+        QTRY_VERIFY(binding.canSearch());
+        QVERIFY(binding.search("Corrected", "Artist"));
+        QVERIFY(binding.onlineLyricsCandidates().isEmpty());
+        QCOMPARE(binding.selectedOnlineLyricsCandidate(), -1);
+        QTRY_COMPARE(service.status(), QtLyricsService::Status::Ready);
+        QCOMPARE(binding.selectedOnlineLyricsCandidate(), 0);
+        QVERIFY(binding.currentLyricsRevision() != previous_revision);
+        QVERIFY(!binding.saveCurrentLyrics("Stale", {}, {}, "original", previous_revision));
+        QCOMPARE(store->save_calls.load(), 0);
+        const auto second_revision = binding.currentLyricsRevision();
+
+        binding.setTrack(temp.filePath("second.mp3"), "Second", "Artist", {}, 0);
+        QVERIFY(binding.onlineLyricsCandidates().isEmpty());
+        QCOMPARE(binding.selectedOnlineLyricsCandidate(), -1);
+        QVERIFY(!binding.selectOnlineLyricsCandidate(0));
+        QVERIFY(!binding.saveCurrentLyrics("Wrong track", {}, {}, "original", second_revision));
+        QCOMPARE(store->save_calls.load(), 0);
+        QCOMPARE(network.requests, 2);
+    }
     void acquiredFormsAreSavedForThePublishedTargetWithoutChangingTheCurrentTrack() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());
@@ -435,7 +535,7 @@ class LyricsBindingTests final : public QObject {
         binding.setTrack(path, "Song", "Artist", {}, 9000);
         QTRY_VERIFY(binding.variantsReady() && binding.canSaveCurrentLyrics());
         QCOMPARE(store->save_calls.load(), 0);
-        QVERIFY(binding.saveCurrentLyrics("My original", "en", "Latn", "original"));
+        QVERIFY(binding.saveCurrentLyrics("My original", "en", "Latn", "original", binding.currentLyricsRevision()));
         QTRY_COMPARE(binding.variants().size(), 1);
         const auto variant = store->read(nativePath(path)).front();
         QCOMPARE(variant.source, std::string{"arquivo local"});
@@ -444,7 +544,7 @@ class LyricsBindingTests final : public QObject {
         QCOMPARE(parsed.document.lines, service.document().lines);
         QVERIFY(binding.selectVariant(binding.variants().front().toMap().value("id").toString()));
         QVERIFY(!binding.canSaveCurrentLyrics());
-        QVERIFY(!binding.saveCurrentLyrics("Wrong source", "en", "Latn", "original"));
+        QVERIFY(!binding.saveCurrentLyrics("Wrong source", "en", "Latn", "original", binding.currentLyricsRevision()));
         QCOMPARE(store->save_calls.load(), 1);
         binding.setPosition(4500);
         QCOMPARE(binding.currentLine(), "Local two");
@@ -471,7 +571,8 @@ class LyricsBindingTests final : public QObject {
         QCOMPARE(network.requests, 1);
         QCOMPARE(store->save_calls.load(), 0);
         QVERIFY(binding.canSaveCurrentLyrics());
-        QVERIFY(binding.saveCurrentLyrics("Online original", "en", "Latn", "original"));
+        QVERIFY(
+            binding.saveCurrentLyrics("Online original", "en", "Latn", "original", binding.currentLyricsRevision()));
         QTRY_COMPARE(binding.variants().size(), 1);
         const auto saved = store->read(nativePath(path)).front();
         QCOMPARE(saved.source, std::string{"LRCLIB"});

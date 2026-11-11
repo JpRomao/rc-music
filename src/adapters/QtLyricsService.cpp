@@ -505,6 +505,7 @@ QtLyricsService::Status QtLyricsService::status() const noexcept { return impl_-
 QtLyricsService::Source QtLyricsService::source() const noexcept { return impl_->source; }
 const LyricsDocument& QtLyricsService::document() const noexcept { return impl_->document; }
 const std::vector<LyricsDocument>& QtLyricsService::onlineDocuments() const noexcept { return impl_->online_documents; }
+quint64 QtLyricsService::contextRevision() const noexcept { return impl_->generation; }
 QString QtLyricsService::message() const { return impl_->message; }
 bool QtLyricsService::canSearch() const noexcept {
     return !impl_->stopping && !impl_->path.isEmpty() && impl_->network && validClient(impl_->client) &&

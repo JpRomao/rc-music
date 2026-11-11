@@ -358,7 +358,11 @@ LyricsBinding::LyricsBinding(QtLyricsService& service, QObject* parent) : Lyrics
 LyricsBinding::LyricsBinding(QtLyricsService& service, std::shared_ptr<LyricsVariantsStore> variants_store,
                              QObject* parent)
     : QObject(parent), variants_(std::make_unique<VariantsState>(*this, std::move(variants_store))), service_(service) {
-    connect(&service_, &QtLyricsService::changed, this, &LyricsBinding::changed);
+    updateOnlineLyricsCandidates();
+    connect(&service_, &QtLyricsService::changed, this, [this] {
+        updateOnlineLyricsCandidates();
+        emit changed();
+    });
 }
 LyricsBinding::~LyricsBinding() = default;
 bool LyricsBinding::appendAcquiredLyrics(std::string ticket, QString target, LyricsVariants drafts,
@@ -405,15 +409,57 @@ bool LyricsBinding::variantsCanRetrySave() const {
 }
 bool LyricsBinding::variantsHasPendingChange() const { return variants_->hasPending(); }
 bool LyricsBinding::canSaveCurrentLyrics() const {
-    return variants_->editable() && variants_->selected == 0 && service_.status() == QtLyricsService::Status::Ready &&
-           (!service_.document().lines.empty() || !service_.document().plain_text.empty());
+    if (!variants_->editable() || variants_->selected || service_.status() != QtLyricsService::Status::Ready)
+        return false;
+    const auto& document = displayedDocument();
+    return !document.lines.empty() || !document.plain_text.empty();
+}
+void LyricsBinding::updateOnlineLyricsCandidates() {
+    QVariantList candidates;
+    const auto& documents = service_.onlineDocuments();
+    for (int index = 0; index < static_cast<int>(documents.size()); ++index) {
+        const auto& document = documents[static_cast<std::size_t>(index)];
+        candidates.push_back(QVariantMap{{"index", index},
+                                         {"label", document.lines.empty() ? tr("Texto simples") : tr("Sincronizada")}});
+    }
+    if (candidates != online_candidates_) {
+        online_candidates_ = std::move(candidates);
+        emit onlineLyricsCandidatesChanged();
+    }
+}
+QVariantList LyricsBinding::onlineLyricsCandidates() const { return online_candidates_; }
+int LyricsBinding::selectedOnlineLyricsCandidate() const {
+    if (variants_->selected || service_.onlineDocuments().empty())
+        return -1;
+    return online_candidate_context_ == service_.contextRevision() ? online_candidate_ : 0;
+}
+QString LyricsBinding::currentLyricsRevision() const {
+    if (!canSaveCurrentLyrics())
+        return {};
+    return QString::number(service_.contextRevision()) + QLatin1Char(':') + QString::number(selection_revision_);
 }
 bool LyricsBinding::selectVariant(const QString& value) {
     if (!variants_->editable())
         return false;
     const auto id = value.isEmpty() ? std::optional<std::uint64_t>{0} : identifier(value);
+    const auto previous = variants_->selected;
     if (!id || !variants_->select(*id))
         return false;
+    if (previous != *id)
+        ++selection_revision_;
+    emit changed();
+    return true;
+}
+bool LyricsBinding::selectOnlineLyricsCandidate(const int index) {
+    if (!variants_->allowed() || variants_->busy || variants_->hasPending() || index < 0 ||
+        static_cast<std::size_t>(index) >= service_.onlineDocuments().size())
+        return false;
+    if (index == selectedOnlineLyricsCandidate())
+        return true;
+    online_candidate_context_ = service_.contextRevision();
+    online_candidate_ = index;
+    variants_->clearSelection();
+    ++selection_revision_;
     emit changed();
     return true;
 }
@@ -445,10 +491,10 @@ bool LyricsBinding::addVariant(const QString& name, const QString& language, con
     return variants_->save();
 }
 bool LyricsBinding::saveCurrentLyrics(const QString& name, const QString& language, const QString& script,
-                                      const QString& kind) {
-    if (!canSaveCurrentLyrics())
+                                      const QString& kind, const QString& expected_revision) {
+    if (expected_revision.isEmpty() || expected_revision != currentLyricsRevision())
         return false;
-    const auto content = lyricsDocumentAsLrc(service_.document());
+    const auto content = lyricsDocumentAsLrc(displayedDocument());
     if (!content)
         return variants_->invalid();
     return addVariant(name, language, script,
@@ -488,7 +534,10 @@ bool LyricsBinding::reloadVariants() {
     return variants_->load();
 }
 const LyricsDocument& LyricsBinding::displayedDocument() const {
-    return variants_->selected ? variants_->selected_document : service_.document();
+    if (variants_->selected)
+        return variants_->selected_document;
+    const int index = selectedOnlineLyricsCandidate();
+    return index >= 0 ? service_.onlineDocuments()[static_cast<std::size_t>(index)] : service_.document();
 }
 void LyricsBinding::setTrack(const QString& path, const QString& title, const QString& artist, const QString& album,
                              const qint64 duration) {

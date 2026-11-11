@@ -23,6 +23,10 @@ TestCase {
         property bool hasSyncedLyrics: true
         property bool busy: false
         property bool canSearch: true
+        property var onlineLyricsCandidates: []
+        property int onlineCandidateIndex: -1
+        readonly property int selectedOnlineLyricsCandidate: selectedVariantId.length === 0 ? onlineCandidateIndex : -1
+        property string currentLyricsRevision: "local-1"
         property var variants: []
         property string selectedVariantId: ""
         property bool variantsBusy: false
@@ -50,11 +54,19 @@ TestCase {
             currentLine = id === "9007199254740993" ? "Romanized verse" : (id.length ? "日本語の行" : "<b>Service verse</b>");
             return record("select", [id]);
         }
+        function selectOnlineLyricsCandidate(index) {
+            onlineCandidateIndex = index;
+            currentLyricsRevision = "online-" + index;
+            hasSyncedLyrics = index === 0;
+            currentLine = hasSyncedLyrics ? "Letra sincronizada" : "";
+            plainText = hasSyncedLyrics ? "Letra sincronizada" : "<b>Outra letra</b>";
+            return record("selectOnline", [index]);
+        }
         function addVariant(name, language, script, source, kind, content, generated) {
             return record("add", [name, language, script, source, kind, content, generated]);
         }
-        function saveCurrentLyrics(name, language, script, kind) {
-            return record("saveCurrent", [name, language, script, kind]);
+        function saveCurrentLyrics(name, language, script, kind, revision) {
+            return record("saveCurrent", [name, language, script, kind, selectedOnlineLyricsCandidate, revision]);
         }
         function removeVariant(id) {
             return record("remove", [id]);
@@ -79,6 +91,9 @@ TestCase {
         backend.currentLine = "<b>Service verse</b>";
         backend.hasSyncedLyrics = true;
         backend.plainText = "";
+        backend.onlineLyricsCandidates = [];
+        backend.onlineCandidateIndex = -1;
+        backend.currentLyricsRevision = "local-1";
         backend.variantsBusy = false;
         backend.variantsReady = true;
         backend.variantsCanEdit = true;
@@ -160,6 +175,33 @@ TestCase {
         tryCompare(findChild(shell, "lyrics-variant-form"), "visible", true);
         verify(waitForPolish(shell));
     }
+    function showOnlineCandidates() {
+        backend.onlineLyricsCandidates = [
+            {
+                index: 0,
+                label: "Sincronizada"
+            },
+            {
+                index: 1,
+                label: "Texto simples"
+            }
+        ];
+        backend.onlineCandidateIndex = 0;
+        backend.currentLyricsRevision = "online-0";
+        backend.plainText = "Letra sincronizada";
+    }
+    function chooseOnlineCandidate(choice, index) {
+        choice.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(choice, "activeFocus", true);
+        keyClick(Qt.Key_Space);
+        tryCompare(choice.popup, "opened", true);
+        keyClick(Qt.Key_Home);
+        if (index === 1)
+            keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Return);
+        tryCompare(choice.popup, "visible", false);
+        compare(lastCall("selectOnline").args[0], index);
+    }
     function test_openingDoesNotSaveSearchOrChangePlaybackAndUsesPlainText() {
         const state = presenter.playbackState;
         const current = presenter.currentOccurrenceId;
@@ -209,7 +251,93 @@ TestCase {
         findChild(shell, "lyrics-variant-name-input").text = "Original guardada";
         compare(findChild(shell, "lyrics-variant-content-input").visible, false);
         mouseClick(findChild(shell, "lyrics-variant-submit"));
-        compare(lastCall("saveCurrent").args[0], "Original guardada");
+        const saved = lastCall("saveCurrent");
+        compare(saved.args[0], "Original guardada");
+        compare(saved.args[5], "local-1");
+    }
+
+    function test_onlineCandidatesCanBeChosenAndSavedWithoutChangingPlayback() {
+        const occurrence = presenter.currentOccurrenceId;
+        showOnlineCandidates();
+        openPanel();
+        const choice = findChild(shell, "lyrics-online-candidates");
+        verify(choice);
+        tryCompare(choice, "visible", true);
+        compare(choice.count, 2);
+        compare(choice.currentIndex, 0);
+        compare(choice.Accessible.name, "Resultado da busca");
+        compare(choice.contentItem.textFormat, Text.PlainText);
+        const preview = findChild(shell, "lyrics-online-preview");
+        verify(preview && preview.visible);
+        compare(preview.textFormat, Text.PlainText);
+        compare(backend.calls.length, 0);
+
+        for (const index of [1, 0]) {
+            chooseOnlineCandidate(choice, index);
+            compare(choice.currentIndex, index);
+            compare(preview.text, index === 1 ? "<b>Outra letra</b>" : "Letra sincronizada");
+            if (index === 1) {
+                const plainLyrics = findChild(shell, "lyrics-plain-text");
+                compare(plainLyrics.text, "<b>Outra letra</b>");
+                compare(plainLyrics.textFormat, Text.PlainText);
+            } else {
+                compare(findChild(shell, "lyrics-current-line").text, "Letra sincronizada");
+            }
+            mouseClick(findChild(shell, "lyrics-variant-save-current"));
+            const form = findChild(shell, "lyrics-variant-form");
+            tryCompare(form, "visible", true);
+            const name = "Resultado " + index;
+            findChild(shell, "lyrics-variant-name-input").text = name;
+            mouseClick(findChild(shell, "lyrics-variant-submit"));
+            const saved = lastCall("saveCurrent");
+            compare(saved.args[0], name);
+            compare(saved.args[4], index);
+            compare(saved.args[5], "online-" + index);
+            tryCompare(form, "visible", false);
+        }
+        compare(backend.calls.length, 4);
+        compare(backend.variants.length, 2);
+        compare(presenter.currentOccurrenceId, occurrence);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+    }
+
+    function test_onlineCandidateChoiceIsHiddenForSingleResultsAndSavedVersions() {
+        showOnlineCandidates();
+        backend.onlineLyricsCandidates = [backend.onlineLyricsCandidates[0]];
+        openPanel();
+        const choice = findChild(shell, "lyrics-online-candidates");
+        verify(choice);
+        const preview = findChild(shell, "lyrics-online-preview");
+        verify(preview);
+        compare(choice.visible, false);
+        compare(preview.visible, false);
+        compare(findChild(shell, "lyrics-variant-save-current").enabled, true);
+        showOnlineCandidates();
+        tryCompare(choice, "visible", true);
+        mouseClick(rowAt(1));
+        compare(lastCall("select").args[0], "1");
+        tryCompare(choice, "visible", false);
+        compare(preview.visible, false);
+        mouseClick(rowAt(0));
+        compare(lastCall("select").args[0], "");
+        tryCompare(choice, "visible", true);
+        compare(backend.calls.length, 2);
+    }
+
+    function test_newOnlineSearchCannotRetargetAnOpenSaveForm() {
+        showOnlineCandidates();
+        openPanel();
+        mouseClick(findChild(shell, "lyrics-variant-save-current"));
+        const form = findChild(shell, "lyrics-variant-form");
+        tryCompare(form, "visible", true);
+        findChild(shell, "lyrics-variant-name-input").text = "Resposta antiga";
+        const submit = findChild(shell, "lyrics-variant-submit");
+
+        backend.currentLyricsRevision = "same-index-new-response";
+        compare(backend.selectedOnlineLyricsCandidate, 0);
+        tryCompare(form, "visible", false);
+        submit.Accessible.pressAction();
+        compare(backend.calls.length, 0);
     }
     function test_removalRequiresConfirmationOfTheSameVariant() {
         backend.selectedVariantId = "1";

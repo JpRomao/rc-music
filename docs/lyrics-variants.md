@@ -12,6 +12,14 @@ Adicionar outra versão depois mantém as anteriores. Excluir remove somente o t
 
 LRC conserva seus tempos quando aceito pelo parser; texto comum permanece sem sincronização. Não há geração automática de tempos, romanização ou tradução. Idioma, escrita e origem são informados pelo usuário; a indicação de conteúdo gerado permite identificar texto produzido externamente.
 
+### Resultados da busca no player
+
+Depois de confirmar **Buscar letra**, abra **Versões** e escolha **Arquivo / busca atual**. Se o LRCLIB trouxer conteúdos distintos, o seletor oferece **Sincronizada** e **Texto simples**. A sincronizada vem selecionada e a prévia acompanha a opção escolhida. Para guardar cada resultado, use **Salvar letra atual**, informe um nome e escolha **Original** ou **Romanizada**. A origem registrada é LRCLIB.
+
+Os rótulos descrevem o formato recebido. Idioma, escrita e forma são informados ao salvar.
+
+O player exibe a versão salva selecionada acima da barra de progresso. Se a opção, o resultado da busca ou a faixa mudar com o formulário aberto, reabra o formulário para confirmar a letra atual.
+
 ## Salvamento e recuperação
 
 As versões pertencem ao caminho exato do arquivo e ficam na pasta de configuração do RC Music, dentro de `lyrics`. Mover ou renomear o áudio não transfere essas associações automaticamente. Lite e Completa usam os mesmos dados. A escolha exibida é da sessão; as versões salvas sobrevivem ao reinício.
@@ -42,3 +50,9 @@ A revisão acrescentou Reds para busca aceita cuja resposta ficava oculta pela s
 O restart grava original e romanizada em um processo e lê em outro, com CWDs diferentes, conferindo IDs acima de `2^53`, metadados, conteúdo, ordem e hashes de primário, backup e áudio sentinela. Binding usa transporte falso para provar salvamento online somente por ação explícita; não fez uma nova consulta real ao provedor. Falhas injetadas antes/depois de commit distinguem escrita física de reconhecimento Saved. A seleção acima não é a suíte inteira de AppContainer, instaladores ou aceitação física.
 
 Não houve instalação, registro no host, nova execução AppContainer, benchmark ou alteração de músicas/dados pessoais. Os seis arquivos AppContainer em andamento e cinco artefatos congelados foram preservados por hash. Instaladores não foram regenerados. FR-054/M3.9 e gates globais permanecem **em andamento**. Letras.mus.br, MP3 remoto, LLM, tradução, exibição simultânea alinhada, Linux, durabilidade após perda física de energia e aceitação nativa/empacotada conservam seus próprios limites.
+
+### Seleção dos formatos online — 2026-11-10
+
+Red observado no binding por ausência da seleção/revisão e no painel Quick com **16 casos aprovados/4 falhos**. O Green passou **6/6 CTest** em 49,70 s, incluindo serviço, store, binding, lookup de downloads, binding de downloads e a suíte Quick completa com **361 casos**. O build Release do player e `all_qmllint` passaram. Uma regressão adicional mostrou que a posição de reprodução notificava a lista de formatos; após separar essa notificação, o fechamento dos dois bindings passou **2/2 CTest**, com **49 casos Qt**, e o player foi recompilado.
+
+Os casos novos usam resposta de rede falsa e armazenamento temporário. Conferem uma única busca, prévia e salvamento dos dois conteúdos, tempos preservados, seleção salva, áudio sentinela e rejeição de formulários de outra escolha, busca ou faixa. Recibos em `out/product/test-runs/online-lyrics-variants-20261110/`. O incremento mantém as pendências de aceitação nativa e de atualização do instalador.

@@ -53,6 +53,9 @@ class LyricsBinding final : public QObject {
     Q_PROPERTY(bool variantsCanRetrySave READ variantsCanRetrySave NOTIFY changed)
     Q_PROPERTY(bool variantsHasPendingChange READ variantsHasPendingChange NOTIFY changed)
     Q_PROPERTY(bool canSaveCurrentLyrics READ canSaveCurrentLyrics NOTIFY changed)
+    Q_PROPERTY(QVariantList onlineLyricsCandidates READ onlineLyricsCandidates NOTIFY onlineLyricsCandidatesChanged)
+    Q_PROPERTY(int selectedOnlineLyricsCandidate READ selectedOnlineLyricsCandidate NOTIFY changed)
+    Q_PROPERTY(QString currentLyricsRevision READ currentLyricsRevision NOTIFY changed)
   public:
     explicit LyricsBinding(QtLyricsService& service, QObject* parent = nullptr);
     LyricsBinding(QtLyricsService& service, std::shared_ptr<LyricsVariantsStore> variants_store,
@@ -88,12 +91,16 @@ class LyricsBinding final : public QObject {
     [[nodiscard]] bool variantsCanRetrySave() const;
     [[nodiscard]] bool variantsHasPendingChange() const;
     [[nodiscard]] bool canSaveCurrentLyrics() const;
+    [[nodiscard]] QVariantList onlineLyricsCandidates() const;
+    [[nodiscard]] int selectedOnlineLyricsCandidate() const;
+    [[nodiscard]] QString currentLyricsRevision() const;
     Q_INVOKABLE bool search(const QString& title, const QString& artist);
     Q_INVOKABLE bool selectVariant(const QString& id);
+    Q_INVOKABLE bool selectOnlineLyricsCandidate(int index);
     Q_INVOKABLE bool addVariant(const QString& name, const QString& language, const QString& script,
                                 const QString& source, const QString& kind, const QString& content, bool generated);
     Q_INVOKABLE bool saveCurrentLyrics(const QString& name, const QString& language, const QString& script,
-                                       const QString& kind);
+                                       const QString& kind, const QString& expected_revision);
     Q_INVOKABLE bool removeVariant(const QString& id);
     Q_INVOKABLE bool retryVariantsSave();
     // After explicit UI consent, drops an unconfirmed candidate and reloads
@@ -102,14 +109,20 @@ class LyricsBinding final : public QObject {
     Q_INVOKABLE bool reloadVariants();
   signals:
     void changed();
+    void onlineLyricsCandidatesChanged();
 
   private:
     struct VariantsState;
     [[nodiscard]] const LyricsDocument& displayedDocument() const;
+    void updateOnlineLyricsCandidates();
     std::unique_ptr<VariantsState> variants_;
     QtLyricsService& service_;
     QString path_, title_, artist_;
+    QVariantList online_candidates_;
     qint64 position_ms_{};
+    quint64 online_candidate_context_{};
+    quint64 selection_revision_{};
+    int online_candidate_{};
     bool shutting_down_{};
     bool exit_preparing_{};
 };

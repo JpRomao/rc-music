@@ -14,6 +14,7 @@ Dialog {
     property string formMode: ""
     property var formOwner: null
     property string formTrack: ""
+    property string formLyricsRevision: ""
     property bool formRejected: false
     property string confirmMode: ""
     property var confirmOwner: null
@@ -26,10 +27,15 @@ Dialog {
     readonly property bool canReload: visible && enabled && supported && !busy
     readonly property bool noTrackToReload: trackIdentity.length === 0
     readonly property string selectedId: supported ? lyrics.selectedVariantId : ""
+    readonly property var onlineCandidates: supported && typeof lyrics.onlineLyricsCandidates !== "undefined" ? lyrics.onlineLyricsCandidates : []
+    readonly property int selectedOnlineCandidate: supported && typeof lyrics.selectedOnlineLyricsCandidate !== "undefined" ? lyrics.selectedOnlineLyricsCandidate : -1
+    readonly property bool showOnlineCandidates: selectedId.length === 0 && onlineCandidates.length > 1
+    readonly property string currentLyricsRevision: supported && typeof lyrics.currentLyricsRevision !== "undefined" ? lyrics.currentLyricsRevision : ""
+    readonly property bool canSaveCurrent: canEdit && currentLyricsRevision.length > 0 && lyrics.canSaveCurrentLyrics
     readonly property var selectedVariant: variantForId(selectedId)
     readonly property var rows: variantRows()
     readonly property bool childDialogOpen: formDialog.visible || confirmation.visible
-    readonly property bool formCurrent: formDialog.visible && formOwner === lyrics && formTrack === trackIdentity && canEdit && (formMode === "add" || (formMode === "current" && lyrics.canSaveCurrentLyrics))
+    readonly property bool formCurrent: formDialog.visible && formOwner === lyrics && formTrack === trackIdentity && canEdit && (formMode === "add" || (formMode === "current" && canSaveCurrent && formLyricsRevision === currentLyricsRevision))
     readonly property bool confirmCurrent: confirmation.visible && confirmOwner === lyrics && confirmTrack === trackIdentity && (confirmMode === "reload" ? (canReload && lyrics.variantsHasPendingChange) : (canEdit && targetCurrent()))
     parent: Overlay.overlay
     anchors.centerIn: parent
@@ -49,6 +55,10 @@ Dialog {
     }
     onLyricsChanged: revokeDialogs()
     onTrackIdentityChanged: revokeDialogs()
+    onCurrentLyricsRevisionChanged: {
+        if (formMode === "current" && formLyricsRevision !== currentLyricsRevision && formDialog && formDialog.visible)
+            formDialog.close();
+    }
     onEnabledChanged: {
         if (!enabled)
             revokeDialogs();
@@ -111,11 +121,12 @@ Dialog {
         return pieces.join(" · ");
     }
     function openForm(mode) {
-        if (!canEdit || (mode === "current" && !lyrics.canSaveCurrentLyrics))
+        if (!canEdit || (mode === "current" && !canSaveCurrent))
             return;
         formMode = mode;
         formOwner = lyrics;
         formTrack = trackIdentity;
+        formLyricsRevision = mode === "current" ? currentLyricsRevision : "";
         formRejected = false;
         nameField.text = "";
         languageField.text = "";
@@ -211,6 +222,61 @@ Dialog {
         }
         RowLayout {
             Layout.fillWidth: true
+            visible: root.showOnlineCandidates
+            Text {
+                text: qsTr("Resultado da busca")
+                textFormat: Text.PlainText
+                color: root.contract.textPrimaryColor
+                Accessible.ignored: true
+            }
+            ComboBox {
+                id: onlineChoice
+                objectName: "lyrics-online-candidates"
+                Layout.fillWidth: true
+                implicitHeight: root.contract.controlTargetPreferred
+                enabled: root.canSelect && root.showOnlineCandidates
+                model: root.onlineCandidates
+                textRole: "label"
+                currentIndex: root.onlineCandidates.findIndex(candidate => candidate.index === root.selectedOnlineCandidate)
+                activeFocusOnTab: true
+                Accessible.name: qsTr("Resultado da busca")
+                Accessible.id: objectName
+                Accessible.focusable: enabled
+                Accessible.focused: activeFocus
+                onActivated: index => {
+                    const row = root.onlineCandidates[index];
+                    if (enabled && row)
+                        root.lyrics.selectOnlineLyricsCandidate(row.index);
+                }
+                contentItem: Text {
+                    text: onlineChoice.displayText
+                    textFormat: Text.PlainText
+                    color: root.contract.textPrimaryColor
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                background: Rectangle {
+                    color: root.contract.surfaceColor
+                    radius: root.contract.radiusSmall
+                    border.width: onlineChoice.activeFocus ? 3 : 1
+                    border.color: onlineChoice.activeFocus ? root.contract.focusColor : root.contract.borderColor
+                }
+            }
+        }
+        Text {
+            objectName: "lyrics-online-preview"
+            Layout.fillWidth: true
+            visible: root.showOnlineCandidates && text.length > 0
+            text: root.showOnlineCandidates ? root.lyrics.plainText : ""
+            textFormat: Text.PlainText
+            maximumLineCount: 2
+            wrapMode: Text.Wrap
+            elide: Text.ElideRight
+            color: root.contract.textSecondaryColor
+            Accessible.role: Accessible.StaticText
+        }
+        RowLayout {
+            Layout.fillWidth: true
             AccessibleTransportButton {
                 id: addButton
                 objectName: "lyrics-variant-add"
@@ -224,7 +290,7 @@ Dialog {
                 objectName: "lyrics-variant-save-current"
                 contract: root.contract
                 text: qsTr("Salvar letra atual")
-                enabled: root.canEdit && root.lyrics.canSaveCurrentLyrics
+                enabled: root.canSaveCurrent
                 onClicked: root.openForm("current")
             }
         }
@@ -368,6 +434,7 @@ Dialog {
             const mode = root.formMode;
             root.formMode = "";
             root.formOwner = null;
+            root.formLyricsRevision = "";
             if (root.visible && root.enabled) {
                 if (mode === "current")
                     saveCurrentButton.forceActiveFocus(Qt.TabFocusReason);
@@ -561,7 +628,9 @@ Dialog {
                             return;
                         const owner = root.formOwner;
                         const kind = kindField.currentIndex === 1 ? "romanized" : "original";
-                        const accepted = root.formMode === "current" ? owner.saveCurrentLyrics(nameField.text.trim(), languageField.text.trim(), scriptField.text.trim(), kind) : owner.addVariant(nameField.text.trim(), languageField.text.trim(), scriptField.text.trim(), sourceField.text.trim(), kind, contentField.text, generatedField.checked);
+                        const accepted = root.formMode === "current" ? owner.saveCurrentLyrics(nameField.text.trim(), languageField.text.trim(), scriptField.text.trim(), kind, root.formLyricsRevision) : owner.addVariant(nameField.text.trim(), languageField.text.trim(), scriptField.text.trim(), sourceField.text.trim(), kind, contentField.text, generatedField.checked);
+                        if (!formDialog.visible)
+                            return;
                         if (accepted)
                             formDialog.accept();
                         else

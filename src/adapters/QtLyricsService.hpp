@@ -45,6 +45,7 @@ class QtLyricsService final : public QObject {
     // All distinct online contents for this search, synchronized first. Plain
     // text stays plain; no language, alphabet or synchronization is inferred.
     [[nodiscard]] const std::vector<LyricsDocument>& onlineDocuments() const noexcept;
+    [[nodiscard]] quint64 contextRevision() const noexcept;
     [[nodiscard]] QString message() const;
     [[nodiscard]] bool canSearch() const noexcept;
     [[nodiscard]] bool busy() const noexcept;

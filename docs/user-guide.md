@@ -18,6 +18,8 @@ A letra aparece **acima da barra de progresso**, no idioma original. O player ca
 
 Para buscar online, clique em **Buscar letra**, confira ou corrija título e artista e confirme **Buscar**. Abrir o diálogo não consulta a rede. A consulta ao LRCLIB envia os campos mostrados, além de álbum/duração quando válidos; não envia áudio nem o caminho local. Trocar de faixa fecha o diálogo e descarta respostas antigas. A disponibilidade e os tempos dependem da versão encontrada; uma falha ou letra ausente não interrompe o áudio. O resultado online fica em memória nesta sessão, sem gravar na música ou criar `.lrc` automaticamente.
 
+Se a busca trouxer conteúdos distintos, em **Versões → Arquivo / busca atual** escolha **Sincronizada** ou **Texto simples** e confira a prévia. A sincronizada é a opção inicial. Use **Salvar letra atual** para guardar a opção escolhida com um nome e a forma **Original** ou **Romanizada**. Se mudar a opção, a busca ou a faixa com o formulário aberto, abra-o de novo para conferir a escolha.
+
 Na barra de volume, a porcentagem atual de **0 a 100%** aparece ao passar o mouse ou durante o arraste, inclusive ao levar o ponteiro para fora do slider enquanto o botão estiver pressionado.
 
 ## Pesquisar e solicitar álbuns no Lidarr
