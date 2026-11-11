@@ -8,7 +8,7 @@ O mantenedor colocou playlists nomeadas como próxima prioridade em FR-056/M6.6.
 
 1. Abra **Playlists** no player e escolha **Nova playlist** para criar uma lista vazia. Informe o nome e confirme **Salvar**.
 2. Para copiar a fila que está no player, escolha **Salvar fila como…** e informe o nome da nova lista. A fila e a música atual são preservadas.
-3. Selecione uma playlist para ver suas faixas. **Adicionar fila atual** acrescenta as faixas que estão na fila do player à lista selecionada, conservando ordem e duplicatas.
+3. Selecione uma playlist e use **Adicionar arquivos…** para escolher faixas locais diretamente. Use **Adicionar fila atual** para copiar as faixas que já estão no player. As duas ações acrescentam as faixas na ordem recebida e permitem duplicatas.
 4. Selecione uma faixa da lista e use os controles de mover para cima/baixo ou **Remover**. A edição afeta a playlist salva; não muda a fila em reprodução nem remove arquivos do disco.
 5. Use **Renomear** para alterar o nome da lista escolhida. **Excluir** pede confirmação do alvo; somente a playlist é removida.
 
@@ -23,6 +23,8 @@ Abrir uma playlist apenas mostra seu conteúdo. Salvar, editar, renomear ou excl
 ## Salvamento e erros
 
 O painel mostra a operação de salvamento e só publica a edição nas listas após o reconhecimento **Saved** do store. Enquanto há trabalho ativo, a operação de arquivos roda em um worker e novas edições ficam indisponíveis até sua conclusão; o áudio conserva seu fluxo normal.
+
+O seletor de arquivos abre de forma assíncrona e vincula a seleção à playlist escolhida. Cancelar o diálogo, trocar o alvo ou iniciar a saída invalida a seleção pendente. Após a confirmação dos arquivos, o salvamento segue o mesmo fluxo das outras edições.
 
 Se o salvamento falhar, **Tentar salvar** submete novamente o mesmo candidato. A opção de recarregar do disco abandona esse candidato em memória e consulta o estado realmente armazenado. Uma falha de confirmação pode acontecer depois da gravação física; por isso, recarregar pode reencontrar a alteração e não promete desfazê-la.
 
@@ -70,3 +72,7 @@ A regressão inicial passou 286/287 CTest; a única falha era um clique do teste
 O teste de restart preserva nomes Unicode, IDs, ordem, duplicatas e hashes de todos os arquivos no diretório entre a leitura e seu encerramento. Os testes usam portas falsas e diretórios temporários próprios, sem depender de músicas pessoais. O grafo do aplicativo inclui domínio/store/binding/painel nas duas edições; o navegador permanece exclusivo da Completa, e fontes de teste, Registry e WFP não entram nesses grafos de produção.
 
 Não houve instalação, registro no host, uso de perfis AppContainer, benchmark ou alteração de dados pessoais. Os seis arquivos AppContainer em andamento e os cinco artefatos congelados anteriores foram preservados. Os instaladores existentes não foram regenerados neste incremento. FR-056/M6.6 continua **em andamento** até a aceitação nativa e empacotada; estes checks não encerram acessibilidade nativa, Linux, durabilidade após perda de energia nem os gates globais do plano.
+
+### Adição direta de arquivos — 2026-11-10
+
+O Red do painel teve **14 passagens e 4 falhas** pela ausência do botão. O Red do binding falhou ao compilar pela ausência da porta na composição e das operações de seleção. Após a implementação, o build Windows Release do player e `all_qmllint` passaram. A seleção final passou **4/4 CTest**, com **358 casos Quick**, **17 do binding**, **4 de restart** e **35 do store**. O caso de restart abre um catálogo salvo em outro processo e confere Unicode, ordem, IDs e duplicatas com zero leituras ou alterações da fila. Os logs estão em `out/product/test-runs/playlist-direct-files-20261110/`. A validação automatizada usa um seletor falso e mantém pendentes a interação com o diálogo nativo e o pacote atualizado.

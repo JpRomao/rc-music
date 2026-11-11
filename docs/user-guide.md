@@ -4,7 +4,7 @@ Este guia descreve o aplicativo Windows atual para uso local privado e experimen
 
 ## Playlists
 
-Abra **Playlists** para criar uma lista vazia com **Nova playlist**, ou copie a fila atual com **Salvar fila como…**. Selecione uma lista para ver suas faixas, renomear/excluir ou usar **Adicionar fila atual**; selecione uma faixa para mover ou remover. Excluir uma lista conserva os arquivos de áudio. A alteração aparece depois da confirmação de salvamento; em falha, escolha **Tentar salvar** ou **Recarregar do disco** para conferir o que foi gravado.
+Abra **Playlists** para criar uma lista vazia com **Nova playlist**, ou copie a fila atual com **Salvar fila como…**. Selecione uma lista e use **Adicionar arquivos…** para escolher músicas locais ou **Adicionar fila atual** para copiar a fila. Selecione uma faixa da lista para mover ou remover. Excluir uma lista conserva os arquivos de áudio. A alteração aparece depois da confirmação de salvamento. Em caso de falha, escolha **Tentar salvar** ou **Recarregar do disco** para conferir o que foi gravado.
 
 **Adicionar à fila** acrescenta a playlist ao fim da fila, preservando a música atual e as duplicatas. Escolher a lista não inicia áudio; para tocar, use a fila do player. As playlists ficam salvas independentemente da restauração da sessão e funcionam offline. O [guia de playlists](playlists.md) explica backup, limites e recuperação.
 

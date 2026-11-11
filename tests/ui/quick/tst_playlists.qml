@@ -20,6 +20,7 @@ TestCase {
         property string selectedPlaylistId: "1"
         property var playlists: []
         property var entries: []
+        property bool canAddFiles: true
         property bool canRetrySave: false
         property bool hasPendingChange: false
         property var calls: []
@@ -50,6 +51,9 @@ TestCase {
         }
         function addQueueToPlaylist(id) {
             return record("addQueue", [id]);
+        }
+        function requestAddFiles(id) {
+            return record("addFiles", [id]);
         }
         function removeEntry(id, entry) {
             return record("removeEntry", [id, entry]);
@@ -117,6 +121,7 @@ TestCase {
         backend.ready = true;
         backend.busy = false;
         backend.interactionAllowed = true;
+        backend.canAddFiles = true;
         backend.canRetrySave = false;
         backend.hasPendingChange = false;
         backend.statusText = "Playlists salvas";
@@ -284,10 +289,34 @@ TestCase {
         mouseClick(findChild(shell, "playlist-enqueue"));
         compare(lastCall("enqueue").args[0], "1");
     }
+    function test_addFilesTargetsSelectedEmptyPlaylistWithoutQueueActions() {
+        openPanel();
+        mouseClick(rowAt("playlists-list", 1));
+        compare(lastCall("select").args[0], "2");
+        backend.entries = [];
+        const addFiles = findChild(shell, "playlist-add-files");
+        verify(addFiles && addFiles.visible && addFiles.enabled);
+        compare(addFiles.Accessible.name, "Adicionar arquivos…");
+        addFiles.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Space);
+        compare(lastCall("addFiles").args[0], "2");
+        compare(backend.calls.length, 2);
+    }
+    function test_addFilesRequiresPickerAndSelectedPlaylist() {
+        openPanel();
+        const addFiles = findChild(shell, "playlist-add-files");
+        verify(addFiles && addFiles.enabled);
+        backend.canAddFiles = false;
+        verify(!addFiles.enabled);
+        backend.canAddFiles = true;
+        backend.selectedPlaylistId = "";
+        verify(!addFiles.enabled);
+        compare(backend.calls.length, 0);
+    }
     function test_busyAndUnconfirmedSaveKeepEditsClosedButOfferRecovery() {
         openPanel();
         backend.busy = true;
-        for (const name of ["playlist-create", "playlist-save-queue", "playlist-rename", "playlist-delete", "playlist-add-queue", "playlist-enqueue"])
+        for (const name of ["playlist-create", "playlist-save-queue", "playlist-rename", "playlist-delete", "playlist-add-files", "playlist-add-queue", "playlist-enqueue"])
             verify(!findChild(shell, name).enabled);
         backend.busy = false;
         backend.canRetrySave = true;
@@ -388,7 +417,7 @@ TestCase {
         openPanel();
         const panel = findChild(shell, "playlists-panel");
         verify(panel.width <= shell.width && panel.height <= shell.height);
-        for (const name of ["playlist-create", "playlist-save-queue", "playlist-enqueue", "playlists-close"]) {
+        for (const name of ["playlist-create", "playlist-save-queue", "playlist-add-files", "playlist-enqueue", "playlists-close"]) {
             const item = findChild(shell, name);
             const point = item.mapToItem(panel.contentItem, 0, 0);
             verify(point.x >= 0 && point.y >= 0);

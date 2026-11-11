@@ -1,4 +1,5 @@
 #include "adapters/QtJsonPlaylistStore.hpp"
+#include "m0/ports/AudioFilesPicker.hpp"
 #include "presentation/PlaylistsBinding.hpp"
 
 #include <QCoreApplication>
@@ -21,11 +22,33 @@
 #include <cstdio>
 #include <memory>
 #include <optional>
+#include <utility>
 
 using namespace music_player::m0;
 namespace {
 constexpr qint64 child_timeout_ms = 5'000;
 constexpr qsizetype maximum_child_output_bytes = 64 * 1024;
+
+class RestartFilesPicker final : public AudioFilesPicker {
+  public:
+    bool pick(AudioFilesSelectionCompletion completion) override {
+        if (completion_)
+            return false;
+        completion_ = std::move(completion);
+        return true;
+    }
+    void cancel() noexcept override { completion_ = {}; }
+    bool select(PlaylistsBinding::Paths paths) {
+        auto completion = std::exchange(completion_, {});
+        if (!completion)
+            return false;
+        completion({AudioFilesSelectionStatus::Selected, std::move(paths)});
+        return true;
+    }
+
+  private:
+    AudioFilesSelectionCompletion completion_;
+};
 
 struct ChildResult final {
     bool started{}, finished{}, stopped{};
@@ -118,7 +141,7 @@ std::filesystem::path sourcePath(const QString& text) {
     return std::filesystem::path{std::string(bytes.constData(), static_cast<std::size_t>(bytes.size()))};
 #endif
 }
-PlaylistsBinding::Paths initialQueue(const QString& directory) {
+PlaylistsBinding::Paths fixtureSources(const QString& directory) {
     return {sourcePath(firstAudio(directory)), sourcePath(secondAudio(directory)), sourcePath(firstAudio(directory))};
 }
 bool ownedTemporaryDirectory(const QString& directory) {
@@ -195,15 +218,18 @@ int printReceipt(QJsonObject result, const int reads, const int appends, const b
 int childMode(const QString& mode, const QString& directory) {
     if (!ownedTemporaryDirectory(directory))
         return 2;
+    const bool write_direct = mode == QStringLiteral("--write-direct");
+    const bool write = write_direct || mode == QStringLiteral("--write");
     const auto primary = QDir(directory).filePath(QStringLiteral("playlists.json"));
     const auto backup = QDir(directory).filePath(QStringLiteral("playlists.json.bak"));
-    if (mode == QStringLiteral("--write") && (QFileInfo::exists(primary) || QFileInfo::exists(backup)))
+    if (write && (QFileInfo::exists(primary) || QFileInfo::exists(backup)))
         return 2; // The fixture writer never replaces an existing document.
     QDeadlineTimer deadline(4'000);
     auto store = std::make_shared<QtJsonPlaylistStore>(directory);
-    auto queue = initialQueue(directory);
+    auto queue = write_direct ? PlaylistsBinding::Paths{sourcePath(secondAudio(directory))} : fixtureSources(directory);
     const auto unchanged_queue = queue;
     int reads{}, appends{};
+    RestartFilesPicker picker;
     PlaylistsBinding binding(
         store,
         [&] {
@@ -214,18 +240,30 @@ int childMode(const QString& mode, const QString& directory) {
             ++appends;
             queue.insert(queue.end(), paths.begin(), paths.end());
             return true;
-        });
+        },
+        nullptr, write_direct ? &picker : nullptr);
     if (!loaded(binding, deadline))
         return 3;
     if (reads != 0 || appends != 0 || !binding.selectedPlaylistId().isEmpty())
         return 4;
-    if (mode == QStringLiteral("--write")) {
-        if (!binding.playlists().isEmpty() || !binding.saveQueueAsPlaylist(initialName()) || !saved(binding, deadline))
+    if (write) {
+        if (!binding.playlists().isEmpty())
+            return 5;
+        const bool created =
+            write_direct ? binding.createPlaylist(initialName()) : binding.saveQueueAsPlaylist(initialName());
+        if (!created || !saved(binding, deadline))
             return 5;
         const auto rows = binding.playlists();
-        if (rows.size() != 1 || reads != 1 || appends != 0)
+        if (rows.size() != 1)
             return 5;
         const auto id = rows.first().toMap().value("id").toString();
+        if (write_direct &&
+            (!binding.entries().isEmpty() || !binding.canAddFiles() || !binding.requestAddFiles(id) ||
+             !picker.select(fixtureSources(directory)) ||
+             !await([&] { return binding.entries().size() == 3; }, deadline) || !saved(binding, deadline)))
+            return 5;
+        if (reads != (write_direct ? 0 : 1) || appends != 0)
+            return 5;
         const auto original_entries = binding.entries();
         if (original_entries.size() != 3)
             return 5;
@@ -258,7 +296,13 @@ int childMode(const QString& mode, const QString& directory) {
 class PlaylistsRestartTests final : public QObject {
     Q_OBJECT
   private slots:
+    void namedPlaylistsSurviveTwoProcessesWithoutAutomaticQueueActions_data() {
+        QTest::addColumn<bool>("direct_files");
+        QTest::newRow("from-queue") << false;
+        QTest::newRow("from-file-picker") << true;
+    }
     void namedPlaylistsSurviveTwoProcessesWithoutAutomaticQueueActions() {
+        QFETCH(bool, direct_files);
         QTemporaryDir temporary(QDir::tempPath() + QStringLiteral("/RCMusic playlists restart 日本-XXXXXX"));
         QVERIFY(temporary.isValid());
         const auto directory = temporary.filePath(QStringLiteral("playlists data 日本"));
@@ -272,7 +316,8 @@ class PlaylistsRestartTests final : public QObject {
         QVERIFY(writeFixture(first_audio, "synthetic audio-path sentinel A"));
         QVERIFY(writeFixture(second_audio, "synthetic audio-path sentinel B"));
 
-        const auto written = runChild(QStringLiteral("--write"), directory, write_cwd);
+        const auto write_mode = direct_files ? QStringLiteral("--write-direct") : QStringLiteral("--write");
+        const auto written = runChild(write_mode, directory, write_cwd);
         if (!written.stopped)
             temporary.setAutoRemove(false);
         QVERIFY(written.started);
@@ -283,7 +328,7 @@ class PlaylistsRestartTests final : public QObject {
         QVERIFY(written.error.isEmpty());
         const auto write_receipt = receipt(written.output);
         QVERIFY(write_receipt);
-        QCOMPARE(write_receipt->value("queue_reader_calls").toInt(), 1);
+        QCOMPARE(write_receipt->value("queue_reader_calls").toInt(), direct_files ? 0 : 1);
         QCOMPARE(write_receipt->value("queue_appender_calls").toInt(), 0);
         QCOMPARE(write_receipt->value("queue_unchanged").toBool(), true);
         QCOMPARE(write_receipt->value("drained").toBool(), true);
@@ -345,7 +390,8 @@ int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     const auto arguments = application.arguments();
     if (arguments.size() > 1 &&
-        (arguments[1] == QStringLiteral("--write") || arguments[1] == QStringLiteral("--read"))) {
+        (arguments[1] == QStringLiteral("--write") || arguments[1] == QStringLiteral("--write-direct") ||
+         arguments[1] == QStringLiteral("--read"))) {
         if (arguments.size() != 3 || !QFileInfo(arguments[2]).isAbsolute())
             return 2;
         return childMode(arguments[1], arguments[2]);

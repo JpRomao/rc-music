@@ -22,7 +22,7 @@ O pedido antecipa playlists nomeadas antes da continuidade das integrações rem
 
 ### Operações e reprodução
 
-4. Oferecer criação de lista vazia, renomear, excluir, salvar a fila atual como outra playlist, adicionar a fila a uma lista existente e remover/reordenar entradas por ID. Essas operações não alteram a fila, a seleção nem a reprodução em andamento. Excluir uma playlist remove somente a lista, com confirmação na UI, sem apagar áudios.
+4. Oferecer criação de lista vazia, renomear, excluir, salvar a fila atual como outra playlist, adicionar arquivos locais ou a fila a uma lista existente e remover/reordenar entradas por ID. Essas operações não alteram a fila, a seleção nem a reprodução em andamento. Excluir uma playlist remove somente a lista, com confirmação na UI, sem apagar áudios.
 5. A seleção de uma lista apenas mostra seu conteúdo. **Adicionar à fila** copia suas faixas na ordem salva e usa o ingresso local existente, atribuindo ocorrências próprias da fila. Acrescenta ao fim sem selecionar faixa ou iniciar reprodução. Tocar uma ocorrência continua sendo uma ação explícita do player.
 6. Manter o mesmo catálogo nas edições Lite e Completa, independente da sessão de reprodução e das opções de restauração da fila. Playlists funcionam offline e não iniciam consultas de metadata, letras ou downloads por serem abertas ou editadas.
 
@@ -41,6 +41,7 @@ O pedido antecipa playlists nomeadas antes da continuidade das integrações rem
 14. Aplicar edição pessimista: o binding prepara um catálogo candidato, mas só publica a mudança nas listas após **Saved**. Falha retém o candidato para **Tentar salvar**, sem repetir a edição ou fabricar outro ID. Recarregar abandona o candidato em memória e lê o estado real do disco; isso não é rollback, pois uma gravação sem confirmação pode ter sido efetivada.
 15. Fechar admissão na preparação de saída e aguardar os jobs e a resolução de alteração pendente. A saída cancelada rearma as ações do painel; shutdown definitivo mantém admissão fechada. O teardown não substitui o protocolo de preparação nem transforma falha de salvamento em sucesso.
 16. Projetar IDs como strings na apresentação, renderizar nomes e paths em texto simples e vincular confirmações à identidade escolhida. Mudança da seleção ou do alvo revoga a ação do diálogo, em vez de redirecionar uma exclusão/renomeação. O modal contém foco e suspende atalhos de transporte enquanto recebe entrada de texto.
+17. Usar uma instância dedicada do seletor local assíncrono para adicionar arquivos, ligada à mesma janela do player. A seleção captura o ID da playlist e usa a mutação e a confirmação de gravação existentes. Troca de alvo e preparação de saída invalidam o pedido antes de fechar seu diálogo. A instância dedicada mantém o cancelamento independente do seletor da fila.
 
 ## Alternativas e consequências
 

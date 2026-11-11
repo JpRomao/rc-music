@@ -908,6 +908,8 @@ Checks deste incremento: domínio 20 casos/228 assertions; store 35 e binding 15
 
 O [ADR-0015](architecture/decisions/0015-named-playlists.md) registra domínio/porta puros, JSON v1 separado com backup/lock e um job Qt Concurrent por binding. O candidato só é publicado após Saved; falha conserva a alteração para retry explícito ou recarga do disco, sem prometer rollback. O [guia](playlists.md#evidência-de-implementação) reúne Reds, checks e limites. Permanecem aceitação Windows nativa/NVDA e empacotamento atualizado; M3U8 segue em evolução posterior. Nenhum gate global ou release é aprovado por esse recorte.
 
+O incremento de 2026-11-10 acrescenta **Adicionar arquivos…** à playlist selecionada. O seletor assíncrono preserva a fila e a reprodução e descarta resultados de pedidos invalidados pela troca de alvo ou saída. O [registro de validação](playlists.md#adição-direta-de-arquivos--2026-11-10) cobre o painel, a persistência e o restart em dois processos.
+
 Lidarr e as demais integrações continuam registrados com seus limites e pendências. Os seis arquivos de integração AppContainer em andamento permanecem preservados; não executar novos ensaios físicos ou instalar componentes por consequência desta mudança de prioridade.
 
 ### Checkpoint anterior — integração Lidarr

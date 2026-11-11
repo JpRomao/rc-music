@@ -468,6 +468,13 @@ int main(int argc, char* argv[]) {
             lyrics_service, std::make_shared<music_player::m0::QtJsonLyricsVariantsStore>(lyrics_config_root));
         music_player::m0::QtLidarrService lidarr_service;
         music_player::m0::LidarrBinding lidarr_binding(lidarr_service);
+#ifdef M0_QT_COMBINED_AUDIO
+        music_player::m0::QtAudioFilesPicker playlist_audio_picker(
+            music_player::m0::ApplicationText::playlistAudioDialogTitle(), localAudioDialogFilter());
+        auto* const playlist_picker = &playlist_audio_picker;
+#else
+        music_player::m0::AudioFilesPicker* const playlist_picker = nullptr;
+#endif
         std::unique_ptr<music_player::m0::PlaylistsBinding> playlists_binding;
 #ifdef M0_QT_COMBINED_AUDIO
         auto artwork_cache = std::make_shared<music_player::m0::ArtworkImageCache>();
@@ -741,7 +748,7 @@ int main(int argc, char* argv[]) {
                     paths.push_back(std::move(item.source_path));
                 return paths;
             },
-            [&](auto paths) { return presenter.appendPlaylistSources(std::move(paths)); });
+            [&](auto paths) { return presenter.appendPlaylistSources(std::move(paths)); }, nullptr, playlist_picker);
         static_cast<void>(playlists_binding->retryLoad());
         QObject::connect(&presenter, &PlayerPresenter::lifecycleChanged, playlists_binding.get(), [&] {
             if (presenter.exiting())
@@ -810,6 +817,7 @@ int main(int argc, char* argv[]) {
         presenter.setAudioFileLocator(&file_locator);
         audio_files_picker.bindWindow(*window);
         presenter.setAudioFilesPicker(&audio_files_picker);
+        playlist_audio_picker.bindWindow(*window);
 #endif
 #ifdef Q_OS_WIN
         music_player::m0::WindowsSmtcAdapter system_media_controls;

@@ -283,7 +283,7 @@ Dialog {
                         anchors.centerIn: parent
                         width: parent.width
                         visible: entryList.count === 0
-                        text: qsTr("Selecione uma playlist. Abra músicas no player e adicione a fila atual para organizar suas faixas.")
+                        text: root.selectedPlaylist === null ? qsTr("Selecione uma playlist.") : qsTr("Esta playlist está vazia.")
                         textFormat: Text.PlainText
                         wrapMode: Text.WordWrap
                         horizontalAlignment: Text.AlignHCenter
@@ -324,6 +324,13 @@ Dialog {
         }
         RowLayout {
             Layout.fillWidth: true
+            AccessibleTransportButton {
+                objectName: "playlist-add-files"
+                contract: root.contract
+                text: qsTr("Adicionar arquivos…")
+                enabled: root.canEdit && root.selectedPlaylist !== null && root.playlists.canAddFiles
+                onClicked: root.playlists.requestAddFiles(root.selectedPlaylistId)
+            }
             AccessibleTransportButton {
                 objectName: "playlist-add-queue"
                 contract: root.contract

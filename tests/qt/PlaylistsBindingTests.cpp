@@ -1,3 +1,4 @@
+#include "m0/ports/AudioFilesPicker.hpp"
 #include "m0/ports/PlaylistStore.hpp"
 #include "presentation/PlaylistsBinding.hpp"
 
@@ -10,6 +11,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 
 using namespace music_player::m0;
 namespace {
@@ -42,6 +44,24 @@ class Store final : public PlaylistStore {
         std::lock_guard lock(mutex);
         outcome = next;
     }
+};
+class Picker final : public AudioFilesPicker {
+  public:
+    AudioFilesSelectionCompletion pending;
+    bool accepts{true};
+    int cancellations{};
+
+    bool pick(AudioFilesSelectionCompletion completion) override {
+        if (!accepts || pending)
+            return false;
+        pending = std::move(completion);
+        return true;
+    }
+    void cancel() noexcept override {
+        ++cancellations;
+        pending = {};
+    }
+    AudioFilesSelectionCompletion takeCompletion() { return std::exchange(pending, {}); }
 };
 std::filesystem::path path(const char* name) {
 #ifdef _WIN32
@@ -113,6 +133,94 @@ class PlaylistsBindingTests final : public QObject {
         QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
         QCOMPARE(reads, 0);
         QCOMPARE(binding.playlists().front().toMap().value("count").toInt(), 0);
+    }
+    void selectedFilesAreAppendedOnlyAfterSavedWithoutTouchingPlayback() {
+        auto store = std::make_shared<Store>();
+        Picker picker;
+        int reads{}, appends{};
+        PlaylistsBinding binding(
+            store,
+            [&] {
+                ++reads;
+                return PlaylistsBinding::Paths{path("currently-playing.mp3")};
+            },
+            [&](auto) {
+                ++appends;
+                return true;
+            },
+            nullptr, &picker);
+        load(binding);
+        QVERIFY(!binding.canAddFiles());
+        QVERIFY(binding.createPlaylist("Empty"));
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        const auto id = binding.selectedPlaylistId();
+        QVERIFY(binding.canAddFiles());
+        QVERIFY(binding.requestAddFiles(id));
+        QVERIFY(binding.busy());
+        QVERIFY(binding.interactionAllowed());
+        QVERIFY(!binding.canAddFiles());
+        QVERIFY(!binding.requestAddFiles(id));
+        QVERIFY(!binding.deletePlaylist(id));
+        QVERIFY(!binding.retryLoad());
+
+        store->release = false;
+        const PlaylistsBinding::Paths expected{path("a.mp3"), path("b.flac"), path("a.mp3")};
+        picker.takeCompletion()({AudioFilesSelectionStatus::Selected, expected});
+        QTRY_COMPARE_WITH_TIMEOUT(store->saves.load(), 2, 1000);
+        QVERIFY(binding.entries().isEmpty());
+        store->release = true;
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QCOMPARE(binding.entries().size(), 3);
+        QCOMPARE(binding.selectedPlaylistId(), id);
+        const auto saved = store->load().snapshot.playlists.front().entries;
+        QVERIFY(saved[0].source_path == expected[0]);
+        QVERIFY(saved[1].source_path == expected[1]);
+        QVERIFY(saved[2].source_path == expected[2]);
+        QVERIFY(saved[0].id != saved[2].id);
+        QCOMPARE(reads, 0);
+        QCOMPARE(appends, 0);
+    }
+    void cancellingOrInvalidatingASelectionCannotRetargetIt() {
+        auto store = std::make_shared<Store>();
+        Picker picker;
+        PlaylistsBinding binding(store, {}, {}, nullptr, &picker);
+        load(binding);
+        QVERIFY(binding.createPlaylist("First"));
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        const auto first = binding.selectedPlaylistId();
+        QVERIFY(binding.createPlaylist("Second"));
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        const auto second = binding.selectedPlaylistId();
+        QVERIFY(!binding.requestAddFiles(first));
+
+        QVERIFY(binding.requestAddFiles(second));
+        auto stale = picker.takeCompletion();
+        QVERIFY(binding.selectPlaylist(first));
+        QCOMPARE(picker.cancellations, 1);
+        QVERIFY(binding.requestAddFiles(first));
+        stale({AudioFilesSelectionStatus::Selected, {path("late.mp3")}});
+        QCoreApplication::processEvents();
+        QVERIFY(binding.busy());
+        picker.takeCompletion()({AudioFilesSelectionStatus::Cancelled, {path("ignored.mp3")}});
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+
+        picker.accepts = false;
+        QVERIFY(!binding.requestAddFiles(first));
+        QVERIFY(!binding.busy());
+        QVERIFY(binding.statusText().contains(QStringLiteral("selecionar")));
+        picker.accepts = true;
+        QVERIFY(binding.requestAddFiles(first));
+        auto after_exit = picker.takeCompletion();
+        QVERIFY(!binding.prepareExit());
+        QCOMPARE(picker.cancellations, 2);
+        QVERIFY(binding.prepareExit());
+        binding.resume();
+        after_exit({AudioFilesSelectionStatus::Selected, {path("late.mp3")}});
+        QCoreApplication::processEvents();
+        QCOMPARE(store->saves.load(), 2);
+        QVERIFY(binding.entries().isEmpty());
+        QCOMPARE(binding.selectedPlaylistId(), first);
+        QVERIFY(binding.canAddFiles());
     }
     void savingTheQueueKeepsDuplicatePathsAndStableEntriesUntilExplicitEnqueue() {
         auto store = std::make_shared<Store>();

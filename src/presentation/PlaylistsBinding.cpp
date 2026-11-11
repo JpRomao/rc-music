@@ -1,4 +1,5 @@
 #include "PlaylistsBinding.hpp"
+#include "m0/ports/AudioFilesPicker.hpp"
 #include "m0/ports/PlaylistStore.hpp"
 
 #include <QFutureWatcher>
@@ -35,24 +36,34 @@ struct Job final {
     PlaylistLoadResult loaded{};
     PlaylistSaveStatus saved{PlaylistSaveStatus::Failed};
 };
+struct FileSelection final {
+    std::uint64_t generation;
+    std::uint64_t playlist_id;
+};
 } // namespace
 struct PlaylistsBinding::Impl final {
     PlaylistsBinding& owner;
     std::shared_ptr<PlaylistStore> store;
     QueueReader reader;
     QueueAppender appender;
+    AudioFilesPicker* picker;
     PlaylistLibrary library;
     std::optional<PlaylistLibrary> pending;
     QFutureWatcher<Job> watcher;
     QString notice;
     std::uint64_t selected{}, select_after_save{};
+    std::uint64_t file_selection_generation{};
+    std::optional<FileSelection> file_selection;
     bool busy{}, ready{}, loading{}, exiting{}, stopping{}, callback_active{};
-    Impl(PlaylistsBinding& q, std::shared_ptr<PlaylistStore> source, QueueReader read, QueueAppender append)
-        : owner(q), store(std::move(source)), reader(std::move(read)), appender(std::move(append)) {
+    Impl(PlaylistsBinding& q, std::shared_ptr<PlaylistStore> source, QueueReader read, QueueAppender append,
+         AudioFilesPicker* file_picker)
+        : owner(q), store(std::move(source)), reader(std::move(read)), appender(std::move(append)),
+          picker(file_picker) {
         QObject::connect(&watcher, &QFutureWatcher<Job>::finished, &owner, [this] { finished(); });
     }
     bool allowed() const { return !exiting && !stopping && !callback_active; }
-    bool editable() const { return allowed() && ready && !busy && !pending; }
+    bool catalogEditable() const { return allowed() && ready && !busy && !pending; }
+    bool editable() const { return catalogEditable() && !file_selection; }
     bool invalid() {
         notice = PlaylistsBinding::tr("Confira o nome, a seleção e os limites da playlist.");
         emit owner.changed();
@@ -131,6 +142,27 @@ struct PlaylistsBinding::Impl final {
         select_after_save = next_selection;
         return save();
     }
+    bool isCurrentFileSelection(std::uint64_t generation) const {
+        return file_selection && file_selection->generation == generation;
+    }
+    void finishFileSelection(std::uint64_t generation, AudioFilesSelectionResult result) {
+        if (!isCurrentFileSelection(generation))
+            return;
+        const auto target = file_selection->playlist_id;
+        file_selection.reset();
+        if (result.status == AudioFilesSelectionStatus::Selected) {
+            static_cast<void>(mutate(
+                [&](auto& candidate) { return candidate.append(target, std::move(result.source_paths)); }, target));
+            return;
+        }
+        if (result.status == AudioFilesSelectionStatus::Failed)
+            notice = PlaylistsBinding::tr("Não foi possível selecionar os arquivos. Tente novamente.");
+        emit owner.changed();
+    }
+    void cancelFileSelection() noexcept {
+        if (std::exchange(file_selection, std::nullopt))
+            picker->cancel();
+    }
     std::optional<Paths> readQueue() {
         if (!editable() || !reader)
             return {};
@@ -147,10 +179,11 @@ struct PlaylistsBinding::Impl final {
     }
 };
 PlaylistsBinding::PlaylistsBinding(std::shared_ptr<PlaylistStore> store, QueueReader reader, QueueAppender appender,
-                                   QObject* parent)
-    : QObject(parent), impl_(std::make_unique<Impl>(*this, std::move(store), std::move(reader), std::move(appender))) {}
-PlaylistsBinding::~PlaylistsBinding() = default;
-bool PlaylistsBinding::busy() const { return impl_->busy; }
+                                   QObject* parent, AudioFilesPicker* picker)
+    : QObject(parent),
+      impl_(std::make_unique<Impl>(*this, std::move(store), std::move(reader), std::move(appender), picker)) {}
+PlaylistsBinding::~PlaylistsBinding() { impl_->cancelFileSelection(); }
+bool PlaylistsBinding::busy() const { return impl_->busy || impl_->file_selection.has_value(); }
 bool PlaylistsBinding::ready() const { return impl_->ready; }
 bool PlaylistsBinding::interactionAllowed() const { return impl_->allowed(); }
 QString PlaylistsBinding::statusText() const { return impl_->notice; }
@@ -175,14 +208,20 @@ QVariantList PlaylistsBinding::entries() const {
                                          {"path", pathText(entry.source_path)}});
     return result;
 }
-bool PlaylistsBinding::canRetrySave() const { return impl_->allowed() && impl_->pending && !impl_->busy; }
+bool PlaylistsBinding::canAddFiles() const { return impl_->picker && impl_->selected != 0 && impl_->editable(); }
+bool PlaylistsBinding::canRetrySave() const { return impl_->allowed() && impl_->pending && !busy(); }
 bool PlaylistsBinding::hasPendingChange() const { return impl_->pending.has_value(); }
 bool PlaylistsBinding::selectPlaylist(const QString& value) {
     const auto id = identifier(value);
-    if (!impl_->editable() || !id || !impl_->library.find(*id))
+    if (!impl_->catalogEditable() || !id || !impl_->library.find(*id))
         return false;
+    const bool changed_selection = impl_->selected != *id;
     impl_->selected = *id;
-    emit changed();
+    const QPointer<PlaylistsBinding> alive(this);
+    if (changed_selection)
+        impl_->cancelFileSelection();
+    if (alive)
+        emit changed();
     return true;
 }
 bool PlaylistsBinding::createPlaylist(const QString& name) {
@@ -235,6 +274,38 @@ bool PlaylistsBinding::addQueueToPlaylist(const QString& value) {
     return alive && paths &&
            impl_->mutate([&](auto& candidate) { return candidate.append(*id, std::move(*paths)); }, *id);
 }
+bool PlaylistsBinding::requestAddFiles(const QString& value) {
+    const auto id = identifier(value);
+    if (!id || *id != impl_->selected || !canAddFiles())
+        return false;
+
+    const auto generation = ++impl_->file_selection_generation;
+    impl_->file_selection = FileSelection{generation, *id};
+    const QPointer<PlaylistsBinding> alive(this);
+    bool accepted = false;
+    try {
+        accepted = impl_->picker->pick([alive, generation](AudioFilesSelectionResult result) {
+            if (alive) {
+                QMetaObject::invokeMethod(
+                    alive,
+                    [alive, generation, result = std::move(result)]() mutable {
+                        if (alive)
+                            alive->impl_->finishFileSelection(generation, std::move(result));
+                    },
+                    Qt::QueuedConnection);
+            }
+        });
+    } catch (...) {
+    }
+    if (!alive || !impl_->isCurrentFileSelection(generation))
+        return false;
+    if (!accepted) {
+        impl_->finishFileSelection(generation, {.status = AudioFilesSelectionStatus::Failed});
+        return false;
+    }
+    emit changed();
+    return true;
+}
 bool PlaylistsBinding::removeEntry(const QString& playlist, const QString& entry) {
     const auto id = identifier(playlist), entry_id = identifier(entry);
     return id && entry_id && impl_->mutate([&](auto& candidate) { return candidate.removeEntry(*id, *entry_id); }, *id);
@@ -281,7 +352,7 @@ void PlaylistsBinding::discardPending() {
     static_cast<void>(retryLoad());
 }
 bool PlaylistsBinding::retryLoad() {
-    if (!impl_->allowed() || impl_->busy || impl_->pending || !impl_->store)
+    if (!impl_->allowed() || busy() || impl_->pending || !impl_->store)
         return false;
     const auto retained_store = impl_->store;
     impl_->busy = true;
@@ -303,7 +374,10 @@ bool PlaylistsBinding::retryLoad() {
 bool PlaylistsBinding::prepareExit() {
     if (!impl_->exiting) {
         impl_->exiting = true;
-        emit changed();
+        const QPointer<PlaylistsBinding> alive(this);
+        impl_->cancelFileSelection();
+        if (alive)
+            emit changed();
         return false;
     }
     return !impl_->busy && !impl_->pending;
@@ -316,6 +390,9 @@ void PlaylistsBinding::resume() {
 }
 void PlaylistsBinding::beginShutdown() {
     impl_->stopping = true;
-    emit changed();
+    const QPointer<PlaylistsBinding> alive(this);
+    impl_->cancelFileSelection();
+    if (alive)
+        emit changed();
 }
 } // namespace music_player::m0

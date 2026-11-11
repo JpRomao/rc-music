@@ -10,6 +10,7 @@
 #include <vector>
 
 namespace music_player::m0 {
+class AudioFilesPicker;
 class PlaylistStore;
 class PlaylistsBinding final : public QObject {
     Q_OBJECT
@@ -20,16 +21,17 @@ class PlaylistsBinding final : public QObject {
     Q_PROPERTY(QString selectedPlaylistId READ selectedPlaylistId NOTIFY changed)
     Q_PROPERTY(QVariantList playlists READ playlists NOTIFY changed)
     Q_PROPERTY(QVariantList entries READ entries NOTIFY changed)
+    Q_PROPERTY(bool canAddFiles READ canAddFiles NOTIFY changed)
     Q_PROPERTY(bool canRetrySave READ canRetrySave NOTIFY changed)
     Q_PROPERTY(bool hasPendingChange READ hasPendingChange NOTIFY changed)
   public:
     using Paths = std::vector<std::filesystem::path>;
     using QueueReader = std::function<Paths()>;
     using QueueAppender = std::function<bool(Paths)>;
-    // Passive construction. The caller owns the lifetime of queue callbacks;
-    // the shared store is retained by each isolated file-I/O job.
+    // Passive construction. The caller retains the dedicated picker and queue
+    // callbacks; each file-I/O job retains the shared store.
     PlaylistsBinding(std::shared_ptr<PlaylistStore> store, QueueReader read_queue, QueueAppender append_queue,
-                     QObject* parent = nullptr);
+                     QObject* parent = nullptr, AudioFilesPicker* picker = nullptr);
     ~PlaylistsBinding() override;
     [[nodiscard]] bool busy() const;
     [[nodiscard]] bool ready() const;
@@ -38,6 +40,7 @@ class PlaylistsBinding final : public QObject {
     [[nodiscard]] QString selectedPlaylistId() const;
     [[nodiscard]] QVariantList playlists() const;
     [[nodiscard]] QVariantList entries() const;
+    [[nodiscard]] bool canAddFiles() const;
     [[nodiscard]] bool canRetrySave() const;
     [[nodiscard]] bool hasPendingChange() const;
     Q_INVOKABLE bool selectPlaylist(const QString& id);
@@ -46,6 +49,7 @@ class PlaylistsBinding final : public QObject {
     Q_INVOKABLE bool deletePlaylist(const QString& id);
     Q_INVOKABLE bool saveQueueAsPlaylist(const QString& name);
     Q_INVOKABLE bool addQueueToPlaylist(const QString& id);
+    Q_INVOKABLE bool requestAddFiles(const QString& id);
     Q_INVOKABLE bool removeEntry(const QString& playlist_id, const QString& entry_id);
     Q_INVOKABLE bool moveEntry(const QString& playlist_id, const QString& entry_id, int destination);
     Q_INVOKABLE bool enqueuePlaylist(const QString& id);
