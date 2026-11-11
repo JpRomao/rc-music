@@ -18,6 +18,8 @@ Em cada lista, use **↑** e **↓** para mover o foco. **Home** e **End** vão 
 
 ## Adicionar músicas à fila
 
+Com o painel aberto, o leitor de tela anuncia mudanças de resultado, como a confirmação de ingresso, uma falha de gravação ou a confirmação após tentar salvar novamente. O foco fica no controle em uso. A suíte Qt Quick passou em 27 casos. Logs em `out/product/test-runs/playlist-announcements-20261111/`.
+
 Selecione a lista desejada e clique em **Adicionar à fila**. Suas faixas são acrescentadas ao fim da fila atual, na ordem salva, com novas ocorrências de fila. A ação preserva a seleção e a reprodução correntes; para tocar, escolha explicitamente uma ocorrência no player.
 
 Abrir uma playlist apenas mostra seu conteúdo. Salvar, editar, renomear ou excluir uma lista não inicia áudio, consulta remota ou download. A persistência da lista não depende da opção de restaurar a sessão do player.

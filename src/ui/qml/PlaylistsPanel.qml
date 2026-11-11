@@ -475,6 +475,7 @@ Dialog {
             }
         }
         Text {
+            id: statusLabel
             objectName: "playlists-status"
             Layout.fillWidth: true
             text: root.playlists !== null ? root.playlists.statusText : ""
@@ -483,7 +484,16 @@ Dialog {
             elide: Text.ElideRight
             wrapMode: Text.WordWrap
             color: root.contract.textPrimaryColor
+            Accessible.role: Accessible.StaticText
             Accessible.name: text
+            function announceResult() {
+                if (root.opened && !root.busy && text.length > 0)
+                    statusLabel.Accessible.announce(text, Accessible.Polite);
+            }
+            onTextChanged: {
+                if (root.opened)
+                    Qt.callLater(announceResult);
+            }
         }
         RowLayout {
             Layout.fillWidth: true

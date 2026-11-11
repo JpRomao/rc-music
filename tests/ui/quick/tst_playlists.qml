@@ -330,6 +330,56 @@ TestCase {
         mouseClick(findChild(shell, "playlist-enqueue"));
         compare(lastCall("enqueue").args[0], "1");
     }
+    function test_statusAnnouncesChangedResultsWithoutTakingFocus() {
+        driver.clearAccessibleAnnouncements();
+        openPanel();
+        wait(0);
+        compare(driver.accessibleAnnouncementCount(), 0);
+
+        const enqueue = findChild(shell, "playlist-enqueue");
+        enqueue.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        compare(lastCall("enqueue").args[0], "1");
+        const enqueued = "Faixas adicionadas à fila. Escolha uma faixa para tocar.";
+        backend.statusText = enqueued;
+        tryVerify(() => driver.accessibleAnnouncementCount() === 1);
+        compare(driver.lastAccessibleAnnouncement(), enqueued);
+        compare(driver.lastAccessibleAnnouncementPoliteness(), Accessible.Polite);
+        verify(enqueue.activeFocus);
+
+        backend.statusText = enqueued;
+        backend.busy = true;
+        backend.statusText = "Salvando playlist…";
+        wait(0);
+        compare(driver.accessibleAnnouncementCount(), 1);
+        backend.hasPendingChange = true;
+        backend.statusText = saveFailure;
+        backend.busy = false;
+        tryVerify(() => driver.accessibleAnnouncementCount() === 2);
+        compare(driver.lastAccessibleAnnouncement(), saveFailure);
+
+        const retry = findChild(shell, "playlists-retry-save");
+        retry.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        lastCall("retrySave");
+        backend.busy = true;
+        backend.statusText = "Salvando playlist…";
+        wait(0);
+        compare(driver.accessibleAnnouncementCount(), 2);
+        backend.hasPendingChange = false;
+        backend.statusText = "Playlist salva.";
+        backend.busy = false;
+        tryVerify(() => driver.accessibleAnnouncementCount() === 3);
+        compare(driver.lastAccessibleAnnouncement(), "Playlist salva.");
+
+        keyClick(Qt.Key_Escape);
+        tryCompare(findChild(shell, "playlists-panel"), "visible", false);
+        backend.statusText = "Suas playlists estão prontas.";
+        wait(0);
+        openPanel();
+        wait(0);
+        compare(driver.accessibleAnnouncementCount(), 3);
+    }
     function test_addFilesTargetsSelectedEmptyPlaylistWithoutQueueActions() {
         openPanel();
         mouseClick(rowAt("playlists-list", 1));
