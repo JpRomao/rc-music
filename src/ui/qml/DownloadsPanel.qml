@@ -6,6 +6,11 @@ import MusicPlayer.M0
 Popup {
     id: root
 
+    readonly property bool archiveAvailable: downloads !== null && downloads.canArchiveSettled === true
+    readonly property bool archiveRetryAvailable: downloads !== null && downloads.canRetryArchive === true
+    property var archiveConsentOwner: null
+    property string archiveConsentToken: ""
+    readonly property bool archiveConsentCurrent: archiveAvailable && archiveConsentOwner === downloads && archiveConsentToken.length > 0 && downloads.archiveConsentToken === archiveConsentToken
     property var closeConsentOwner: null
     property string closeConsentWarning: ""
     property var discardConsentOwner: null
@@ -35,8 +40,48 @@ Popup {
 
     signal exitRequested
 
+    function canPromptArchive() {
+        return opened && archiveAvailable && !archiveConfirmation.visible && !discardConfirmation.visible && !importConfirmation.visible && !exitConfirmation.visible && !lyricsDialog.visible;
+    }
+    function requestArchiveConsent() {
+        if (!canPromptArchive())
+            return;
+        const owner = downloads;
+        if (owner.requestArchiveConfirmation() !== true || !owner)
+            return;
+        const token = owner.archiveConsentToken;
+        if (owner !== downloads || !canPromptArchive() || !token) {
+            if (token)
+                owner.cancelArchiveConfirmation(token);
+            return;
+        }
+        archiveConsentOwner = owner;
+        archiveConsentToken = token;
+        archiveConfirmation.open();
+    }
+    function invalidateArchiveConsent() {
+        const owner = archiveConsentOwner;
+        const token = archiveConsentToken;
+        archiveConsentOwner = null;
+        archiveConsentToken = "";
+        if (owner !== null && token.length > 0)
+            owner.cancelArchiveConfirmation(token);
+        if (archiveConfirmation.visible)
+            archiveConfirmation.close();
+    }
+    function confirmArchiveConsent() {
+        if (!opened || !archiveConfirmation.opened || !archiveConsentCurrent)
+            return;
+        const owner = archiveConsentOwner;
+        const token = archiveConsentToken;
+        archiveConsentOwner = null;
+        archiveConsentToken = "";
+        owner.confirmArchive(token);
+        if (archiveConfirmation.visible)
+            archiveConfirmation.close();
+    }
     function requestDiscardConsent(jobId, opener) {
-        if (downloads === null || discardConfirmation.visible || exitConfirmation.visible || importConfirmation.visible || downloads.requestDiscardPartials(jobId) !== true)
+        if (downloads === null || archiveConfirmation.visible || discardConfirmation.visible || exitConfirmation.visible || importConfirmation.visible || downloads.requestDiscardPartials(jobId) !== true)
             return;
         discardConsentOwner = downloads;
         discardConsentJobId = downloads.discardConsentJobId;
@@ -69,7 +114,7 @@ Popup {
         invalidateDiscardConsent();
     }
     function requestRecoveredImportConsent(jobId, opener, row) {
-        if (!opened || downloads === null || importConfirmation.visible || discardConfirmation.visible || exitConfirmation.visible || !row || !row.canImportRecovered || row.validationBusy || !row.validationIdentityCurrent() || row.jobId !== jobId || jobsList.itemAtIndex(row.index) !== row)
+        if (!opened || downloads === null || archiveConfirmation.visible || importConfirmation.visible || discardConfirmation.visible || exitConfirmation.visible || !row || !row.canImportRecovered || row.validationBusy || !row.validationIdentityCurrent() || row.jobId !== jobId || jobsList.itemAtIndex(row.index) !== row)
             return;
         const owner = downloads;
         if (owner.requestRecoveredImport(jobId) !== true)
@@ -161,7 +206,7 @@ Popup {
         open();
     }
     function requestCloseWithoutSave() {
-        if (!closeWithoutSaveAvailable || exitConfirmation.visible || discardConfirmation.visible || importConfirmation.visible)
+        if (!closeWithoutSaveAvailable || archiveConfirmation.visible || exitConfirmation.visible || discardConfirmation.visible || importConfirmation.visible)
             return;
         closeConsentOwner = downloads;
         closeConsentWarning = warning;
@@ -172,7 +217,7 @@ Popup {
         jobsList.positionViewAtIndex(index, ListView.Contain);
     }
     function topControls() {
-        return [closeButton, lyricsButton, retryStartupButton, renewNamespaceButton, retryAdmissionButton, retryFinalSaveButton, closeWithoutSaveButton].filter(function (item) {
+        return [closeButton, lyricsButton, archiveButton, retryStartupButton, renewNamespaceButton, retryAdmissionButton, retryFinalSaveButton, closeWithoutSaveButton].filter(function (item) {
             return item && item.visible && item.enabled;
         });
     }
@@ -270,6 +315,27 @@ Popup {
             textFormat: Text.PlainText
             visible: text.length > 0
             wrapMode: Text.Wrap
+        }
+        AccessibleTransportButton {
+            id: archiveButton
+
+            KeyNavigation.backtab: root.nextTopControl(archiveButton, true)
+            KeyNavigation.tab: root.nextTopControl(archiveButton, false)
+            Layout.fillWidth: true
+            contract: root.contract
+            enabled: visible
+            objectName: "downloads-archive"
+            text: root.archiveRetryAvailable ? labels.retryArchive : labels.archive
+            visible: root.archiveAvailable || root.archiveRetryAvailable
+
+            onClicked: {
+                if (root.archiveRetryAvailable) {
+                    if (root.downloads.retryArchive() === true)
+                        closeButton.forceActiveFocus(Qt.TabFocusReason);
+                } else {
+                    root.requestArchiveConsent();
+                }
+            }
         }
         AccessibleTransportButton {
             id: retryStartupButton
@@ -707,9 +773,17 @@ Popup {
     }
 
     onAboutToHide: {
+        invalidateArchiveConsent();
         invalidateCloseConsent();
         invalidateDiscardConsent();
         invalidateImportConsent();
+    }
+    onArchiveConsentCurrentChanged: {
+        if (!archiveConsentCurrent)
+            Qt.callLater(function () {
+                if (!root.archiveConsentCurrent)
+                    root.invalidateArchiveConsent();
+            });
     }
     onDiscardConsentCurrentChanged: {
         if (!discardConsentCurrent)
@@ -743,6 +817,7 @@ Popup {
         });
     }
     onDownloadsChanged: {
+        invalidateArchiveConsent();
         invalidateCloseConsent();
         invalidateDiscardConsent();
         invalidateImportConsent();
@@ -759,6 +834,93 @@ Popup {
         id: lyricsDialog
         contract: root.contract
         backend: root.lyricsBackend
+    }
+    Popup {
+        id: archiveConfirmation
+
+        closePolicy: Popup.CloseOnEscape
+        dim: false
+        focus: true
+        height: archiveContent.implicitHeight + padding * 2
+        modal: true
+        objectName: "downloads-archive-confirmation"
+        padding: root.contract.spacingUnit * 3
+        parent: root.parent
+        popupType: Popup.Item
+        width: Math.min(root.width, 560)
+        x: root.x + (root.width - width) / 2
+        y: root.y + (root.height - height) / 2
+
+        background: Rectangle {
+            border.color: root.contract.borderColor
+            border.width: root.contract.highContrast ? 2 : 1
+            color: root.contract.surfaceRaisedColor
+            radius: root.contract.radiusMedium
+        }
+        contentItem: ColumnLayout {
+            id: archiveContent
+
+            Accessible.name: labels.archive
+            Accessible.role: Accessible.Dialog
+            spacing: root.contract.spacingUnit * 3
+
+            Text {
+                Layout.fillWidth: true
+                color: root.contract.textPrimaryColor
+                font.bold: true
+                text: labels.archive
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+            }
+            Text {
+                Layout.fillWidth: true
+                color: root.contract.textPrimaryColor
+                text: labels.archiveAdvice
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+            }
+            RowLayout {
+                Layout.fillWidth: true
+
+                AccessibleTransportButton {
+                    id: cancelArchiveButton
+
+                    KeyNavigation.backtab: confirmArchiveButton
+                    KeyNavigation.tab: confirmArchiveButton
+                    contract: root.contract
+                    objectName: "downloads-cancel-archive"
+                    text: labels.cancel
+
+                    onClicked: root.invalidateArchiveConsent()
+                }
+                Item {
+                    Layout.fillWidth: true
+                }
+                AccessibleTransportButton {
+                    id: confirmArchiveButton
+
+                    KeyNavigation.backtab: cancelArchiveButton
+                    KeyNavigation.tab: cancelArchiveButton
+                    contract: root.contract
+                    enabled: root.archiveConsentCurrent
+                    objectName: "downloads-confirm-archive"
+                    text: labels.confirmArchive
+
+                    onClicked: root.confirmArchiveConsent()
+                }
+            }
+        }
+
+        onClosed: {
+            root.invalidateArchiveConsent();
+            Qt.callLater(function () {
+                if (!root.opened || archiveConfirmation.visible)
+                    return;
+                const target = archiveButton.visible && archiveButton.enabled ? archiveButton : closeButton;
+                target.forceActiveFocus(Qt.TabFocusReason);
+            });
+        }
+        onOpened: cancelArchiveButton.forceActiveFocus(Qt.TabFocusReason)
     }
     Popup {
         id: importConfirmation

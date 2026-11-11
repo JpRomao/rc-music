@@ -142,6 +142,7 @@ class DownloadCheckpointJsonTests final : public QObject {
         QCOMPARE(DownloadCheckpointJson::encode(expected), first);
         const auto object = QJsonDocument::fromJson(first).object();
         QCOMPARE(keys(object), (QSet<QString>{u"schemaVersion"_s, u"owner"_s, u"receipts"_s, u"jobs"_s}));
+        QCOMPARE(object.value(u"schemaVersion"_s), QJsonValue{1});
         QCOMPARE(object.value(u"owner"_s).toString(), u"rc-music-download-checkpoint"_s);
         const auto job = object.value(u"jobs"_s).toArray().at(1).toObject();
         QCOMPARE(job.value(u"completedUnits"_s), QJsonValue{u"18446744073709551615"_s});
@@ -169,6 +170,37 @@ class DownloadCheckpointJsonTests final : public QObject {
         const auto decoded = DownloadCheckpointJson::decode(encoded);
         QCOMPARE(decoded.status, DownloadCheckpointJsonStatus::Valid);
         QCOMPARE(decoded.checkpoint, std::optional<DownloadCheckpoint>{empty});
+    }
+
+    void versionTwoRoundTripsArchiveWithClosedReceiptShape() {
+        auto root = validObject();
+        root.insert(u"schemaVersion"_s, 2);
+        const QJsonObject archive{{u"requestId"_s, u"12345678-1234-4234-8234-123456789abd"_s},
+                                  {u"fingerprint"_s, QString{64, QChar{'b'}}},
+                                  {u"jobIds"_s, QJsonArray{u"archive-a"_s, u"archive-b"_s}}};
+        root.insert(u"archivedReceipts"_s, QJsonArray{archive});
+        const auto decoded = DownloadCheckpointJson::decode(bytes(root));
+        QCOMPARE(decoded.status, DownloadCheckpointJsonStatus::Valid);
+        QVERIFY(decoded.checkpoint);
+        const std::vector<DownloadArchivedRequest> expected{
+            {"12345678-1234-4234-8234-123456789abd", std::string(64, 'b'), {"archive-a", "archive-b"}}};
+        QCOMPARE(decoded.checkpoint->archived_receipts, expected);
+        QCOMPARE(DownloadCheckpointJson::encode(*decoded.checkpoint), bytes(root));
+
+        auto wrong_version = root;
+        wrong_version.insert(u"schemaVersion"_s, 1);
+        QCOMPARE(DownloadCheckpointJson::decode(bytes(wrong_version)).status, DownloadCheckpointJsonStatus::Invalid);
+
+        auto missing_archive = root;
+        missing_archive.remove(u"archivedReceipts"_s);
+        QCOMPARE(DownloadCheckpointJson::decode(bytes(missing_archive)).status, DownloadCheckpointJsonStatus::Invalid);
+
+        for (const auto& field : {u"retainedRequestBytes"_s, u"sourceUrl"_s, u"completedMp3"_s}) {
+            auto with_extra = archive;
+            with_extra.insert(field, u"private"_s);
+            root.insert(u"archivedReceipts"_s, QJsonArray{with_extra});
+            QCOMPARE(DownloadCheckpointJson::decode(bytes(root)).status, DownloadCheckpointJsonStatus::Invalid);
+        }
     }
 
     void importingStateIsClosedRoundTripsAndRejectsMissingFinalEvidence() {
@@ -251,14 +283,14 @@ class DownloadCheckpointJsonTests final : public QObject {
         }
     }
 
-    void futureSchemaIsDistinguishedBeforeVersionOneFields_data() {
+    void futureSchemaIsDistinguishedBeforeKnownVersionFields_data() {
         QTest::addColumn<QByteArray>("json");
-        QTest::newRow("version-only") << QByteArray{R"({"schemaVersion":2})"};
+        QTest::newRow("version-only") << QByteArray{R"({"schemaVersion":3})"};
         QTest::newRow("foreign-fields") << QByteArray{R"({"schemaVersion":99,"jobs":false,"owner":7})"};
         QTest::newRow("large-future") << QByteArray{R"({"schemaVersion":2147483648})"};
     }
 
-    void futureSchemaIsDistinguishedBeforeVersionOneFields() {
+    void futureSchemaIsDistinguishedBeforeKnownVersionFields() {
         QFETCH(QByteArray, json);
         const auto decoded = DownloadCheckpointJson::decode(json);
         QCOMPARE(decoded.status, DownloadCheckpointJsonStatus::FutureVersion);
@@ -408,7 +440,7 @@ class DownloadCheckpointJsonTests final : public QObject {
 
     void depthBoundaryCountsContainersNotScalarValues() {
         const auto nested = [](const qsizetype arrays, const QByteArray& scalar) {
-            return QByteArray{"{\"schemaVersion\":2,\"x\":"} + QByteArray(arrays, '[') + scalar +
+            return QByteArray{"{\"schemaVersion\":3,\"x\":"} + QByteArray(arrays, '[') + scalar +
                    QByteArray(arrays, ']') + QByteArray{"}"};
         };
         // The root object counts as one container; scalar values do not count.

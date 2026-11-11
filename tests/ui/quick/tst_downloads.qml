@@ -165,6 +165,82 @@ TestCase {
         compare(capacity.text, "");
         verify(!capacity.visible, "Backends without capacity support must keep the existing panel usable");
     }
+    function test_archiveConfirmationStartsOnlyFromCurrentConsent() {
+        const panel = openDownloads();
+        const action = findChild(shell, "downloads-archive");
+        verify(action, "Downloads must expose the conditional archive action");
+        verify(!action.visible);
+        downloads.canArchiveSettled = true;
+        verifyTarget(action);
+        keyClick(Qt.Key_Tab);
+        tryVerify(function () {
+            return action.activeFocus;
+        });
+        keyClick(Qt.Key_Return);
+        const confirmation = findChild(shell, "downloads-archive-confirmation");
+        const cancel = findChild(shell, "downloads-cancel-archive");
+        const confirm = findChild(shell, "downloads-confirm-archive");
+        tryVerify(function () {
+            return confirmation.opened && cancel.activeFocus;
+        });
+        compare(downloads.archives, 0);
+        verify(visibleText(confirmation.contentItem).includes("fila"));
+        verify(visibleText(confirmation.contentItem).includes("MP3"));
+        verifyTarget(cancel);
+        verifyTarget(confirm);
+        verify(panel.width <= 672 && panel.height <= 472);
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !confirmation.visible && action.activeFocus;
+        });
+        compare(downloads.archiveConsentToken, "");
+        keyClick(Qt.Key_Return);
+        tryVerify(function () {
+            return confirmation.opened;
+        });
+        downloads.archiveConsentToken = "";
+        tryVerify(function () {
+            return !confirmation.visible;
+        });
+        compare(downloads.archives, 0);
+        mouseClick(action);
+        tryVerify(function () {
+            return confirmation.opened;
+        });
+        mouseClick(confirm);
+        compare(downloads.archives, 1);
+        tryVerify(function () {
+            return !confirmation.visible && !action.visible;
+        });
+    }
+    function test_archiveSaveRetryUsesTheArchiveAction() {
+        downloads.canRetryArchive = true;
+        openDownloads();
+        const action = findChild(shell, "downloads-archive");
+        verifyTarget(action);
+        verify(action.visible && action.enabled);
+        verify(action.text.includes("novamente"));
+        mouseClick(action);
+        compare(downloads.archiveRetries, 1);
+        compare(downloads.archives, 0);
+        compare(downloads.finalSaveRetries, 0);
+        compare(downloads.admissionRetries, 0);
+        verify(!findChild(shell, "downloads-archive-confirmation").visible);
+    }
+    function test_archiveConfirmationDoesNotOpenAfterSynchronousPanelClose() {
+        downloads.canArchiveSettled = true;
+        const panel = openDownloads();
+        downloads.onArchiveRequest = function () {
+            panel.close();
+        };
+        mouseClick(findChild(shell, "downloads-archive"));
+        tryVerify(function () {
+            return !panel.visible;
+        });
+        verify(!findChild(shell, "downloads-archive-confirmation").visible);
+        compare(downloads.archiveConsentToken, "");
+        compare(downloads.archives, 0);
+    }
     function test_finalSaveFailureRequiresExplicitSeparateConfirmation() {
         downloads.warningText = "Não foi possível salvar o histórico de downloads.";
         downloads.canCloseAfterFinalSaveFailure = true;
@@ -1095,8 +1171,15 @@ TestCase {
         QtObject {
             property bool acceptHistoryAbandonment: true
             property int admissionRetries: 0
+            property string archiveConsentToken: ""
+            property int archiveRequests: 0
+            property int archiveRetries: 0
+            property int archives: 0
+            property var onArchiveRequest: null
+            property bool canArchiveSettled: false
             property bool canCloseAfterFinalSaveFailure: false
             property bool canRetryAdmission: false
+            property bool canRetryArchive: false
             property bool canRetryFinalSave: false
             property bool canRetryStartup: false
             property bool canRenewNamespace: false
@@ -1131,6 +1214,29 @@ TestCase {
             }
             function retryAdmission() {
                 ++admissionRetries;
+            }
+            function requestArchiveConfirmation() {
+                archiveConsentToken = "archive-" + ++archiveRequests;
+                if (onArchiveRequest)
+                    onArchiveRequest();
+                return true;
+            }
+            function cancelArchiveConfirmation(token) {
+                if (archiveConsentToken === token)
+                    archiveConsentToken = "";
+            }
+            function confirmArchive(token) {
+                if (!canArchiveSettled || archiveConsentToken !== token)
+                    return false;
+                ++archives;
+                archiveConsentToken = "";
+                canArchiveSettled = false;
+                return true;
+            }
+            function retryArchive() {
+                ++archiveRetries;
+                canRetryArchive = false;
+                return true;
             }
             function retryFinalSave() {
                 ++finalSaveRetries;

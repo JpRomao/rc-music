@@ -103,6 +103,75 @@ TEST_CASE("Download checkpoint captures bounded receipts without source URLs", "
     REQUIRE(h.service.checkpoint() == checkpoint);
 }
 
+TEST_CASE("Archived download receipts retain unique request and job identities", "[download][checkpoint][archive]") {
+    auto checkpoint = saved();
+    checkpoint.archived_receipts.push_back({input(2).request_id, std::string(64, 'b'), {"archived-1", "archived-2"}});
+    REQUIRE(validDownloadCheckpoint(checkpoint));
+    auto& archive = checkpoint.archived_receipts.front();
+    SECTION("live request ID reused") { archive.request_id = checkpoint.receipts.front().request_id; }
+    SECTION("live job ID reused") { archive.job_ids.front() = checkpoint.jobs.front().job_id; }
+    SECTION("archived job ID repeated") { archive.job_ids.back() = archive.job_ids.front(); }
+    SECTION("malformed job ID") { archive.job_ids.front() = "archive/path"; }
+    SECTION("malformed request ID") { archive.request_id = "not-a-uuid"; }
+    SECTION("malformed fingerprint") { archive.fingerprint = std::string(64, 'B'); }
+    SECTION("empty group") { archive.job_ids.clear(); }
+    SECTION("oversized group") {
+        for (unsigned int index = 2; index <= 20; ++index)
+            archive.job_ids.push_back("extra-" + std::to_string(index));
+    }
+    SECTION("request ID repeated across archived groups") {
+        checkpoint.archived_receipts.push_back({archive.request_id, std::string(64, 'c'), {"other-1"}});
+    }
+    SECTION("job ID repeated across archived groups") {
+        checkpoint.archived_receipts.push_back({input(3).request_id, std::string(64, 'c'), {archive.job_ids.front()}});
+    }
+    REQUIRE_FALSE(validDownloadCheckpoint(checkpoint));
+}
+
+TEST_CASE("Archived download receipt count is bounded independently of live groups",
+          "[download][checkpoint][archive]") {
+    auto checkpoint = saved();
+    for (unsigned int index = 0; index < download_checkpoint_max_archived_receipts; ++index) {
+        checkpoint.archived_receipts.push_back(
+            {input(index + 2).request_id, std::string(64, 'a'), {"archived-" + std::to_string(index)}});
+    }
+    REQUIRE(validDownloadCheckpoint(checkpoint));
+    checkpoint.archived_receipts.push_back({input(1000).request_id, std::string(64, 'a'), {"overflow"}});
+    REQUIRE_FALSE(validDownloadCheckpoint(checkpoint));
+}
+
+TEST_CASE("Archived receipt identities share the checkpoint byte budget with live rows",
+          "[download][checkpoint][archive]") {
+    DownloadCheckpoint checkpoint;
+    const auto path =
+        (candidate().parent_path() / (std::string(20'000 / sizeof(std::filesystem::path::value_type), 'x') + ".mp3"))
+            .lexically_normal();
+    for (unsigned int group = 0; group < 2; ++group) {
+        auto& live = checkpoint.receipts.emplace_back(input(group + 1).request_id, std::string(64, 'a'));
+        for (unsigned int index = 0; index < 20; ++index) {
+            const auto id = "live-" + std::to_string(group * 20 + index);
+            live.job_ids.push_back(id);
+            checkpoint.jobs.push_back(
+                {.job_id = id, .title = "Audio", .state = DownloadJobState::Completed, .completed_mp3 = path});
+        }
+        live.retained_request_bytes = 36 + live.job_ids.size() * 6;
+    }
+    REQUIRE(validDownloadCheckpoint(checkpoint));
+
+    DownloadCheckpoint archive;
+    for (unsigned int group = 0; group < 200; ++group) {
+        auto& receipt = archive.archived_receipts.emplace_back(input(group + 3).request_id, std::string(64, 'b'));
+        for (unsigned int index = 0; index < 20; ++index) {
+            auto id = "archived-" + std::to_string(group) + "-" + std::to_string(index) + "-";
+            id.resize(64, 'x');
+            receipt.job_ids.push_back(std::move(id));
+        }
+    }
+    REQUIRE(validDownloadCheckpoint(archive));
+    checkpoint.archived_receipts = std::move(archive.archived_receipts);
+    REQUIRE_FALSE(validDownloadCheckpoint(checkpoint));
+}
+
 TEST_CASE("Download checkpoint identity is optional for legacy in-memory ownership", "[download][checkpoint]") {
     Execution execution;
     Import importer;

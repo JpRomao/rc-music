@@ -55,12 +55,15 @@ class DownloadApplicationBinding final : public QObject {
     Q_PROPERTY(bool canRetryStartup READ canRetryStartup NOTIFY stateChanged)
     Q_PROPERTY(bool canRenewNamespace READ canRenewNamespace NOTIFY stateChanged)
     Q_PROPERTY(bool canRetryAdmission READ canRetryAdmission NOTIFY stateChanged)
+    Q_PROPERTY(bool canArchiveSettled READ canArchiveSettled NOTIFY stateChanged)
+    Q_PROPERTY(bool canRetryArchive READ canRetryArchive NOTIFY stateChanged)
     Q_PROPERTY(bool canRetryFinalSave READ canRetryFinalSave NOTIFY stateChanged)
     Q_PROPERTY(bool canCloseAfterFinalSaveFailure READ canCloseAfterFinalSaveFailure NOTIFY stateChanged)
     Q_PROPERTY(QString discardConsentJobId READ discardConsentJobId NOTIFY discardConsentChanged)
     Q_PROPERTY(QString discardConsentToken READ discardConsentToken NOTIFY discardConsentChanged)
     Q_PROPERTY(QString importConsentJobId READ importConsentJobId NOTIFY importConsentChanged)
     Q_PROPERTY(QString importConsentToken READ importConsentToken NOTIFY importConsentChanged)
+    Q_PROPERTY(QString archiveConsentToken READ archiveConsentToken NOTIFY archiveConsentChanged)
 
   public:
     DownloadApplicationBinding(PlayerPresenter& presenter, DownloadAdmissionController& controller,
@@ -77,12 +80,15 @@ class DownloadApplicationBinding final : public QObject {
     [[nodiscard]] bool canRetryStartup() const;
     [[nodiscard]] bool canRenewNamespace() const;
     [[nodiscard]] bool canRetryAdmission() const;
+    [[nodiscard]] bool canArchiveSettled() const;
+    [[nodiscard]] bool canRetryArchive() const;
     [[nodiscard]] bool canRetryFinalSave() const;
     [[nodiscard]] bool canCloseAfterFinalSaveFailure() const;
     [[nodiscard]] QString discardConsentJobId() const;
     [[nodiscard]] QString discardConsentToken() const;
     [[nodiscard]] QString importConsentJobId() const;
     [[nodiscard]] QString importConsentToken() const;
+    [[nodiscard]] QString archiveConsentToken() const;
     // Trusted composition only, not exposed to QML. poll is deterministic when
     // automatic_polling is false. Neither method admits remote requests.
     [[nodiscard]] bool start();
@@ -90,6 +96,10 @@ class DownloadApplicationBinding final : public QObject {
     Q_INVOKABLE bool retryStartup();
     Q_INVOKABLE bool renewNamespace();
     Q_INVOKABLE bool retryAdmission();
+    Q_INVOKABLE bool requestArchiveConfirmation();
+    Q_INVOKABLE bool confirmArchive(const QString& token);
+    Q_INVOKABLE void cancelArchiveConfirmation(const QString& token);
+    Q_INVOKABLE bool retryArchive();
     Q_INVOKABLE bool retryFinalSave();
     Q_INVOKABLE bool closeAfterFinalSaveFailure();
     // Read-only assessment by exact Interrupted job ID. A typed read failure
@@ -109,6 +119,7 @@ class DownloadApplicationBinding final : public QObject {
     void stateChanged();
     void discardConsentChanged();
     void importConsentChanged();
+    void archiveConsentChanged();
 
   private:
     [[nodiscard]] bool requestClosure();
@@ -125,6 +136,8 @@ class DownloadApplicationBinding final : public QObject {
     [[nodiscard]] bool canValidateForJob(const QString& job_id) const;
     void invalidateDiscardConsent();
     [[nodiscard]] bool canDiscardForJob(const QString& job_id) const;
+    [[nodiscard]] bool archiveActionsAllowed() const;
+    void invalidateArchiveConsent();
     [[nodiscard]] bool startReviewAction(const QString& job_id, DownloadRecoveryReviewAction action);
     [[nodiscard]] ExitPreparationState pollExitPreparation();
     void refreshProjection();

@@ -1,6 +1,9 @@
 import QtQuick
 
 QtObject {
+    readonly property string archive: qsTr("Arquivar pedidos encerrados")
+    readonly property string archiveAdvice: qsTr("Os pedidos encerrados disponíveis para arquivamento sairão do histórico após salvar. Os MP3, as letras salvas e a fila de reprodução serão preservados. O mesmo pedido continua registrado para evitar downloads duplicados.")
+    readonly property string confirmArchive: qsTr("Arquivar")
     readonly property string cancel: qsTr("Cancelar")
     readonly property string close: qsTr("Fechar downloads")
     readonly property string closeWithoutSave: qsTr("Sair sem salvar o histórico")
@@ -20,6 +23,7 @@ QtObject {
     readonly property string importRecovered: qsTr("Adicionar à fila")
     readonly property string importRecoveredAdvice: qsTr("Adicionar este áudio validado à fila? A inclusão aguardará a confirmação de gravação e não iniciará a reprodução. O arquivo será preservado.")
     readonly property string retryAdmission: qsTr("Tentar salvar o pedido novamente")
+    readonly property string retryArchive: qsTr("Tentar salvar o arquivamento novamente")
     readonly property string retryFinalSave: qsTr("Tentar salvar o histórico novamente")
     readonly property string retryImport: qsTr("Tentar importar novamente")
     readonly property string retryStartup: qsTr("Tentar carregar o histórico novamente")

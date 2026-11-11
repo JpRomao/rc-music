@@ -51,7 +51,7 @@ struct PublishedYoutubeAudio final {
 // Single application-thread owner shared by all browser connections. Admission inputs must
 // pass the common remote-source policy at the adapter boundary (NativeDownloadCodec today).
 // This service also bounds typed inputs, owns them and never calls execution from submit.
-// Receipts are retained without eviction for this service lifetime; persistence is separate.
+// Receipt identities are retained without eviction, including after explicit archival.
 // Dependencies are borrowed: composition must shutdown/drain before destroying them. The
 // destructor does not invoke ports or promise worker termination; stopped() observes
 // execution and pending handoff statuses, not separate session/autosave worker teardown.
@@ -72,6 +72,11 @@ class DownloadService final : public DownloadSubmission {
     // Current ledger usage, including terminal history, and configured limits.
     // A pure observation: no I/O or dependency callbacks, and no quota release.
     [[nodiscard]] DownloadServiceCapacity capacity() const noexcept;
+    // Trusted durable owner only. Stage a complete replacement while keeping the
+    // current history visible. Only matching Saved evidence permits confirmation.
+    [[nodiscard]] bool canArchiveSettled() const;
+    [[nodiscard]] std::optional<DownloadCheckpoint> stageSettledArchive();
+    [[nodiscard]] bool confirmSettledArchive() noexcept;
     // Live, matching publication acknowledgement plus original typed source
     // only. Historical candidate paths/receipts never authorize a new lookup.
     [[nodiscard]] std::optional<PublishedYoutubeAudio> publishedYoutubeAudio(std::string_view job_id) const;

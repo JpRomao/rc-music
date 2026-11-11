@@ -90,6 +90,10 @@ struct DownloadApplicationBinding::Impl {
         QString token;
         std::uint64_t validation_id;
     };
+    struct ArchiveConsent final {
+        QString token;
+        std::vector<DownloadJobSnapshot> jobs;
+    };
     struct Projection final {
         QString status;
         QString warning;
@@ -97,6 +101,8 @@ struct DownloadApplicationBinding::Impl {
         bool retry_startup{false};
         bool renew_namespace{false};
         bool retry_admission{false};
+        bool archive_settled{false};
+        bool retry_archive{false};
         bool retry_final{false};
         bool close_failed{false};
         bool operator==(const Projection&) const = default;
@@ -129,6 +135,7 @@ struct DownloadApplicationBinding::Impl {
     std::uint64_t consent_revision{0};
     std::optional<DiscardConsent> discard_consent{};
     std::optional<ImportConsent> import_consent{};
+    std::optional<ArchiveConsent> archive_consent{};
     bool discard_uncertain{false};
     std::uint64_t validation_operation_id{0};
     std::optional<ValidationOperation> validation_operation{};
@@ -533,6 +540,8 @@ QString DownloadApplicationBinding::historyCapacityText() const { return impl_->
 bool DownloadApplicationBinding::canRetryStartup() const { return impl_->projection.retry_startup; }
 bool DownloadApplicationBinding::canRenewNamespace() const { return impl_->projection.renew_namespace; }
 bool DownloadApplicationBinding::canRetryAdmission() const { return impl_->projection.retry_admission; }
+bool DownloadApplicationBinding::canArchiveSettled() const { return impl_->projection.archive_settled; }
+bool DownloadApplicationBinding::canRetryArchive() const { return impl_->projection.retry_archive; }
 bool DownloadApplicationBinding::canRetryFinalSave() const { return impl_->projection.retry_final; }
 bool DownloadApplicationBinding::canCloseAfterFinalSaveFailure() const { return impl_->projection.close_failed; }
 QString DownloadApplicationBinding::discardConsentJobId() const {
@@ -825,6 +834,9 @@ void DownloadApplicationBinding::beginShutdown() {
     invalidateImportConsent();
     if (!guard)
         return;
+    invalidateArchiveConsent();
+    if (!guard)
+        return;
     // The controller explicitly accepts a nested shutdown intent. Publish it
     // even during our poll so its same-tick successor start predicate closes.
     impl_->controller.shutdown();
@@ -1063,6 +1075,61 @@ bool DownloadApplicationBinding::renewNamespace() {
 bool DownloadApplicationBinding::retryAdmission() {
     return performControl([this] { return !impl_->closing && impl_->controller.retryAdmission(); });
 }
+bool DownloadApplicationBinding::archiveActionsAllowed() const {
+    return impl_->gate_attached && !impl_->closing && !impl_->poll_failed && !impl_->review_operation &&
+           !impl_->validation_operation && !impl_->discard_consent && !impl_->import_consent;
+}
+QString DownloadApplicationBinding::archiveConsentToken() const {
+    return impl_->archive_consent ? impl_->archive_consent->token : QString{};
+}
+void DownloadApplicationBinding::invalidateArchiveConsent() {
+    if (!impl_->archive_consent)
+        return;
+    impl_->archive_consent.reset();
+    emit archiveConsentChanged();
+}
+bool DownloadApplicationBinding::requestArchiveConfirmation() {
+    return performControl([this] {
+        if (!archiveActionsAllowed() || impl_->archive_consent || !impl_->controller.canArchiveSettled() ||
+            impl_->consent_revision == std::numeric_limits<std::uint64_t>::max())
+            return false;
+        impl_->archive_consent =
+            Impl::ArchiveConsent{QString::number(++impl_->consent_revision), impl_->download_service.snapshot()};
+        const QPointer<DownloadApplicationBinding> guard{this};
+        emit archiveConsentChanged();
+        return guard && !impl_->closing && impl_->archive_consent.has_value();
+    });
+}
+bool DownloadApplicationBinding::confirmArchive(const QString& token) {
+    return performControl([this, &token] {
+        if (!impl_->archive_consent || impl_->archive_consent->token != token)
+            return false;
+        if (!archiveActionsAllowed() || !impl_->controller.canArchiveSettled() ||
+            impl_->archive_consent->jobs != impl_->download_service.snapshot()) {
+            invalidateArchiveConsent();
+            return false;
+        }
+        // Consume consent before offering the save. Announce it after the
+        // offer so synchronous observers cannot replace the reviewed plan.
+        impl_->archive_consent.reset();
+        const QPointer<DownloadApplicationBinding> guard{this};
+        const bool accepted = impl_->controller.archiveSettled();
+        if (guard)
+            emit archiveConsentChanged();
+        return guard && accepted;
+    });
+}
+void DownloadApplicationBinding::cancelArchiveConfirmation(const QString& token) {
+    static_cast<void>(performControl([this, &token] {
+        if (!impl_->archive_consent || impl_->archive_consent->token != token)
+            return false;
+        invalidateArchiveConsent();
+        return true;
+    }));
+}
+bool DownloadApplicationBinding::retryArchive() {
+    return performControl([this] { return archiveActionsAllowed() && impl_->controller.retryArchive(); });
+}
 bool DownloadApplicationBinding::retryFinalSave() {
     return performControl([this] { return impl_->closing && impl_->controller.retryFinalSave(); });
 }
@@ -1089,6 +1156,8 @@ void DownloadApplicationBinding::refreshProjection() {
         next.retry_startup = false;
         next.renew_namespace = false;
         next.retry_admission = false;
+        next.archive_settled = false;
+        next.retry_archive = false;
         next.retry_final = false;
         next.close_failed = false;
         if (next != impl_->projection) {
@@ -1155,6 +1224,11 @@ void DownloadApplicationBinding::refreshProjection() {
         invalidateDiscardConsent();
     if (!guard)
         return;
+    if (impl_->archive_consent && (!archiveActionsAllowed() || !impl_->controller.canArchiveSettled() ||
+                                   impl_->archive_consent->jobs != impl_->download_service.snapshot()))
+        invalidateArchiveConsent();
+    if (!guard)
+        return;
     Impl::Projection next;
     const auto state = impl_->controller.state();
     const auto startup_action = impl_->controller.startupRecoveryAction();
@@ -1174,6 +1248,14 @@ void DownloadApplicationBinding::refreshProjection() {
     case DownloadAdmissionControllerState::AdmissionFailed:
         next.status = tr("A solicitação ainda não foi confirmada");
         next.warning = tr("A gravação da solicitação falhou. O download não será iniciado sem confirmação.");
+        break;
+    case DownloadAdmissionControllerState::ArchivePending:
+        next.status = tr("Salvando o arquivamento de pedidos encerrados");
+        break;
+    case DownloadAdmissionControllerState::ArchiveFailed:
+        next.status = tr("O arquivamento ainda não foi confirmado");
+        next.warning =
+            tr("Não foi possível confirmar o salvamento do arquivamento. O histórico exibido foi preservado.");
         break;
     case DownloadAdmissionControllerState::Blocked:
         next.status = tr("Downloads bloqueados para preservar o histórico");
@@ -1230,7 +1312,9 @@ void DownloadApplicationBinding::refreshProjection() {
     next.capacity = impl_->projection.capacity;
     if (state == DownloadAdmissionControllerState::Ready ||
         state == DownloadAdmissionControllerState::AdmissionPending ||
-        state == DownloadAdmissionControllerState::AdmissionFailed) {
+        state == DownloadAdmissionControllerState::AdmissionFailed ||
+        state == DownloadAdmissionControllerState::ArchivePending ||
+        state == DownloadAdmissionControllerState::ArchiveFailed) {
         const auto capacity = impl_->download_service.capacity();
         next.capacity = tr("%1/%2 pedidos · %3/%4 itens · %5/%6 bytes de pedidos")
                             .arg(static_cast<qulonglong>(capacity.requests))
@@ -1252,6 +1336,8 @@ void DownloadApplicationBinding::refreshProjection() {
     next.retry_startup = !impl_->closing && startup_action == DownloadStartupRecoveryAction::RetryCheckpoint;
     next.renew_namespace = !impl_->closing && startup_action == DownloadStartupRecoveryAction::RenewNamespace;
     next.retry_admission = !impl_->closing && state == DownloadAdmissionControllerState::AdmissionFailed;
+    next.archive_settled = archiveActionsAllowed() && impl_->controller.canArchiveSettled();
+    next.retry_archive = archiveActionsAllowed() && impl_->controller.canRetryArchive();
     next.retry_final = impl_->closing && state == DownloadAdmissionControllerState::FinalSaveFailed;
     next.close_failed = next.retry_final;
     if (next == impl_->projection)

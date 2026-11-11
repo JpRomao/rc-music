@@ -221,25 +221,16 @@ class JsonPreflight final {
     }
 };
 
-std::optional<DownloadCheckpointReceipt> receipt(const QJsonValue& value) {
-    if (!value.isObject())
-        return std::nullopt;
-    const auto object = value.toObject();
-    if (!exactKeys(object, {QStringLiteral("requestId"), QStringLiteral("fingerprint"), QStringLiteral("jobIds"),
-                            QStringLiteral("retainedRequestBytes")}) ||
-        !object.value(QStringLiteral("requestId")).isString() ||
+template <typename Receipt> std::optional<Receipt> receiptIdentity(const QJsonObject& object) {
+    if (!object.value(QStringLiteral("requestId")).isString() ||
         !object.value(QStringLiteral("fingerprint")).isString() || !object.value(QStringLiteral("jobIds")).isArray())
         return std::nullopt;
-    const auto retained = unsignedDecimal(object.value(QStringLiteral("retainedRequestBytes")));
-    if (!retained || *retained > download_checkpoint_max_bytes || *retained > std::numeric_limits<std::size_t>::max())
-        return std::nullopt;
     const auto ids = object.value(QStringLiteral("jobIds")).toArray();
-    if (ids.size() > 20)
+    if (ids.isEmpty() || ids.size() > 20)
         return std::nullopt;
-    DownloadCheckpointReceipt decoded{
+    Receipt decoded{
         .request_id = object.value(QStringLiteral("requestId")).toString().toUtf8().toStdString(),
         .fingerprint = object.value(QStringLiteral("fingerprint")).toString().toUtf8().toStdString(),
-        .retained_request_bytes = static_cast<std::size_t>(*retained),
     };
     decoded.job_ids.reserve(static_cast<std::size_t>(ids.size()));
     for (const auto& id : ids) {
@@ -248,6 +239,40 @@ std::optional<DownloadCheckpointReceipt> receipt(const QJsonValue& value) {
         decoded.job_ids.push_back(id.toString().toUtf8().toStdString());
     }
     return decoded;
+}
+
+std::optional<DownloadCheckpointReceipt> receipt(const QJsonValue& value) {
+    if (!value.isObject())
+        return std::nullopt;
+    const auto object = value.toObject();
+    if (!exactKeys(object, {QStringLiteral("requestId"), QStringLiteral("fingerprint"), QStringLiteral("jobIds"),
+                            QStringLiteral("retainedRequestBytes")}))
+        return std::nullopt;
+    const auto retained = unsignedDecimal(object.value(QStringLiteral("retainedRequestBytes")));
+    if (!retained || *retained > download_checkpoint_max_bytes || *retained > std::numeric_limits<std::size_t>::max())
+        return std::nullopt;
+    auto decoded = receiptIdentity<DownloadCheckpointReceipt>(object);
+    if (decoded)
+        decoded->retained_request_bytes = static_cast<std::size_t>(*retained);
+    return decoded;
+}
+
+std::optional<DownloadArchivedRequest> archivedReceipt(const QJsonValue& value) {
+    if (!value.isObject())
+        return std::nullopt;
+    const auto object = value.toObject();
+    if (!exactKeys(object, {QStringLiteral("requestId"), QStringLiteral("fingerprint"), QStringLiteral("jobIds")}))
+        return std::nullopt;
+    return receiptIdentity<DownloadArchivedRequest>(object);
+}
+
+template <typename Receipt> QJsonObject receiptIdentityObject(const Receipt& saved) {
+    QJsonArray ids;
+    for (const auto& id : saved.job_ids)
+        ids.append(latin(id));
+    return {{QStringLiteral("requestId"), latin(saved.request_id)},
+            {QStringLiteral("fingerprint"), latin(saved.fingerprint)},
+            {QStringLiteral("jobIds"), ids}};
 }
 
 std::optional<DownloadJobSnapshot> job(const QJsonValue& value) {
@@ -302,15 +327,10 @@ QByteArray DownloadCheckpointJson::encode(const DownloadCheckpoint& checkpoint) 
         return {};
     QJsonArray receipts;
     for (const auto& saved : checkpoint.receipts) {
-        QJsonArray ids;
-        for (const auto& id : saved.job_ids)
-            ids.append(latin(id));
-        receipts.append(QJsonObject{
-            {QStringLiteral("requestId"), latin(saved.request_id)},
-            {QStringLiteral("fingerprint"), latin(saved.fingerprint)},
-            {QStringLiteral("jobIds"), ids},
-            {QStringLiteral("retainedRequestBytes"), decimal(static_cast<std::uint64_t>(saved.retained_request_bytes))},
-        });
+        auto object = receiptIdentityObject(saved);
+        object.insert(QStringLiteral("retainedRequestBytes"),
+                      decimal(static_cast<std::uint64_t>(saved.retained_request_bytes)));
+        receipts.append(object);
     }
     QJsonArray jobs;
     for (const auto& saved : checkpoint.jobs) {
@@ -329,13 +349,20 @@ QByteArray DownloadCheckpointJson::encode(const DownloadCheckpoint& checkpoint) 
             {QStringLiteral("error"), enumText(saved.error, error_names)},
         });
     }
-    const auto encoded = QJsonDocument{
-        QJsonObject{
-            {QStringLiteral("schemaVersion"), schema_version},
-            {QStringLiteral("owner"), latin(owner)},
-            {QStringLiteral("receipts"), receipts},
-            {QStringLiteral("jobs"), jobs},
-        }}.toJson(QJsonDocument::Compact);
+    const bool has_archive = !checkpoint.archived_receipts.empty();
+    QJsonObject object{
+        {QStringLiteral("schemaVersion"), has_archive ? schema_version : 1},
+        {QStringLiteral("owner"), latin(owner)},
+        {QStringLiteral("receipts"), receipts},
+        {QStringLiteral("jobs"), jobs},
+    };
+    if (has_archive) {
+        QJsonArray archive;
+        for (const auto& saved : checkpoint.archived_receipts)
+            archive.append(receiptIdentityObject(saved));
+        object.insert(QStringLiteral("archivedReceipts"), archive);
+    }
+    const auto encoded = QJsonDocument{object}.toJson(QJsonDocument::Compact);
     return encoded.size() <= max_document_bytes ? encoded : QByteArray{};
 }
 
@@ -364,20 +391,33 @@ DownloadCheckpointJsonResult DownloadCheckpointJson::decode(const QByteArrayView
         return {};
     if (version > schema_version)
         return {.status = DownloadCheckpointJsonStatus::FutureVersion};
-    if (version != schema_version ||
-        !exactKeys(object, {QStringLiteral("schemaVersion"), QStringLiteral("owner"), QStringLiteral("receipts"),
-                            QStringLiteral("jobs")}) ||
-        object.value(QStringLiteral("owner")) != QJsonValue{latin(owner)} ||
+    QJsonArray archive;
+    if (version == 1) {
+        if (!exactKeys(object, {QStringLiteral("schemaVersion"), QStringLiteral("owner"), QStringLiteral("receipts"),
+                                QStringLiteral("jobs")}))
+            return {};
+    } else if (version == 2) {
+        const auto archive_value = object.value(QStringLiteral("archivedReceipts"));
+        if (!exactKeys(object, {QStringLiteral("schemaVersion"), QStringLiteral("owner"), QStringLiteral("receipts"),
+                                QStringLiteral("jobs"), QStringLiteral("archivedReceipts")}) ||
+            !archive_value.isArray())
+            return {};
+        archive = archive_value.toArray();
+    } else
+        return {};
+    if (object.value(QStringLiteral("owner")) != QJsonValue{latin(owner)} ||
         !object.value(QStringLiteral("receipts")).isArray() || !object.value(QStringLiteral("jobs")).isArray())
         return {};
     const auto receipts = object.value(QStringLiteral("receipts")).toArray();
     const auto jobs = object.value(QStringLiteral("jobs")).toArray();
     if (receipts.size() > static_cast<qsizetype>(download_checkpoint_max_receipts) ||
-        jobs.size() > static_cast<qsizetype>(download_checkpoint_max_jobs))
+        jobs.size() > static_cast<qsizetype>(download_checkpoint_max_jobs) ||
+        archive.size() > static_cast<qsizetype>(download_checkpoint_max_archived_receipts))
         return {};
     DownloadCheckpoint checkpoint;
     checkpoint.receipts.reserve(static_cast<std::size_t>(receipts.size()));
     checkpoint.jobs.reserve(static_cast<std::size_t>(jobs.size()));
+    checkpoint.archived_receipts.reserve(static_cast<std::size_t>(archive.size()));
     for (const auto& saved : receipts) {
         auto decoded = receipt(saved);
         if (!decoded)
@@ -389,6 +429,12 @@ DownloadCheckpointJsonResult DownloadCheckpointJson::decode(const QByteArrayView
         if (!decoded)
             return {};
         checkpoint.jobs.push_back(std::move(*decoded));
+    }
+    for (const auto& saved : archive) {
+        auto decoded = archivedReceipt(saved);
+        if (!decoded)
+            return {};
+        checkpoint.archived_receipts.push_back(std::move(*decoded));
     }
     if (!validDownloadCheckpoint(checkpoint))
         return {};

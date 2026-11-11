@@ -13,6 +13,8 @@ enum class DownloadAdmissionControllerState {
     Ready,
     AdmissionPending,
     AdmissionFailed,
+    ArchivePending,
+    ArchiveFailed,
     Blocked,
     Stopping,
     Stopped,
@@ -47,6 +49,12 @@ class DownloadAdmissionController final : public AsyncDownloadSubmission {
     [[nodiscard]] DownloadAdmissionResult begin(const DownloadRequest& request) override;
     [[nodiscard]] std::optional<DownloadSubmissionResult> poll(std::string_view request_id) override;
     [[nodiscard]] bool retryAdmission();
+    // Keeps the current rows and quotas until the prepared checkpoint is Saved.
+    // A failed or uncertain write keeps the same candidate for explicit retry.
+    [[nodiscard]] bool canArchiveSettled() const;
+    [[nodiscard]] bool archiveSettled();
+    [[nodiscard]] bool canRetryArchive() const;
+    [[nodiscard]] bool retryArchive();
     // The startup session ledger is a detached, immutable snapshot. Retrying
     // checkpoint I/O cannot replace untrusted session evidence in this owner.
     [[nodiscard]] DownloadStartupRecoveryAction startupRecoveryAction() const;

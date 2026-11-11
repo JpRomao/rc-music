@@ -173,13 +173,11 @@ struct WindowsPlayerDownloads::Impl final : AsyncDownloadSubmission {
             if (offered_lyrics.contains(job.job_id))
                 continue;
             const auto publication = service.publishedYoutubeAudio(job.job_id);
-            if (!publication)
+            if (!publication || !publication->source.fetch_lyrics)
                 continue;
-            // Bound by the common service's 128-job ledger. Reserve before any
-            // Qt callback: dismissal/reentry must not silently repeat a lookup.
+            // Live jobs with requested lyrics stay in the service ledger.
+            // Reserve before Qt callbacks so reentry cannot repeat a lookup.
             offered_lyrics.insert(job.job_id);
-            if (!publication->source.fetch_lyrics)
-                continue;
             PublishedLyricsRequest request;
             request.job_id = publication->job_id;
             request.final_mp3 = QString::fromStdWString(publication->published_mp3.native());

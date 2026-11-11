@@ -42,17 +42,27 @@ struct DownloadCheckpointReceipt final {
     bool operator==(const DownloadCheckpointReceipt&) const = default;
 };
 
+// Retain the accepted response and fingerprint after the job rows are archived.
+struct DownloadArchivedRequest final {
+    std::string request_id{};
+    std::string fingerprint{};
+    std::vector<std::string> job_ids{};
+    bool operator==(const DownloadArchivedRequest&) const = default;
+};
+
 // Private bounded recovery evidence, NOT authority to execute, import or delete a
 // file. A final path is only a candidate requiring separate ownership/media review.
 // No source URL, query, browser credentials or monotonic deadline is persisted.
 struct DownloadCheckpoint final {
     std::vector<DownloadCheckpointReceipt> receipts{};
     std::vector<DownloadJobSnapshot> jobs{};
+    std::vector<DownloadArchivedRequest> archived_receipts{};
     bool operator==(const DownloadCheckpoint&) const = default;
 };
 
 inline constexpr std::size_t download_checkpoint_max_jobs = 128;
 inline constexpr std::size_t download_checkpoint_max_receipts = 64;
+inline constexpr std::size_t download_checkpoint_max_archived_receipts = 256;
 inline constexpr std::size_t download_checkpoint_max_bytes = 1024 * 1024;
 
 [[nodiscard]] bool validDownloadCheckpoint(const DownloadCheckpoint& checkpoint);

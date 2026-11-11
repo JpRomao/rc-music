@@ -7,6 +7,7 @@
 #include "presentation/PlayerPresenterTestAccess.hpp"
 
 #include <QAbstractItemModel>
+#include <QPersistentModelIndex>
 #include <QPointer>
 #include <QSignalSpy>
 #include <QTest>
@@ -422,6 +423,82 @@ class DownloadApplicationBindingTests final : public QObject {
         h.binding.poll();
         QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::Blocked);
         QVERIFY(h.binding.historyCapacityText().isEmpty());
+    }
+    void archiveKeepsHistoryUntilSavedAndPreservesTheSurvivingRow() {
+        Harness h({}, true);
+        QVERIFY(h.binding.start());
+        const DownloadCheckpoint checkpoint{
+            .receipts = {{.request_id = request_id,
+                          .fingerprint = std::string(64, 'a'),
+                          .job_ids = {"old-1"},
+                          .retained_request_bytes = 128},
+                         {.request_id = "11234567-89ab-4cde-8fab-0123456789ab",
+                          .fingerprint = std::string(64, 'a'),
+                          .job_ids = {"old-2"},
+                          .retained_request_bytes = 128},
+                         {.request_id = "21234567-89ab-4cde-8fab-0123456789ab",
+                          .fingerprint = std::string(64, 'a'),
+                          .job_ids = {"old-3"},
+                          .retained_request_bytes = 128}},
+            .jobs = {{.job_id = "old-1", .title = "Cancelled first", .state = DownloadJobState::Cancelled},
+                     {.job_id = "old-2",
+                      .title = "Interrupted second",
+                      .state = DownloadJobState::Interrupted,
+                      .error = DownloadFailure::Unavailable},
+                     {.job_id = "old-3", .title = "Cancelled third", .state = DownloadJobState::Cancelled}}};
+        h.io.loaded({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+        h.binding.poll();
+        auto* const model = qobject_cast<DownloadJobsModel*>(h.binding.jobsModel());
+        QVERIFY(model);
+        QCOMPARE(model->rowCount(), 3);
+        const QPersistentModelIndex survivor(model->index(1, 0));
+        QSignalSpy removed(model, &QAbstractItemModel::rowsRemoved);
+        connect(model, &QAbstractItemModel::rowsRemoved, model, [model] { model->refresh(); });
+        QVERIFY(h.binding.canArchiveSettled());
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-2")));
+        QVERIFY(!h.binding.requestArchiveConfirmation());
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        h.binding.poll();
+        const auto review = survivor.data(DownloadJobsModel::ReviewTextRole);
+        QVERIFY(!review.toString().isEmpty());
+        QVERIFY(h.binding.requestArchiveConfirmation());
+        const auto cancelled = h.binding.archiveConsentToken();
+        h.binding.cancelArchiveConfirmation(cancelled);
+        QVERIFY(!h.binding.confirmArchive(cancelled));
+        QVERIFY(h.binding.requestArchiveConfirmation());
+        const auto token = h.binding.archiveConsentToken();
+        QVERIFY(!token.isEmpty() && token != cancelled);
+        QVERIFY(h.io.saves.empty());
+        QVERIFY(h.binding.confirmArchive(token));
+        QVERIFY(!h.binding.confirmArchive(token));
+        QVERIFY(!h.binding.canArchiveSettled());
+        QVERIFY(!h.binding.canRetryArchive());
+        QCOMPARE(model->rowCount(), 3);
+        QVERIFY(removed.isEmpty());
+        QCOMPARE(h.io.saves.size(), std::size_t{1});
+        const auto candidate = h.io.saves.back().second;
+        QCOMPARE(candidate.jobs.size(), std::size_t{1});
+        QCOMPARE(candidate.jobs.front().job_id, std::string{"old-2"});
+        h.io.saved(DownloadCheckpointSaveStatus::Failed);
+        h.binding.poll();
+        QVERIFY(h.binding.canRetryArchive());
+        QVERIFY(!h.binding.canRetryAdmission() && !h.binding.canRetryFinalSave());
+        QVERIFY(h.binding.warningText().contains(QStringLiteral("arquivamento")));
+        QCOMPARE(model->rowCount(), 3);
+        QVERIFY(removed.isEmpty());
+        QVERIFY(h.binding.retryArchive());
+        QCOMPARE(h.io.saves.back().second, candidate);
+        h.io.saved();
+        h.binding.poll();
+        QCOMPARE(model->rowCount(), 1);
+        QVERIFY(!removed.isEmpty());
+        QVERIFY(survivor.isValid());
+        QCOMPARE(survivor.row(), 0);
+        QCOMPARE(survivor.data(DownloadJobsModel::JobIdRole).toString(), QStringLiteral("old-2"));
+        QCOMPARE(survivor.data(DownloadJobsModel::ReviewTextRole), review);
+        QVERIFY(!h.binding.canRetryArchive() && !h.binding.canArchiveSettled());
+        QCOMPARE(h.execution.starts, 0);
+        QCOMPARE(h.importer.calls, 0);
     }
     void recoveredImportRequiresCurrentOneShotConsentAndNativePreparationBeforeHandoff() {
         Harness h({}, true, true);

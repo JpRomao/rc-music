@@ -380,6 +380,36 @@ class WindowsDownloadCheckpointStoreTests final : public QObject {
         QVERIFY(replaced.checkpoint && *replaced.checkpoint == second);
         QCOMPARE(fixture.entries(), QStringList({"download-checkpoint.json", "download-checkpoint.lock"}));
     }
+    void replacesLegacyJournalWithArchiveAndLoadsAfterReopen() {
+        Fixture fixture;
+        QVERIFY(fixture.created);
+        const auto legacy = example();
+        const auto& receipt = legacy.receipts.front();
+        const DownloadCheckpoint archived{
+            .archived_receipts = {{receipt.request_id, receipt.fingerprint, receipt.job_ids}},
+        };
+        {
+            WindowsDownloadCheckpointStore store(fixture.directory);
+            QCOMPARE(store.save(legacy), WindowsDownloadCheckpointSaveStatus::Saved);
+            const auto legacy_bytes = fixture.bytes();
+            QVERIFY(legacy_bytes.contains("\"schemaVersion\":1"));
+            const auto loaded = store.load();
+            QCOMPARE(loaded.status, WindowsDownloadCheckpointLoadStatus::Loaded);
+            QVERIFY(loaded.checkpoint && *loaded.checkpoint == legacy);
+            QCOMPARE(fixture.bytes(), legacy_bytes);
+            QCOMPARE(store.save(archived), WindowsDownloadCheckpointSaveStatus::Saved);
+        }
+
+        const auto archived_bytes = fixture.bytes();
+        QVERIFY(archived_bytes.contains("\"schemaVersion\":2"));
+        QVERIFY(!archived_bytes.contains("synthetic candidate"));
+        WindowsDownloadCheckpointStore reopened(fixture.directory);
+        const auto loaded = reopened.load();
+        QCOMPARE(loaded.status, WindowsDownloadCheckpointLoadStatus::Loaded);
+        QVERIFY(loaded.checkpoint && *loaded.checkpoint == archived);
+        QVERIFY(fixture.privateFile(fixture.journal()));
+        QCOMPARE(fixture.bytes(), archived_bytes);
+    }
     void newJournalLockAndTemporaryHaveProtectedPrivateDacl() {
         Fixture fixture;
         QVERIFY(fixture.created);

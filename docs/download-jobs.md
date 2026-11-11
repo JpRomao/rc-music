@@ -313,9 +313,19 @@ O painel **Downloads** mostra a ocupação e os limites de pedidos, itens e byte
 
 Os valores descrevem os metadados do histórico. O tamanho dos arquivos de áudio, os recibos de importação da sessão e o journal dos arquivos têm suas próprias cotas. Enquanto o histórico ainda está sendo carregado ou exige recuperação, o painel aguarda sua confirmação antes de exibir a capacidade.
 
-Ao esgotar uma dessas cotas, o aviso identifica o limite atingido. Os downloads já aceitos conservam progresso, cancelamento e conclusão. A recuperação de espaço nesse histórico exige também tratar os registros de importação e de ownership e definir o reconhecimento dos pedidos antigos após sua retirada.
+Ao esgotar uma dessas cotas, o aviso identifica o limite atingido. Os downloads já aceitos conservam progresso, cancelamento e conclusão.
 
 O recorte de 2026-11-11 teve Red por API/projeção ausente e dois casos Quick falhos pela ausência do indicador. O serviço passou **173 casos/4.434 assertions**, incluindo três casos novos com 96 assertions sobre limites, contabilização tipada, reenvio e restauração. A seleção de UI passou **2/2 CTest**, com **100 casos Qt do binding** e **363 Quick**, sem falhas/skips, além do build Release do player e `all_qmllint`. Os testes usam portas falsas e fixtures próprias. Evidências em `out/product/test-runs/download-capacity-20261111/` e `out/product/test-runs/download-history-capacity-20261111/`.
+
+### Arquivar pedidos encerrados
+
+Quando a fila de downloads está ociosa, **Arquivar pedidos encerrados** pede confirmação e remove do histórico ativo somente lotes inteiros que já terminaram. Pedidos com itens interrompidos, importações pendentes ou falhas de importação ficam disponíveis para recuperação. Uma publicação YouTube em memória que solicitou letras continua disponível até que o aplicativo seja reiniciado.
+
+O histórico só libera os pedidos, itens e bytes depois que o salvamento é confirmado. Em caso de falha, o painel mantém as linhas e oferece **Tentar salvar o arquivamento novamente**. A ação conserva os áudios publicados, a biblioteca, a fila de reprodução e as playlists.
+
+O checkpoint aceita o formato v1 anterior. Quando há arquivamento, o v2 guarda até 256 recibos arquivados, com ID do pedido, impressão digital e IDs originais dos itens, dentro do limite de tamanho do checkpoint. Um reenvio idêntico recebe os IDs já emitidos, inclusive após reiniciar. Um pedido com o mesmo ID e conteúdo alterado é recusado. Os recibos de importação da sessão e o journal de ownership conservam cotas próprias.
+
+O Red confirmou a ausência do contrato de arquivamento e dos controles do painel. O fechamento passou **184 casos do núcleo (4.651 assertions)**, **8/8 CTest selecionados** com **704 casos Qt/Quick** e dois skips de symlink pela política do Windows, build Release e `all_qmllint`. A composição local importou o MP3 produzido de AAC, reteve a linha enquanto o Saved estava bloqueado e reconheceu o mesmo pedido após reiniciar sem nova conversão ou importação. A transferência nessa jornada usou fixture local. Evidências em `out/product/test-runs/download-archive-20261111/`.
 
 ## Pendências funcionais
 

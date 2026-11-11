@@ -123,6 +123,7 @@ struct Gate final {
 
 struct Observation final {
     Gate admission_ack;
+    Gate archive_ack;
     Gate session_ack;
     std::atomic<bool> admission_saved{false};
     std::atomic<bool> factory_before_saved{false};
@@ -136,6 +137,7 @@ struct Observation final {
     std::atomic<int> session_failures{0};
     void release() {
         admission_ack.release();
+        archive_ack.release();
         session_ack.release();
         fail_session_before_commit = false;
     }
@@ -192,6 +194,8 @@ class ObservedCheckpointStore final : public DownloadCheckpointStore {
             state_->admission_ack.hold();
             state_->admission_saved = true;
         }
+        if (saved == DownloadCheckpointSaveStatus::Saved && !checkpoint.archived_receipts.empty())
+            state_->archive_ack.hold();
         return saved;
     }
 
@@ -602,11 +606,13 @@ class PlayerDownloadsCompositionTests final : public QObject {
 #endif
     void realPreparedWorkersImportOnlyAfterDurableAdmissionAndSessionSaved_data() {
         QTest::addColumn<QString>("suffix");
-        QTest::newRow("MP3") << QStringLiteral("mp3");
-        QTest::newRow("MP4-AAC") << QStringLiteral("mp4");
+        QTest::addColumn<bool>("archive");
+        QTest::newRow("MP3") << QStringLiteral("mp3") << false;
+        QTest::newRow("MP4-AAC-archive") << QStringLiteral("mp4") << true;
     }
     void realPreparedWorkersImportOnlyAfterDurableAdmissionAndSessionSaved() {
         QFETCH(QString, suffix);
+        QFETCH(bool, archive);
         Files files;
         QVERIFY(files.initialize());
         const auto batch = request(suffix);
@@ -678,6 +684,25 @@ class PlayerDownloadsCompositionTests final : public QObject {
             QCOMPARE(player.audio.loads, 0);
             QCOMPARE(player.audio.plays, 0);
             QVERIFY(!player.presenter.hasCurrentTrack());
+            if (archive) {
+                auto* binding = player.owner->binding();
+                QVERIFY(binding->canArchiveSettled());
+                QVERIFY(binding->requestArchiveConfirmation());
+                const auto token = binding->archiveConsentToken();
+                QVERIFY(!token.isEmpty());
+                QVERIFY(binding->confirmArchive(token));
+                QVERIFY(waitFor([&] { return player.observation->archive_ack.entered.load(); }));
+                QCOMPARE(player.jobs()->rowCount(), 1);
+                const auto archived = checkpoint.load();
+                QCOMPARE(archived.status, DownloadCheckpointLoadStatus::Loaded);
+                QVERIFY(archived.checkpoint);
+                QVERIFY(archived.checkpoint->jobs.empty());
+                QCOMPARE(archived.checkpoint->archived_receipts.size(), std::size_t{1});
+                QCOMPARE(archived.checkpoint->archived_receipts.front().job_ids, admitted_ids);
+                player.observation->archive_ack.release();
+                QVERIFY(waitFor([&] { return player.jobs()->rowCount() == 0; }));
+                QCOMPARE(player.presenter.queueModelObject()->rowCount(), 1);
+            }
             QVERIFY(player.drain());
             QVERIFY(player.owner->stopped());
             QVERIFY(player.observation->checkpoint_destroyed);
@@ -702,7 +727,7 @@ class PlayerDownloadsCompositionTests final : public QObject {
             QCOMPARE(replay.result.job_ids, admitted_ids);
             QTest::qWait(100);
             QCOMPARE(observation->factories.load(), 0);
-            QCOMPARE(restarted.jobs()->rowCount(), 1);
+            QCOMPARE(restarted.jobs()->rowCount(), archive ? 0 : 1);
             QCOMPARE(restarted.presenter.queueModelObject()->rowCount(), 0);
             QCOMPARE(restarted.audio.loads, 0);
             QCOMPARE(restarted.audio.plays, 0);

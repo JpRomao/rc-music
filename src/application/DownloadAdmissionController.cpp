@@ -6,6 +6,9 @@
 
 namespace music_player::m0 {
 namespace {
+constexpr auto maximum_confirmed_requests =
+    download_checkpoint_max_receipts + download_checkpoint_max_archived_receipts;
+
 std::string canonicalId(const std::string_view value) {
     // Only bounded UUID-shaped input is copied, including observer queries.
     if (value.size() != 36)
@@ -30,7 +33,7 @@ struct DownloadAdmissionController::Impl {
         std::string id;
         DownloadSubmissionResult result;
     };
-    enum class Purpose { Load, Admission, Final };
+    enum class Purpose { Load, Admission, Archive, Final };
     struct Operation {
         std::uint64_t id;
         Purpose purpose;
@@ -43,6 +46,7 @@ struct DownloadAdmissionController::Impl {
     const DownloadFinalSavePolicy final_save_policy;
     std::vector<Receipt> confirmed;
     std::optional<Receipt> pending;
+    std::optional<DownloadCheckpoint> archive_checkpoint;
     std::optional<Operation> operation;
     // At most one explicit probe may follow an uncertain operation. If that
     // probe also throws, either ID could own the single native slot. Retain both
@@ -65,7 +69,19 @@ struct DownloadAdmissionController::Impl {
 
     Impl(DownloadService& owner, DownloadCheckpointIo& storage, const DownloadFinalSavePolicy policy)
         : service(owner), io(storage), final_save_policy(policy) {
-        confirmed.reserve(download_checkpoint_max_receipts);
+        confirmed.reserve(maximum_confirmed_requests);
+    }
+    static std::vector<Receipt> acknowledgements(const DownloadCheckpoint& checkpoint) {
+        std::vector<Receipt> result;
+        result.reserve(maximum_confirmed_requests);
+        const auto append = [&](const auto& receipts) {
+            for (const auto& receipt : receipts)
+                result.push_back(
+                    {receipt.request_id, {.error = DownloadSubmissionError::None, .job_ids = receipt.job_ids}});
+        };
+        append(checkpoint.receipts);
+        append(checkpoint.archived_receipts);
+        return result;
     }
     bool holdsFinalFailure() const {
         return final_save_policy == DownloadFinalSavePolicy::HoldForDecision && closing && healthy_startup &&
@@ -129,14 +145,20 @@ struct DownloadAdmissionController::Impl {
     }
     void failedSave(DownloadCheckpointSaveStatus status) {
         save_status = validSaveStatus(status) ? status : DownloadCheckpointSaveStatus::Failed;
-        state = holdsFinalFailure() ? DownloadAdmissionControllerState::FinalSaveFailed
-                : closing           ? DownloadAdmissionControllerState::Stopping
-                                    : DownloadAdmissionControllerState::AdmissionFailed;
+        if (closing) {
+            state = holdsFinalFailure() ? DownloadAdmissionControllerState::FinalSaveFailed
+                                        : DownloadAdmissionControllerState::Stopping;
+            return;
+        }
+        state = archive_checkpoint ? DownloadAdmissionControllerState::ArchiveFailed
+                                   : DownloadAdmissionControllerState::AdmissionFailed;
     }
     bool save(const Purpose purpose) {
         std::optional<std::uint64_t> offered_id;
         try {
-            const auto checkpoint = service.checkpoint();
+            const bool archiving = purpose == Purpose::Archive;
+            const auto current = archiving ? std::nullopt : service.checkpoint();
+            const auto& checkpoint = archiving ? archive_checkpoint : current;
             const auto id = newOperationId();
             if (checkpoint && id) {
                 offered_id = id;
@@ -146,13 +168,15 @@ struct DownloadAdmissionController::Impl {
                     // single-slot contract refuses outstanding native work.
                     operation = Operation{*id, purpose};
                     uncertain_offer.reset();
-                    state = closing ? DownloadAdmissionControllerState::Stopping
-                                    : DownloadAdmissionControllerState::AdmissionPending;
+                    state = closing     ? DownloadAdmissionControllerState::Stopping
+                            : archiving ? DownloadAdmissionControllerState::ArchivePending
+                                        : DownloadAdmissionControllerState::AdmissionPending;
                     return true;
                 }
             }
         } catch (...) {
-            if (final_save_policy == DownloadFinalSavePolicy::HoldForDecision && offered_id) {
+            if (offered_id &&
+                (final_save_policy == DownloadFinalSavePolicy::HoldForDecision || purpose == Purpose::Archive)) {
                 if (!operation)
                     operation = Operation{*offered_id, purpose, true};
                 else if (operation->drain_only)
@@ -191,11 +215,7 @@ struct DownloadAdmissionController::Impl {
                 return;
             }
             // Allocate the complete acknowledgement index before the atomic restore.
-            std::vector<Receipt> receipts;
-            receipts.reserve(download_checkpoint_max_receipts);
-            for (const auto& receipt : checkpoint->receipts)
-                receipts.push_back(
-                    {receipt.request_id, {.error = DownloadSubmissionError::None, .job_ids = receipt.job_ids}});
+            auto receipts = acknowledgements(*checkpoint);
             const bool restored =
                 reconcile_imports ? service.restore(*checkpoint, import_receipts) : service.restore(*checkpoint);
             if (!restored) {
@@ -242,14 +262,21 @@ struct DownloadAdmissionController::Impl {
                 return;
             }
             if (expected.purpose == Purpose::Admission) {
-                if (!pending || confirmed.size() >= download_checkpoint_max_receipts ||
-                    !service.confirmStaged(pending->id)) {
+                if (!pending || confirmed.size() >= maximum_confirmed_requests || !service.confirmStaged(pending->id)) {
                     failedSave(DownloadCheckpointSaveStatus::Failed);
                     return;
                 }
                 // Reserved capacity and noexcept moves precede any observer's ACK.
                 confirmed.push_back(std::move(*pending));
                 pending.reset();
+            } else if (expected.purpose == Purpose::Archive) {
+                if (!archive_checkpoint || !service.confirmSettledArchive()) {
+                    failedSave(DownloadCheckpointSaveStatus::Failed);
+                    return;
+                }
+                archive_checkpoint.reset();
+                if (closing)
+                    final_attempted = true;
             }
             save_status = DownloadCheckpointSaveStatus::Saved;
             state = closing ? DownloadAdmissionControllerState::Stopping : DownloadAdmissionControllerState::Ready;
@@ -258,7 +285,8 @@ struct DownloadAdmissionController::Impl {
             // after an explicit lossy close. Keep both possible IDs bounded.
             if (expected.drain_only)
                 return;
-            if (expected.purpose != Purpose::Load && final_save_policy == DownloadFinalSavePolicy::HoldForDecision)
+            if (expected.purpose != Purpose::Load &&
+                (final_save_policy == DownloadFinalSavePolicy::HoldForDecision || expected.purpose == Purpose::Archive))
                 operation = Operation{expected.id, expected.purpose, true};
             else
                 operation.reset();
@@ -367,6 +395,8 @@ DownloadAdmissionResult DownloadAdmissionController::begin(const DownloadRequest
                                         [&](const Impl::Receipt& receipt) { return receipt.id == id; });
         if (known != owner.confirmed.end())
             return {.result = owner.service.submitStaged(request)};
+        if (owner.archive_checkpoint)
+            return rejected(DownloadSubmissionError::Busy);
         if (owner.pending) {
             if (owner.pending->id != id)
                 return rejected(DownloadSubmissionError::Busy);
@@ -412,6 +442,32 @@ bool DownloadAdmissionController::retryAdmission() {
     const Impl::Guard guard(owner);
     return owner.save(Impl::Purpose::Admission);
 }
+bool DownloadAdmissionController::canArchiveSettled() const {
+    const auto& owner = *impl_;
+    return !owner.operating && !owner.closing && owner.state == DownloadAdmissionControllerState::Ready &&
+           !owner.operation && !owner.uncertain_offer && !owner.pending && !owner.archive_checkpoint &&
+           owner.service.canArchiveSettled();
+}
+bool DownloadAdmissionController::archiveSettled() {
+    auto& owner = *impl_;
+    if (!canArchiveSettled())
+        return false;
+    const Impl::Guard guard(owner);
+    owner.archive_checkpoint = owner.service.stageSettledArchive();
+    return owner.archive_checkpoint && owner.save(Impl::Purpose::Archive);
+}
+bool DownloadAdmissionController::canRetryArchive() const {
+    const auto& owner = *impl_;
+    return !owner.operating && !owner.closing && owner.state == DownloadAdmissionControllerState::ArchiveFailed &&
+           owner.archive_checkpoint && !owner.uncertain_offer && (!owner.operation || owner.operation->drain_only);
+}
+bool DownloadAdmissionController::retryArchive() {
+    if (!canRetryArchive())
+        return false;
+    auto& owner = *impl_;
+    const Impl::Guard guard(owner);
+    return owner.save(Impl::Purpose::Archive);
+}
 DownloadStartupRecoveryAction DownloadAdmissionController::startupRecoveryAction() const {
     const auto& owner = *impl_;
     if (owner.operating || owner.closing || owner.healthy_startup || owner.operation ||
@@ -439,11 +495,7 @@ bool DownloadAdmissionController::renewStartupNamespace() {
         return false;
     const Impl::Guard guard(owner);
     try {
-        std::vector<Impl::Receipt> receipts;
-        receipts.reserve(download_checkpoint_max_receipts);
-        for (const auto& receipt : owner.namespace_checkpoint->receipts)
-            receipts.push_back(
-                {receipt.request_id, {.error = DownloadSubmissionError::None, .job_ids = receipt.job_ids}});
+        auto receipts = Impl::acknowledgements(*owner.namespace_checkpoint);
         const bool restored =
             owner.reconcile_imports
                 ? owner.service.restoreWithFreshNamespace(*owner.namespace_checkpoint, owner.import_receipts)
@@ -480,7 +532,7 @@ bool DownloadAdmissionController::retryFinalSave() {
         return false;
     const Impl::Guard guard(owner);
     owner.final_attempted = true;
-    return owner.save(Impl::Purpose::Final);
+    return owner.save(owner.archive_checkpoint ? Impl::Purpose::Archive : Impl::Purpose::Final);
 }
 bool DownloadAdmissionController::closeAfterFinalSaveFailure() {
     auto& owner = *impl_;

@@ -24,7 +24,7 @@ struct DownloadCheckpointJsonResult final {
 // A strict bounded private document, never authority to execute/import/delete media.
 class DownloadCheckpointJson final {
   public:
-    static constexpr int schema_version = 1;
+    static constexpr int schema_version = 2;
     static constexpr qsizetype max_document_bytes = 2 * 1024 * 1024;
     [[nodiscard]] static QByteArray encode(const DownloadCheckpoint& checkpoint);
     [[nodiscard]] static DownloadCheckpointJsonResult decode(QByteArrayView bytes);

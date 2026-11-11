@@ -131,7 +131,8 @@ bool validJob(const DownloadJobSnapshot& job) {
 
 bool validDownloadCheckpoint(const DownloadCheckpoint& checkpoint) {
     if (checkpoint.jobs.size() > download_checkpoint_max_jobs ||
-        checkpoint.receipts.size() > download_checkpoint_max_receipts)
+        checkpoint.receipts.size() > download_checkpoint_max_receipts ||
+        checkpoint.archived_receipts.size() > download_checkpoint_max_archived_receipts)
         return false;
     std::size_t retained_bytes = 0;
     const auto retain = [&](const std::size_t bytes) {
@@ -148,12 +149,15 @@ bool validDownloadCheckpoint(const DownloadCheckpoint& checkpoint) {
             return false;
     }
     std::unordered_set<std::string_view> request_ids;
+    const auto retainReceiptIdentity = [&](const auto& receipt) {
+        return canonicalUuid(receipt.request_id) && digest(receipt.fingerprint) &&
+               request_ids.insert(receipt.request_id).second && !receipt.job_ids.empty() &&
+               receipt.job_ids.size() <= 20 && retain(receipt.request_id.size()) && retain(receipt.fingerprint.size());
+    };
     std::size_t original_bytes = 0;
     std::size_t job_index = 0;
     for (const auto& receipt : checkpoint.receipts) {
-        if (!canonicalUuid(receipt.request_id) || !digest(receipt.fingerprint) ||
-            !request_ids.insert(receipt.request_id).second || receipt.job_ids.empty() || receipt.job_ids.size() > 20 ||
-            !retain(receipt.request_id.size()) || !retain(receipt.fingerprint.size()) ||
+        if (!retainReceiptIdentity(receipt) ||
             receipt.retained_request_bytes > download_checkpoint_max_bytes - original_bytes ||
             receipt.retained_request_bytes > 36 + receipt.job_ids.size() * (8192 + 800))
             return false;
@@ -168,6 +172,14 @@ bool validDownloadCheckpoint(const DownloadCheckpoint& checkpoint) {
         if (receipt.retained_request_bytes < minimum_bytes)
             return false;
         original_bytes += receipt.retained_request_bytes;
+    }
+    for (const auto& receipt : checkpoint.archived_receipts) {
+        if (!retainReceiptIdentity(receipt))
+            return false;
+        for (const auto& id : receipt.job_ids) {
+            if (!asciiId(id) || !job_ids.insert(id).second || !retain(id.size()))
+                return false;
+        }
     }
     return job_index == checkpoint.jobs.size();
 }

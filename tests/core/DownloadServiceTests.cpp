@@ -157,9 +157,10 @@ struct Harness {
 
 struct RecoveryIdentity final : DownloadRequestIdentity {
     std::size_t calls{0};
-    std::string fingerprint(const DownloadRequest&) override {
+    std::string fingerprint(const DownloadRequest& value) override {
         ++calls;
-        return std::string(64, 'a');
+        return std::string(64,
+                           !value.items.empty() && value.items.front().title == "Changed archived request" ? 'b' : 'a');
     }
 };
 
@@ -899,6 +900,176 @@ TEST_CASE("Download capacity commits only accepted restored accounting and prese
     REQUIRE(importer.imports.empty());
     REQUIRE(importer.import_polls.empty());
     REQUIRE(importer.capability_queries == 0);
+}
+
+TEST_CASE("A settled archive releases active quota only when confirmed and preserves exact request replay",
+          "[download][archive]") {
+    FakeExecution execution;
+    FakeImport importer;
+    RecoveryIdentity identity;
+    DownloadService service(execution, importer, "test", {.max_jobs = 2, .max_requests = 1}, &identity);
+    const auto original = request(1, 2);
+    const auto admitted = service.submit(original);
+    REQUIRE(admitted.error == DownloadSubmissionError::None);
+    REQUIRE(service.cancel(admitted.job_ids[0]));
+    REQUIRE_FALSE(service.canArchiveSettled());
+    REQUIRE_FALSE(service.stageSettledArchive());
+    REQUIRE(service.cancel(admitted.job_ids[1]));
+    REQUIRE(service.canArchiveSettled());
+    const auto before = service.checkpoint();
+    REQUIRE(before);
+    const auto candidate = service.stageSettledArchive();
+    REQUIRE(candidate);
+    REQUIRE(validDownloadCheckpoint(*candidate));
+    REQUIRE(candidate->jobs.empty());
+    REQUIRE(candidate->receipts.empty());
+    REQUIRE(candidate->archived_receipts.size() == 1);
+    REQUIRE(candidate->archived_receipts.front().request_id == original.request_id);
+    REQUIRE(candidate->archived_receipts.front().fingerprint == before->receipts.front().fingerprint);
+    REQUIRE(candidate->archived_receipts.front().job_ids == admitted.job_ids);
+    REQUIRE(service.checkpoint() == before);
+    REQUIRE(service.capacity().jobs == 2);
+    REQUIRE(service.capacity().requests == 1);
+    REQUIRE(service.capacity().retained_request_bytes == before->receipts.front().retained_request_bytes);
+    REQUIRE_FALSE(service.canArchiveSettled());
+    REQUIRE_FALSE(service.stageSettledArchive());
+    REQUIRE(service.submit(original).job_ids == admitted.job_ids);
+    REQUIRE(service.submit(request(2)).error == DownloadSubmissionError::Busy);
+
+    STATIC_REQUIRE(noexcept(service.confirmSettledArchive()));
+    REQUIRE(service.confirmSettledArchive());
+    REQUIRE_FALSE(service.confirmSettledArchive());
+    REQUIRE(service.checkpoint() == candidate);
+    REQUIRE(service.capacity().jobs == 0);
+    REQUIRE(service.capacity().requests == 0);
+    REQUIRE(service.capacity().retained_request_bytes == 0);
+    const auto calls = identity.calls;
+    REQUIRE(service.submit(original).job_ids == admitted.job_ids);
+    REQUIRE(identity.calls == calls + 1);
+    auto changed = original;
+    changed.items[0].title = "Changed archived request";
+    REQUIRE(service.submit(changed).error == DownloadSubmissionError::InvalidRequest);
+    REQUIRE(service.submit(request(2)).job_ids == std::vector<std::string>{"test-3"});
+    REQUIRE(execution.starts.empty());
+    REQUIRE(execution.polls.empty());
+    REQUIRE(importer.imports.empty());
+}
+
+TEST_CASE("Settled archive waits for active work and keeps an entire batch with an import retry",
+          "[download][archive]") {
+    FakeExecution execution;
+    FakeImport importer;
+    RecoveryIdentity identity;
+    DownloadService service(execution, importer, "test", {}, &identity);
+    const auto settled = service.submit(request(1));
+    const auto mixed = service.submit(request(2, 2));
+    REQUIRE(settled.error == DownloadSubmissionError::None);
+    REQUIRE(mixed.error == DownloadSubmissionError::None);
+    REQUIRE(service.cancel(settled.job_ids.front()));
+    REQUIRE(service.cancel(mixed.job_ids.front()));
+    REQUIRE_FALSE(service.canArchiveSettled());
+    service.tick(0);
+    REQUIRE_FALSE(service.canArchiveSettled());
+    importer.begin_state = DownloadImportState::Pending;
+    published(execution, mixed.job_ids.back());
+    service.tick(1);
+    REQUIRE_FALSE(service.canArchiveSettled());
+    importer.poll_state = DownloadImportState::Failed;
+    service.tick(2);
+    const auto candidate = service.stageSettledArchive();
+    REQUIRE(candidate);
+    REQUIRE(candidate->archived_receipts.size() == 1);
+    REQUIRE(candidate->archived_receipts.front().job_ids == settled.job_ids);
+    REQUIRE(candidate->receipts.size() == 1);
+    REQUIRE(candidate->receipts.front().job_ids == mixed.job_ids);
+    REQUIRE(candidate->jobs.size() == 2);
+    REQUIRE(candidate->jobs.back().state == DownloadJobState::ImportFailed);
+    REQUIRE_FALSE(service.retryImport(mixed.job_ids.back()));
+    REQUIRE(importer.imports.size() == 1);
+    REQUIRE(service.confirmSettledArchive());
+    REQUIRE(service.capacity().jobs == 2);
+    REQUIRE_FALSE(service.canArchiveSettled());
+    importer.begin_state = DownloadImportState::Committed;
+    REQUIRE(service.retryImport(mixed.job_ids.back()));
+    const auto second = service.stageSettledArchive();
+    REQUIRE(second);
+    REQUIRE(second->archived_receipts.size() == 2);
+    REQUIRE(second->jobs.empty());
+    service.shutdown();
+    REQUIRE(service.stopped());
+    REQUIRE(service.confirmSettledArchive());
+    REQUIRE(service.checkpoint() == second);
+}
+
+TEST_CASE("Restored archive preserves namespace and replay without occupying active quota", "[download][archive]") {
+    DownloadCheckpoint history;
+    history.archived_receipts.push_back(
+        {.request_id = request().request_id, .fingerprint = std::string(64, 'a'), .job_ids = {"fresh-1"}});
+    const std::vector<DownloadImportReceipt> confirmed{{.job_id = "fresh-1", .source_path = finalPath()}};
+    FakeExecution execution;
+    FakeImport importer;
+    RecoveryIdentity identity;
+    DownloadService service(execution, importer, "fresh", {.max_jobs = 1, .max_requests = 1}, &identity);
+    REQUIRE_FALSE(service.restore(history));
+    REQUIRE(service.recoveryReport().status == DownloadRecoveryStatus::NamespaceConflict);
+    REQUIRE(service.restoreWithFreshNamespace(history, confirmed));
+    REQUIRE(service.recoveryReport().session_only_job_ids.empty());
+    REQUIRE(service.checkpoint() == history);
+    REQUIRE(service.capacity().jobs == 0);
+    REQUIRE(service.capacity().requests == 0);
+    REQUIRE(service.submitStaged(request()).job_ids == std::vector<std::string>{"fresh-1"});
+    REQUIRE_FALSE(service.confirmStaged(request().request_id));
+    REQUIRE(service.submit(request(2)).job_ids == std::vector<std::string>{"fresh-r001-1"});
+    REQUIRE(execution.starts.empty());
+    REQUIRE(importer.imports.empty());
+}
+
+TEST_CASE("A live published YouTube lyric offer remains available until restart", "[download][archive]") {
+    FakeExecution execution;
+    FakeImport importer;
+    RecoveryIdentity identity;
+    DownloadService service(execution, importer, "live", {}, &identity);
+    const auto admitted = service.submit(youtubeRequest());
+    REQUIRE(admitted.error == DownloadSubmissionError::None);
+    const auto& id = admitted.job_ids.front();
+    service.tick(0);
+    published(execution, id);
+    service.tick(1);
+    REQUIRE(service.snapshot().front().state == DownloadJobState::Completed);
+    REQUIRE(service.publishedYoutubeAudio(id));
+    REQUIRE_FALSE(service.canArchiveSettled());
+    REQUIRE_FALSE(service.stageSettledArchive());
+    const auto history = service.checkpoint();
+    REQUIRE(history);
+    const std::vector<DownloadImportReceipt> confirmed{{.job_id = id, .source_path = finalPath()}};
+    DownloadService restored(execution, importer, "restored", {}, &identity);
+    REQUIRE(restored.restore(*history, confirmed));
+    REQUIRE_FALSE(restored.publishedYoutubeAudio(id));
+    REQUIRE(restored.canArchiveSettled());
+}
+
+TEST_CASE("A full replay archive never evicts receipts or releases unrecorded history", "[download][archive]") {
+    DownloadCheckpoint history;
+    for (std::size_t index = 0; index < download_checkpoint_max_archived_receipts; ++index) {
+        const auto input = request(1000 + static_cast<unsigned int>(index));
+        history.archived_receipts.push_back({.request_id = input.request_id,
+                                             .fingerprint = std::string(64, 'a'),
+                                             .job_ids = {"old-" + std::to_string(index)}});
+    }
+    FakeExecution execution;
+    FakeImport importer;
+    RecoveryIdentity identity;
+    DownloadService service(execution, importer, "test", {.max_jobs = 1, .max_requests = 1}, &identity);
+    REQUIRE(service.restore(history));
+    const auto admitted = service.submit(request());
+    REQUIRE(admitted.error == DownloadSubmissionError::None);
+    REQUIRE(service.cancel(admitted.job_ids.front()));
+    REQUIRE_FALSE(service.canArchiveSettled());
+    REQUIRE_FALSE(service.stageSettledArchive());
+    REQUIRE(service.capacity().jobs == 1);
+    REQUIRE(service.checkpoint()->archived_receipts == history.archived_receipts);
+    REQUIRE(service.submit(request(1000)).job_ids == std::vector<std::string>{"old-0"});
+    REQUIRE(service.submit(request(2)).error == DownloadSubmissionError::LimitExceeded);
 }
 
 TEST_CASE("Published YouTube context requires a live publication and survives pending or failed queue import",

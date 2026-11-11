@@ -814,7 +814,7 @@ Em R1.8, o worker passou a aceitar provisionamento explícito de AppContainer po
 
 A receita de empacotamento agora aceita opções explícitas para esse provisionamento e para o ingresso do navegador integrado. O header compilado e o recibo registram as escolhas, e o leitor Windows aceita tanto as receitas anteriores quanto as novas. Os gates físicos e de produção continuam abertos. [Opções e evidência do perfil](packaged-download-profile.md#opções-do-perfil--2026-11-11)
 
-O painel comum projeta a capacidade real do histórico por pedidos, itens e bytes, incluindo reservas pendentes de gravação. O aviso identifica a cota esgotada. Liberação de registros entre os históricos e a política de reconhecimento de pedidos antigos continuam pendentes. [Capacidade do histórico](download-jobs.md#capacidade-do-histórico)
+O painel comum mostra a capacidade real do histórico, inclusive reservas pendentes de gravação. O arquivamento confirmado de lotes encerrados libera as cotas ativas e conserva o reconhecimento de reenvios após reiniciar. A recuperação de espaço nos recibos de importação da sessão e no journal de ownership continua pendente. [Capacidade do histórico](download-jobs.md#capacidade-do-histórico)
 
 ### Checkpoint anterior — extensões opcionais no instalador
 

@@ -191,6 +191,14 @@ void notAccepted(const std::optional<DownloadSubmissionResult>& result) {
         REQUIRE(result->job_ids.empty());
 }
 
+void loadCancelledAdmission(AdmissionHarness& harness, DownloadCheckpoint checkpoint) {
+    checkpoint.jobs.front().state = DownloadJobState::Cancelled;
+    REQUIRE(harness.controller.start());
+    harness.io.loaded({.checkpoint = std::move(checkpoint), .status = DownloadCheckpointLoadStatus::Loaded});
+    harness.controller.tick(0);
+    REQUIRE(harness.controller.state() == DownloadAdmissionControllerState::Ready);
+}
+
 DownloadCheckpoint recoveredAdmission() {
     const auto request = admissionInput();
     return {.receipts = {{.request_id = request.request_id,
@@ -922,6 +930,99 @@ TEST_CASE("A failed final checkpoint remains visible after physical download-own
     REQUIRE(h.controller.stopped());
     REQUIRE(h.controller.saveStatus() == DownloadCheckpointSaveStatus::Failed);
     REQUIRE(h.io.saves.size() == 1);
+}
+
+TEST_CASE("Archive frees active admission only after Saved and preserves replay after restart", "[download][archive]") {
+    AdmissionHarness h({.max_jobs = 1, .max_requests = 1});
+    const auto original = recoveredAdmission();
+    const auto request = admissionInput();
+    const auto replacement = admissionInput(2);
+    loadCancelledAdmission(h, original);
+    REQUIRE(h.controller.begin(replacement).result.error == DownloadSubmissionError::LimitExceeded);
+    REQUIRE(h.controller.canArchiveSettled());
+    REQUIRE(h.controller.archiveSettled());
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::ArchivePending);
+    REQUIRE_FALSE(h.controller.canArchiveSettled());
+    REQUIRE(h.service.capacity().jobs == 1);
+    REQUIRE(h.controller.begin(replacement).result.error == DownloadSubmissionError::Busy);
+    REQUIRE(h.controller.poll(request.request_id)->job_ids == original.receipts[0].job_ids);
+    const auto candidate = h.io.saves.back().checkpoint;
+    REQUIRE(candidate.jobs.empty());
+    REQUIRE(candidate.receipts.empty());
+    h.io.saved();
+    h.controller.tick(1);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
+    REQUIRE(h.service.capacity().jobs == 0);
+    REQUIRE(h.service.capacity().requests == 0);
+    REQUIRE(h.service.capacity().retained_request_bytes == 0);
+    REQUIRE(h.controller.begin(request).result.job_ids == original.receipts[0].job_ids);
+    REQUIRE(h.io.saves.size() == 1);
+
+    AdmissionHarness restored({.max_jobs = 1, .max_requests = 1});
+    REQUIRE(restored.controller.start());
+    restored.io.loaded({.checkpoint = candidate, .status = DownloadCheckpointLoadStatus::Loaded});
+    restored.controller.tick(0);
+    REQUIRE(restored.controller.poll(request.request_id)->job_ids == original.receipts[0].job_ids);
+    REQUIRE(restored.controller.begin(request).result.job_ids == original.receipts[0].job_ids);
+    REQUIRE(restored.io.saves.empty());
+    REQUIRE(restored.execution.starts.empty());
+    pendingWithoutAck(restored.controller.begin(replacement));
+    REQUIRE(restored.io.saves.back().checkpoint.receipts.front().job_ids == std::vector<std::string>{"owner-1"});
+    REQUIRE(restored.importer.calls == 0);
+}
+
+TEST_CASE("Failed or miscorrelated archive save keeps history and requires an explicit retry", "[download][archive]") {
+    const auto failure = GENERATE(0, 1, 2);
+    AdmissionHarness h;
+    loadCancelledAdmission(h, recoveredAdmission());
+    h.io.throw_save_after_accept = failure == 2;
+    REQUIRE(h.controller.archiveSettled() == (failure != 2));
+    h.io.throw_save_after_accept = false;
+    const auto candidate = h.io.saves.back().checkpoint;
+    if (failure == 1) {
+        h.io.saved();
+        h.io.deliver_malformed = true;
+        h.io.completion->operation_id += 7;
+    } else {
+        h.io.saved(failure == 2 ? DownloadCheckpointSaveStatus::Saved : DownloadCheckpointSaveStatus::Failed);
+    }
+    h.controller.tick(1);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::ArchiveFailed);
+    REQUIRE(h.service.snapshot().size() == 1);
+    REQUIRE_FALSE(h.controller.archiveSettled());
+    REQUIRE_FALSE(h.controller.retryAdmission());
+    h.controller.tick(2);
+    REQUIRE(h.io.saves.size() == 1);
+    REQUIRE(h.controller.retryArchive());
+    REQUIRE(h.io.saves.size() == 2);
+    REQUIRE(h.io.saves[1].id > h.io.saves[0].id);
+    REQUIRE(h.io.saves[1].checkpoint == candidate);
+    h.io.saved();
+    h.controller.tick(3);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.execution.starts.empty());
+}
+
+TEST_CASE("Shutdown retries the same archive checkpoint before acknowledging exit", "[download][archive]") {
+    AdmissionHarness h({}, DownloadFinalSavePolicy::HoldForDecision);
+    loadCancelledAdmission(h, recoveredAdmission());
+    REQUIRE(h.controller.archiveSettled());
+    const auto candidate = h.io.saves.back().checkpoint;
+    h.controller.shutdown();
+    h.io.saved(DownloadCheckpointSaveStatus::Failed);
+    h.controller.tick(1);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::FinalSaveFailed);
+    REQUIRE(h.service.snapshot().size() == 1);
+    REQUIRE(h.controller.retryFinalSave());
+    REQUIRE(h.io.saves.back().checkpoint == candidate);
+    h.io.saved();
+    h.io.allow_stopped = true;
+    h.controller.tick(2);
+    REQUIRE(h.controller.stopped());
+    REQUIRE(h.io.saves.size() == 2);
+    REQUIRE(h.service.snapshot().empty());
+    REQUIRE(h.importer.calls == 0);
 }
 
 TEST_CASE("Held download exit retains final save failures until an explicit successful retry",

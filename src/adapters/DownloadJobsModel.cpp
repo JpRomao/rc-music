@@ -534,13 +534,48 @@ void DownloadJobsModel::refresh() {
 
 void DownloadJobsModel::refreshSnapshot() {
     auto next = service_.snapshot();
-    // The service retains admission order without eviction. Refuse a broken projection
-    // rather than replacing identities under focused delegates or overflowing Qt rows.
-    if (next.size() < items_.size() || next.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+    if (next.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
         return;
-    for (std::size_t row = 0; row < items_.size(); ++row) {
-        if (items_[row].job_id != next[row].job_id)
-            return;
+    const bool same_prefix = next.size() >= items_.size() && std::equal(items_.begin(), items_.end(), next.begin(),
+                                                                        [](const auto& left, const auto& right) {
+                                                                            return left.job_id == right.job_id;
+                                                                        });
+    if (!same_prefix) {
+        // Archiving can remove rows anywhere. Surviving IDs keep their order,
+        // and newly admitted IDs follow them.
+        std::vector<bool> keep(items_.size(), false);
+        auto first_survivor = items_.cbegin();
+        bool appending = false;
+        for (const auto& item : next) {
+            const auto previous = std::ranges::find(items_, item.job_id, &DownloadJobSnapshot::job_id);
+            if (previous == items_.end()) {
+                appending = true;
+                continue;
+            }
+            if (appending || previous < first_survivor)
+                return;
+            keep[static_cast<std::size_t>(previous - items_.cbegin())] = true;
+            first_survivor = previous + 1;
+        }
+        for (std::size_t last = items_.size(); last > 0;) {
+            if (keep[last - 1]) {
+                --last;
+                continue;
+            }
+            auto first = last - 1;
+            while (first > 0 && !keep[first - 1])
+                --first;
+            beginRemoveRows({}, static_cast<int>(first), static_cast<int>(last - 1));
+            for (auto row = first; row < last; ++row) {
+                const auto id = QString::fromStdString(items_[row].job_id);
+                reviews_.remove(id);
+                validations_.remove(id);
+            }
+            items_.erase(items_.begin() + static_cast<std::ptrdiff_t>(first),
+                         items_.begin() + static_cast<std::ptrdiff_t>(last));
+            endRemoveRows();
+            last = first;
+        }
     }
     const auto existing_count = items_.size();
     for (std::size_t row = 0; row < existing_count; ++row) {
