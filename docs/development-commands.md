@@ -187,6 +187,12 @@ Após conferir os [setups de `a469f8d`](windows-installer.md#setups-atualizados-
 
 A operação conferiu **1.771 arquivos protegidos** por tamanho e SHA-256, incluindo o trabalho em andamento, os executáveis, instaladores e recibos. Os dois grafos Ninja continuam legíveis. Os próximos builds desses caches recriam os intermediários removidos. Plano e resultado em `out/product/test-runs/windows-candidates-a469f8d-20261111/`.
 
+### Remoção de versões substituídas e caches
+
+A limpeza posterior removeu **6.107 arquivos (1.514.097.870 bytes)**. A lista inclui os quatro payloads de runtime de `7601247` e `26cc641` conferidos pelos manifestos, os quatro setups de `cf34cd8` e `26cc641` conferidos pelos recibos, 571 intermediários de build declarados pelo Ninja e 3.114 caches Python com fontes correspondentes. Os manifestos, configurações, recibos e logs das versões substituídas foram preservados.
+
+Foram conferidos **1.291 arquivos** por tamanho e SHA-256, incluindo os setups e runtimes completos de `a469f8d` e as 26 alterações locais. Dez grafos Ninja continuaram legíveis. O plano e o resultado estão em `out/product/cleanup-superseded-20261111/`. A conferência foi feita por leitura de arquivos e grafos. Os próximos builds dos caches limpos regeneram os intermediários.
+
 ## Limpeza de artefatos gerados — 2026-11-10
 
 Foram removidos **968 arquivos de build (179.047.853 bytes)**. A lista inclui 150 objetos do núcleo, 49 bibliotecas estáticas de builds auxiliares antigos e 769 fontes geradas pelo Qt em builds históricos. Os grafos CMake/Ninja, logs e recibos foram mantidos. Um build futuro recompila as saídas removidas.

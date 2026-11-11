@@ -2,10 +2,10 @@
 
 **Estado:** runtimes privados Lite e Completa experimental atualizados em 2026-11-11. Uso nativo, lifecycle e gates de distribuição continuam abertos.
 
-A [retenção após a limpeza de 2026-11-05](development-commands.md#limpeza-de-artefatos-gerados--2026-11-05) mantém os dois runtimes Native `7601247`; payloads substituídos tiveram seus arquivos removidos, conservando manifests e evidências. Os registros históricos abaixo documentam sua geração original.
+A [limpeza de 2026-11-11](development-commands.md#remoção-de-versões-substituídas-e-caches) preservou os dois runtimes de `a469f8d` e retirou os payloads substituídos de `7601247` e `26cc641`. Os manifestos e as evidências continuam disponíveis. Os registros históricos abaixo documentam a geração original.
 **Data:** 2026-11-05.
 
-Os [runtimes mais recentes de `2144cfd`](local-delivery-2144cfd-20261104.md) foram compilados e montados em worktree isolada: Lite com 554 arquivos e Completa experimental com 557. Ambos permanecem íntegros após a limpeza; os payloads anteriores `4125f46`/`51cd067` foram substituídos, preservando seus manifests e setups históricos.
+Os [runtimes de `2144cfd`](local-delivery-2144cfd-20261104.md) foram compilados, montados e conferidos em worktree isolada. A edição Lite tinha 554 arquivos, e a Completa experimental, 557.
 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) contém 554 arquivos / 96.347.255 bytes, sem opcionais remotos ou engine interna. O runtime permaneceu íntegro após a limpeza inventariada. A receita adicional da Completa experimental está descrita abaixo, com evidência de montagem própria exigida para cada artefato.
 
