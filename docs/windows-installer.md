@@ -123,6 +123,8 @@ As duas edições incluem escolha da saída de áudio para a sessão, reconexão
 
 A inspeção conferiu os inventários de 619 e 622 arquivos, cinco combinações de seleção, associações OFF e setups PE x86 GUI sem assinatura. A leitura com 7-Zip conferiu 21 arquivos embutidos na Lite e 24 na Completa. Recibos em `out/product/test-runs/windows-candidates-8982c60-20261111/`. Instalação, atualização, remoção, uso com dispositivos físicos e integração instalada com Brave continuam pendentes.
 
+Os dois executáveis sem associações listados acima foram retirados. As configurações e os recibos permanecem disponíveis. [Registro da limpeza](development-commands.md#limpeza-após-a-entrega-de-f8a593b)
+
 ### Declarações e setups de 8982c60 com associações
 
 As declarações v2 vinculam as associações `.flac`, `.m4a`, `.mp3`, `.mp4`, `.oga`, `.ogg` e `.wav` à validação dos perfis básicos no runtime de cada edição. O setup habilita o registro das associações, e o aplicativo padrão é escolhido pelo usuário no Windows. A inspeção estática conferiu as cinco combinações de seleção e a leitura com 7-Zip conferiu 21 arquivos embutidos na Lite e 24 na Completa. Os setups não foram executados. Os recibos ficam em `out/product/test-runs/windows-associations-8982c60-20261111/`.

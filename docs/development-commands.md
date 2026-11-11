@@ -183,6 +183,12 @@ A [promoção dos processos](process-tests.md) registra os cinco drivers em sete
 
 ## Limpeza de artefatos gerados — 2026-11-11
 
+### Limpeza após a entrega de f8a593b
+
+Foram removidos **3.737 arquivos (1.314.385.252 bytes lógicos)**. A seleção incluiu 1.158 intermediários declarados pelo Ninja, os dois setups substituídos de `8982c60` sem associações, 1.203 arquivos dos runtimes anteriores idênticos aos atuais, 1.368 cópias do SDK em uma pasta de execução visual e seis cópias temporárias de probes.
+
+A conferência verificou 2.627 arquivos por SHA-256 e releu seis grafos Ninja. Foram preservados os setups e runtimes de `f8a593b`, os setups anteriores com associações usados na verificação de comparação, os executáveis de referência, os SDKs, os recibos e as sete alterações locais. O próximo build recompila os intermediários removidos. O plano e o resultado ficam em `out/product/cleanup-request-f8a593b-20261111/`. [Setups de f8a593b](windows-installer.md#setups-de-f8a593b)
+
 ### Limpeza após a entrega de 8982c60
 
 Foram removidos **1.995 arquivos (1.157.657.216 bytes lógicos)**. A seleção incluiu os dois setups substituídos de `6d7ae8b` e 1.207 arquivos de seus runtimes, 569 intermediários declarados pelo Ninja, 12 cópias temporárias de probes, 203 arquivos gerados de um cache CMake cuja fonte foi removida e dois PDBs cujo conteúdo foi conferido no arquivo `.7z` preservado.
