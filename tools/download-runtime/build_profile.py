@@ -285,7 +285,7 @@ def _youtube(value):
     return files, root, {"path": str(receipt_path), "sha256": expected_hash, "bytes": size}
 
 
-def _header(files, include_youtube):
+def _header(files, include_youtube, features=None):
     network = [row for row in files if row["component"] == "network"]
     media = next(row for row in files if row["component"] == "media")
     def relative(row):
@@ -299,6 +299,9 @@ def _header(files, include_youtube):
     lines.extend(["    }};", '    profile.execution.media.source_executable = QStringLiteral("' + relative(media) + '");',
                   '    profile.execution.media.source_sha256 = QByteArrayLiteral("' + media["sha256"] + '");',
                   "    profile.execution.job.converter.backend = WindowsLocalMediaBackend::MediaFoundation;"])
+    if features is not None:
+        lines.extend(["    profile.execution.provision_media_profile = " + str(features["provision_media_profile"]).lower() + ";",
+                      "    profile.options.embedded_browser_ingress = " + str(features["embedded_browser_ingress"]).lower() + ";"])
     if include_youtube:
         lines.extend(["    profile.execution.youtube.emplace();", "    profile.execution.youtube->runtime.artifacts = {"])
         for row in files:
@@ -316,9 +319,19 @@ def _header(files, include_youtube):
 
 
 def _plan(config, *, allow_existing_output=False):
-    _closed(config, ("schemaVersion", "output_directory", "network", "media", "youtube"))
+    fields = ("schemaVersion", "output_directory", "network", "media", "youtube")
+    if type(config) is dict and "features" in config:
+        fields += ("features",)
+    _closed(config, fields)
     if type(config["schemaVersion"]) is not int or config["schemaVersion"] != 1:
         raise ValueError("unsupported configuration schema")
+    features = None
+    if "features" in config:
+        feature_names = ("provision_media_profile", "embedded_browser_ingress")
+        _closed(config["features"], feature_names)
+        if any(type(config["features"][name]) is not bool for name in feature_names):
+            raise ValueError("feature values must be booleans")
+        features = {name: config["features"][name] for name in feature_names}
     output = _plain(_local(config["output_directory"]))
     parent = _local(str(ROOT / "out/product"))
     if not _within(output, parent) or _key(output) == _key(parent):
@@ -366,8 +379,10 @@ def _plan(config, *, allow_existing_output=False):
                              for row in files if row["component"] == "network"],
                  "media": {key: files[len(NETWORK)][{"path": "source_path"}.get(key, key)] for key in ("path", "bytes", "sha256")},
                  "youtube": None if youtube_receipt is None else {"receipt_path": youtube_receipt["path"], "receipt_sha256": youtube_receipt["sha256"]}}
+    if features is not None:
+        canonical["features"] = features
     return {"schemaVersion": 1, "purpose": "player-download-package-profile-v1", "config": canonical,
-            "output_directory": str(output), "files": files, "header_text": _header(files, youtube_receipt is not None),
+            "output_directory": str(output), "files": files, "header_text": _header(files, youtube_receipt is not None, features),
             "recipe_files": recipes, "youtube_receipt": youtube_receipt}
 
 
@@ -424,6 +439,8 @@ def materialize(candidate):
                    "files": [{key: row[key] for key in ("component", "role", "relative_path", "bytes", "sha256")} for row in current["files"]],
                    "header": {"relative_path": header.name, "bytes": len(header_bytes), "sha256": header_hash},
                    "recipe_files": current["recipe_files"], "youtube_receipt": current["youtube_receipt"]}
+        if "features" in current["config"]:
+            receipt["features"] = current["config"]["features"]
         receipt_path = output / "download-profile-receipt.json"
         with receipt_path.open("x", encoding="utf-8", newline="\n") as stream:
             json.dump(receipt, stream, ensure_ascii=False, allow_nan=False, indent=2)

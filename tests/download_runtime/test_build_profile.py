@@ -148,6 +148,9 @@ class BuildProfileTests(unittest.TestCase):
         self.assertIn("WindowsLocalMediaBackend::MediaFoundation", header)
         self.assertIn("compiledPlayerNativeIngressProfiles()", header)
         self.assertIn("makePackagedPlayerDownloadProfile(std::move(profile), config_root)", header)
+        self.assertNotIn("features", candidate["config"])
+        self.assertNotIn("provision_media_profile", header)
+        self.assertNotIn("embedded_browser_ingress", header)
         self.assertNotIn(str(REPOSITORY), header)
         self.assertNotIn(str(REPOSITORY).replace("\\", "/"), header)
         self.assertNotIn("payload/", header)
@@ -166,9 +169,75 @@ class BuildProfileTests(unittest.TestCase):
         self.assertEqual((self.output / "PlayerDownloadPackageProfile.hpp").read_text(encoding="utf-8"), candidate["header_text"])
         receipt = json.loads((self.output / "download-profile-receipt.json").read_text(encoding="utf-8"))
         self.assertEqual(receipt["state"], "candidate")
+        self.assertEqual(set(receipt), {"schemaVersion", "purpose", "state", "files", "header", "recipe_files", "youtube_receipt"})
         self.assertEqual(len(receipt["files"]), 10)
         self.assertGreaterEqual(len(receipt["recipe_files"]), 2)
         self.assertEqual({path: digest(Path(path)) for path in before}, before)
+
+    def test_feature_combinations_emit_explicit_flags_and_pin_them_in_receipts(self):
+        for provision in (False, True):
+            for embedded in (False, True):
+                with self.subTest(provision=provision, embedded=embedded):
+                    config = copy.deepcopy(self.config)
+                    config["output_directory"] = str(self.root / f"candidate-{int(provision)}-{int(embedded)}")
+                    features = {"provision_media_profile": provision, "embedded_browser_ingress": embedded}
+                    config["features"] = features
+                    candidate = self.module.plan(config)
+                    self.assertEqual(candidate["config"]["features"], features)
+                    header = candidate["header_text"]
+                    self.assertIn(f"profile.execution.provision_media_profile = {str(provision).lower()};", header)
+                    self.assertIn(f"profile.options.embedded_browser_ingress = {str(embedded).lower()};", header)
+                    output = Path(config["output_directory"])
+                    self.module.materialize(candidate)
+                    receipt = json.loads((output / "download-profile-receipt.json").read_text(encoding="utf-8"))
+                    self.assertEqual(receipt["features"], features)
+                    self.assertEqual(receipt["header"]["sha256"], digest(output / "PlayerDownloadPackageProfile.hpp"))
+                    self.assertEqual((output / "PlayerDownloadPackageProfile.hpp").read_text(encoding="utf-8"), header)
+
+    def test_features_require_both_exact_boolean_fields(self):
+        invalid = [None, False, [], "enabled", {},
+                   {"provision_media_profile": True}, {"embedded_browser_ingress": False},
+                   {"provision_media_profile": False, "embedded_browser_ingress": False, "extra": False}]
+        for name in ("provision_media_profile", "embedded_browser_ingress"):
+            for value in (0, 1, None, "true", [], {}):
+                features = {"provision_media_profile": False, "embedded_browser_ingress": False}
+                features[name] = value
+                invalid.append(features)
+        for features in invalid:
+            with self.subTest(features=features):
+                config = copy.deepcopy(self.config)
+                config["features"] = features
+                self.rejected(config)
+
+    def test_feature_canonical_config_is_ordered_independent_and_preserves_explicit_false(self):
+        config = copy.deepcopy(self.config)
+        config["features"] = {"embedded_browser_ingress": False, "provision_media_profile": False}
+        candidate = self.module.plan(config)
+        self.assertEqual(list(candidate["config"]["features"]), ["provision_media_profile", "embedded_browser_ingress"])
+        self.assertEqual(candidate, self.module.plan(candidate["config"]))
+        config["features"]["embedded_browser_ingress"] = True
+        self.assertFalse(candidate["config"]["features"]["embedded_browser_ingress"])
+        self.assertIn("profile.options.embedded_browser_ingress = false;", candidate["header_text"])
+
+    def test_feature_or_header_plan_tampering_is_rejected_before_output(self):
+        self.config["features"] = {"provision_media_profile": True, "embedded_browser_ingress": True}
+        original = self.module.plan(self.config)
+        for mutation in ("profile", "browser", "omitted", "extra-plan-field", "header"):
+            with self.subTest(mutation=mutation):
+                candidate = copy.deepcopy(original)
+                if mutation == "profile":
+                    candidate["config"]["features"]["provision_media_profile"] = False
+                elif mutation == "browser":
+                    candidate["config"]["features"]["embedded_browser_ingress"] = False
+                elif mutation == "omitted":
+                    del candidate["config"]["features"]
+                elif mutation == "extra-plan-field":
+                    candidate["features"] = {"provision_media_profile": False, "embedded_browser_ingress": False}
+                else:
+                    candidate["header_text"] = candidate["header_text"].replace("provision_media_profile = true", "provision_media_profile = false")
+                with self.assertRaises(ValueError):
+                    self.module.materialize(candidate)
+                self.assertFalse(self.output.exists())
 
     def test_youtube_uses_the_complete_pinned_production_tree_without_reopening_historical_sources(self):
         yt = self.add_youtube()

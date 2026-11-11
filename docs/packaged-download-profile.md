@@ -6,7 +6,7 @@ Esse componente fornece os arquivos e a configuração revisável para uma monta
 
 ## Configuração da receita
 
-O arquivo JSON de entrada tem exatamente estes campos:
+O arquivo JSON de entrada exige os cinco primeiros campos abaixo e aceita o objeto opcional `features`:
 
 | Campo | Contrato |
 | --- | --- |
@@ -15,6 +15,7 @@ O arquivo JSON de entrada tem exatamente estes campos:
 | `network` | Lista com exatamente nove registros `{role, path, bytes, sha256}`, um por papel da tabela abaixo. A ordem de entrada é normalizada. |
 | `media` | Registro `{path, bytes, sha256}` do `RCMusicMediaWorker.exe`. |
 | `youtube` | `null`, ou objeto `{receipt_path, receipt_sha256}` com caminho absoluto e pin explícito do recibo de produção YouTube. |
+| `features` | Opcional. Objeto fechado com os booleanos `provision_media_profile` e `embedded_browser_ingress`. |
 
 Os caminhos das fontes precisam ser absolutos em drive local do Windows. `bytes` é um inteiro positivo de até 128 MiB por arquivo; `sha256` tem 64 dígitos hexadecimais minúsculos e deve corresponder aos bytes observados. Campos extras, tipos incompatíveis, papéis ausentes ou duplicados são recusados.
 
@@ -31,6 +32,23 @@ Os caminhos das fontes precisam ser absolutos em drive local do Windows. `bytes`
 | `Plugin` | `qrcmusicschanneloffline.dll` |
 
 O [scanner estático de rede](../tools/download-runtime/README.md) fornece observações dos nove PEs com tamanhos, hashes e imports. Seu uso é explícito e separado; o gerador não inicia `dumpbin` nem executa as ferramentas examinadas. A configuração usa fontes e pins já revisados, sem descoberta no `PATH`.
+
+### Opções compiladas
+
+Uma composição revisada pode definir `features` assim:
+
+```json
+{
+  "provision_media_profile": true,
+  "embedded_browser_ingress": true
+}
+```
+
+`provision_media_profile` configura o [perfil AppContainer por trabalho](download-conversion.md#perfil-appcontainer-por-trabalho). `embedded_browser_ingress` configura o [envio pelo navegador integrado](embedded-browser.md#envio-para-a-fila-de-downloads) da Completa. A execução usa as mesmas opções C++ dos componentes existentes. A janela interna continua pertencendo à composição da Completa.
+
+Quando `features` está presente, os dois campos são obrigatórios e aceitam somente `true` ou `false`. O header recebe as duas atribuições e o recibo registra as escolhas, inclusive `false` explícito. Omitir o objeto conserva o formato anterior do header e do recibo, com os defaults C++ desligados. Alterar as opções ou o header de um plano já calculado exige gerar outro plano antes da materialização.
+
+O leitor de componentes usado pela montagem Windows valida o objeto opcional e devolve as opções normalizadas no plano. Os hashes do recibo e do header continuam vinculando a identidade do componente. O JSON é uma entrada de build; a configuração que chega ao player vem do C++ compilado. Qualificação física do isolamento e aceitação do navegador permanecem requisitos próprios antes do uso em produção.
 
 ## YouTube opcional
 
@@ -133,3 +151,11 @@ Formato dos **5 C++**, incluindo o template, passou. O header completo do candid
 A fixture usa Python 3.13+ somente durante o build de testes desse recorte; `Python3_EXECUTABLE` pode selecionar explicitamente o intérprete conhecido. Hashes e geração ocorrem depois dos targets, sem pin do próprio player ou ciclo de dependências. A saída não materializada de `--plan-only` fica sob a raiz autorizada da receita, independente do diretório de build. Uma verificação adicional gerou os headers fora de `out/product`, sem materializar o candidato; as cópias próprias foram preservadas intactas em `out/product/test-runs/packaged-download-profile-20261105/non-product-build-fixture/`, com o local original registrado na evidência.
 
 Essa geração não iniciou o runtime YouTube/Node/EJS nem executou transferência ou conversão pelos binários do candidato completo. Montagem do app com Qt, dependências PE (inclusive `.pyd`), licenças, seleção opcional/ownership do instalador, identidade real Brave e aquisição pública permanecem etapas separadas.
+
+### Opções do perfil — 2026-11-11
+
+O produtor teve Red em quatro métodos com seis erros pela ausência de `features`, seguido de **22/22 métodos Python**. O consumidor Windows teve Red **11 aprovados/5 falhos**, seguido de **16/16 casos PowerShell**. As quatro combinações foram materializadas com bytes sintéticos e aceitas pelo leitor real de componentes, preservando as escolhas. Foram também gerados quatro headers a partir do inventário real de **45 arquivos/133.468.285 bytes** e compilados em um smoke C++20, que confirmou os campos públicos nas quatro combinações. Nesse smoke, o helper de pacote e o provedor Native são substitutos inertes.
+
+As regressões proporcionais passaram **19/19** no componente do instalador e **150/150** no planejador de runtime Windows. Validação documental, rastreabilidade e diff passaram.
+
+Evidência em `out/product/test-runs/download-profile-features-20261111/`. Os planos reais foram somente lidos; o smoke e os componentes sintéticos não iniciam workers, navegador ou perfis nativos. A incorporação das opções qualificadas ao instalador exige seu fechamento específico.

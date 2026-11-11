@@ -190,12 +190,28 @@ function Get-RcMusicDownloadComponentPlan {
         $text = [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
         $document = [Text.Json.JsonDocument]::Parse($text, $options)
         $root = $document.RootElement
-        Assert-ComponentObject $root @('schemaVersion', 'purpose', 'state', 'files', 'header', 'recipe_files', 'youtube_receipt')
+        $rootFields = @('schemaVersion', 'purpose', 'state', 'files', 'header', 'recipe_files', 'youtube_receipt')
+        $featureObject = [Text.Json.JsonElement]::new()
+        $hasFeatures = $root.ValueKind -eq [Text.Json.JsonValueKind]::Object -and
+            $root.TryGetProperty('features', [ref]$featureObject)
+        if ($hasFeatures) { $rootFields += 'features' }
+        Assert-ComponentObject $root $rootFields
         $schema = $root.GetProperty('schemaVersion')
         if ($schema.ValueKind -ne [Text.Json.JsonValueKind]::Number -or $schema.GetRawText() -cne '1' -or
             (Get-ComponentString ($root.GetProperty('purpose'))) -cne 'player-download-package-profile-v1' -or
             (Get-ComponentString ($root.GetProperty('state'))) -cne 'candidate') {
             throw 'Unsupported component receipt schema, purpose or state'
+        }
+        $features = [ordered]@{ provision_media_profile = $false; embedded_browser_ingress = $false }
+        if ($hasFeatures) {
+            Assert-ComponentObject $featureObject @('provision_media_profile', 'embedded_browser_ingress')
+            foreach ($name in @($features.Keys)) {
+                $value = $featureObject.GetProperty($name)
+                if ($value.ValueKind -notin @([Text.Json.JsonValueKind]::True, [Text.Json.JsonValueKind]::False)) {
+                    throw 'Component compile-time features must be Boolean'
+                }
+                $features[$name] = $value.GetBoolean()
+            }
         }
         $header = $root.GetProperty('header')
         Assert-ComponentObject $header @('relative_path', 'bytes', 'sha256')
@@ -301,6 +317,7 @@ function Get-RcMusicDownloadComponentPlan {
         return [pscustomobject]@{
             package_root = $packageRoot; receipt_path = $receiptPath; receipt_sha256 = $ReceiptSha256
             header_path = $headerPath; header_sha256 = $headerSha
+            features = [pscustomobject]$features
             files = @($files | Sort-Object -Property relative_path -CaseSensitive)
             metadata = [pscustomobject]@{
                 schema_version = 1; selection_default = $false; receipt_sha256 = $ReceiptSha256; header_sha256 = $headerSha

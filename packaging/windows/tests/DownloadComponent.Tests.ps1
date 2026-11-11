@@ -145,8 +145,63 @@ try {
         Assert-Equal $plan.metadata.header_sha256 $f.Data.header.sha256
         Assert-Equal $plan.metadata.activation_marker.relative_path 'download-tools/installed-v1'
         Assert-Equal $plan.metadata.activation_marker.content "RCMusicDownloadTools-v1`n"
+        Assert-True ($plan.features.provision_media_profile -is [bool] -and -not $plan.features.provision_media_profile) 'Legacy profile provisioning default changed'
+        Assert-True ($plan.features.embedded_browser_ingress -is [bool] -and -not $plan.features.embedded_browser_ingress) 'Legacy embedded ingress default changed'
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.Root 'payload/download-tools/installed-v1'))) 'Reader created an activation marker'
         Assert-Equal (Snapshot $f.Root) $before 'Component inspection changed its inputs'
+    }
+    foreach ($mask in 0..3) {
+        Test-Case "explicit compile-time feature selection $mask is preserved without changing inputs" {
+            $f = New-Fixture
+            $f.Data['features'] = [ordered]@{
+                provision_media_profile = [bool]($mask -band 1)
+                embedded_browser_ingress = [bool]($mask -band 2)
+            }
+            Save-Receipt $f
+            $before = Snapshot $f.Root
+            $plan = Get-Plan $f
+            Assert-True ($plan.features.provision_media_profile -is [bool]) 'Profile option lost its Boolean type'
+            Assert-True ($plan.features.embedded_browser_ingress -is [bool]) 'Embedded option lost its Boolean type'
+            Assert-Equal $plan.features.provision_media_profile ([bool]($mask -band 1))
+            Assert-Equal $plan.features.embedded_browser_ingress ([bool]($mask -band 2))
+            Assert-Equal $plan.files.Count 10
+            Assert-Equal $plan.header_sha256 $f.Data.header.sha256
+            Assert-Equal (Snapshot $f.Root) $before 'Feature inspection changed its inputs'
+        }
+    }
+    Test-Case 'optional compile-time features reject missing unknown and non-Boolean fields' {
+        foreach ($change in @(
+            { param($d) $d['features'] = $null },
+            { param($d) $d['features'] = $false },
+            { param($d) $d['features'] = @() },
+            { param($d) $d['features'] = 'true' },
+            { param($d) $d['features'] = [ordered]@{} },
+            { param($d) $d['features'] = [ordered]@{ provision_media_profile = $true } },
+            { param($d) $d['features'] = [ordered]@{ embedded_browser_ingress = $true } },
+            { param($d) $d['features'] = [ordered]@{ provision_media_profile = $true; embedded_browser_ingress = $true; extra = $false } },
+            { param($d) $d['features'] = [ordered]@{ provision_media_profile = 'true'; embedded_browser_ingress = $false } },
+            { param($d) $d['features'] = [ordered]@{ provision_media_profile = 1; embedded_browser_ingress = $false } },
+            { param($d) $d['features'] = [ordered]@{ provision_media_profile = $true; embedded_browser_ingress = $null } },
+            { param($d) $d['features'] = [ordered]@{ provision_media_profile = $true; embedded_browser_ingress = 0 } }
+        )) { Reject-ChangedReceipt $change }
+    }
+    Test-Case 'duplicate optional feature objects and nested option names are rejected' {
+        foreach ($nested in @($false, $true)) {
+            $f = New-Fixture
+            $f.Data['features'] = [ordered]@{ provision_media_profile = $true; embedded_browser_ingress = $false }
+            Save-Receipt $f
+            $raw = Get-Content -LiteralPath $f.Receipt -Raw
+            if ($nested) {
+                $raw = $raw.Replace('"features":{', '"features":{"provision_media_profile":false,')
+            } else {
+                $raw = $raw.Replace('"features":{', '"features":{"provision_media_profile":false,"embedded_browser_ingress":false},"features":{')
+            }
+            Write-Utf8 $f.Receipt $raw
+            $f.Pin = Hash $f.Receipt
+            $before = Snapshot $f.Root
+            Assert-Throws { Get-Plan $f } 'Duplicate optional features were accepted'
+            Assert-Equal (Snapshot $f.Root) $before 'Duplicate feature inspection changed its inputs'
+        }
     }
     Test-Case 'YouTube maps its closed nested inventory and treats absent external provenance as inert data' {
         $f = New-Fixture -Youtube
