@@ -32,6 +32,8 @@ Clique em **Lidarr**, informe o endereço da sua instância (inicialmente `http:
 
 Digite o artista ou álbum, escolha o tipo de pesquisa e clique em **Buscar**. Se não houver correspondências, o painel informa **Nenhum resultado para esta busca**. Os álbuns aparecem como **No catálogo do Lidarr** ou **Já cadastrado no Lidarr**. Selecione um deles e use **Solicitar download**. Para um álbum novo, escolha uma pasta e perfis já configurados no servidor. A confirmação explica o que será cadastrado ou buscado. Só **Solicitar** envia o pedido. Para encontrar uma faixa, procure o artista ou o álbum correspondente.
 
+Use **Tab** para entrar nos resultados, **↑/↓** para mover o cursor e **Home/End** para chegar ao início ou ao fim da lista. **Enter** ou **Espaço** selecionam o resultado. Depois, vá até **Solicitar download** para abrir a confirmação.
+
 **Busca solicitada no Lidarr** indica que o pedido foi aceito, sem garantir resultado ou download concluído. Indexadores e cliente de download precisam estar configurados no Lidarr; acompanhe a busca nele. Se cancelar ou ocorrer timeout após o envio, confira no Lidarr antes de repetir. A integração não importa os arquivos baixados automaticamente nem altera a fila atual. **Desconectar** encerra a conexão e descarta as credenciais da sessão. Consulte os [limites da integração](lidarr-integration.md).
 
 ## Abrir música e organizar a fila

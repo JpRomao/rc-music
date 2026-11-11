@@ -363,6 +363,50 @@ TestCase {
         verify(!findChild(shell, "lidarr-request").enabled);
         compare(backend.downloads, 0);
     }
+    function test_keyboardSelectsResultsBeyondTheVisibleRowsWithoutRequestingDownload() {
+        const count = 40;
+        showResults(Array.from({
+            length: count
+        }, (_, index) => album("album-" + index, index + 1)));
+        const panel = findChild(shell, "lidarr-panel");
+        const query = findChild(shell, "lidarr-query");
+        const search = findChild(shell, "lidarr-search");
+        const list = findChild(shell, "lidarr-results");
+        const request = findChild(shell, "lidarr-request");
+        query.text = "Album";
+        search.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        tryCompare(list, "activeFocus", true);
+        verify(list.itemAtIndex(count - 1) === null);
+        keyClick(Qt.Key_Down);
+        tryCompare(list, "currentIndex", 1);
+        keyClick(Qt.Key_End);
+        tryCompare(list, "currentIndex", count - 1);
+        tryVerify(function () {
+            const row = list.itemAtIndex(count - 1);
+            return row && row.mapToItem(list, 0, row.height).y <= list.height + 1;
+        });
+        compare(panel.selectedKey, "");
+        verify(!request.enabled);
+        const reordered = backend.results.slice();
+        reordered.splice(2, 0, reordered.pop());
+        backend.results = reordered;
+        tryCompare(list, "currentIndex", 2);
+        keyClick(Qt.Key_Return);
+        tryCompare(panel, "selectedKey", "album-39");
+        verify(request.enabled);
+        compare(backend.downloads, 0);
+        keyClick(Qt.Key_Tab);
+        tryCompare(request, "activeFocus", true);
+        keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        tryCompare(list, "activeFocus", true);
+        keyClick(Qt.Key_Home);
+        tryCompare(list, "currentIndex", 0);
+        compare(panel.selectedKey, "album-39");
+        keyClick(Qt.Key_Space);
+        tryCompare(panel, "selectedKey", "album-0");
+        compare(backend.downloads, 0);
+    }
     function test_modalBlocksPlayerShortcutsAndRestoresFocus() {
         openPanel();
         compare(shell.windowShortcutsEnabled, false);

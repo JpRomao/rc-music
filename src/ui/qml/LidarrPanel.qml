@@ -280,14 +280,83 @@ Dialog {
         ListView {
             id: resultsList
             objectName: "lidarr-results"
+            readonly property bool selectionAllowed: root.interactionAllowed && root.connected && !root.busy
+            property string cursorKey: ""
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumHeight: 64
             visible: root.connected
             model: root.lidarr !== null ? root.lidarr.results : []
+            activeFocusOnTab: selectionAllowed && count > 0
+            keyNavigationEnabled: false
             clip: true
             spacing: root.contract.spacingUnit
             boundsBehavior: Flickable.StopAtBounds
+            Accessible.role: Accessible.List
+            Accessible.name: qsTr("Resultados da pesquisa do Lidarr")
+            Accessible.focusable: activeFocusOnTab
+            Accessible.focused: activeFocus
+
+            function indexOfKey(key) {
+                for (let index = 0; index < model.length; ++index) {
+                    if (model[index].key === key)
+                        return index;
+                }
+                return -1;
+            }
+            function moveCursor(index, reveal) {
+                const next = model.length > 0 ? Math.max(0, Math.min(index, model.length - 1)) : -1;
+                cursorKey = next < 0 ? "" : model[next].key;
+                currentIndex = next;
+                if (reveal && next >= 0)
+                    positionViewAtIndex(next, ListView.Contain);
+            }
+            function restoreCursor() {
+                const index = indexOfKey(cursorKey);
+                moveCursor(index >= 0 ? index : indexOfKey(root.selectedKey), activeFocus);
+            }
+            function activateRow(key, reason) {
+                const index = indexOfKey(key);
+                if (!selectionAllowed || index < 0)
+                    return;
+                moveCursor(index, true);
+                forceActiveFocus(reason);
+                root.selectedKey = key;
+            }
+
+            Component.onCompleted: restoreCursor()
+            onModelChanged: restoreCursor()
+            onActiveFocusChanged: {
+                if (activeFocus)
+                    restoreCursor();
+            }
+            Keys.onPressed: event => {
+                if (!selectionAllowed || count === 0 || (event.modifiers !== Qt.NoModifier && event.modifiers !== Qt.KeypadModifier))
+                    return;
+                switch (event.key) {
+                case Qt.Key_Up:
+                    moveCursor(currentIndex - 1, true);
+                    break;
+                case Qt.Key_Down:
+                    moveCursor(currentIndex + 1, true);
+                    break;
+                case Qt.Key_Home:
+                    moveCursor(0, true);
+                    break;
+                case Qt.Key_End:
+                    moveCursor(model.length - 1, true);
+                    break;
+                case Qt.Key_Return:
+                case Qt.Key_Enter:
+                case Qt.Key_Space:
+                    if (!event.isAutoRepeat)
+                        activateRow(cursorKey, Qt.TabFocusReason);
+                    break;
+                default:
+                    return;
+                }
+                event.accepted = true;
+            }
             ScrollBar.vertical: AccessibleScrollBar {
                 contract: root.contract
             }
@@ -296,19 +365,27 @@ Dialog {
                 required property var modelData
                 required property int index
                 readonly property string libraryStatus: modelData.kind !== "album" ? "" : (modelData.existingId > 0 ? qsTr("Já cadastrado no Lidarr") : qsTr("No catálogo do Lidarr"))
+                readonly property bool cursorFocused: resultsList.activeFocus && ListView.isCurrentItem
                 objectName: "lidarr-result-" + index
                 width: resultsList.width
                 implicitHeight: 62
                 highlighted: root.selectedKey === modelData.key
-                enabled: root.interactionAllowed && !root.busy
-                activeFocusOnTab: true
+                enabled: resultsList.selectionAllowed
+                activeFocusOnTab: false
+                focusPolicy: Qt.NoFocus
+                Accessible.role: Accessible.ListItem
                 Accessible.name: modelData.title + (modelData.artist.length > 0 ? " · " + modelData.artist : "") + (libraryStatus.length > 0 ? " · " + libraryStatus : "")
-                onClicked: root.selectedKey = modelData.key
+                Accessible.focusable: enabled
+                Accessible.focused: cursorFocused
+                Accessible.selectable: true
+                Accessible.selected: highlighted
+                Accessible.onPressAction: resultsList.activateRow(modelData.key, Qt.OtherFocusReason)
+                onClicked: resultsList.activateRow(modelData.key, Qt.MouseFocusReason)
                 background: Rectangle {
                     color: rowDelegate.highlighted ? root.contract.surfaceColor : "transparent"
                     radius: root.contract.radiusSmall
-                    border.width: rowDelegate.activeFocus ? 3 : (rowDelegate.highlighted ? 1 : 0)
-                    border.color: rowDelegate.activeFocus ? root.contract.focusColor : root.contract.accentColor
+                    border.width: rowDelegate.cursorFocused ? 3 : (rowDelegate.highlighted ? 1 : 0)
+                    border.color: rowDelegate.cursorFocused ? root.contract.focusColor : root.contract.accentColor
                 }
                 contentItem: Column {
                     spacing: root.contract.spacingUnit

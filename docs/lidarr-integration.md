@@ -63,6 +63,8 @@ Em 2026-11-11, os testes reproduziram a mensagem genérica para busca vazia, a f
 
 Cinco regressões reproduziram recusas de acesso durante busca ou pedido de álbum, incluindo um 403 com resposta acima do limite. Após a correção, passaram **40 casos Qt do serviço**, o binding e **13 casos Qt Quick** do painel. Logs em `out/product/test-runs/lidarr-auth-recovery-20261111/`.
 
+Na regressão de teclado, End deixou o cursor no segundo de 40 resultados. O Green passou em **14/14 Qt Quick** do Lidarr, incluindo navegação até uma linha fora da área visível, preservação do cursor pela chave após reordenação, seleção por teclado e passagem de foco para o botão de solicitação. O build Release do alvo Quick, o lint e o formato dos QML alterados passaram. Os testes usam um serviço simulado. Logs em `out/product/test-runs/lidarr-keyboard-results-20261111/`. [Controles no manual](user-guide.md#pesquisar-e-solicitar-álbuns-no-lidarr)
+
 ## Referências
 
 - [API oficial Lidarr](https://lidarr.audio/docs/api/).
