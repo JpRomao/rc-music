@@ -1,0 +1,38 @@
+# FFmpeg nos instaladores Windows de f8a593b
+
+## Origem dos binários e das fontes
+
+A leitura direta dos dois setups `f8a593b` confirmou por SHA-256 que as cinco DLLs do FFmpeg são idênticas às dos runtimes, do estágio do Qt e do arquivo oficial Qt Multimedia 6.11.2 para MSVC 2022 x64. O SHA-1 publicado pelo Qt coincide com o do arquivo local. As cinco DLLs são parte da instalação básica de ambas as edições. [Arquivo do Qt](../m0/evidence/m0-6-qt-audio-first-slices.md#dependências-isoladas) · [Inventários dos setups](windows-f8a593b-sbom.md)
+
+| DLL | Versão do arquivo PE e dos headers da fonte | SHA-256 |
+| --- | --- | --- |
+| `avcodec-61.dll` | `61.19.101` | `ed5b2789171ba8bf603b3cdb55c9ad3e711873c9ccdf1e6a89958bc24dc2807b` |
+| `avformat-61.dll` | `61.7.103` | `4140360861d785a68f39927481f42cd61a48a77eaeabadfa291e118bfc01f796` |
+| `avutil-59.dll` | `59.39.100` | `530fb1c691e27341d058059070cfa399b7ae5fbc827d0e4928e6d022d6676df2` |
+| `swresample-5.dll` | `5.3.100` | `d9b6978b3edec2a6a3e7c5dd55acca2f0a9e198fd4cc81682e3f64973d8b2a15` |
+| `swscale-8.dll` | `8.3.100` | `3f5a8f18f683e0c52cb8b8f0695f84b97d5c2e5d45d944f2a15a40e45be79a9a` |
+
+As cinco DLLs informam `ProductVersion` `7.1.5` e a mesma configuração MSVC de bibliotecas compartilhadas. A configuração embutida coincide com a receita Coin do Qt, que fixa a tag `n7.1.5` e compila seu arquivo fonte diretamente. O tarball conferido corresponde ao commit `3a0867c2bfda4a4d4309ca1a8cbdc6175e67f587`. `config_qtmultimedia.opt` aponta para a saída dessa receita. A atribuição do Qt Multimedia `v6.11.2` ainda declarava `7.1.3` e foi atualizada no commit `884fc4a`. O SPDX antigo permanece registrado como dado do fornecedor. [Receita FFmpeg para Windows](https://github.com/qt/qt5/blob/v6.11.2/coin/provisioning/common/windows/install-ffmpeg.ps1) · [Opções comuns](https://github.com/qt/qt5/blob/v6.11.2/coin/provisioning/common/shared/ffmpeg_config_options.txt) · [Atribuição em 6.11.2](https://github.com/qt/qtmultimedia/blob/v6.11.2/src/3rdparty/ffmpeg/qt_attribution.json) · [Correção da atribuição](https://github.com/qt/qtmultimedia/commit/884fc4a59bb96b6dc18a0f17ccbb5bd650db2176)
+
+As opções do FFmpeg habilitam zlib e apontam para a saída x64 da receita Qt para zlib **1.3.1**. Essa receita ajusta `zconf.h` e `win32/Makefile.msc` para MSVC. A inspeção confirmou os marcadores de `inflate` e `deflate` 1.3.1 em `avcodec-61.dll`, e de `inflate` 1.3.1 em `avformat-61.dll`. Os imports dos PEs não incluem uma DLL zlib. A evidência vincula a cópia estática a esses dois arquivos. [Receita zlib do Qt](https://github.com/qt/qt5/blob/v6.11.2/coin/provisioning/common/windows/zlib.ps1) · [Makefile MSVC do zlib](https://github.com/madler/zlib/blob/v1.3.1/win32/Makefile.msc)
+
+| Arquivo fonte fixado na receita | SHA-1 do Qt | SHA-256 conferido | Textos na fonte |
+| --- | --- | --- | --- |
+| [FFmpeg n7.1.5](https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/refs/tags/n7.1.5) | `2322a4cef2d607c7f0048953662ec5e27c587ae8` | `e3963a50831c985933e1a625ed566ec4c7adb5c012c34fa9f84438e1d61bdacc` | `COPYING.LGPLv2.1`, `LICENSE.md`, `CREDITS` |
+| [zlib 1.3.1](https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz) | `f535367b1a11e2f9ac3bec723fb007fbc0d189e5` | `9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23` | `LICENSE` |
+
+As DLLs registram LGPL 2.1 ou posterior e as opções observadas excluem `--enable-gpl`, `--enable-version3` e `--enable-nonfree`. A atribuição do Qt inclui termos adicionais e referencia código de terceiros como IJG e Boost. A composição dos notices e a conferência das obrigações de distribuição continuam em M5.7. [Atribuições do Qt para FFmpeg 7.1.5](https://doc.qt.io/qt-6.11/qtmultimedia-attribution-ffmpeg.html)
+
+## Avisos aplicáveis à revisão de M5.7
+
+A inspeção estática dos PEs confirmou os registros dos decodificadores e demuxers abaixo. O filtro local do RC Music verifica o sufixo antes de passar a URL ao Qt. O backend FFmpeg do Qt identifica o formato pelo conteúdo e analisa os streams ao abrir o arquivo. O AAX e o VobSub têm funções de detecção por conteúdo, por isso a lista de extensões e a ausência de vídeo na interface são insuficientes para dispensar esses caminhos. [Admissão de arquivo local](../../src/domain/LocalAudioFilePolicy.cpp) · [Backend do RC Music](../../src/adapters/QtMultimediaPlaybackBackend.cpp) · [Abertura no Qt](https://github.com/qt/qtmultimedia/blob/v6.11.2/src/plugins/multimedia/ffmpeg/playbackengine/qffmpegmediadataholder.cpp#L260-L310) · [Detecção AAX](https://github.com/FFmpeg/FFmpeg/blob/n7.1.5/libavformat/aaxdec.c#L58-L69) · [Detecção VobSub](https://github.com/FFmpeg/FFmpeg/blob/n7.1.5/libavformat/mpeg.c#L687-L744)
+
+| Aviso | Evidência no candidato | Pendência |
+| --- | --- | --- |
+| [CVE-2026-64835](https://www.vulncheck.com/advisories/ffmpeg-out-of-bounds-memory-access-in-adx-audio-decoder), High | `adpcm_adx`, `adx` e `aax` estão registrados. O callback ADX mantém o estado de canais anterior no caminho de novos dados do stream. | Incluir e validar a [correção ADX](https://github.com/FFmpeg/FFmpeg/commit/1836ef96846937a6cc2443698a693104f5c0b21e) na substituição do runtime. |
+| [CVE-2026-64830](https://www.vulncheck.com/advisories/ffmpeg-heap-buffer-overflow-via-vobsub-subtitle-demuxer), High | `vobsub` está registrado. O parser cria streams sem o limite corrigido e usa a contagem para indexar a fila de legendas. O demuxer procura um `.sub` irmão. | Incluir e validar a [correção VobSub](https://github.com/FFmpeg/FFmpeg/commit/dbd495f066a85ba96b17433f4306582aa37c3951) na substituição do runtime. |
+| [TOB-ZLIB-004](https://zlib.net/), `inflateSync` | `avcodec-61.dll` inclui `flashsv` e o marcador da recuperação zlib. O código do decoder chama `inflateSync` nesse caminho. | Confirmar a aplicabilidade e validar a [correção zlib](https://github.com/madler/zlib/commit/8179479c6274c0041189882b8746a33e2376eaf0) junto da substituição. [Decoder Flash Screen Video](https://github.com/FFmpeg/FFmpeg/blob/n7.1.5/libavcodec/flashsv.c#L210-L235) |
+
+Os três patches upstream passaram em `git apply --check` nas fontes das tags `n7.1.5` e `v1.3.1`. A validação foi restrita à aplicação dos patches. A receita publicada para Qt 6.11.3 também fixa `n7.1.5`. A substituição ainda exige DLLs Windows x64 com as ABIs acima e verificação dos formatos nas duas edições. [Receita Qt 6.11.3](https://github.com/qt/qt5/blob/v6.11.3/coin/provisioning/common/windows/install-ffmpeg.ps1) · [Compatibilidade do FFmpeg no Qt](https://doc.qt.io/qt-6/qtmultimedia-building-ffmpeg.html)
+
+A auditoria leu os arquivos sem executá-los. Os scripts, recibos JSON e arquivos fonte autenticados estão em `out/product/test-runs/windows-ffmpeg-f8a593b-20261111/`. A análise de alcance usou a implementação do RC Music e as fontes upstream. A exploração no player e a cobertura dos demais avisos permanecem sem verificação. Os candidatos atuais seguem privados e M5.7 fica em andamento.

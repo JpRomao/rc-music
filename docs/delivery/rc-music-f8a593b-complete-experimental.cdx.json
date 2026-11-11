@@ -3,7 +3,7 @@
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
   "serialNumber": "urn:uuid:a470bccb-bb4a-5382-b042-d92922419f40",
-  "version": 1,
+  "version": 2,
   "metadata": {
     "lifecycles": [
       {
@@ -50,7 +50,7 @@
       },
       {
         "name": "rcmusic:dependency-evidence",
-        "value": "Observed base-runtime PE imports and declared prerequisites"
+        "value": "Observed base-runtime PE imports, zlib embedded in FFmpeg, and declared prerequisites"
       },
       {
         "name": "rcmusic:installer:variant:0:payload-id",
@@ -661,7 +661,11 @@
         },
         {
           "name": "rcmusic:version-evidence",
-          "value": "PE ProductVersion 7.1.5; supplier SPDX states 7.1.3"
+          "value": "Qt archive and setup bytes, PE versions and Qt Coin recipe confirm 7.1.5. Supplier SPDX states 7.1.3."
+        },
+        {
+          "name": "rcmusic:source:upstream-commit",
+          "value": "3a0867c2bfda4a4d4309ca1a8cbdc6175e67f587"
         }
       ],
       "components": [
@@ -752,6 +756,56 @@
             {
               "alg": "SHA-256",
               "content": "3f5a8f18f683e0c52cb8b8f0695f84b97d5c2e5d45d944f2a15a40e45be79a9a"
+            }
+          ]
+        },
+        {
+          "type": "library",
+          "bom-ref": "embedded:zlib-ffmpeg",
+          "name": "zlib",
+          "scope": "required",
+          "version": "1.3.1",
+          "licenses": [
+            {
+              "license": {
+                "id": "Zlib"
+              }
+            }
+          ],
+          "properties": [
+            {
+              "name": "rcmusic:embedded-in",
+              "value": "avcodec-61.dll, avformat-61.dll"
+            },
+            {
+              "name": "rcmusic:version-evidence",
+              "value": "Qt Coin recipe, PE configure and embedded zlib 1.3.1 strings"
+            }
+          ],
+          "externalReferences": [
+            {
+              "type": "distribution",
+              "url": "https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz",
+              "comment": "Source archive pinned by Qt Coin",
+              "hashes": [
+                {
+                  "alg": "SHA-256",
+                  "content": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/refs/tags/n7.1.5",
+          "comment": "Source archive pinned by Qt Coin",
+          "hashes": [
+            {
+              "alg": "SHA-256",
+              "content": "e3963a50831c985933e1a625ed566ec4c7adb5c012c34fa9f84438e1d61bdacc"
             }
           ]
         }
@@ -11902,6 +11956,12 @@
         "component:webview2-sdk",
         "external:vc-redistributable",
         "external:windows-x64"
+      ]
+    },
+    {
+      "ref": "component:ffmpeg",
+      "dependsOn": [
+        "embedded:zlib-ffmpeg"
       ]
     },
     {

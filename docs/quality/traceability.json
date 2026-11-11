@@ -3300,12 +3300,16 @@
           "marker": "## Verificação e pendências"
         },
         {
+          "path": "docs/delivery/windows-f8a593b-ffmpeg.md",
+          "marker": "## Origem dos binários e das fontes"
+        },
+        {
           "path": "docs/architecture/decisions/0005-windows-product-stack.md",
           "marker": "Distribuição permanece privada/experimental até seus próprios gates"
         }
       ],
       "remaining": [
-        "Completar dependências transitivas, notices e fontes correspondentes nos SBOMs de f8a593b. Reconciliar a divergência SPDX/binários do FFmpeg e revisar os termos dos pré-requisitos Microsoft e dos componentes opcionais.",
+        "Completar dependências transitivas, notices e fontes correspondentes nos SBOMs de f8a593b. Validar a substituição do FFmpeg para os avisos ADX e VobSub e apurar o aviso de zlib. Revisar os termos dos pré-requisitos Microsoft e dos componentes opcionais.",
         "Definir licença pública quando autorizada; licença/proveniência local das fixtures não equivale a autorização de publicação."
       ]
     },

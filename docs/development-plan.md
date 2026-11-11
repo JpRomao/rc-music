@@ -824,7 +824,7 @@ Os instaladores Lite e Completa experimental de `f8a593b` incorporam recuperaç�
 
 Em M4.6, cada runtime de `f8a593b` passou os 17 cenários de áudio. As declarações v2 vinculam sete extensões ao resultado de cada edição, e os setups com associações passaram pela inspeção estática. A confirmação no Registro, no Explorer e em Aplicativos Padrão permanece pendente. [Evidência dos candidatos](windows-installer.md#setups-de-f8a593b)
 
-Em M5.7, os dois setups de `f8a593b` têm SBOMs CycloneDX com arquivos e totais conferidos para cada combinação de opções. A revisão de dependências transitivas, licenças e advisories segue aberta. [Inventário dos setups](delivery/windows-f8a593b-sbom.md)
+Em M5.7, os dois setups de `f8a593b` têm SBOMs CycloneDX com arquivos e totais conferidos para cada combinação de opções. A inspeção vinculou o FFmpeg 7.1.5 à receita Qt e identificou zlib 1.3.1 incorporado. Os binários contêm os caminhos de ADX e VobSub sem as correções de dois avisos High. A substituição do runtime, os demais advisories e os notices finais seguem em aberto. [Inventário dos setups](delivery/windows-f8a593b-sbom.md) · [Proveniência e avisos do FFmpeg](delivery/windows-f8a593b-ffmpeg.md)
 
 Em M2.6, a extração de metadados observa troca de faixa, cancelamento explícito, o prazo de 2 s e saída entre as operações de leitura e de capa. A próxima faixa pode receber seus detalhes assim que a extração anterior atingir um desses pontos. [Cancelamento e limites](audio-tests.md#cancelamento-cooperativo-de-metadados)
 
