@@ -14,7 +14,12 @@ namespace music_player::m0::test {
 namespace {
 
 struct FakeExecution final : DownloadExecution {
+    struct ArchivedStart final {
+        std::vector<std::string> archived_job_ids;
+        std::vector<std::string> retired_import_job_ids;
+    };
     std::vector<std::pair<std::string, DownloadItem>> starts;
+    std::vector<ArchivedStart> archived_starts;
     std::vector<std::string> cancellations;
     std::vector<std::string> polls;
     DownloadExecutionUpdate update;
@@ -34,6 +39,14 @@ struct FakeExecution final : DownloadExecution {
         if (throw_start)
             throw std::runtime_error("private adapter detail");
         return accepted;
+    }
+    bool startWithArchivedJobs(const std::string& job_id, const DownloadItem& item,
+                               const ArchivedDownloadJobEvidence& evidence) override {
+        archived_starts.push_back(
+            {.archived_job_ids = {evidence.archived_job_ids.begin(), evidence.archived_job_ids.end()},
+             .retired_import_job_ids = {evidence.retired_import_job_ids.begin(),
+                                        evidence.retired_import_job_ids.end()}});
+        return start(job_id, item);
     }
     void cancel(std::string_view job_id) override {
         cancellations.emplace_back(job_id);
@@ -66,6 +79,8 @@ struct FakeImport final : DownloadImport {
     bool throw_capability{false};
     mutable int capability_queries{0};
     mutable std::function<void()> on_capability{};
+    std::vector<std::string> retired_import_job_ids{};
+    std::function<void()> on_retirement_evidence{};
 
     bool supportsDurableRecovery() const override {
         ++capability_queries;
@@ -97,6 +112,11 @@ struct FakeImport final : DownloadImport {
         if (throw_poll)
             throw std::runtime_error("private persistence detail");
         return poll_state;
+    }
+    std::span<const std::string> committedRetiredImportJobIds() const override {
+        if (on_retirement_evidence)
+            on_retirement_evidence();
+        return retired_import_job_ids;
     }
 };
 
@@ -1022,6 +1042,45 @@ TEST_CASE("Restored archive preserves namespace and replay without occupying act
     REQUIRE(service.submit(request(2)).job_ids == std::vector<std::string>{"fresh-r001-1"});
     REQUIRE(execution.starts.empty());
     REQUIRE(importer.imports.empty());
+}
+
+TEST_CASE("Execution receives only acknowledged archived jobs and current durable retirement evidence",
+          "[download][archive][ownership-retirement]") {
+    DownloadCheckpoint history;
+    const std::vector<std::string> archived{"old-1", "old-2"};
+    history.archived_receipts.push_back(
+        {.request_id = request().request_id, .fingerprint = std::string(64, 'a'), .job_ids = archived});
+    FakeExecution execution;
+    FakeImport importer;
+    RecoveryIdentity identity;
+    DownloadService service(execution, importer, "fresh", {}, &identity);
+    REQUIRE(service.restore(history));
+    execution.accepted = false;
+    int retirement_evidence_queries = 0;
+    importer.on_retirement_evidence = [&] {
+        ++retirement_evidence_queries;
+        REQUIRE(service.submit(request(9)).error == DownloadSubmissionError::Busy);
+    };
+    REQUIRE(service.submit(request(2)).error == DownloadSubmissionError::None);
+    service.tick(0);
+    REQUIRE(execution.starts.size() == 1);
+    REQUIRE(execution.archived_starts.empty());
+    REQUIRE(retirement_evidence_queries == 0);
+
+    service.retireArchivedImportReceipts();
+    REQUIRE(service.submit(request(3)).error == DownloadSubmissionError::None);
+    service.tick(1);
+    REQUIRE(execution.archived_starts.size() == 1);
+    REQUIRE(execution.archived_starts.back().archived_job_ids == archived);
+    REQUIRE(execution.archived_starts.back().retired_import_job_ids.empty());
+
+    importer.retired_import_job_ids = {"old-2"};
+    REQUIRE(service.submit(request(4)).error == DownloadSubmissionError::None);
+    service.tick(2);
+    REQUIRE(execution.archived_starts.size() == 2);
+    REQUIRE(execution.archived_starts.back().archived_job_ids == archived);
+    REQUIRE(execution.archived_starts.back().retired_import_job_ids == importer.retired_import_job_ids);
+    REQUIRE(retirement_evidence_queries == 2);
 }
 
 TEST_CASE("A live published YouTube lyric offer remains available until restart", "[download][archive]") {

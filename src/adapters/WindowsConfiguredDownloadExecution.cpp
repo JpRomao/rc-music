@@ -1,4 +1,7 @@
 #include "WindowsConfiguredDownloadExecution.hpp"
+#include "WindowsDownloadArtifactPins.hpp"
+#include "WindowsDownloadOwnershipRecovery.hpp"
+#include "WindowsDownloadOwnershipStore.hpp"
 #include "WindowsNativeMediaProfile.hpp"
 
 #include <utility>
@@ -50,10 +53,29 @@ makeWindowsConfiguredDownloadExecution(WindowsDownloadExecutionProfile profile,
     }
     // Ordinary Qt value copies may still borrow fromRawData storage. Detach
     // all configuration bytes before returning or starting the worker thread.
+    const auto job = copiedJob(profile.job);
+    const auto journal = owned(profile.journal_directory);
+    WindowsDownloadExecution::Preflight preflight = [workspace = job.workspace, journal](const auto& evidence) {
+        QString directory;
+        if (!download_artifacts::validPath(journal, directory))
+            return DownloadFailure::InvalidResult;
+        WindowsDownloadOwnershipStore store{std::move(directory)};
+        switch (WindowsDownloadOwnershipRecovery::ensureCapacity(workspace, store, evidence)) {
+        case DownloadOwnershipCapacity::Available:
+            return DownloadFailure::None;
+        case DownloadOwnershipCapacity::Full:
+            return DownloadFailure::LimitExceeded;
+        case DownloadOwnershipCapacity::HistoryUnavailable:
+            return DownloadFailure::InvalidResult;
+        case DownloadOwnershipCapacity::ReclaimUnconfirmed:
+            return DownloadFailure::Publication;
+        }
+        return DownloadFailure::InvalidResult;
+    };
     WindowsDownloadExecution::TaskFactory destination =
-        [network = copiedNetwork(profile.network), media = copiedMedia(profile.media), job = copiedJob(profile.job),
-         journal = owned(profile.journal_directory), network_prepare = std::move(preparers.network),
-         media_prepare = std::move(preparers.media), media_profile = std::move(media_profile)] {
+        [network = copiedNetwork(profile.network), media = copiedMedia(profile.media), job, journal,
+         network_prepare = std::move(preparers.network), media_prepare = std::move(preparers.media),
+         media_profile = std::move(media_profile)] {
             // This factory is invoked only on the existing execution worker.
             // Construction stays inert; start owns journal validation/preparation
             // and the first uncancelled poll owns the session launch.
@@ -61,7 +83,7 @@ makeWindowsConfiguredDownloadExecution(WindowsDownloadExecutionProfile profile,
                                                         media_profile);
         };
     if (!profile.youtube)
-        return std::make_unique<WindowsDownloadExecution>(std::move(destination));
+        return std::make_unique<WindowsDownloadExecution>(std::move(destination), std::move(preflight));
 
     auto& youtube = *profile.youtube;
     // The broker factory already snapshots every runtime/environment value.
@@ -69,6 +91,6 @@ makeWindowsConfiguredDownloadExecution(WindowsDownloadExecutionProfile profile,
     auto resolver = makeWindowsYoutubeBrokerResolverFactory(std::move(youtube.runtime), std::move(youtube.environment),
                                                             std::move(preparers.youtube));
     return makeWindowsMediaAndYoutubeExecution(std::move(resolver), std::move(destination),
-                                               std::move(youtube.epoch_clock), youtube.limits);
+                                               std::move(youtube.epoch_clock), youtube.limits, std::move(preflight));
 }
 } // namespace music_player::m0

@@ -97,7 +97,8 @@ QString errorText(const DownloadFailure failure) {
     case DownloadFailure::NoAudio:
         return DownloadJobsModel::tr("Este arquivo não contém áudio. Selecione outra mídia.");
     case DownloadFailure::LimitExceeded:
-        return DownloadJobsModel::tr("O arquivo excede os limites de download. Selecione uma mídia menor.");
+        return DownloadJobsModel::tr("Um limite de download foi atingido. Confira o tamanho da mídia e se há "
+                                     "pedidos encerrados para arquivar.");
     case DownloadFailure::Conversion:
         return DownloadJobsModel::tr("Não foi possível converter o áudio em MP3. Selecione outra mídia.");
     case DownloadFailure::Publication:

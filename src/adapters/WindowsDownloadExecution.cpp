@@ -18,6 +18,7 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 namespace music_player::m0 {
 namespace {
@@ -26,6 +27,10 @@ bool validId(const std::string& id) {
         return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9') ||
                value == '-' || value == '_';
     });
+}
+bool validEvidenceIds(const std::span<const std::string> ids) {
+    constexpr std::size_t maximum_ids = 5'120;
+    return ids.size() <= maximum_ids && std::ranges::all_of(ids, validId);
 }
 bool validText(const std::string& text, const std::size_t maximum) {
     if (text.empty() || text.size() > maximum || text.find('\0') != std::string::npos)
@@ -404,6 +409,8 @@ struct WindowsDownloadExecution::Impl final {
     struct Request final {
         std::string id;
         DownloadItem item;
+        std::vector<std::string> archived_job_ids;
+        std::vector<std::string> retired_import_job_ids;
     };
     struct Worker final : QThread {
         Impl& owner;
@@ -412,6 +419,7 @@ struct WindowsDownloadExecution::Impl final {
     };
     TaskFactory factory;
     std::function<bool(const DownloadItem&)> admission;
+    Preflight preflight;
     mutable std::mutex mutex;
     std::optional<Request> pending;
     DownloadExecutionUpdate snapshot;
@@ -420,8 +428,8 @@ struct WindowsDownloadExecution::Impl final {
     QObject* dispatcher{nullptr}; // lifetime protected by mutex, one queued wake at most
     Worker worker;
 
-    Impl(TaskFactory value, std::function<bool(const DownloadItem&)> admit)
-        : factory(std::move(value)), admission(std::move(admit)), worker(*this) {
+    Impl(TaskFactory value, std::function<bool(const DownloadItem&)> admit, Preflight check)
+        : factory(std::move(value)), admission(std::move(admit)), preflight(std::move(check)), worker(*this) {
         worker.start();
     }
 
@@ -481,7 +489,16 @@ struct WindowsDownloadExecution::Impl final {
                     cancel_sent = false;
                     DownloadExecutionUpdate early;
                     early.job_id = current->id;
-                    if (!cancellation()) {
+                    if (!cancellation() && preflight) {
+                        try {
+                            early.error = preflight({current->archived_job_ids, current->retired_import_job_ids});
+                        } catch (...) {
+                            early.error = DownloadFailure::InvalidResult;
+                        }
+                        if (!knownFailure(early.error))
+                            early.error = DownloadFailure::InvalidResult;
+                    }
+                    if (!cancellation() && early.error == DownloadFailure::None) {
                         try {
                             if (factory)
                                 task = factory();
@@ -490,12 +507,16 @@ struct WindowsDownloadExecution::Impl final {
                             // work. Exceptions from a task never take this path.
                         }
                     }
-                    if (cancellation()) {
+                    // Keep an unconfirmed journal replacement visible even
+                    // when cancellation arrived while the preflight was running.
+                    if (cancellation() && early.error != DownloadFailure::Publication) {
                         early.state = DownloadExecutionState::Cancelled;
+                        early.error = DownloadFailure::None;
                         publish(std::move(early));
                     } else if (!task) {
                         early.state = DownloadExecutionState::Failed;
-                        early.error = DownloadFailure::Unavailable;
+                        if (early.error == DownloadFailure::None)
+                            early.error = DownloadFailure::Unavailable;
                         publish(std::move(early));
                     } else {
                         try {
@@ -587,11 +608,12 @@ struct WindowsDownloadExecution::Impl final {
     }
 };
 
-WindowsDownloadExecution::WindowsDownloadExecution(TaskFactory factory)
-    : WindowsDownloadExecution(std::move(factory), validItem) {}
+WindowsDownloadExecution::WindowsDownloadExecution(TaskFactory factory, Preflight preflight)
+    : WindowsDownloadExecution(std::move(factory), validItem, std::move(preflight)) {}
 WindowsDownloadExecution::WindowsDownloadExecution(TaskFactory factory,
-                                                   std::function<bool(const DownloadItem&)> admission)
-    : impl_(std::make_unique<Impl>(std::move(factory), std::move(admission))) {}
+                                                   std::function<bool(const DownloadItem&)> admission,
+                                                   Preflight preflight)
+    : impl_(std::make_unique<Impl>(std::move(factory), std::move(admission), std::move(preflight))) {}
 WindowsDownloadExecution::WindowsDownloadExecution(WindowsProcessDownloadIoConfig io,
                                                    WindowsDownloadJobSessionConfig job)
     : WindowsDownloadExecution(
@@ -612,9 +634,17 @@ WindowsDownloadExecution::~WindowsDownloadExecution() {
     impl_->worker.wait(); // owner must have observed stopped before UI destruction
 }
 bool WindowsDownloadExecution::start(const std::string& id, const DownloadItem& item) {
-    if (!validId(id) || !validText(item.title, 800) || !impl_->admission(item))
+    return startWithArchivedJobs(id, item, {});
+}
+bool WindowsDownloadExecution::startWithArchivedJobs(const std::string& id, const DownloadItem& item,
+                                                     const ArchivedDownloadJobEvidence& evidence) {
+    if (!validId(id) || !validText(item.title, 800) || !impl_->admission(item) ||
+        !validEvidenceIds(evidence.archived_job_ids) || !validEvidenceIds(evidence.retired_import_job_ids))
         return false;
-    Impl::Request request{id, item};
+    Impl::Request request{id,
+                          item,
+                          {evidence.archived_job_ids.begin(), evidence.archived_job_ids.end()},
+                          {evidence.retired_import_job_ids.begin(), evidence.retired_import_job_ids.end()}};
     DownloadExecutionUpdate initial;
     initial.job_id = id;
     std::lock_guard lock(impl_->mutex);

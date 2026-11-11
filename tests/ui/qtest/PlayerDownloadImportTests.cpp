@@ -1281,9 +1281,11 @@ void PlayerDownloadImportTests::retiredReceiptReleasesCapacityOnlyAfterSavedWith
     PlayerDownloadImport importer(h.presenter, {.max_receipts = 1}, PlayerDownloadImportPersistence::Session);
     QCOMPARE(h.model()->rowCount(), 0);
     QVERIFY(!h.presenter.downloadImportRetirementPending());
+    QVERIFY(importer.committedRetiredImportJobIds().empty());
     const std::vector<std::string> archived{"old", "unknown"};
     importer.retireArchivedReceipts(archived);
     QVERIFY(h.presenter.downloadImportRetirementPending());
+    QVERIFY(importer.committedRetiredImportJobIds().empty());
     QVERIFY(h.writer.active);
     QCOMPARE(h.writer.active->snapshot.queue, initial.queue);
     QCOMPARE(h.writer.active->snapshot.position_ms, initial.position_ms);
@@ -1296,6 +1298,7 @@ void PlayerDownloadImportTests::retiredReceiptReleasesCapacityOnlyAfterSavedWith
     h.poll();
     QVERIFY(h.writer.disk.download_import_receipts.empty());
     QVERIFY(h.presenter.downloadImportRetirementPending());
+    QVERIFY(importer.committedRetiredImportJobIds().empty());
     QCOMPARE(importer.begin("new", new_path), DownloadImportState::Failed);
     QVERIFY(!h.writer.active);
     QCOMPARE(h.writer.starts.size(), std::size_t{1});
@@ -1306,6 +1309,8 @@ void PlayerDownloadImportTests::retiredReceiptReleasesCapacityOnlyAfterSavedWith
     h.writer.complete(SessionSaveStatus::Saved);
     h.poll();
     QVERIFY(!h.presenter.downloadImportRetirementPending());
+    const auto retired = importer.committedRetiredImportJobIds();
+    QCOMPARE(std::vector<std::string>(retired.begin(), retired.end()), std::vector<std::string>{"old"});
     QCOMPARE(importer.begin("old", old_path), DownloadImportState::Failed);
     QCOMPARE(h.writer.disk.queue, initial.queue);
     QCOMPARE(h.writer.disk.position_ms, initial.position_ms);
@@ -1315,6 +1320,12 @@ void PlayerDownloadImportTests::retiredReceiptReleasesCapacityOnlyAfterSavedWith
     DurableHarness restarted(h.writer.disk, SessionLoadStatus::Loaded, false);
     PlayerDownloadImport restarted_importer(restarted.presenter, {.max_receipts = 1},
                                             PlayerDownloadImportPersistence::Session);
+    const auto restarted_retired = restarted_importer.committedRetiredImportJobIds();
+    QCOMPARE(std::vector<std::string>(restarted_retired.begin(), restarted_retired.end()),
+             std::vector<std::string>{"old"});
+    DurableHarness backup(h.writer.disk, SessionLoadStatus::RecoveredFromBackup, false);
+    PlayerDownloadImport backup_importer(backup.presenter, {}, PlayerDownloadImportPersistence::Session);
+    QVERIFY(backup_importer.committedRetiredImportJobIds().empty());
     QCOMPARE(restarted_importer.begin("old", old_path), DownloadImportState::Failed);
     QVERIFY(restarted.writer.starts.empty());
     QCOMPARE(importer.begin("new", new_path), DownloadImportState::Pending);

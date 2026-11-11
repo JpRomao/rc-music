@@ -240,12 +240,15 @@ class RoutedSessionTask final : public WindowsDownloadTask {
 class YoutubeDownloadExecutionFactory final {
   public:
     static std::unique_ptr<WindowsDownloadExecution> create(WindowsDownloadExecution::TaskFactory factory,
-                                                            const bool mixed = false) {
-        return std::unique_ptr<WindowsDownloadExecution>(
-            new WindowsDownloadExecution(std::move(factory), [mixed](const DownloadItem& item) {
+                                                            const bool mixed = false,
+                                                            WindowsDownloadExecution::Preflight preflight = {}) {
+        return std::unique_ptr<WindowsDownloadExecution>(new WindowsDownloadExecution(
+            std::move(factory),
+            [mixed](const DownloadItem& item) {
                 return mixed ? (item.youtube ? youtubeContext(item) : directItem(item))
                              : (!videoId(item).isEmpty() && (!item.youtube || youtubeContext(item)));
-            }));
+            },
+            std::move(preflight)));
     }
 };
 std::unique_ptr<WindowsDownloadExecution>
@@ -262,13 +265,13 @@ makeWindowsYoutubeAudioExecution(YoutubeResolverProcessFactory source,
 std::unique_ptr<WindowsDownloadExecution>
 makeWindowsMediaAndYoutubeExecution(YoutubeResolverProcessFactory source,
                                     WindowsDownloadExecution::TaskFactory destination, YoutubeResolverEpochClock clock,
-                                    YoutubeResolverLimits limits) {
+                                    YoutubeResolverLimits limits, WindowsDownloadExecution::Preflight preflight) {
     if (!source || !destination || !clock)
         return {};
     return YoutubeDownloadExecutionFactory::create(
         [source = std::move(source), destination = std::move(destination), clock = std::move(clock), limits] {
             return std::make_unique<RoutedSessionTask>(source, destination, clock, limits);
         },
-        true);
+        true, std::move(preflight));
 }
 } // namespace music_player::m0

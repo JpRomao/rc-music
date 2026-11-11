@@ -7,7 +7,11 @@
 
 namespace music_player::m0 {
 
+struct ArchivedDownloadJobEvidence;
+class WindowsDownloadOwnershipStore;
+
 enum class DownloadOwnershipAssessment { Unverified, OwnedPartial, OwnedFinalCandidate, Missing, Conflict, Unreadable };
+enum class DownloadOwnershipCapacity { Available, Full, HistoryUnavailable, ReclaimUnconfirmed };
 
 enum class DownloadOwnershipDiscardOutcome {
     Discarded,
@@ -55,6 +59,10 @@ struct DownloadFinalPinResult final {
 // This does not defend against a malicious same-user process or administrator.
 class WindowsDownloadOwnershipRecovery final {
   public:
+    // Retire at most one proven-clean row when the journal is full. Keep any existing MP3.
+    [[nodiscard]] static DownloadOwnershipCapacity ensureCapacity(const WindowsDownloadWorkspaceConfig& config,
+                                                                  WindowsDownloadOwnershipStore& store,
+                                                                  const ArchivedDownloadJobEvidence& evidence) noexcept;
     [[nodiscard]] static DownloadOwnershipAssessment assess(const WindowsDownloadWorkspaceConfig& config,
                                                             const DownloadOwnershipRecord& record) noexcept;
     [[nodiscard]] static DownloadFinalPinResult pinFinal(const WindowsDownloadWorkspaceConfig& config,

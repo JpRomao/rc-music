@@ -2,6 +2,7 @@
 #include "adapters/WindowsDownloadArtifactPins.hpp"
 #include "adapters/WindowsDownloadMediaProfileStore.hpp"
 #include "adapters/WindowsDownloadNativeUseFence.hpp"
+#include "adapters/WindowsDownloadOwnershipStore.hpp"
 #include "adapters/WindowsMediaProfileOwner.hpp"
 #include "adapters/YoutubeAudioCodec.hpp"
 
@@ -680,6 +681,41 @@ class WindowsConfiguredDownloadExecutionTests final : public QObject {
         QCOMPARE(state->networks.load(), 0);
         QCOMPARE(state->media.load(), 0);
         QVERIFY(!QDir{h.profile.journal_directory}.exists());
+    }
+    void fullOwnershipJournalBlocksDirectAndYoutubeBeforePreparation() {
+        Fixture h;
+        QVERIFY(h.initialize());
+        WindowsDownloadOwnershipStore store{h.profile.journal_directory};
+        for (std::size_t i = 1; i <= DownloadOwnershipJournal::maximum_records; ++i) {
+            auto suffix = std::to_string(i);
+            suffix.insert(0, 12 - suffix.size(), '0');
+            DownloadOwnershipRecord record{.job_id = "previous-" + std::to_string(i),
+                                           .workspace_id = "abcdefab-cdef-4abc-8def-" + suffix,
+                                           .staging_parent = {.volume_serial = 7},
+                                           .publish_parent = {.volume_serial = 7}};
+            record.staging_parent.file_id[0] = 1;
+            record.publish_parent.file_id[0] = 2;
+            QCOMPARE(store.record(record), DownloadCheckpointSaveStatus::Saved);
+        }
+        const auto state = std::make_shared<Observations>();
+        h.enableYoutube(state);
+        auto execution = makeWindowsConfiguredDownloadExecution(h.profile, rejecting(state));
+        QVERIFY(execution);
+        Drain drain{*execution, h};
+        for (const auto& item : {direct, youtube()}) {
+            const std::string id = item.youtube ? "full_youtube" : "full_direct";
+            QVERIFY(execution->start(id, item));
+            QVERIFY(waitFor([&] { return execution->poll(id).state == DownloadExecutionState::Failed; }));
+            QCOMPARE(execution->poll(id).error, DownloadFailure::LimitExceeded);
+        }
+        QCOMPARE(state->networks.load(), 0);
+        QCOMPARE(state->media.load(), 0);
+        QCOMPARE(state->youtubes.load(), 0);
+        QCOMPARE(state->clocks.load(), 0);
+        QVERIFY(h.runtimeArtifactsAbsent());
+        const auto loaded = store.load();
+        QVERIFY(loaded.journal);
+        QCOMPARE(loaded.journal->records.size(), DownloadOwnershipJournal::maximum_records);
     }
     void cancellationDuringPreparationDoesNotLaunchASessionOrCreateWorkspaceFiles() {
         Fixture h;

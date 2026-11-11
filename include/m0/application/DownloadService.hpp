@@ -79,7 +79,8 @@ class DownloadService final : public DownloadSubmission {
     [[nodiscard]] std::optional<DownloadCheckpoint> stageSettledArchive();
     [[nodiscard]] bool confirmSettledArchive() noexcept;
     // Trusted checkpoint owner only, after authoritative primary restoration or
-    // matching archive Saved. Port failure cannot revoke the checkpoint evidence.
+    // matching archive Saved. Supplies archived IDs for receipt compaction and
+    // later execution. Port failure cannot revoke the checkpoint evidence.
     void retireArchivedImportReceipts() noexcept;
     // Live, matching publication acknowledgement plus original typed source
     // only. Historical candidate paths/receipts never authorize a new lookup.

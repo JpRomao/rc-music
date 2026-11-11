@@ -132,6 +132,12 @@ bool PlayerDownloadImport::supportsDurableRecovery() const {
            !state.presenter->exiting_;
 }
 
+std::span<const std::string> PlayerDownloadImport::committedRetiredImportJobIds() const {
+    if (!supportsDurableRecovery())
+        return {};
+    return impl_->presenter->retired_download_import_job_ids_;
+}
+
 void PlayerDownloadImport::retireArchivedReceipts(const std::span<const std::string> archived_job_ids) {
     if (archived_job_ids.empty() || !supportsDurableRecovery())
         return;

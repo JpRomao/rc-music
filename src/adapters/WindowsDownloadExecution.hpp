@@ -68,7 +68,10 @@ makeWindowsPreparedDownloadTask(WindowsDownloadNetworkLaunchConfig network, Wind
 class WindowsDownloadExecution final : public DownloadExecution {
   public:
     using TaskFactory = std::function<std::unique_ptr<WindowsDownloadTask>()>;
-    explicit WindowsDownloadExecution(TaskFactory factory);
+    // Trusted synchronous check on the execution worker before task creation.
+    // The evidence spans are valid only for the call. None allows the job.
+    using Preflight = std::function<DownloadFailure(const ArchivedDownloadJobEvidence&)>;
+    explicit WindowsDownloadExecution(TaskFactory factory, Preflight preflight = {});
     WindowsDownloadExecution(WindowsProcessDownloadIoConfig io, WindowsDownloadJobSessionConfig job);
     WindowsDownloadExecution(WindowsDownloadNetworkLaunchConfig launch, WindowsDownloadJobSessionConfig job);
     WindowsDownloadExecution(WindowsDownloadNetworkLaunchConfig network, WindowsMediaFoundationLaunchConfig media,
@@ -78,6 +81,8 @@ class WindowsDownloadExecution final : public DownloadExecution {
     WindowsDownloadExecution& operator=(const WindowsDownloadExecution&) = delete;
 
     [[nodiscard]] bool start(const std::string& job_id, const DownloadItem& item) override;
+    [[nodiscard]] bool startWithArchivedJobs(const std::string& job_id, const DownloadItem& item,
+                                             const ArchivedDownloadJobEvidence& evidence) override;
     void cancel(std::string_view job_id) override;
     [[nodiscard]] DownloadExecutionUpdate poll(std::string_view job_id) override;
     void shutdown();
@@ -90,7 +95,8 @@ class WindowsDownloadExecution final : public DownloadExecution {
 
   private:
     friend class YoutubeDownloadExecutionFactory;
-    WindowsDownloadExecution(TaskFactory factory, std::function<bool(const DownloadItem&)> admission);
+    WindowsDownloadExecution(TaskFactory factory, std::function<bool(const DownloadItem&)> admission,
+                             Preflight preflight);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

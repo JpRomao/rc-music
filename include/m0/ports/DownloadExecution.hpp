@@ -40,6 +40,14 @@ struct DownloadExecutionUpdate final {
     DownloadFailure error{DownloadFailure::None};
 };
 
+// The checkpoint owner and durable importer supply these independent proofs.
+// Both spans are borrowed for startWithArchivedJobs only. A worker must own
+// copies before the call returns.
+struct ArchivedDownloadJobEvidence final {
+    std::span<const std::string> archived_job_ids{};
+    std::span<const std::string> retired_import_job_ids{};
+};
+
 // One active job; every method must return promptly. Network/decoding belongs to a worker.
 // The adapter owns quotas, TLS/DNS/redirect checks, MP3 validation, temporary-file cleanup
 // and publication without overwrite. Published means a validated final file, never a partial.
@@ -56,6 +64,10 @@ class DownloadExecution {
   public:
     virtual ~DownloadExecution() = default;
     [[nodiscard]] virtual bool start(const std::string& job_id, const DownloadItem& item) = 0;
+    [[nodiscard]] virtual bool startWithArchivedJobs(const std::string& job_id, const DownloadItem& item,
+                                                     const ArchivedDownloadJobEvidence&) {
+        return start(job_id, item);
+    }
     virtual void cancel(std::string_view job_id) = 0;
     [[nodiscard]] virtual DownloadExecutionUpdate poll(std::string_view job_id) = 0;
 };
@@ -85,6 +97,9 @@ class DownloadImport {
     // A durable importer may schedule receipt compaction. The span is borrowed
     // only for this call. Media, queue occurrences and import authority are separate.
     virtual void retireArchivedReceipts(std::span<const std::string>) {}
+    // Prompt read-only evidence from the primary session or matching Saved.
+    // The caller may borrow it until the next mutating importer call.
+    [[nodiscard]] virtual std::span<const std::string> committedRetiredImportJobIds() const { return {}; }
 };
 
 } // namespace music_player::m0

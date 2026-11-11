@@ -1,11 +1,13 @@
 #include "../../qt/support/YoutubeResolverTestSupport.hpp"
 #include "adapters/DownloadJobsModel.hpp"
+#include "adapters/DownloadOwnershipJson.hpp"
 #include "adapters/QtJsonWindowsSessionStore.hpp"
 #include "adapters/WindowsConfiguredDownloadExecution.hpp"
 #include "adapters/WindowsDownloadArtifactPins.hpp"
 #include "adapters/WindowsDownloadCheckpointStore.hpp"
 #include "adapters/WindowsDownloadExecution.hpp"
 #include "adapters/WindowsDownloadOwnershipStore.hpp"
+#include "adapters/WindowsPrivateDownloadDocument.hpp"
 #include "adapters/YoutubeDownloadExecution.hpp"
 #include "m0/adapters/SingleWorkerSessionWriter.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
@@ -49,6 +51,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -925,6 +928,99 @@ class PlayerDownloadsCompositionTests final : public QObject {
         QVERIFY(player.drain());
         QVERIFY(files.transientParentsEmpty());
         QVERIFY(files.sourcesPreserved());
+    }
+
+    void configuredOwnerReusesFullJournalSlotOnlyAfterArchiveAndSessionSaved() {
+        Files files;
+        QVERIFY(files.initialize());
+        auto observation = std::make_shared<Observation>();
+        observation->admission_ack.release();
+        observation->session_ack.release();
+        Player player{files,
+                      observation,
+                      {},
+                      false,
+                      WindowsDownloadExecutionProfile{.network = files.network,
+                                                      .media = files.media,
+                                                      .job = files.job,
+                                                      .journal_directory = files.documents}};
+        QVERIFY(player.owner);
+        QVERIFY(player.ready());
+        const auto original = request(QStringLiteral("mp3"));
+        QCOMPARE(player.owner->submission().begin(original).state, DownloadAdmissionState::Pending);
+        QVERIFY(waitFor([&] { return player.state() == QStringLiteral("completed"); }));
+        const auto archived_job = player.jobId().toStdString();
+        const auto initial_session = player.session_store.load();
+        const auto saved_revision = player.autosave.savedRevision();
+        QCOMPARE(initial_session.snapshot.download_import_receipts.size(), std::size_t{1});
+        const auto original_path =
+            QString::fromStdWString(initial_session.snapshot.download_import_receipts.front().source_path.native());
+        const auto original_hash = fileHash(original_path);
+        QCOMPARE(original_hash.size(), 64);
+
+        WindowsDownloadOwnershipStore ownership{files.documents};
+        const auto initial = ownership.load();
+        QVERIFY(initial.journal);
+        QCOMPARE(initial.journal->records.size(), std::size_t{1});
+        auto full = *initial.journal;
+        const auto& completed = initial.journal->records.front();
+        for (std::size_t index = 1; index < DownloadOwnershipJournal::maximum_records; ++index) {
+            full.records.push_back(
+                {.job_id = "unrelated-" + std::to_string(index),
+                 .workspace_id =
+                     QStringLiteral("00000000-0000-4000-8000-%1").arg(index, 12, 16, QLatin1Char('0')).toStdString(),
+                 .staging_parent = completed.staging_parent,
+                 .publish_parent = completed.publish_parent});
+        }
+        WindowsPrivateDownloadDocument document{
+            files.documents, WindowsPrivateDownloadDocumentKind::Ownership,
+            [](const QByteArrayView bytes) { return DownloadOwnershipJson::decode(bytes).status; }};
+        QCOMPARE(document.update([&](const WindowsPrivateDownloadDocumentResult& current) {
+            if (DownloadOwnershipJson::decode(current.bytes).journal != initial.journal)
+                return WindowsPrivateDownloadDocumentMutation{};
+            return WindowsPrivateDownloadDocumentMutation{.status = DownloadCheckpointSaveStatus::Saved,
+                                                          .bytes = DownloadOwnershipJson::encode(full)};
+        }),
+                 DownloadCheckpointSaveStatus::Saved);
+
+        auto* binding = player.owner->binding();
+        observation->hold_retirement_ack = true;
+        QVERIFY(binding->requestArchiveConfirmation());
+        QVERIFY(binding->confirmArchive(binding->archiveConsentToken()));
+        QVERIFY(waitFor([&] { return observation->archive_ack.entered.load(); }));
+        QCOMPARE(ownership.load().journal, std::optional{full});
+        observation->archive_ack.release();
+        QVERIFY(waitFor([&] { return observation->retirement_ack.entered.load(); }));
+        QCOMPARE(player.autosave.savedRevision(), saved_revision);
+
+        auto next = original;
+        next.request_id.back() = 'c';
+        QCOMPARE(player.owner->submission().begin(next).state, DownloadAdmissionState::Pending);
+        QVERIFY(waitFor([&] { return player.state() == QStringLiteral("failed"); }));
+        QCOMPARE(ownership.load().journal, std::optional{full});
+        QCOMPARE(entries(files.publication).size(), 1);
+
+        observation->retirement_ack.release();
+        QVERIFY(waitFor([&] { return player.autosave.savedRevision() > saved_revision; }));
+        next.request_id.back() = 'd';
+        QCOMPARE(player.owner->submission().begin(next).state, DownloadAdmissionState::Pending);
+        QVERIFY2(waitFor([&] { return player.state(1) == QStringLiteral("completed"); }),
+                 "A confirmed retirement must allow a new owned download in a full journal");
+        const auto reclaimed = ownership.load();
+        QVERIFY(reclaimed.journal);
+        QCOMPARE(reclaimed.journal->records.size(), full.records.size());
+        QVERIFY(std::ranges::find(reclaimed.journal->records, archived_job, &DownloadOwnershipRecord::job_id) ==
+                reclaimed.journal->records.end());
+        for (const auto& unrelated : std::span{full.records}.subspan(1))
+            QVERIFY(std::ranges::find(reclaimed.journal->records, unrelated) != reclaimed.journal->records.end());
+        QCOMPARE(fileHash(original_path), original_hash);
+        QCOMPARE(entries(files.publication).size(), 2);
+        QCOMPARE(player.presenter.queueModelObject()->rowCount(), 2);
+        const auto replay = player.owner->submission().begin(original);
+        QCOMPARE(replay.result.job_ids, std::vector{archived_job});
+        QCOMPARE(player.audio.plays, 0);
+        QVERIFY(player.drain());
+        QVERIFY(files.transientParentsEmpty());
     }
 
     void failedRealSessionCommitRetriesImportWithoutExecutingOrConvertingAgain() {

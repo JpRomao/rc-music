@@ -3,12 +3,14 @@
 
 #include <QTest>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 using namespace music_player::m0;
 using namespace std::chrono_literals;
@@ -261,6 +263,68 @@ class WindowsDownloadExecutionTests final : public QObject {
         QVERIFY(!execution.start(id, request));
         execution.shutdown();
         QTRY_VERIFY(execution.stopped());
+        QCOMPARE(c->factories.load(), 0);
+    }
+    void invalidArchivedEvidenceRetainsNoWork_data() {
+        QTest::addColumn<bool>("retired");
+        QTest::addColumn<bool>("oversized");
+        QTest::newRow("invalid archive id") << false << false;
+        QTest::newRow("invalid retired id") << true << false;
+        QTest::newRow("too many archived ids") << false << true;
+        QTest::newRow("too many retired ids") << true << true;
+    }
+    void invalidArchivedEvidenceRetainsNoWork() {
+        QFETCH(bool, retired);
+        QFETCH(bool, oversized);
+        const std::vector<std::string> ids =
+            oversized ? std::vector<std::string>(5'121, "archived-job") : std::vector<std::string>{"../job"};
+        ArchivedDownloadJobEvidence evidence;
+        (retired ? evidence.retired_import_job_ids : evidence.archived_job_ids) = ids;
+        auto c = std::make_shared<Control>();
+        WindowsDownloadExecution execution(factory(c));
+        Finish finish{c, execution};
+        QVERIFY(!execution.startWithArchivedJobs("job-1", item, evidence));
+        execution.shutdown();
+        QTRY_VERIFY(execution.stopped());
+        QCOMPARE(c->factories.load(), 0);
+    }
+    void cancellationDuringPreflightDetachesEvidenceAndSkipsFactory_data() {
+        QTest::addColumn<DownloadFailure>("preflight_error");
+        QTest::addColumn<DownloadExecutionState>("terminal_state");
+        QTest::newRow("capacity available") << DownloadFailure::None << DownloadExecutionState::Cancelled;
+        QTest::newRow("unconfirmed journal replacement")
+            << DownloadFailure::Publication << DownloadExecutionState::Failed;
+    }
+    void cancellationDuringPreflightDetachesEvidenceAndSkipsFactory() {
+        QFETCH(DownloadFailure, preflight_error);
+        QFETCH(DownloadExecutionState, terminal_state);
+        const auto c = std::make_shared<Control>();
+        const auto caller_thread = std::this_thread::get_id();
+        std::array<std::string, 1> archived{"archived-job"};
+        std::array<std::string, 1> retired{"retired-job"};
+        bool observed_original_evidence = false;
+        bool ran_on_worker = false;
+        WindowsDownloadExecution execution(factory(c), [&](const ArchivedDownloadJobEvidence& evidence) {
+            ran_on_worker = std::this_thread::get_id() != caller_thread;
+            c->factory_gate.enter();
+            observed_original_evidence =
+                evidence.archived_job_ids.size() == 1 && evidence.archived_job_ids.front() == "archived-job" &&
+                evidence.retired_import_job_ids.size() == 1 && evidence.retired_import_job_ids.front() == "retired-job";
+            return preflight_error;
+        });
+        Finish finish{c, execution};
+        QVERIFY(execution.startWithArchivedJobs("job-1", item, {archived, retired}));
+        QVERIFY(c->factory_gate.wait());
+        archived.front() = "changed-archive";
+        retired.front() = "changed-receipt";
+        execution.cancel("job-1");
+        QCOMPARE(execution.poll("job-1").state, DownloadExecutionState::Running);
+        QVERIFY(c->factory_gate.stillBlocked());
+        c->factory_gate.release();
+        QTRY_COMPARE(execution.poll("job-1").state, terminal_state);
+        QCOMPARE(execution.poll("job-1").error, preflight_error);
+        QVERIFY(observed_original_evidence);
+        QVERIFY(ran_on_worker);
         QCOMPARE(c->factories.load(), 0);
     }
     void factoryFailureIsAcceptedThenAcknowledged_data() {

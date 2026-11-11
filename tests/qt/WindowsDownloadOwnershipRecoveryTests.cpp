@@ -1,6 +1,8 @@
+#include "adapters/DownloadOwnershipJson.hpp"
 #include "adapters/WindowsDownloadOwnershipRecovery.hpp"
 #include "adapters/WindowsDownloadOwnershipStore.hpp"
 #include "adapters/WindowsDownloadReadInput.hpp"
+#include "m0/ports/DownloadExecution.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -243,12 +245,169 @@ struct RestoreAttributes final {
     QString path;
     ~RestoreAttributes() { SetFileAttributesW(native(path).c_str(), FILE_ATTRIBUTE_NORMAL); }
 };
+
+DownloadOwnershipJournal journalWith(const DownloadOwnershipRecord& record,
+                                     const std::size_t count = DownloadOwnershipJournal::maximum_records) {
+    DownloadOwnershipJournal journal{{record}};
+    for (std::size_t index = 1; index < count; ++index) {
+        auto suffix = std::to_string(index);
+        suffix.insert(0, 12 - suffix.size(), '0');
+        journal.records.push_back({.job_id = "unrelated-" + std::to_string(index),
+                                   .workspace_id = "feedface-cdef-4abc-8def-" + suffix,
+                                   .staging_parent = record.staging_parent,
+                                   .publish_parent = record.publish_parent});
+    }
+    return journal;
+}
+
+QString seedJournal(const Fixture& fixture, const QByteArray& contents) {
+    PrivateSecurity security(false);
+    const auto directory = fixture.root.filePath(QStringLiteral("private-reclaim-journal"));
+    if (!security.valid() || !CreateDirectoryW(native(directory).c_str(), security.attributes()) ||
+        !createFile(directory + QStringLiteral("/download-ownership.json"), contents, security))
+        return {};
+    return directory;
+}
 } // namespace
 
 class WindowsDownloadOwnershipRecoveryTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void fullJournalReclaimsOnePublishedRowAndKeepsThePhysicalFile_data() {
+        QTest::addColumn<int>("fault");
+        QTest::newRow("saved") << 0;
+        QTest::newRow("before-commit") << 1;
+        QTest::newRow("after-commit") << 2;
+    }
+    void fullJournalReclaimsOnePublishedRowAndKeepsThePhysicalFile() {
+        QFETCH(int, fault);
+        Fixture f;
+        QVERIFY(f.ready());
+        QVERIFY(f.publish());
+        QVERIFY(f.removeTemps());
+        f.record.cleanup_complete = true;
+        // The file remains user media. Reclaim compares exact identity and size
+        // without decoding or hashing its contents again.
+        const QByteArray preserved(static_cast<qsizetype>(f.record.output_bytes), 'x');
+        QVERIFY(changeBytes(f.final, preserved));
+        auto before = journalWith(f.record);
+        before.records.back().cleanup_complete = true;
+        const auto directory = seedJournal(f, DownloadOwnershipJson::encode(before));
+        QVERIFY(!directory.isEmpty());
+        bool saw_pinned_final = false;
+        WindowsDownloadOwnershipStore store(
+            directory, {.inject_fault = [&](const auto point) {
+                if (point == WindowsDownloadOwnershipFaultPoint::BeforeCommit) {
+                    Handle writable(CreateFileW(native(f.final).c_str(), GENERIC_WRITE,
+                                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+                    saw_pinned_final = !writable.valid();
+                    return fault == 1;
+                }
+                return fault == 2;
+            }});
+        const std::array ids{f.record.job_id, before.records.back().job_id};
+        QCOMPARE(WindowsDownloadOwnershipRecovery::ensureCapacity(f.config(), store, {ids, ids}),
+                 fault == 0 ? DownloadOwnershipCapacity::Available : DownloadOwnershipCapacity::ReclaimUnconfirmed);
+        QVERIFY(saw_pinned_final);
+        const auto loaded = store.load();
+        QCOMPARE(loaded.status, DownloadCheckpointLoadStatus::Loaded);
+        QVERIFY(loaded.journal);
+        auto expected = before;
+        if (fault != 1)
+            expected.records.erase(expected.records.begin());
+        QCOMPARE(*loaded.journal, expected);
+        QCOMPARE(readFile(f.final), preserved);
+        QVERIFY(!QFile::exists(f.job));
+    }
+
+    void fullJournalPreservesUnqualifiedRowsAndPhysicalObjects_data() {
+        QTest::addColumn<int>("kind");
+        QTest::newRow("not-archived") << 0;
+        QTest::newRow("not-retired-in-session") << 1;
+        QTest::newRow("cleanup-not-confirmed") << 2;
+        QTest::newRow("prepared-final") << 3;
+        QTest::newRow("changed-parent") << 4;
+        QTest::newRow("wrong-final-size") << 5;
+        QTest::newRow("staging-residual") << 6;
+        QTest::newRow("wrong-final-identity") << 7;
+    }
+    void fullJournalPreservesUnqualifiedRowsAndPhysicalObjects() {
+        QFETCH(int, kind);
+        Fixture f;
+        QVERIFY(f.ready());
+        QVERIFY(f.publish());
+        if (kind != 6)
+            QVERIFY(f.removeTemps());
+        f.record.cleanup_complete = kind != 2;
+        if (kind == 3)
+            f.record.stage = DownloadOwnershipStage::PublicationPrepared;
+        auto config = f.config();
+        if (kind == 4)
+            config.publish_parent = config.staging_parent;
+        if (kind == 5)
+            QVERIFY(changeBytes(f.final, "other-size"));
+        if (kind == 7) {
+            auto& first_byte = f.record.output->file_id[0];
+            first_byte = first_byte == 1 ? 2 : 1;
+        }
+        const auto final_bytes = readFile(f.final);
+        const auto before = DownloadOwnershipJson::encode(journalWith(f.record));
+        const auto directory = seedJournal(f, before);
+        QVERIFY(!directory.isEmpty());
+        WindowsDownloadOwnershipStore store(directory);
+        const std::array ids{f.record.job_id};
+        const std::span<const std::string> archived = kind != 0 ? std::span{ids} : std::span<const std::string>{};
+        const std::span<const std::string> retired = kind != 1 ? std::span{ids} : std::span<const std::string>{};
+        QCOMPARE(WindowsDownloadOwnershipRecovery::ensureCapacity(config, store, {archived, retired}),
+                 DownloadOwnershipCapacity::Full);
+        QCOMPARE(readFile(directory + QStringLiteral("/download-ownership.json")), before);
+        QCOMPARE(readFile(f.final), final_bytes);
+        QCOMPARE(QFile::exists(f.job), kind == 6);
+    }
+
+    void fullJournalCanReclaimAnArchivedRowWithConfirmedCleanupAndNoFiles() {
+        Fixture f;
+        QVERIFY(f.initialized);
+        f.record.cleanup_complete = true;
+        const auto before = journalWith(f.record);
+        const auto directory = seedJournal(f, DownloadOwnershipJson::encode(before));
+        QVERIFY(!directory.isEmpty());
+        WindowsDownloadOwnershipStore store(directory);
+        const std::array ids{f.record.job_id};
+        QCOMPARE(WindowsDownloadOwnershipRecovery::ensureCapacity(f.config(), store, {ids, {}}),
+                 DownloadOwnershipCapacity::Available);
+        auto expected = before;
+        expected.records.erase(expected.records.begin());
+        const auto loaded = store.load();
+        QVERIFY(loaded.journal);
+        QCOMPARE(*loaded.journal, expected);
+        QVERIFY(!QFile::exists(f.job));
+        QVERIFY(!QFile::exists(f.final));
+    }
+
+    void capacityDoesNotRewriteSmallOrUnknownHistory_data() {
+        QTest::addColumn<bool>("future");
+        QTest::newRow("space-available") << false;
+        QTest::newRow("future-schema") << true;
+    }
+    void capacityDoesNotRewriteSmallOrUnknownHistory() {
+        QFETCH(bool, future);
+        Fixture f;
+        QVERIFY(f.initialized);
+        f.record.cleanup_complete = true;
+        const QByteArray before =
+            future ? QByteArray{R"({"schemaVersion":9})"} : DownloadOwnershipJson::encode(journalWith(f.record, 1));
+        const auto directory = seedJournal(f, before);
+        QVERIFY(!directory.isEmpty());
+        WindowsDownloadOwnershipStore store(directory);
+        const std::array ids{f.record.job_id};
+        QCOMPARE(WindowsDownloadOwnershipRecovery::ensureCapacity(f.config(), store, {ids, {}}),
+                 future ? DownloadOwnershipCapacity::HistoryUnavailable : DownloadOwnershipCapacity::Available);
+        QCOMPARE(readFile(directory + QStringLiteral("/download-ownership.json")), before);
+    }
+
     void finalReadCapabilityHasIndependentReadOnlyAccessWithoutDependingOnTheOriginalName() {
         Fixture f;
         QVERIFY(f.ready());

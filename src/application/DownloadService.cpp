@@ -220,6 +220,7 @@ struct DownloadService::Impl {
     std::vector<Receipt> receipts;
     std::vector<Job> jobs;
     std::vector<DownloadArchivedRequest> archived_receipts;
+    std::vector<std::string> acknowledged_archived_job_ids;
     std::optional<ArchivePlan> staged_archive;
     DownloadRecoveryReport recovery_report{};
     std::optional<std::size_t> active;
@@ -951,8 +952,9 @@ void DownloadService::retireArchivedImportReceipts() noexcept {
         archived_job_ids.reserve(count);
         for (const auto& receipt : state.archived_receipts)
             archived_job_ids.insert(archived_job_ids.end(), receipt.job_ids.begin(), receipt.job_ids.end());
+        state.acknowledged_archived_job_ids.swap(archived_job_ids);
         const PortCall guard(state.calling_port);
-        state.importer.retireArchivedReceipts(archived_job_ids);
+        state.importer.retireArchivedReceipts(state.acknowledged_archived_job_ids);
     } catch (...) {
         // The checkpoint is already committed. Receipt compaction may be
         // offered again on a later authoritative load or archive acknowledgement.
@@ -974,12 +976,19 @@ void DownloadService::tick(const std::int64_t now_ms, const std::function<bool()
                                        [](const Impl::Job& job) { return job.view.state == DownloadJobState::Queued; });
         if (next == state.jobs.end() || next->awaiting_confirmation)
             return;
+        ArchivedDownloadJobEvidence archive_evidence{.archived_job_ids = state.acknowledged_archived_job_ids};
         bool allowed = true;
         try {
-            if (allow_start) {
-                const PortCall guard(state.calling_port);
-                allowed = allow_start();
+            const PortCall guard(state.calling_port);
+            if (!archive_evidence.archived_job_ids.empty()) {
+                try {
+                    archive_evidence.retired_import_job_ids = state.importer.committedRetiredImportJobIds();
+                } catch (...) {
+                    // Unavailable session proof cannot authorize retirement of a final.
+                }
             }
+            if (allow_start)
+                allowed = allow_start();
         } catch (...) {
             allowed = false;
         }
@@ -994,8 +1003,10 @@ void DownloadService::tick(const std::int64_t now_ms, const std::function<bool()
             bool accepted = false;
             {
                 const PortCall guard(state.calling_port);
-                accepted = state.execution.start(job.view.job_id,
-                                                 state.receipts[job.receipt_index].request.items[job.item_index]);
+                const auto& item = state.receipts[job.receipt_index].request.items[job.item_index];
+                accepted = archive_evidence.archived_job_ids.empty()
+                               ? state.execution.start(job.view.job_id, item)
+                               : state.execution.startWithArchivedJobs(job.view.job_id, item, archive_evidence);
             }
             if (!accepted)
                 state.failTerminal(job, DownloadFailure::Unavailable);

@@ -107,6 +107,14 @@ Somente `input.bin`, `converted.part` e o diretório vazio correspondente podem 
 
 O job continua Interrupted; não modifica checkpoint, fila, recibos, namespace ou quotas/capacidade do serviço/importador. Imported permanece inerte e sem esta ação. Não importa final candidato ou transforma a limpeza em retomada, cancelamento bem-sucedido ou nova execução. Saída espera também a drenagem desta operação antes de destruir owners.
 
+## Reaproveitamento de vagas no journal
+
+O executor Windows configurado verifica o journal antes de preparar ferramentas ou iniciar o próximo download direto ou YouTube. Ao atingir 128 registros, procura uma entrada com limpeza confirmada entre os IDs do checkpoint arquivado. O worker confere os diretórios originais e a ausência do workspace sob pins. Para retirar o registro de um MP3 ainda presente, exige estágio `Published`, identidade e tamanho esperados e o ID compactado em sessão com `Saved` ou carregado de uma sessão primária saudável. O MP3 permanece na pasta de publicação.
+
+O store compara o registro inteiro e retira somente essa entrada sob o lock do journal. O próximo job só começa após `Saved` dessa retirada e a criação do seu próprio registro `Planned` continua exigindo `Saved`. Uma falha de gravação não inicia o job atual. Se não houver candidato comprovado, o executor informa o limite e mantém os registros e arquivos. O arquivamento continua reconhecendo reenvios e a [sessão](download-jobs.md#liberar-vagas-dos-recibos-de-importação) bloqueia um checkpoint antigo que perdeu os IDs compactados.
+
+O build Release e os checks passaram em **187 casos do núcleo de downloads** e **8 testes CTest / 359 casos Qt**, com dois casos antigos de symlink pulados pela política do Windows. A composição preencheu o journal com 128 registros, reteve as confirmações de arquivamento e sessão e completou o download seguinte após a liberação. O teste conferiu os bytes do MP3 anterior e os 127 registros alheios. Os testes nativos cobriram falhas antes e depois da gravação, arquivos ainda recuperáveis e cancelamento durante a verificação. Evidências em `out/product/test-runs/reclaim-ownership-slots-20261111/`.
+
 ## Limites e checks
 
 Crash entre criação e captura/save de IDs pode deixar órfão não verificado; Planned não o reivindica pelo nome. Journal cobre input/output/jobdir/final, não as nove cópias do runtime, todos os temporários de replacement ou arquivos externos. Assessment/revisão não autorizam remoção futura por path; o descarte separado não resolve importação/retomada de candidatos, tratamento de capacidade/divergências, runtime-residuais ou promoção protegida do lifecycle/host/UI para produção. Não promete transação entre documentos, exactly-once após crash ou proteção contra processo malicioso do mesmo usuário/administrador. Depois seguem descoberta ampliada, engine isolada Completa e opcionais/upgrade das edições.

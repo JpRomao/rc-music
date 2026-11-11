@@ -1,7 +1,9 @@
 #include "adapters/WindowsDownloadOwnershipRecovery.hpp"
 
 #include "adapters/WindowsDownloadArtifactPins.hpp"
+#include "adapters/WindowsDownloadOwnershipStore.hpp"
 #include "adapters/WindowsDownloadReadInput.hpp"
+#include "m0/ports/DownloadExecution.hpp"
 
 #include <QCryptographicHash>
 
@@ -258,17 +260,15 @@ struct Workspace final {
     PrivateSecurity security{};
     Object job{}, input{}, output{}, final{};
     QString job_path{}, input_path{}, output_path{}, final_path{};
+    QString job_canonical{}, final_canonical{};
 };
 
-// Shared fresh proof, with all handles kept alive in the caller's workspace.
-// A writable proof grants DELETE only to the owned job and temporary files;
-// assessment and the publication candidate always remain read-only.
-Assessment assessExisting(const WindowsDownloadWorkspaceConfig& config, const DownloadOwnershipRecord& record,
-                          Workspace& workspace, const bool delete_access = false) {
+std::optional<Assessment> pinWorkspaceRoots(const WindowsDownloadWorkspaceConfig& config,
+                                            const DownloadOwnershipRecord& record, Workspace& workspace) {
     QString staging_path;
     QString publication_path;
-    if (!validDownloadOwnershipRecord(record) || record.stage == DownloadOwnershipStage::Planned ||
-        !config.max_workspace_bytes || config.max_workspace_bytes > maximum_workspace_bytes ||
+    if (!validDownloadOwnershipRecord(record) || !config.max_workspace_bytes ||
+        config.max_workspace_bytes > maximum_workspace_bytes ||
         !download_artifacts::validPath(config.staging_parent, staging_path) ||
         !download_artifacts::validPath(config.publish_parent, publication_path))
         return Assessment::Unverified;
@@ -286,20 +286,36 @@ Assessment assessExisting(const WindowsDownloadWorkspaceConfig& config, const Do
         staging.leaf.identity.VolumeSerialNumber != publication.leaf.identity.VolumeSerialNumber)
         return Assessment::Conflict;
 
-    auto& security = workspace.security;
-    if (!security.initialize())
-        return Assessment::Unreadable;
     const auto uuid =
         QString::fromLatin1(record.workspace_id.data(), static_cast<qsizetype>(record.workspace_id.size()));
     const auto job_leaf = QStringLiteral("rc-music-job-") + uuid;
+    const auto final_leaf = QStringLiteral("rc-music-") + uuid + QStringLiteral(".mp3");
     workspace.job_path = staging_path + QLatin1Char('/') + job_leaf;
+    workspace.input_path = workspace.job_path + QStringLiteral("/input.bin");
+    workspace.output_path = workspace.job_path + QStringLiteral("/converted.part");
+    workspace.final_path = publication_path + QLatin1Char('/') + final_leaf;
+    workspace.job_canonical = staging.leaf.canonical + QLatin1Char('\\') + job_leaf;
+    workspace.final_canonical = publication.leaf.canonical + QLatin1Char('\\') + final_leaf;
+    return {};
+}
+
+// Shared fresh proof, with all handles kept alive in the caller's workspace.
+// A writable proof grants DELETE only to the owned job and temporary files;
+// assessment and the publication candidate always remain read-only.
+Assessment assessExisting(const WindowsDownloadWorkspaceConfig& config, const DownloadOwnershipRecord& record,
+                          Workspace& workspace, const bool delete_access = false) {
+    if (record.stage == DownloadOwnershipStage::Planned)
+        return Assessment::Unverified;
+    if (const auto failed = pinWorkspaceRoots(config, record, workspace))
+        return *failed;
+    auto& security = workspace.security;
+    if (!security.initialize())
+        return Assessment::Unreadable;
     const auto& job_path = workspace.job_path;
-    workspace.input_path = job_path + QStringLiteral("/input.bin");
-    workspace.output_path = job_path + QStringLiteral("/converted.part");
-    const auto job_canonical = staging.leaf.canonical + QLatin1Char('\\') + job_leaf;
+    const auto& job_canonical = workspace.job_canonical;
     auto& job = workspace.job;
     job = observe(job_path, true, delete_access);
-    state = verifyObject(job, *record.job_directory, job_canonical, security);
+    auto state = verifyObject(job, *record.job_directory, job_canonical, security);
     if (state != OpenState::Present && state != OpenState::Missing)
         return failure(state);
     if (state == OpenState::Present) {
@@ -314,8 +330,6 @@ Assessment assessExisting(const WindowsDownloadWorkspaceConfig& config, const Do
         input = observe(workspace.input_path, false, delete_access);
         output = observe(workspace.output_path, false, delete_access);
     }
-    const auto final_leaf = QStringLiteral("rc-music-") + uuid + QStringLiteral(".mp3");
-    workspace.final_path = publication_path + QLatin1Char('/') + final_leaf;
     auto& final = workspace.final;
     final = observe(workspace.final_path, false);
     for (const auto item : {std::pair{&input, &*record.input}, std::pair{&output, &*record.output}}) {
@@ -349,8 +363,7 @@ Assessment assessExisting(const WindowsDownloadWorkspaceConfig& config, const Do
         if (input.state == OpenState::Present && input.bytes != record.input_bytes)
             return Assessment::Conflict;
         if (final.state == OpenState::Present) {
-            state = verifyObject(final, *record.output, publication.leaf.canonical + QLatin1Char('\\') + final_leaf,
-                                 security);
+            state = verifyObject(final, *record.output, workspace.final_canonical, security);
             if (state != OpenState::Present)
                 return failure(state);
             state = hashMatches(final, record);
@@ -363,7 +376,7 @@ Assessment assessExisting(const WindowsDownloadWorkspaceConfig& config, const Do
         }
     }
 
-    for (const auto* directory : {&staging.leaf, &publication.leaf, &job}) {
+    for (const auto* directory : {&workspace.staging.leaf, &workspace.publication.leaf, &job}) {
         if (directory->state == OpenState::Present) {
             state = unchanged(*directory, true);
             if (state != OpenState::Present)
@@ -419,13 +432,41 @@ bool eraseOwned(Object& object, const QString& path, const bool directory) {
     return true;
 }
 
-bool removedUnderPinnedParents(const Workspace& workspace) {
+bool temporaryFilesAbsent(const Workspace& workspace) {
     return unchanged(workspace.staging.leaf, true) == OpenState::Present &&
            unchanged(workspace.publication.leaf, true) == OpenState::Present &&
            observe(workspace.job_path, true).state == OpenState::Missing &&
            observe(workspace.input_path, false).state == OpenState::Missing &&
-           observe(workspace.output_path, false).state == OpenState::Missing &&
-           observe(workspace.final_path, false).state == OpenState::Missing;
+           observe(workspace.output_path, false).state == OpenState::Missing;
+}
+
+bool removedUnderPinnedParents(const Workspace& workspace) {
+    return temporaryFilesAbsent(workspace) && observe(workspace.final_path, false).state == OpenState::Missing;
+}
+
+bool pinReclaimable(const WindowsDownloadWorkspaceConfig& config, const DownloadOwnershipRecord& record,
+                    const bool import_retired, Workspace& workspace) {
+    if (pinWorkspaceRoots(config, record, workspace) || !temporaryFilesAbsent(workspace))
+        return false;
+    workspace.final = observe(workspace.final_path, false);
+    if (workspace.final.state == OpenState::Missing)
+        return true;
+    // Retiring the journal row leaves the publication intact. It requires no media read or reimport.
+    return record.stage == DownloadOwnershipStage::Published && import_retired && record.output &&
+           workspace.final.state == OpenState::Present && workspace.final.bytes == record.output_bytes &&
+           workspace.final.bytes <= config.max_workspace_bytes && workspace.security.initialize() &&
+           verifyObject(workspace.final, *record.output, workspace.final_canonical, workspace.security) ==
+               OpenState::Present;
+}
+
+bool reclaimProofStillValid(const Workspace& workspace, const DownloadOwnershipRecord& record) {
+    if (!temporaryFilesAbsent(workspace))
+        return false;
+    if (workspace.final.state == OpenState::Missing)
+        return observe(workspace.final_path, false).state == OpenState::Missing;
+    return record.output && unchanged(workspace.final, false) == OpenState::Present &&
+           verifyObject(workspace.final, *record.output, workspace.final_canonical, workspace.security) ==
+               OpenState::Present;
 }
 } // namespace
 
@@ -436,6 +477,38 @@ struct WindowsPinnedDownloadFinal::Impl {
     Impl(const WindowsDownloadWorkspaceConfig& settings, const DownloadOwnershipRecord& evidence)
         : config(settings), record(evidence) {}
 };
+DownloadOwnershipCapacity
+WindowsDownloadOwnershipRecovery::ensureCapacity(const WindowsDownloadWorkspaceConfig& config,
+                                                 WindowsDownloadOwnershipStore& store,
+                                                 const ArchivedDownloadJobEvidence& evidence) noexcept {
+    try {
+        const auto loaded = store.load();
+        if (loaded.status == DownloadCheckpointLoadStatus::Missing && !loaded.journal)
+            return DownloadOwnershipCapacity::Available;
+        if (loaded.status != DownloadCheckpointLoadStatus::Loaded || !loaded.journal)
+            return DownloadOwnershipCapacity::HistoryUnavailable;
+        const auto& records = loaded.journal->records;
+        if (records.size() < DownloadOwnershipJournal::maximum_records)
+            return DownloadOwnershipCapacity::Available;
+        for (const auto& record : records) {
+            if (!record.cleanup_complete ||
+                std::ranges::find(evidence.archived_job_ids, record.job_id) == evidence.archived_job_ids.end())
+                continue;
+            const auto import_retired = std::ranges::find(evidence.retired_import_job_ids, record.job_id) !=
+                                        evidence.retired_import_job_ids.end();
+            Workspace workspace;
+            if (!pinReclaimable(config, record, import_retired, workspace))
+                continue;
+            const auto saved =
+                store.reclaimAtCapacity(record, [&] { return reclaimProofStillValid(workspace, record); });
+            return saved == DownloadCheckpointSaveStatus::Saved ? DownloadOwnershipCapacity::Available
+                                                                : DownloadOwnershipCapacity::ReclaimUnconfirmed;
+        }
+        return DownloadOwnershipCapacity::Full;
+    } catch (...) {
+        return DownloadOwnershipCapacity::HistoryUnavailable;
+    }
+}
 WindowsPinnedDownloadFinal::WindowsPinnedDownloadFinal(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 WindowsPinnedDownloadFinal::~WindowsPinnedDownloadFinal() = default;
 QString WindowsPinnedDownloadFinal::pathForValidation() const { return impl_->workspace.final_path; }

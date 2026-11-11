@@ -79,4 +79,34 @@ DownloadCheckpointSaveStatus WindowsDownloadOwnershipStore::record(const Downloa
         return DownloadCheckpointSaveStatus::Failed;
     }
 }
+
+DownloadCheckpointSaveStatus
+WindowsDownloadOwnershipStore::reclaimAtCapacity(const DownloadOwnershipRecord& expected,
+                                                 const std::function<bool()>& still_reclaimable) {
+    try {
+        if (!expected.cleanup_complete || !validDownloadOwnershipRecord(expected) || !still_reclaimable)
+            return DownloadCheckpointSaveStatus::Failed;
+        WindowsPrivateDownloadDocument document(directory_, WindowsPrivateDownloadDocumentKind::Ownership,
+                                                validateOwnership, options_);
+        return document.update([&](const WindowsPrivateDownloadDocumentResult& current) {
+            const auto blocked =
+                WindowsPrivateDownloadDocumentMutation{.status = DownloadCheckpointSaveStatus::BlockedByExistingData};
+            if (current.status != DownloadCheckpointLoadStatus::Loaded)
+                return blocked;
+            auto decoded = DownloadOwnershipJson::decode(current.bytes);
+            if (decoded.status != DownloadCheckpointLoadStatus::Loaded || !decoded.journal ||
+                decoded.journal->records.size() != DownloadOwnershipJournal::maximum_records)
+                return blocked;
+            auto& records = decoded.journal->records;
+            const auto found = std::ranges::find(records, expected);
+            if (found == records.end() || !still_reclaimable())
+                return blocked;
+            records.erase(found);
+            return WindowsPrivateDownloadDocumentMutation{.status = DownloadCheckpointSaveStatus::Saved,
+                                                          .bytes = DownloadOwnershipJson::encode(*decoded.journal)};
+        });
+    } catch (...) {
+        return DownloadCheckpointSaveStatus::Failed;
+    }
+}
 } // namespace music_player::m0

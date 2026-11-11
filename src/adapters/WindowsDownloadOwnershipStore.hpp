@@ -21,6 +21,11 @@ class WindowsDownloadOwnershipStore final : public DownloadOwnershipStore {
     [[nodiscard]] DownloadCheckpointSaveStatus record(const DownloadOwnershipRecord& record) override;
 
   private:
+    friend class WindowsDownloadOwnershipRecovery;
+    // Compare the exact settled record and recheck its pinned proof while the
+    // journal is locked. Only a full journal can release one record.
+    [[nodiscard]] DownloadCheckpointSaveStatus reclaimAtCapacity(const DownloadOwnershipRecord& expected,
+                                                                 const std::function<bool()>& still_reclaimable);
     QString directory_;
     WindowsDownloadOwnershipStoreOptions options_;
 };
