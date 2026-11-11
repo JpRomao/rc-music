@@ -629,6 +629,10 @@
         },
         {
           "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
+          "marker": "FR-023 rejects a continued Ogg Vorbis header packet over the limit and recovers"
+        },
+        {
+          "path": "tests/audio/TagLibMetadataExtractorTests.cpp",
           "marker": "MR-103 rejects malformed ID3 lengths before falling back to a FLAC signature"
         }
       ],
@@ -648,6 +652,10 @@
         {
           "path": "docs/audio-tests.md",
           "marker": "## Limite por leitura de metadados"
+        },
+        {
+          "path": "docs/audio-tests.md",
+          "marker": "### Pacotes de cabeçalho Vorbis"
         }
       ],
       "remaining": [

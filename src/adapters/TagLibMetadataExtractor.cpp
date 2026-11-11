@@ -56,10 +56,15 @@ constexpr std::size_t container_header_size = 512;
 constexpr std::size_t maximum_metadata_read_bytes = 32U * 1024U * 1024U;
 constexpr std::size_t maximum_metadata_total_bytes = 64U * 1024U * 1024U;
 constexpr std::size_t maximum_metadata_read_calls = 65'536U;
+constexpr std::size_t ogg_page_header_size = 27;
+// TagLib can read the Vorbis comment twice. Leave room for both reads and the
+// page headers within the cumulative metadata budget.
+constexpr std::size_t maximum_vorbis_header_packet_bytes = 30U * 1024U * 1024U;
 constexpr std::array flac_marker{'f', 'L', 'a', 'C'};
 using ContainerHeader = std::array<char, container_header_size>;
 
 enum class OggCodec { Unknown, Vorbis, Opus };
+enum class VorbisHeaderCheck { Complete, Invalid, PacketTooLarge };
 
 enum class MetadataReadLimit { SingleRead, TotalBytes, ReadCalls };
 
@@ -179,13 +184,12 @@ class MetadataFileStream final : public TagLib::FileStream {
 }
 
 [[nodiscard]] OggCodec oggCodec(const ContainerHeader& header, const std::size_t bytes_read) noexcept {
-    constexpr std::size_t fixed_page_header_size = 27;
-    if (bytes_read < fixed_page_header_size || !matches(header, 0, "OggS", bytes_read) || byteAt(header, 4) != 0) {
+    if (bytes_read < ogg_page_header_size || !matches(header, 0, "OggS", bytes_read) || byteAt(header, 4) != 0) {
         return OggCodec::Unknown;
     }
 
     const auto segment_count = static_cast<std::size_t>(byteAt(header, 26));
-    const auto first_packet_offset = fixed_page_header_size + segment_count;
+    const auto first_packet_offset = ogg_page_header_size + segment_count;
     if (matches(header, first_packet_offset, std::string_view{"\x01vorbis", 7}, bytes_read)) {
         return OggCodec::Vorbis;
     }
@@ -193,6 +197,59 @@ class MetadataFileStream final : public TagLib::FileStream {
         return OggCodec::Opus;
     }
     return OggCodec::Unknown;
+}
+
+[[nodiscard]] VorbisHeaderCheck checkVorbisHeaderPackets(TagLib::IOStream& stream, const std::uintmax_t file_size) {
+    constexpr std::size_t header_packet_count = 3;
+    constexpr unsigned int continuing_segment_size = 255;
+    constexpr unsigned int end_of_stream = 0x04;
+    std::uintmax_t page_offset = 0;
+    std::size_t packet_bytes = 0;
+    std::size_t completed_packets = 0;
+    stream.clear();
+
+    // Follow the same physical page chain and lacing boundaries as TagLib
+    // without reading or assembling any packet payload.
+    while (completed_packets < header_packet_count) {
+        const auto available = file_size - page_offset;
+        if (available < ogg_page_header_size)
+            return VorbisHeaderCheck::Invalid;
+        const auto position = static_cast<TagLib::offset_t>(page_offset);
+        stream.seek(position);
+        if (stream.tell() != position)
+            return VorbisHeaderCheck::Invalid;
+        const auto page = stream.readBlock(ogg_page_header_size);
+        if (page.size() != ogg_page_header_size || std::memcmp(page.data(), "OggS", 4) != 0)
+            return VorbisHeaderCheck::Invalid;
+        const auto segment_count = static_cast<unsigned char>(page[26]);
+        if (segment_count == 0 || segment_count > available - ogg_page_header_size)
+            return VorbisHeaderCheck::Invalid;
+        const auto segments = stream.readBlock(segment_count);
+        if (segments.size() != segment_count)
+            return VorbisHeaderCheck::Invalid;
+
+        std::size_t page_payload_bytes = 0;
+        for (const char segment : segments) {
+            const auto segment_bytes = static_cast<unsigned char>(segment);
+            page_payload_bytes += segment_bytes;
+            if (completed_packets == header_packet_count)
+                continue;
+            packet_bytes += segment_bytes;
+            if (packet_bytes > maximum_vorbis_header_packet_bytes)
+                return VorbisHeaderCheck::PacketTooLarge;
+            if (segment_bytes < continuing_segment_size) {
+                ++completed_packets;
+                packet_bytes = 0;
+            }
+        }
+        const auto page_header_bytes = ogg_page_header_size + segment_count;
+        if (page_payload_bytes > available - page_header_bytes)
+            return VorbisHeaderCheck::Invalid;
+        if (completed_packets < header_packet_count && (static_cast<unsigned char>(page[5]) & end_of_stream) != 0)
+            return VorbisHeaderCheck::Invalid;
+        page_offset += page_header_bytes + page_payload_bytes;
+    }
+    return VorbisHeaderCheck::Complete;
 }
 
 [[nodiscard]] bool hasId3v2Signature(const ContainerHeader& header) noexcept {
@@ -780,8 +837,14 @@ MetadataReadResult TagLibMetadataExtractor::read(const std::filesystem::path& so
             return readMetadata(readM4aAac);
         }
         switch (oggCodec(header, bytes_read)) {
-        case OggCodec::Vorbis:
+        case OggCodec::Vorbis: {
+            const auto headers = checkVorbisHeaderPackets(stream, file_size);
+            if (headers == VorbisHeaderCheck::PacketTooLarge)
+                return error(MetadataReadErrorCode::InvalidData, "Ogg Vorbis header packet exceeds 30 MiB");
+            if (headers == VorbisHeaderCheck::Invalid)
+                return error(MetadataReadErrorCode::InvalidData, "Ogg Vorbis header pages are truncated or invalid");
             return readMetadata(readVorbis);
+        }
         case OggCodec::Opus:
             return error(MetadataReadErrorCode::UnsupportedFormat, "Ogg Opus remains a candidate format");
         case OggCodec::Unknown:

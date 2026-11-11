@@ -120,6 +120,14 @@ As regressões inserem blocos APPLICATION depois dos metadados do FLAC canônico
 
 O orçamento cobre a entrada via `readBlock`. Cópias, montagem de pacotes e outras alocações internas do TagLib podem elevar o pico de memória. O decoder de reprodução usa seu próprio caminho.
 
+### Pacotes de cabeçalho Vorbis
+
+Antes de entregar um Ogg/Vorbis ao TagLib, o adaptador percorre as tabelas de segmentos dos três pacotes iniciais na mesma abertura somente leitura. Soma os fragmentos entre páginas e reconhece um segmento zero como terminador. Cada pacote admite até **30 MiB**, com margem para a releitura do comentário dentro do orçamento total de 64 MiB. Uma página truncada ou um pacote acima do teto encerra a extração antes da montagem dos dados. [Formato de páginas Ogg](https://www.rfc-editor.org/rfc/rfc3533.html#section-6)
+
+Os testes usam cópias temporárias do Vorbis sintético do corpus. Um leitor de teste confirma o tamanho do comentário pelas tabelas emitidas. O pacote de 30 MiB conserva título e propriedades de áudio. O Red aceitou o pacote um byte maior. Após a correção, o leitor devolve erro específico e um arquivo válido continua legível em seguida. Há também um comentário continuado que termina com segmento zero. Na jornada Qt, o áudio acima do limite toca até o fim com o nome do arquivo como título. Passaram **54/54 CTest** e o build Release do player. Logs em `out/product/test-runs/ogg-header-packet-limit-20261111/`.
+
+O limite se aplica aos três pacotes que o leitor de metadados pode montar. A verificação valida a geometria das páginas necessárias para eles. O pico de memória das bibliotecas e o isolamento da reprodução continuam pendentes.
+
 ## Limites
 
 Esta promoção não publica uma nova matriz de formatos, não reclassifica Opus/ALAC nem substitui a evidência do runtime/instalador. Não houve benchmark, reconstrução de SDK, instalação no host, áudio audível/dispositivo físico ou nova interação nativa.

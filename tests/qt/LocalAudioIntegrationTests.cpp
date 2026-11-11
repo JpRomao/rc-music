@@ -1,5 +1,6 @@
 #include "../audio/FlacApplicationBlocksFixture.hpp"
 #include "../audio/Id3PaddedMp3Fixture.hpp"
+#include "../audio/OggCommentPacketFixture.hpp"
 #include "m0/adapters/QtMultimediaPlaybackBackend.hpp"
 #include "m0/adapters/SingleWorkerMetadataReader.hpp"
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
@@ -257,21 +258,24 @@ class LocalAudioIntegrationTests final : public QObject {
 
   private slots:
     void metadataReadBudgetKeepsTheRealPlaybackAndFilenameFallback_data() {
-        QTest::addColumn<bool>("cumulative");
-        QTest::newRow("mp3-single-read") << false;
-        QTest::newRow("flac-cumulative-reads") << true;
+        QTest::addColumn<QString>("extension");
+        QTest::newRow("mp3-single-read") << QStringLiteral(".mp3");
+        QTest::newRow("flac-cumulative-reads") << QStringLiteral(".flac");
+        QTest::newRow("ogg-header-packet") << QStringLiteral(".ogg");
     }
 
     void metadataReadBudgetKeepsTheRealPlaybackAndFilenameFallback() {
-        QFETCH(bool, cumulative);
+        QFETCH(QString, extension);
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
-        const auto filename =
-            directory.filePath(cumulative ? QStringLiteral("Faixa 日本語.flac") : QStringLiteral("Faixa 日本語.mp3"));
+        const auto filename = directory.filePath(QStringLiteral("Faixa 日本語") + extension);
         const auto source = nativePath(filename);
-        if (cumulative) {
+        if (extension == QStringLiteral(".flac")) {
             QVERIFY(writeFlacWithApplicationBlocks(nativePath(QString::fromUtf8(M0_TEST_AUDIO_FLAC_FILE)), source, 5,
                                                    15U * 1024U * 1024U));
+        } else if (extension == QStringLiteral(".ogg")) {
+            QVERIFY(writeOggWithCommentPacketSize(nativePath(QString::fromUtf8(M0_TEST_AUDIO_OGG_VORBIS_FILE)), source,
+                                                  30U * 1024U * 1024U + 1U));
         } else {
             QVERIFY(writeMp3WithPaddedId3(nativePath(QString::fromUtf8(M0_TEST_AUDIO_MP3_FILE)), source,
                                           32U * 1024U * 1024U + 1U));

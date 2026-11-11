@@ -127,7 +127,7 @@ Os valores normativos estão nos [requisitos](../product/requirements.md) (NFR-L
 
 Fuzzing é desejável nos wrappers e parsers próprios. Não prometer que fuzzing de uma biblioteca externa elimina o risco dela.
 
-O adaptador TagLib limita cada buffer de entrada a 32 MiB antes de ler. A mesma abertura somente leitura serve à detecção e à extração, com orçamento de 64 MiB de entrada e 65.536 chamadas. Pico de memória, alocações internas e isolamento do decoder continuam em avaliação. [Testes dos limites](../audio-tests.md#limite-por-leitura-de-metadados)
+O adaptador TagLib limita cada buffer de entrada a 32 MiB antes de ler. A mesma abertura somente leitura serve à detecção e à extração, com orçamento de 64 MiB de entrada e 65.536 chamadas. Para Ogg/Vorbis, as tabelas de segmentos limitam cada pacote inicial a 30 MiB antes da montagem. Pico de memória, alocações internas e isolamento do decoder continuam em avaliação. [Testes dos limites](../audio-tests.md#limite-por-leitura-de-metadados)
 
 ## 8. Persistência e privacidade
 

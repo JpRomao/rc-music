@@ -620,6 +620,8 @@ Em M5.2, o corpus Windows inclui [FLAC com ID3 inicial e extensão enganosa](aud
 
 Em M5.2/M5.3, o leitor de metadados usa a mesma abertura somente leitura para identificar e interpretar o arquivo. O adaptador impõe [limites de bytes e chamadas de leitura do TagLib](audio-tests.md#limite-por-leitura-de-metadados). A jornada Windows verifica a reprodução com o nome do arquivo como título quando uma tag ou um conjunto de blocos ultrapassa esses tetos.
 
+Em Ogg/Vorbis, o leitor verifica os [três pacotes iniciais](audio-tests.md#pacotes-de-cabeçalho-vorbis) antes de o TagLib montá-los. A regressão cobre comentário continuado no limite e acima dele, incluindo o fallback de título durante a reprodução.
+
 ### Gate M5 / release
 
 - Bugs P0/P1 bloqueadores abertos: zero.

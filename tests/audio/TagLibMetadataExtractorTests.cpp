@@ -1,5 +1,6 @@
 #include "FlacApplicationBlocksFixture.hpp"
 #include "Id3PaddedMp3Fixture.hpp"
+#include "OggCommentPacketFixture.hpp"
 #include "m0/adapters/SingleWorkerMetadataReader.hpp"
 #include "m0/adapters/TagLibMetadataExtractor.hpp"
 
@@ -25,6 +26,7 @@
 #include <xiphcomment.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -144,6 +146,49 @@ void writeBytes(const std::filesystem::path& destination, const std::vector<std:
     REQUIRE(stream);
     stream.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     REQUIRE(stream);
+}
+
+struct OggCommentPacketLayout final {
+    std::size_t size{};
+    std::size_t pages{};
+    std::uint8_t terminating_lace{};
+};
+
+[[nodiscard]] OggCommentPacketLayout readOggCommentPacketLayout(const std::filesystem::path& path) {
+    std::ifstream stream{path, std::ios::binary};
+    OggCommentPacketLayout comment;
+    std::size_t packet_index = 0;
+    while (true) {
+        std::array<std::uint8_t, 27> page{};
+        REQUIRE(stream.read(reinterpret_cast<char*>(page.data()), static_cast<std::streamsize>(page.size())));
+        REQUIRE(std::equal(page.begin(), page.begin() + 4, "OggS"));
+        const auto segment_count = page.back();
+        REQUIRE(segment_count > 0);
+        std::array<std::uint8_t, 255> segments{};
+        REQUIRE(stream.read(reinterpret_cast<char*>(segments.data()), segment_count));
+
+        bool comment_on_page = false;
+        std::streamoff page_payload = 0;
+        for (std::size_t index = 0; index < segment_count; ++index) {
+            const auto lace = segments[index];
+            page_payload += lace;
+            if (packet_index == 1) {
+                if (!comment_on_page) {
+                    ++comment.pages;
+                    comment_on_page = true;
+                }
+                comment.size += lace;
+                if (lace < 255) {
+                    comment.terminating_lace = lace;
+                    return comment;
+                }
+            }
+            if (lace < 255) {
+                ++packet_index;
+            }
+        }
+        REQUIRE(stream.seekg(page_payload, std::ios::cur));
+    }
 }
 
 [[nodiscard]] std::string utf8TextFieldWithSize(const std::size_t size_bytes) {
@@ -809,6 +854,65 @@ TEST_CASE("FR-023 reads metadata for a PCM WAV larger than the cumulative metada
     CHECK(metadata.audio.sample_rate_hz == std::optional<std::uint32_t>{48'000});
     CHECK(metadata.audio.channels == std::optional<std::uint16_t>{1});
     CHECK(metadata.audio.duration_ms == std::optional<std::int64_t>{static_cast<std::int64_t>(pcm_bytes) / 96});
+}
+
+TEST_CASE("FR-023 accepts continued Ogg Vorbis comments at the header packet limit",
+          "[m0][qt][metadata][taglib][ogg][vorbis][ogg-header-packet-limit][FR-023]") {
+    constexpr std::size_t packet_limit_bytes = 30U * 1024U * 1024U;
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile padded{temporaryPath(directory, "vorbis-at-packet-limit.ogg")};
+    const auto authenticated = fixture("fixtures/valid/ogg-vorbis.ogg");
+    REQUIRE(writeOggWithCommentPacketSize(authenticated, padded.path(), packet_limit_bytes));
+    const auto layout = readOggCommentPacketLayout(padded.path());
+    REQUIRE(layout.size == packet_limit_bytes);
+    REQUIRE(layout.pages > 1);
+
+    const TagLibMetadataExtractor reader;
+    const auto baseline_result = reader.read(authenticated);
+    const auto& baseline = requireMetadata(baseline_result);
+    const auto result = reader.read(padded.path());
+    const auto& metadata = requireMetadata(result);
+    CHECK(metadata.audio.codec == "Vorbis");
+    CHECK(metadata.audio.duration_ms == baseline.audio.duration_ms);
+    CHECK(metadata.audio.sample_rate_hz == baseline.audio.sample_rate_hz);
+    CHECK(metadata.audio.channels == baseline.audio.channels);
+    CHECK(metadata.tags.title == baseline.tags.title);
+}
+
+TEST_CASE("FR-023 rejects a continued Ogg Vorbis header packet over the limit and recovers",
+          "[m0][qt][metadata][taglib][ogg][vorbis][hostile][ogg-header-packet-limit][FR-023]") {
+    constexpr std::size_t packet_limit_bytes = 30U * 1024U * 1024U;
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile padded{temporaryPath(directory, "vorbis-above-packet-limit.ogg")};
+    const auto authenticated = fixture("fixtures/valid/ogg-vorbis.ogg");
+    REQUIRE(writeOggWithCommentPacketSize(authenticated, padded.path(), packet_limit_bytes + 1U));
+    const auto layout = readOggCommentPacketLayout(padded.path());
+    REQUIRE(layout.size == packet_limit_bytes + 1U);
+    REQUIRE(layout.pages > 1);
+
+    const TagLibMetadataExtractor reader;
+    const auto result = reader.read(padded.path());
+    const auto& error = requireError(result);
+    CHECK(error.code == MetadataReadErrorCode::InvalidData);
+    CHECK(error.message == "Ogg Vorbis header packet exceeds 30 MiB");
+    const auto recovered = reader.read(authenticated);
+    CHECK(requireMetadata(recovered).audio.codec == "Vorbis");
+}
+
+TEST_CASE("FR-023 accepts a zero lace terminating a continued Ogg Vorbis comment packet",
+          "[m0][qt][metadata][taglib][ogg][vorbis][ogg-header-packet-limit][FR-023]") {
+    constexpr std::size_t packet_bytes = 256U * 255U;
+    const ScopedTemporaryDirectory directory;
+    const ScopedTemporaryFile padded{temporaryPath(directory, "vorbis-zero-terminating-lace.ogg")};
+    const auto authenticated = fixture("fixtures/valid/ogg-vorbis.ogg");
+    REQUIRE(writeOggWithCommentPacketSize(authenticated, padded.path(), packet_bytes));
+    const auto layout = readOggCommentPacketLayout(padded.path());
+    REQUIRE(layout.size == packet_bytes);
+    REQUIRE(layout.pages > 1);
+    REQUIRE(layout.terminating_lace == 0);
+
+    const auto result = TagLibMetadataExtractor{}.read(padded.path());
+    CHECK(requireMetadata(result).audio.codec == "Vorbis");
 }
 
 TEST_CASE("MR-103 returns typed errors for empty and truncated input without crashing",
