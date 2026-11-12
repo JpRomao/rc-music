@@ -12,6 +12,7 @@
 *.yaml text eol=lf
 scripts/fixtures/*.py text eol=lf
 extensions/chromium/main/* text eol=lf
+extensions/chromium/youtube/* text eol=lf
 tests/extensions/*.mjs text eol=lf
 tests/qt/network-fixtures/*.pem text eol=lf
 *.bin binary
