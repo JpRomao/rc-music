@@ -82,6 +82,8 @@ O pacote-fonte YouTube passou a exigir **oito assets**, incluindo `page-video.mj
 
 A família YouTube também recebeu a regra `text eol=lf` já aplicada à principal. A regressão `packaging/windows/tests/YoutubeExtensionCheckout.Tests.ps1` faz um checkout Git real com conversão CRLF habilitada e exige os oito assets e proveniência limpa no planejador real. Pacotes diagnósticos gerados antes dessa correção permaneceram marcados como alterados e não foram carregados; não se edita o receipt para promover esses bytes.
 
+A revisão independente reproduziu a troca do vídeo durante as esperas de aba/foco. Envio e reenvio agora fazem uma última leitura no `documentId` fixado **depois** dessas esperas e comparam a identidade antes de serializar/entregar o pedido, sem outra espera de contexto entre a leitura e o handoff. A verificação é pontual: não bloqueia mudanças posteriores da página nem autentica a mídia remota. O coletor ainda usa `querySelectorAll` no player antes de conferir os oito iframes; o teto de iframes não é um orçamento de elementos percorridos. Essa melhoria de limitação de trabalho permanece pendente, sem alegação de desempenho qualificado.
+
 ### Cliente
 
 As duas extensões passaram em 247 testes Node após o incremento de reenvio. Os casos verificaram o envelope e ID originais, o clique explícito, a revogação após mudança de contexto e o isolamento de confirmações atrasadas. Logs em `out/product/test-runs/chromium-repeat-request-20261111/`.

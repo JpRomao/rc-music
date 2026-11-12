@@ -67,6 +67,16 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
     return window.id;
   }
 
+  async function readLetrasSource(tab, documentId) {
+    const results = await chrome.scripting.executeScript({ world: 'ISOLATED',
+      target: documentId ? { tabId: tab.id, documentIds: [documentId] } : { tabId: tab.id, frameIds: [0] },
+      func: collectLetrasYoutubeVideo });
+    if (!Array.isArray(results) || results.length !== 1 || results[0]?.frameId !== 0
+      || typeof results[0].documentId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/u.test(results[0].documentId)
+      || (documentId && results[0].documentId !== documentId)) throw new Error('unsupported_page');
+    return { candidate: videoFromLetrasPage(tab, results[0].result), documentId: results[0].documentId };
+  }
+
   async function activeVideo(windowId, documentId) {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!Array.isArray(tabs) || tabs.length !== 1) throw new Error('unsupported_page');
@@ -77,18 +87,12 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
       const candidate = videoFromTab(tab);
       return { candidate, context: { tabId: candidate.tabId, windowId, pageUrl: tab.url } };
     }
-    const results = await chrome.scripting.executeScript({ world: 'ISOLATED',
-      target: documentId ? { tabId: tab.id, documentIds: [documentId] } : { tabId: tab.id, frameIds: [0] },
-      func: collectLetrasYoutubeVideo });
-    if (!Array.isArray(results) || results.length !== 1 || results[0]?.frameId !== 0
-      || typeof results[0].documentId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/u.test(results[0].documentId)
-      || (documentId && results[0].documentId !== documentId)) throw new Error('unsupported_page');
+    const source = await readLetrasSource(tab, documentId);
     const current = await chrome.tabs.get(tab.id);
     if (current?.id !== tab.id || current.active !== true || current.windowId !== windowId || current.url !== tab.url
       || current.discarded === true || (current.pendingUrl ?? '') !== ''
       || (current.status !== undefined && current.status !== 'complete')) throw new Error('unsupported_page');
-    const candidate = videoFromLetrasPage(tab, results[0].result);
-    return { candidate, context: { tabId: candidate.tabId, windowId, pageUrl: tab.url, documentId: results[0].documentId } };
+    return { candidate: source.candidate, context: { tabId: tab.id, windowId, pageUrl: tab.url, documentId: source.documentId } };
   }
 
   async function refresh() {
@@ -151,6 +155,13 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
       const windowId = await focusedWindowId();
       if (!live(token)) return false;
       if (windowId !== expected.windowId) { invalidate(); return false; }
+      if (expected.documentId !== undefined) {
+        // Read the source after all asynchronous tab/focus guards. Do not await
+        // another context check between this snapshot and the native handoff.
+        const fresh = await readLetrasSource({ id: expected.tabId, url: expected.pageUrl }, expected.documentId);
+        if (!live(token)) return false;
+        if (fresh.candidate.videoId !== candidate.videoId) { invalidate(); return false; }
+      }
       request ??= buildYoutubeAudioRequest(candidate, metadata, newRequestId());
       if (!live(token) || state.status !== 'checking') return false;
       publish({ status: 'sending', message: 'Enviando pedido ao componente YouTube…' });

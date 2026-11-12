@@ -53,10 +53,11 @@ test('Letras offers its declared YouTube video without sending or inferring an a
   assert.deepEqual(h.sends, [{ schemaVersion: 1, type: 'youtube.audio.request', requestId,
     items: [{ videoId: 'wW9TwZdWpjw', title: 'Asterisk', artist: '',
       lyricsPage: 'https://www.letras.mus.br/bleach/1222774/', fetchLyrics: false }] }]);
-  assert.equal(h.injections.length, 2);
+  assert.equal(h.injections.length, 3);
   assert.equal(h.injections[0].world, 'ISOLATED');
   assert.deepEqual(h.injections[0].target, { tabId: 7, frameIds: [0] });
   assert.deepEqual(h.injections[1].target, { tabId: 7, documentIds: ['letras-document-1'] });
+  assert.deepEqual(h.injections[2].target, { tabId: 7, documentIds: ['letras-document-1'] });
 });
 test('Letras same-URL document or video replacement revokes selected consent before native handoff', async t => {
   for (const [name, change] of [
@@ -123,6 +124,39 @@ test('Letras retry preserves the admitted identity and rejects a replaced embedd
   assert.equal(requests.length, 2);
   assert.equal(controller.getState().status, 'stale');
   controller.dispose();
+});
+test('Letras source replacement during the final asynchronous guards prevents send and retry', async t => {
+  for (const phase of ['tab guard', 'focus guard']) {
+    for (const retry of [false, true]) await t.test(`${phase}, retry=${retry}`, async () => {
+      const h = letrasHarness(); h.controller.dispose();
+      const requests = [];
+      const controller = createYoutubePopupController({ chrome: h.chrome, newRequestId: () => requestId,
+        async sendRequest(_chrome, request) {
+          requests.push(structuredClone(request));
+          throw Object.assign(new Error('Uncertain'), { code: 'bridge_timeout' });
+        } });
+      assert.equal(await controller.refresh(), true);
+      controller.setSelected(true);
+      if (retry) {
+        assert.equal(await controller.send(), false);
+        assert.equal(controller.getState().canRetry, true);
+      }
+      const before = requests.length;
+      if (phase === 'tab guard') h.chrome.tabs.get = async () => {
+        h.snapshot.videoId = 'aB_0123-xYz';
+        return { ...h.tab };
+      };
+      else h.chrome.windows.getLastFocused = async () => {
+        h.snapshot.videoId = 'aB_0123-xYz';
+        return { ...h.window };
+      };
+      assert.equal(await (retry ? controller.retry() : controller.send()), false);
+      assert.equal(requests.length, before);
+      assert.equal(controller.getState().status, 'stale');
+      assert.equal(controller.getState().canRetry, false);
+      controller.dispose();
+    });
+  }
 });
 test('opening or refreshing reads only the current tab and never submits a request', async () => {
   const h = harness();
