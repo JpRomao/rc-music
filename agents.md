@@ -2,6 +2,17 @@
 
 Este arquivo é o contrato operacional para qualquer pessoa ou agente que trabalhe neste repositório. Leia-o por completo antes de analisar, documentar, implementar, testar ou publicar qualquer mudança.
 
+<!-- proportional-validation:v1 -->
+## Validação proporcional e eficiência
+
+- Esta política governa o escopo/frequência dos checks, inclusive com Superpowers, sem dispensar critérios de aceite ou gates explícitos.
+- Preserve Red → Green → Refactor nas mudanças de comportamento, com regressões focadas e consumidores relevantes. Amplie por risco transversal, persistência, segurança ou integração não coberta.
+- Não rode suíte global por arquivo, subtarefa, commit ou retomada. Reutilize evidências somente com entradas relevantes inalteradas; coordenador e subagentes não duplicam a mesma validação.
+- Documentação pura exige conteúdo, links/comandos e diff, sem Reds artificiais ou rebuild. Não enfraqueça asserts, prazos ou gates para economizar tempo.
+- Relate checks executados, falhas e pendentes separadamente. Testes focados não comprovam a suíte inteira; timeout, zero testes ou ambiente ausente não são aprovação.
+- Use os comandos reais e filtros dos guias específicos: `docs/browser-extension.md` para Node/extensões e `docs/development-commands.md` para CMake/CTest. Não invente runners ou instale dependências sem necessidade do escopo.
+<!-- /proportional-validation:v1 -->
+
 ## 1. Objetivo do produto
 
 Construir um player de música desktop pessoal, leve, rápido e agradável de usar, com prioridade para Windows e suporte planejado para Linux.

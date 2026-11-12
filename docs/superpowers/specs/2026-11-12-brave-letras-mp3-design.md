@@ -1,6 +1,6 @@
 # Brave/Letras → RC Music → MP3
 
-**Estado:** desenho para aprovação. A configuração local da ponte e o teste no Brave já foram autorizados pelo mantenedor; não é necessário pedir novamente essa mesma autorização.
+**Estado:** desenho aprovado pelo mantenedor: “Implementar desta forma”. A configuração local da ponte e o teste no Brave já foram autorizados; não é necessário pedir novamente essa mesma autorização.
 
 ## Objetivo e aceite
 
