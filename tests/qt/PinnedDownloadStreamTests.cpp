@@ -94,6 +94,56 @@ class PinnedDownloadStreamTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void sendsOneValidatedUserAgentWithoutChangingSignedTarget_data() {
+        QTest::addColumn<QByteArray>("agent");
+        QTest::newRow("public resolver hint") << QByteArray("RCMusic Synthetic Agent/1");
+        QTest::newRow("maximum printable hint") << QByteArray(512, 'a');
+        QTest::newRow("empty means no header") << QByteArray{};
+    }
+    void sendsOneValidatedUserAgentWithoutChangingSignedTarget() {
+        QFETCH(QByteArray, agent);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        auto value = endpoint(server.serverPort());
+        value.user_agent = agent;
+        const auto crlf = QByteArray(1, char{13}) + char{10};
+        auto expected = expectedRequest(value);
+        if (!agent.isEmpty())
+            expected.replace(crlf + "Connection: close", crlf + "User-Agent: " + agent + crlf + "Connection: close");
+        PinnedDownloadStream stream;
+        QVERIFY(stream.open(value));
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 3000);
+        std::unique_ptr<QTcpSocket> peer(server.nextPendingConnection());
+        QTRY_VERIFY_WITH_TIMEOUT(peer->peek(4096).contains(crlf + crlf), 3000);
+        const auto observed = peer->readAll();
+        QCOMPARE(observed, expected);
+        QCOMPARE(observed.count("User-Agent:"), agent.isEmpty() ? qsizetype{0} : qsizetype{1});
+        QVERIFY(!observed.contains("Cookie:"));
+        QVERIFY(!observed.contains("Authorization:"));
+        QVERIFY(!observed.contains("Referer:"));
+    }
+    void invalidUserAgentFailsBeforeConnection_data() {
+        QTest::addColumn<QByteArray>("agent");
+        QTest::newRow("CR") << (QByteArray("agent") + char{13} + "Cookie: no");
+        QTest::newRow("LF") << (QByteArray("agent") + char{10} + "Authorization: no");
+        QTest::newRow("NUL") << (QByteArray("agent") + char{0} + "tail");
+        QTest::newRow("DEL") << QByteArray(1, char{127});
+        QTest::newRow("non ASCII") << QByteArray::fromHex("c3a9");
+        QTest::newRow("513 bytes") << QByteArray(513, 'a');
+    }
+    void invalidUserAgentFailsBeforeConnection() {
+        QFETCH(QByteArray, agent);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        auto value = endpoint(server.serverPort());
+        value.user_agent = agent;
+        PinnedDownloadStream stream;
+        QVERIFY(!stream.open(value));
+        QCOMPARE(stream.poll().state, PinnedDownloadStreamState::Failed);
+        QCOMPARE(stream.poll().error, PinnedDownloadStreamError::InvalidEndpoint);
+        QCoreApplication::processEvents();
+        QVERIFY(!server.hasPendingConnections());
+    }
     void startsIdleWithoutNetworkOrReadableData() {
         PinnedDownloadStream stream;
         QCOMPARE(stream.poll().state, PinnedDownloadStreamState::Idle);

@@ -24,6 +24,12 @@ O popup guarda a aba, a janela e a URL confirmada do vídeo escolhido. Antes de 
 
 Se a confirmação ficar incerta, **Repetir o mesmo pedido** revalida o vídeo e conserva o ID e os campos enviados, inclusive a escolha de letra. A opção vale para o popup aberto e a seleção confirmada. [Reenvio e identificação na fila](browser-extension.md#protocolo-nativo-de-desenvolvimento)
 
+## Prova temporária de User-Agent
+
+O [teste autorizado](superpowers/specs/2026-11-12-youtube-user-agent-probe-design.md) conserva somente o User-Agent público validado do resolvedor na capability, sem persistir ou registrar seu valor. A composição confiável deve optar explicitamente por encaminhá-lo; o default e mídia direta continuam sem o header. [Limites, protocolo privado v1/v2 e observação booleana](download-network.md#hint-user-agent-temporário-e-default-mínimo) não mudam os gates de DNS/TLS, expiração, isolamento, ACK ou conversão MP3.
+
+O HTTP 403 foi observado diretamente em uma tentativa anterior isolada; ele não prova DRM nem que User-Agent seja a causa. Testes sintéticos verdes não substituem a nova tentativa explícita, os pins novos e a restauração completa exigidos pelo desenho. Encaminhamento permanente e aquisição/conversão/importação reais não estão aprovados por esse incremento.
+
 ## Evidência do ingresso separado
 
 Recibos locais em `out/product/test-runs/youtube-audio-20261104/`. O Red Node passou **5 casos e falhou 18**, antes do comportamento de policy/ponte/controller. O Red Qt passou **38 casos e falhou 26**, com stubs vazios. Depois, o novo teste de montagem DOM real com browser falso teve Red **35/1**; o clique e a renderização foram implementados sem remover suas assertions.

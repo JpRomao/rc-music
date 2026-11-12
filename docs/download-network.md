@@ -22,6 +22,18 @@ No corpo delimitado somente por EOF, HTTPS exige fechamento autenticado. Se o ba
 
 O socket aplica high-water de 4 KiB nas filas Qt, solicita recepção nativa de 4 KiB e confere valor efetivo de até 8 KiB antes da conexão. O fechamento TLS drena dados retidos enquanto o descritor ainda é válido, com high-water de 48 KiB para reservar um registro sob o limite legível de 64 KiB. Valores legíveis acima do teto falham fechados; não são mascarados em `poll()`. Essa margem foi exercitada por regressões de EOF/leituras desalinhadas, não é uma prova de limite de todas as filas internas ou alocações Schannel/Qt/Windows.
 
+## Hint User-Agent temporário e default mínimo
+
+O teste autorizado de compatibilidade preserva somente um hint público `User-Agent` do resolvedor YouTube, após a validação integral dos metadados. O valor é efêmero na capability, ASCII imprimível (0x20–0x7e), limitado a 512 bytes e nunca registrado. Ausência/vazio continuam omitindo o header. Não há dicionário de headers, cookies, Authorization, Referer ou autoridade da página para habilitar encaminhamento.
+
+`DirectDownloadLimits::forward_youtube_user_agent` é `false` por padrão. Somente composição C++ confiável pode habilitar o teste: é necessária uma capability válida YouTube em cada hop aprovado; mídia direta continua mínima mesmo com a flag. DNS/TLS, allowlists, expiração e request-target assinado não mudam. O observador opcional `on_request_user_agent(bool)` informa somente inclusão **tentada** no endpoint, não recebimento pelo servidor; não pode reentrar/destruir a sessão e suas exceções são contidas.
+
+O endpoint aplica o mesmo limite antes da conexão. Requests privados sem hint conservam `RCMD` v1 byte a byte; somente Stream com hint não vazio usa v2, acrescentando um campo length-prefixed após request-target e antes de port/TLS. Decoder recusa v2 Resolve, vazio/inválido, truncamento e bytes extras; respostas não mudam. Worker antigo recusa v2, sem downgrade silencioso. Testes de socket e subprocesso usam exclusivamente loopback sintético de baixo nível; não abrem exceção na policy do downloader nem comprovam aquisição pública ou MP3.
+
+A [prova temporária aprovada](superpowers/specs/2026-11-12-youtube-user-agent-probe-design.md) exige candidato/pins novos, tentativa explícita isolada e restauração. A mudança não promove encaminhamento no produto normal nem comprova a causa do HTTP 403 observado.
+
+O fechamento local desse incremento passou **9/9 CTest, 364 casos Qt**, sem falhas/skips/warnings, incluindo socket, protocolo, worker real de teste, supervisor e consumidores de preparo/execução. Há comparação integral do HTTP sintético e golden independente de bytes v1. O worker diretamente ligado é um seam explícito de testes; esse resultado não prova o bootstrap autenticado instalado, AppContainer ou a mídia pública. Formato dos 17 C++ e documentos/rastreabilidade passaram; nenhuma suíte global Node/CTest foi executada nesse recorte.
+
 ## Build e checks locais
 
 Na sessão MSVC descrita em [core-build](core-build.md#build-windows), configure a [biblioteca de navegador](browser-extension.md#biblioteca-nativa-windows) com Qt/Catch2 já disponíveis e acrescente:

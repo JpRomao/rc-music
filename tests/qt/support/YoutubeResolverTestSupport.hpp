@@ -40,13 +40,17 @@ class FixtureYoutubeResolverProcess final : public YoutubeResolverProcess {
 };
 // Tests obtain capabilities through the same session and exit/EOF contract as
 // production. This is synthetic evidence, never qualification of a live source.
-inline std::shared_ptr<const ResolvedYoutubeAudioCapability>
-resolvedYoutubeFixture(const std::string& job_id = "youtube_job",
-                       const QString& video_id = QStringLiteral("aB0-_Cd1EF2"),
-                       const QString& url = QStringLiteral(
-                           "https://r1.googlevideo.com/videoplayback?expire=2000000000&sig=A%2fb%2F&x=1")) {
+inline std::shared_ptr<const ResolvedYoutubeAudioCapability> resolvedYoutubeFixture(
+    const std::string& job_id = "youtube_job", const QString& video_id = QStringLiteral("aB0-_Cd1EF2"),
+    const QString& url = QStringLiteral("https://r1.googlevideo.com/videoplayback?expire=2000000000&sig=A%2fb%2F&x=1"),
+    const QByteArray& user_agent = {}) {
     FixtureYoutubeResolverProcess process;
     process.output = youtubeResolverFixtureJson(video_id, url);
+    if (!user_agent.isEmpty()) {
+        auto object = QJsonDocument::fromJson(process.output).object();
+        object.insert("http_headers", QJsonObject{{"User-Agent", QString::fromLatin1(user_agent)}});
+        process.output = QJsonDocument(object).toJson(QJsonDocument::Compact);
+    }
     YoutubeResolverSession session(process);
     if (!session.start(job_id, video_id, 0, 1'999'999'000))
         return {};

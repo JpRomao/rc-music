@@ -134,8 +134,19 @@ void DirectDownloadSession::tick(qint64 now_ms) {
             endpoint.request_target = target_->request_target;
             endpoint.port = target_->https ? 443 : 80;
             endpoint.tls = target_->https;
+            if (limits_.forward_youtube_user_agent && youtube_capability_)
+                endpoint.user_agent = youtube_capability_->data().user_agent_hint;
             snapshot_.state = DirectDownloadState::Receiving;
             activity_ms_ = now_ms;
+            if (limits_.on_request_user_agent) {
+                try {
+                    limits_.on_request_user_agent(!endpoint.user_agent.isEmpty());
+                } catch (...) {
+                    // Diagnostic observers cannot change transport outcomes.
+                }
+            }
+            if (snapshot_.state != DirectDownloadState::Receiving)
+                return;
             const auto accepted = io_.open(endpoint);
             if (!active(snapshot_.state))
                 return;

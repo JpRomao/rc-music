@@ -1,4 +1,5 @@
 #include "PinnedDownloadStream.hpp"
+#include "DownloadUserAgent.hpp"
 
 #include <QNetworkProxy>
 #include <QSslKey>
@@ -78,7 +79,8 @@ constexpr qint64 closing_high_water_bytes = 48 * 1024;
 [[nodiscard]] bool validEndpoint(const PinnedDownloadEndpoint& endpoint) {
     return !endpoint.address.isNull() && endpoint.address != QHostAddress::AnyIPv4 &&
            endpoint.address != QHostAddress::AnyIPv6 && endpoint.address.scopeId().isEmpty() && endpoint.port != 0 &&
-           validHost(endpoint.host) && validTarget(endpoint.request_target);
+           validHost(endpoint.host) && validTarget(endpoint.request_target) &&
+           validDownloadUserAgent(endpoint.user_agent);
 }
 
 [[nodiscard]] QByteArray wireRequest(const PinnedDownloadEndpoint& endpoint) {
@@ -87,8 +89,13 @@ constexpr qint64 closing_high_water_bytes = 48 * 1024;
         host = '[' + host + ']';
     if (endpoint.port != (endpoint.tls ? 443 : 80))
         host += ':' + QByteArray::number(endpoint.port);
-    return "GET " + endpoint.request_target + " HTTP/1.1\r\nHost: " + host +
-           "\r\nAccept: */*\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n";
+    const auto crlf = QByteArray(1, char{13}) + char{10};
+    auto request = "GET " + endpoint.request_target + " HTTP/1.1" + crlf + "Host: " + host + crlf + "Accept: */*" +
+                   crlf + "Accept-Encoding: identity" + crlf;
+    if (!endpoint.user_agent.isEmpty())
+        request += "User-Agent: " + endpoint.user_agent + crlf;
+    request += "Connection: close" + crlf + crlf;
+    return request;
 }
 
 } // namespace

@@ -9,6 +9,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QtEndian>
 
 #include <utility>
 
@@ -167,6 +168,72 @@ struct Loopback final {
 class WindowsDownloadNetworkWorkerTests final : public QObject {
     Q_OBJECT
   private slots:
+    void validatedUserAgentReachesRealWorkerWire_data() {
+        QTest::addColumn<QByteArray>("agent");
+        QTest::newRow("public hint") << QByteArray("RCMusic Synthetic Agent/1");
+        QTest::newRow("512 printable bytes") << QByteArray(512, 'a');
+    }
+    void validatedUserAgentReachesRealWorkerWire() {
+        QFETCH(QByteArray, agent);
+        if (!realPluginEnabled())
+            QSKIP("Restricted TLS plugin fixture is opt-in.");
+        Loopback local;
+        QVERIFY(local.listen());
+        const auto crlf = QByteArray(1, char{13}) + char{10};
+        local.response = "HTTP/1.1 200 OK" + crlf + "Content-Length: 0" + crlf + crlf;
+        auto request = streamRequest(local.server.serverPort());
+        request.endpoint.user_agent = agent;
+        const auto bytes = encodeDownloadWorkerRequest(request);
+        QVERIFY(!bytes.isEmpty());
+        const auto result = run(bytes);
+        QVERIFY(result.completed);
+        QCOMPARE(result.exit_status, QProcess::NormalExit);
+        QCOMPARE(result.exit_code, 0);
+        QVERIFY(result.diagnostics.isEmpty());
+        QCOMPARE(local.connections, 1);
+        const QByteArray expected = "GET /signed/%41%2fb?sig=%2f%2F&x=1+2&literal=^|`{} HTTP/1.1" + crlf +
+                                    "Host: media.example.test:" + QByteArray::number(request.endpoint.port) + crlf +
+                                    "Accept: */*" + crlf + "Accept-Encoding: identity" + crlf + "User-Agent: " + agent +
+                                    crlf + "Connection: close" + crlf + crlf;
+        QCOMPARE(local.request, expected);
+        const auto decoded = frames(result.wire);
+        QVERIFY(decoded);
+        QVERIFY(decoded->size() >= 2);
+        QByteArray received;
+        for (qsizetype index = 0; index < decoded->size() - 1; ++index) {
+            QCOMPARE(decoded->at(index).kind, DownloadWorkerFrameKind::Data);
+            received += decoded->at(index).data;
+        }
+        QCOMPARE(received, local.response);
+        QCOMPARE(decoded->back().kind, DownloadWorkerFrameKind::Terminal);
+        QCOMPARE(decoded->back().error, DownloadWorkerError::None);
+        QVERIFY(decoded->back().authenticated_eof);
+    }
+    void malformedVersionTwoHintNeverConnects_data() {
+        QTest::addColumn<QByteArray>("agent");
+        QTest::newRow("empty v2") << QByteArray{};
+        QTest::newRow("CR") << (QByteArray("agent") + char{13});
+        QTest::newRow("LF") << (QByteArray("agent") + char{10});
+        QTest::newRow("NUL") << (QByteArray("agent") + char{0});
+        QTest::newRow("DEL") << QByteArray(1, char{127});
+        QTest::newRow("non ASCII") << QByteArray::fromHex("ff");
+        QTest::newRow("513 bytes") << QByteArray(513, 'a');
+    }
+    void malformedVersionTwoHintNeverConnects() {
+        QFETCH(QByteArray, agent);
+        Loopback local;
+        QVERIFY(local.listen());
+        auto bytes = encodeDownloadWorkerRequest(streamRequest(local.server.serverPort()));
+        QVERIFY(!bytes.isEmpty());
+        bytes[4] = char{2};
+        QByteArray field(4, char{0});
+        qToLittleEndian<quint32>(static_cast<quint32>(agent.size()), field.data());
+        field += agent;
+        bytes.insert(bytes.size() - 3, field);
+        expectFailure(run(bytes), DownloadWorkerError::InvalidRequest);
+        QCOMPARE(local.connections, 0);
+        QVERIFY(local.request.isEmpty());
+    }
     void rejectsMalformedPrivateRequestsBeforeAnyConnection_data() {
         QTest::addColumn<QByteArray>("input");
         QTest::newRow("empty") << QByteArray{};

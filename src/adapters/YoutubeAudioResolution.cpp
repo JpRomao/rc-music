@@ -1,4 +1,5 @@
 #include "YoutubeAudioResolution.hpp"
+#include "DownloadUserAgent.hpp"
 #include "StrictJson.hpp"
 
 #include <QDir>
@@ -76,7 +77,7 @@ DownloadFailure metadata(const QJsonObject& object, const QString& key, QString&
     destination = text;
     return DownloadFailure::None;
 }
-DownloadFailure headers(const QJsonObject& object) {
+DownloadFailure headers(const QJsonObject& object, QByteArray& user_agent_hint) {
     const auto value = object.value(QStringLiteral("http_headers"));
     if (value.isUndefined())
         return DownloadFailure::None;
@@ -85,6 +86,7 @@ DownloadFailure headers(const QJsonObject& object) {
     const auto dictionary = value.toObject();
     constexpr std::array<const char*, 4> names{"user-agent", "accept", "accept-language", "sec-fetch-mode"};
     QSet<QString> seen;
+    QByteArray candidate;
     for (auto entry = dictionary.begin(); entry != dictionary.end(); ++entry) {
         const auto key = entry.key().toLower();
         if (seen.contains(key) ||
@@ -93,13 +95,18 @@ DownloadFailure headers(const QJsonObject& object) {
             return DownloadFailure::Restricted;
         seen.insert(key);
         const auto text = entry.value().toString();
-        if (text.size() > 512 || std::any_of(text.begin(), text.end(), [](const QChar unit) {
+        if (text.size() > download_max_user_agent_bytes || std::any_of(text.begin(), text.end(), [](const QChar unit) {
                 return unit.unicode() < 0x20 || unit.unicode() > 0x7e;
             }))
             return DownloadFailure::Restricted;
+        if (key == QLatin1String("user-agent"))
+            candidate = text.toLatin1();
     }
-    // The transfer builds its own minimal headers. Even these default hints
-    // are inspected only; they never become caller-controlled request headers.
+    if (!validDownloadUserAgent(candidate))
+        return DownloadFailure::Restricted;
+    // Preserve only this public hint; trusted composition still must opt in.
+    // Other inspected defaults never become request-header authority.
+    user_agent_hint = std::move(candidate);
     return DownloadFailure::None;
 }
 DownloadFailure byteCount(const QJsonValue& value, std::optional<quint64>& destination) {
@@ -227,7 +234,8 @@ YoutubeAudioResolutionResult decodeYoutubeAudioResolution(QByteArray payload, QS
         object.value(QStringLiteral("vcodec")).toString() != QLatin1String("none") ||
         object.value(QStringLiteral("protocol")).toString() != QLatin1String("https"))
         return failure(DownloadFailure::UnsupportedMedia);
-    const auto header_status = headers(object);
+    QByteArray user_agent_hint;
+    const auto header_status = headers(object, user_agent_hint);
     if (header_status != DownloadFailure::None)
         return failure(header_status);
     const auto duration = object.value(QStringLiteral("duration"));
@@ -262,6 +270,7 @@ YoutubeAudioResolutionResult decodeYoutubeAudioResolution(QByteArray payload, QS
     if (!expiry)
         return failure(DownloadFailure::InvalidResult);
     audio.expires_at_seconds = *expiry;
+    audio.user_agent_hint = std::move(user_agent_hint);
     return {.error = DownloadFailure::None, .audio = std::move(audio)};
 }
 

@@ -3,6 +3,8 @@
 #include <QBuffer>
 #include <QDir>
 #include <QFileInfo>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -41,6 +43,77 @@ struct Harness final {
 class WindowsProcessDownloadIoTests final : public QObject {
     Q_OBJECT
   private slots:
+    void realWorkerPreservesOptionalUserAgentThroughSupervisor_data() {
+        QTest::addColumn<QByteArray>("agent");
+        QTest::newRow("minimal legacy") << QByteArray{};
+        QTest::newRow("public hint") << QByteArray("RCMusic Synthetic Agent/1");
+    }
+    void realWorkerPreservesOptionalUserAgentThroughSupervisor() {
+        QFETCH(QByteArray, agent);
+        if (QString::fromUtf8(RC_MUSIC_TEST_TLS_PLUGIN_PATH).isEmpty())
+            QSKIP("Reviewed TLS fixture is opt-in.");
+        Harness h(true);
+        QVERIFY(h.directory.isValid());
+        const auto crlf = QByteArray(1, char{13}) + char{10};
+        const auto response = "HTTP/1.1 200 OK" + crlf + "Content-Length: 0" + crlf + crlf;
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        QByteArray observed;
+        int connections = 0;
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [&] {
+            auto* socket = server.nextPendingConnection();
+            ++connections;
+            QObject::connect(socket, &QTcpSocket::readyRead, &server, [&, socket] {
+                observed += socket->readAll();
+                if (observed.contains(crlf + crlf)) {
+                    static_cast<void>(socket->write(response));
+                    socket->disconnectFromHost();
+                }
+            });
+        });
+        auto value = endpoint("/signed/%41%2fb?sig=%2f%2F&x=1+2");
+        value.address = QHostAddress::LocalHost;
+        value.port = server.serverPort();
+        value.tls = false;
+        value.user_agent = agent;
+        QVERIFY(h.io.open(value));
+        QByteArray received;
+        QTRY_VERIFY_WITH_TIMEOUT(([&] {
+                                     received += h.io.read(64 * 1024);
+                                     return h.io.poll().state == PinnedDownloadStreamState::Finished;
+                                 }()),
+                                 5000);
+        QByteArray expected = "GET /signed/%41%2fb?sig=%2f%2F&x=1+2 HTTP/1.1" + crlf +
+                              "Host: media.example.test:" + QByteArray::number(value.port) + crlf + "Accept: */*" +
+                              crlf + "Accept-Encoding: identity" + crlf;
+        if (!agent.isEmpty())
+            expected += "User-Agent: " + agent + crlf;
+        expected += "Connection: close" + crlf + crlf;
+        QCOMPARE(observed, expected);
+        QCOMPARE(connections, 1);
+        QCOMPARE(received, response);
+        QVERIFY(h.io.poll().authenticated_eof);
+        QVERIFY(h.io.pollStop().stopped);
+        QCOMPARE(h.io.pollStop().error, DownloadFailure::None);
+    }
+    void invalidUserAgentIsRejectedBeforeWorkerLaunch_data() {
+        QTest::addColumn<QByteArray>("agent");
+        QTest::newRow("CR") << (QByteArray("agent") + char{13});
+        QTest::newRow("LF") << (QByteArray("agent") + char{10});
+        QTest::newRow("NUL") << (QByteArray("agent") + char{0});
+        QTest::newRow("DEL") << QByteArray(1, char{127});
+        QTest::newRow("non ASCII") << QByteArray::fromHex("ff");
+        QTest::newRow("513 bytes") << QByteArray(513, 'a');
+    }
+    void invalidUserAgentIsRejectedBeforeWorkerLaunch() {
+        QFETCH(QByteArray, agent);
+        Harness h(true);
+        auto value = endpoint("/never");
+        value.user_agent = agent;
+        QVERIFY(!h.io.open(value));
+        QVERIFY(h.io.pollStop().stopped);
+        QCOMPARE(h.io.pollStop().error, DownloadFailure::Unavailable);
+    }
     void successfulDnsWaitsForNativeExitNotJustTerminalFrame() {
         Harness h;
         QVERIFY(h.directory.isValid());

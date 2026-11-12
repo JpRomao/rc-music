@@ -16,6 +16,7 @@ struct YoutubeResolvedAudioData final {
     quint64 duration_ms{};
     std::optional<quint64> expected_bytes{};
     qint64 expires_at_seconds{};
+    QByteArray user_agent_hint{};
     bool operator==(const YoutubeResolvedAudioData&) const = default;
 };
 struct YoutubeAudioResolutionResult final {

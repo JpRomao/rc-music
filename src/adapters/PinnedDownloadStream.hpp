@@ -20,6 +20,7 @@ struct PinnedDownloadEndpoint final {
     QByteArray request_target{}; // Original encoded path/query, not reconstructed with QUrl.
     quint16 port{443};
     bool tls{true};
+    QByteArray user_agent{};
 };
 
 enum class PinnedDownloadStreamState { Idle, Connecting, Receiving, Finished, Failed, Cancelled };

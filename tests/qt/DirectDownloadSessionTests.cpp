@@ -95,6 +95,89 @@ struct Harness final {
 class DirectDownloadSessionTests final : public QObject {
     Q_OBJECT
   private slots:
+    void youtubeUserAgentRequiresTrustedOptIn_data() {
+        QTest::addColumn<bool>("enabled");
+        QTest::newRow("default minimal") << false;
+        QTest::newRow("trusted opt in") << true;
+    }
+    void youtubeUserAgentRequiresTrustedOptIn() {
+        QFETCH(bool, enabled);
+        const QByteArray agent("RCMusic Synthetic Agent/1");
+        const auto capability = test::resolvedYoutubeFixture(
+            "agent_job", QStringLiteral("aB0-_Cd1EF2"),
+            QStringLiteral("https://r1.googlevideo.com/videoplayback?expire=2000000000&sig=A%2fb%2F&x=1"), agent);
+        QVERIFY(capability);
+        QList<bool> observations;
+        DirectDownloadLimits limits;
+        if (enabled)
+            limits.forward_youtube_user_agent = true;
+        limits.on_request_user_agent = [&](bool included) { observations.push_back(included); };
+        Harness h(limits);
+        QVERIFY(h.session.startResolvedYoutube(capability, 0, 1'999'999'000));
+        h.session.tick(1);
+        QCOMPARE(h.io.endpoints.size(), qsizetype{1});
+        QCOMPARE(h.io.endpoints.front().user_agent, enabled ? agent : QByteArray{});
+        QCOMPARE(h.io.endpoints.front().request_target,
+                 QByteArray("/videoplayback?expire=2000000000&sig=A%2fb%2F&x=1"));
+        QCOMPARE(observations, QList<bool>{enabled});
+        Harness direct(limits);
+        direct.connect();
+        QVERIFY(direct.io.endpoints.front().user_agent.isEmpty());
+        QCOMPARE(observations, (QList<bool>{enabled, false}));
+    }
+    void youtubeUserAgentSurvivesOnlyApprovedRedirects() {
+        const auto capability = test::resolvedYoutubeFixture(
+            "agent_job", QStringLiteral("aB0-_Cd1EF2"),
+            QStringLiteral("https://r1.googlevideo.com/videoplayback?expire=2000000000&sig=A%2fb%2F&x=1"),
+            QByteArray("RCMusic Synthetic Agent/1"));
+        QVERIFY(capability);
+        Harness h({.forward_youtube_user_agent = true});
+        QVERIFY(h.session.startResolvedYoutube(capability, 0, 1'999'999'000));
+        h.session.tick(1);
+        h.io.chunks = {diagnosticResponse(
+            "HTTP/1.1 302 Found|Location: "
+            "https://r2.googlevideo.com/videoplayback?expire=2000000000&sig=%2f%2F|Content-Length: 0||")};
+        h.session.tick(2);
+        h.session.tick(3);
+        QCOMPARE(h.io.endpoints.size(), qsizetype{2});
+        for (const auto& value : h.io.endpoints)
+            QCOMPARE(value.user_agent, QByteArray("RCMusic Synthetic Agent/1"));
+        QCOMPARE(h.io.endpoints.back().request_target, QByteArray("/videoplayback?expire=2000000000&sig=%2f%2F"));
+        h.io.chunks = {diagnosticResponse(
+            "HTTP/1.1 302 Found|Location: https://not-googlevideo.example/secret|Content-Length: 0||")};
+        h.session.tick(4);
+        QCOMPARE(h.session.snapshot().error, DownloadFailure::Restricted);
+        QCOMPARE(h.io.endpoints.size(), qsizetype{2});
+        QVERIFY(h.sink.data().isEmpty());
+        Harness expired({.forward_youtube_user_agent = true});
+        QVERIFY(expired.session.startResolvedYoutube(capability, 0, 1'999'999'000));
+        expired.session.tick(1'000'000);
+        QCOMPARE(expired.session.snapshot().error, DownloadFailure::Expired);
+        QVERIFY(expired.io.endpoints.isEmpty());
+    }
+    void requestUserAgentObserverCannotChangeOutcome() {
+        const auto capability = test::resolvedYoutubeFixture(
+            "agent_job", QStringLiteral("aB0-_Cd1EF2"),
+            QStringLiteral("https://r1.googlevideo.com/videoplayback?expire=2000000000&sig=A%2fb%2F&x=1"),
+            QByteArray("RCMusic Synthetic Agent/1"));
+        QVERIFY(capability);
+        int calls = 0;
+        Harness h({.forward_youtube_user_agent = true, .on_request_user_agent = [&](bool) {
+                       ++calls;
+                       throw std::runtime_error("synthetic observer exception");
+                   }});
+        QVERIFY(h.session.startResolvedYoutube(capability, 0, 1'999'999'000));
+        h.session.tick(1);
+        QCOMPARE(calls, 1);
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Receiving);
+        h.io.chunks = {diagnosticResponse("HTTP/1.1 403 Forbidden|Content-Length: 4||DATA")};
+        h.session.tick(2);
+        QCOMPARE(h.session.snapshot().error, DownloadFailure::Restricted);
+        QVERIFY(h.sink.data().isEmpty());
+        QCOMPARE(h.io.cancels, 1);
+        h.session.tick(3);
+        QCOMPARE(calls, 1);
+    }
     void restrictionObservationNamesOnlyTheClosedFailureBranch_data() {
         QTest::addColumn<QString>("cause");
         QTest::addColumn<int>("reason");

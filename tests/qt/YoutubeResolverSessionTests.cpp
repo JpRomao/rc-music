@@ -45,6 +45,27 @@ YoutubeResolverProcessUpdate exited(QByteArray bytes = test::youtubeResolverFixt
 class YoutubeResolverSessionTests final : public QObject {
     Q_OBJECT
   private slots:
+    void capabilityRetainsOwnedUserAgentHintAfterResolverExit() {
+        auto object = QJsonDocument::fromJson(test::youtubeResolverFixtureJson()).object();
+        object.insert("http_headers", QJsonObject{{"User-Agent", "RCMusic Synthetic Agent/1"}});
+        auto payload = QJsonDocument(object).toJson(QJsonDocument::Compact);
+        Process process;
+        YoutubeResolverSession session(process);
+        QVERIFY(session.start("agent_job", video, 0, epoch));
+        process.updates.push_back({.stdout_chunk = payload});
+        const auto resolving = session.poll(1, epoch);
+        QCOMPARE(resolving.state, YoutubeResolverState::Resolving);
+        QVERIFY(!resolving.audio);
+        payload.fill('x');
+        object.insert("http_headers", QJsonObject{{"User-Agent", "different synthetic value"}});
+        process.updates.push_back(exited({}));
+        const auto ready = session.poll(2, epoch);
+        QCOMPARE(ready.state, YoutubeResolverState::Ready);
+        QVERIFY(ready.audio);
+        QCOMPARE(ready.audio->jobId(), std::string("agent_job"));
+        QCOMPARE(ready.audio->data().user_agent_hint, QByteArray("RCMusic Synthetic Agent/1"));
+        QCOMPARE(session.poll(3, epoch).audio, ready.audio);
+    }
     void onlyExitZeroAndPipeAcknowledgementCanMintTheMatchingCapability() {
         Process process;
         YoutubeResolverSession session(process);

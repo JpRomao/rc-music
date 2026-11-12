@@ -1,4 +1,5 @@
 #include "DownloadWorkerProtocol.hpp"
+#include "DownloadUserAgent.hpp"
 
 #include <QtEndian>
 
@@ -38,10 +39,11 @@ bool address(const QHostAddress& value) {
 bool valid(const DownloadWorkerRequest& value) {
     const auto& runtime = value.runtime;
     if (!path(runtime.core_path) || !pin(runtime.core_sha256) || !path(runtime.network_path) ||
-        !pin(runtime.network_sha256) || !path(runtime.plugin_path) || !pin(runtime.plugin_sha256))
+        !pin(runtime.network_sha256) || !path(runtime.plugin_path) || !pin(runtime.plugin_sha256) ||
+        !validDownloadUserAgent(value.endpoint.user_agent))
         return false;
     if (value.mode == DownloadWorkerMode::Resolve)
-        return host(value.host);
+        return host(value.host) && value.endpoint.user_agent.isEmpty();
     return value.mode == DownloadWorkerMode::Stream && address(value.endpoint.address) && host(value.endpoint.host) &&
            target(value.endpoint.request_target) && value.endpoint.port != 0;
 }
@@ -89,7 +91,8 @@ class Reader final {
 QByteArray encodeDownloadWorkerRequest(const DownloadWorkerRequest& request) {
     if (!valid(request))
         return {};
-    QByteArray bytes("RCMD\x01", 5);
+    QByteArray bytes("RCMD", 4);
+    bytes += request.endpoint.user_agent.isEmpty() ? char{1} : char{2};
     bytes += static_cast<char>(request.mode);
     for (const auto& field :
          {request.runtime.core_path.toUtf8(), request.runtime.core_sha256, request.runtime.network_path.toUtf8(),
@@ -101,6 +104,8 @@ QByteArray encodeDownloadWorkerRequest(const DownloadWorkerRequest& request) {
         put(bytes, request.endpoint.address.toString().toLatin1());
         put(bytes, request.endpoint.host.toLatin1());
         put(bytes, request.endpoint.request_target);
+        if (!request.endpoint.user_agent.isEmpty())
+            put(bytes, request.endpoint.user_agent);
         char port[2];
         qToLittleEndian<quint16>(request.endpoint.port, port);
         bytes.append(port, 2);
@@ -110,10 +115,13 @@ QByteArray encodeDownloadWorkerRequest(const DownloadWorkerRequest& request) {
 }
 std::optional<DownloadWorkerRequest> decodeDownloadWorkerRequest(const QByteArray& bytes) {
     if (bytes.size() > download_worker_max_request_bytes || bytes.size() < 6 ||
-        bytes.first(5) != QByteArray("RCMD\x01", 5))
+        bytes.first(4) != QByteArray("RCMD", 4) || (bytes.at(4) != char{1} && bytes.at(4) != char{2}))
         return std::nullopt;
     DownloadWorkerRequest value;
+    const bool with_user_agent = bytes.at(4) == char{2};
     value.mode = static_cast<DownloadWorkerMode>(static_cast<quint8>(bytes.at(5)));
+    if (with_user_agent && value.mode != DownloadWorkerMode::Stream)
+        return std::nullopt;
     Reader reader(QByteArrayView{bytes}.sliced(6));
     value.runtime.core_path = reader.text(120000);
     value.runtime.core_sha256 = reader.field(64);
@@ -127,6 +135,11 @@ std::optional<DownloadWorkerRequest> decodeDownloadWorkerRequest(const QByteArra
         value.endpoint.address = QHostAddress(reader.text(45));
         value.endpoint.host = reader.text(254);
         value.endpoint.request_target = reader.field(8192);
+        if (with_user_agent) {
+            value.endpoint.user_agent = reader.field(download_max_user_agent_bytes);
+            if (value.endpoint.user_agent.isEmpty())
+                return std::nullopt;
+        }
         const auto tail = reader.remaining();
         if (tail.size() != 3 || (tail.at(2) != char{0} && tail.at(2) != char{1}))
             return std::nullopt;

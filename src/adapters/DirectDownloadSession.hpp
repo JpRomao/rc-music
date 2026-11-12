@@ -61,6 +61,11 @@ struct DirectDownloadLimits final {
     // Trusted, optional observer: closed code only, no remote data or text.
     // Must not reenter or destroy the session. Exceptions are contained.
     std::function<void(DirectDownloadRestriction)> on_restricted{};
+    // Trusted composition only; pages cannot enable resolver-header forwarding.
+    bool forward_youtube_user_agent{false};
+    // Inclusion attempted at open(), not proof of server receipt. Same observer
+    // lifetime/reentrancy restrictions as on_restricted; exceptions are contained.
+    std::function<void(bool)> on_request_user_agent{};
 };
 
 // Caller-driven transport session, NOT a published/validated MP3. Sink is a fresh empty

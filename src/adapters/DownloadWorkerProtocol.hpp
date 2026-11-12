@@ -19,6 +19,8 @@ enum class DownloadWorkerError : quint8 { None = 0, InvalidRequest = 1, Runtime 
 
 // One private bounded binary request + EOF. No request data is exposed in argv,
 // environment, diagnostics or logs. Pins are trusted composition, never page input.
+// RCMD1 remains byte-identical for minimal requests. RCMD2 is Stream-only and
+// adds one validated nonempty User-Agent field before port/TLS, never a header map.
 struct DownloadWorkerRequest final {
     DownloadWorkerMode mode{DownloadWorkerMode::Resolve};
     WindowsDownloadTlsRuntimeConfig runtime{};

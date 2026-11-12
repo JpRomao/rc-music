@@ -75,7 +75,27 @@ class YoutubeAudioResolutionTests final : public QObject {
         QVERIFY(result.audio->title.isEmpty());
         QVERIFY(result.audio->artist.isEmpty());
     }
-    void approvedDefaultHeaderMetadataIsIgnoredRatherThanForwarded() {
+    void capturesOnlyValidatedPublicUserAgentHint() {
+        auto object = fixture();
+        object.insert("http_headers", QJsonObject{{"uSeR-aGeNt", "RCMusic Synthetic Agent/1"},
+                                                  {"Accept", "*/*"},
+                                                  {"Accept-Language", "en"},
+                                                  {"Sec-Fetch-Mode", "navigate"}});
+        const auto result = decodeYoutubeAudioResolution(bytes(object), video_id);
+        QCOMPARE(result.error, DownloadFailure::None);
+        QVERIFY(result.audio);
+        QCOMPARE(result.audio->user_agent_hint, QByteArray("RCMusic Synthetic Agent/1"));
+        QCOMPARE(result.audio->stream_url, stream);
+        object.remove("http_headers");
+        const auto absent = decodeYoutubeAudioResolution(bytes(object), video_id);
+        QVERIFY(absent.audio);
+        QVERIFY(absent.audio->user_agent_hint.isEmpty());
+        object.insert("http_headers", QJsonObject{{"Accept", "*/*"}});
+        const auto other_hint = decodeYoutubeAudioResolution(bytes(object), video_id);
+        QVERIFY(other_hint.audio);
+        QVERIFY(other_hint.audio->user_agent_hint.isEmpty());
+    }
+    void approvedDefaultHeaderMetadataDoesNotBecomeArbitraryRequestHeaders() {
         auto object = fixture();
         object.insert("http_headers", QJsonObject{{"User-Agent", "Mozilla/5.0 Synthetic Test"},
                                                   {"Accept", "text/html,application/xhtml+xml,*/*;q=0.8"},
