@@ -504,6 +504,8 @@ Um arquivo JSON de preferências e outro de sessão simplificam migração e rec
 
 O schema acima está materializado no adapter experimental Windows. A porta, o codec, o store Windows, a coordenação assíncrona e a restauração pausada no presenter/bootstrap dos recortes de M4.1 são descritos abaixo; M4.4 integra o efeito local de `startMinimized` depois da restauração do placement. `PreferencesStore` não substitui `SessionStore`.
 
+Ao autorizar a substituição de preferências de versão futura, o store mantém o backup intacto até confirmar a gravação principal. O [teste do store Windows](../../tests/qt/QtJsonWindowsPreferencesStoreTests.cpp) cobre falha antes da confirmação, resultado ambíguo após o commit e nova tentativa autorizada.
+
 Em M4.2, a evolução funcional preserva o schema v1 acima como formato conhecido de leitura e passa a emitir sempre o schema v2:
 
 ```json

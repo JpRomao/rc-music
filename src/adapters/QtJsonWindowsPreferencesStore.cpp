@@ -130,8 +130,9 @@ PreferencesSaveStatus QtJsonWindowsPreferencesStore::save(const PreferencesSaveR
 
     const InspectedFile primary = inspectFile(primaryPath(config_directory_));
     const InspectedFile backup = inspectFile(backupPath(config_directory_));
-    if ((primary.status == InspectedFileStatus::FutureVersion || backup.status == InspectedFileStatus::FutureVersion) &&
-        !request.replace_future_version) {
+    const bool primary_valid = primary.status == InspectedFileStatus::Valid;
+    const bool backup_is_future = backup.status == InspectedFileStatus::FutureVersion;
+    if ((primary.status == InspectedFileStatus::FutureVersion || backup_is_future) && !request.replace_future_version) {
         return PreferencesSaveStatus::BlockedByFutureVersion;
     }
 
@@ -139,7 +140,7 @@ PreferencesSaveStatus QtJsonWindowsPreferencesStore::save(const PreferencesSaveR
     if (!directory.exists() && !QDir{}.mkpath(config_directory_))
         return PreferencesSaveStatus::Failed;
 
-    if (primary.status == InspectedFileStatus::Valid &&
+    if (primary_valid && !backup_is_future &&
         writeAtomically(backupPath(config_directory_), primary.bytes, nullptr) != AtomicWriteStatus::Committed) {
         return PreferencesSaveStatus::Failed;
     }
@@ -147,9 +148,10 @@ PreferencesSaveStatus QtJsonWindowsPreferencesStore::save(const PreferencesSaveR
     const AtomicWriteStatus written = writeAtomically(primaryPath(config_directory_), encoded, &options_);
     if (written != AtomicWriteStatus::Committed)
         return PreferencesSaveStatus::Failed;
-    if (backup.status == InspectedFileStatus::FutureVersion && primary.status != InspectedFileStatus::Valid &&
-        writeAtomically(backupPath(config_directory_), encoded, nullptr) != AtomicWriteStatus::Committed) {
-        return PreferencesSaveStatus::Failed;
+    if (backup_is_future) {
+        const QByteArray& replacement_backup = primary_valid ? primary.bytes : encoded;
+        if (writeAtomically(backupPath(config_directory_), replacement_backup, nullptr) != AtomicWriteStatus::Committed)
+            return PreferencesSaveStatus::Failed;
     }
     return PreferencesSaveStatus::Saved;
 }

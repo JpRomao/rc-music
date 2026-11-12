@@ -67,6 +67,8 @@ class QtJsonWindowsPreferencesStoreTests final : public QObject {
     void preservesAValidBackupWhenThePrimaryIsCorrupt();
     void blocksFuturePrimaryUntilReplacementIsExplicit();
     void blocksFutureBackupUntilReplacementIsExplicit();
+    void preservesFutureBackupUntilPrimaryReplacementSucceeds_data();
+    void preservesFutureBackupUntilPrimaryReplacementSucceeds();
     void injectedFaultBeforeCommitPreservesThePrimary();
     void injectedFaultAfterCommitReportsFailureButLeavesAValidReplacement();
     void retainsExactlyOneBackupAcrossRepeatedSaves();
@@ -257,6 +259,40 @@ void QtJsonWindowsPreferencesStoreTests::blocksFutureBackupUntilReplacementIsExp
     QCOMPARE(store.load().preferences, nonDefaultPreferences());
     QCOMPARE(PreferencesJsonCodec::decode(readAll(backupPath(root))).preferences,
              std::optional<Preferences>{nonDefaultPreferences()});
+}
+
+void QtJsonWindowsPreferencesStoreTests::preservesFutureBackupUntilPrimaryReplacementSucceeds_data() {
+    QTest::addColumn<bool>("primary_committed");
+    QTest::newRow("before primary commit") << false;
+    QTest::newRow("ambiguous primary commit") << true;
+}
+
+void QtJsonWindowsPreferencesStoreTests::preservesFutureBackupUntilPrimaryReplacementSucceeds() {
+    QFETCH(bool, primary_committed);
+    QTemporaryDir temporary;
+    QVERIFY(temporary.isValid());
+    const QString root = temporary.path();
+    const QByteArray original = PreferencesJsonCodec::encode(Preferences{}) + " \r\n";
+    const QByteArray future{"{\"schemaVersion\":3,\"future\":true}"};
+    QVERIFY(writeAll(preferencesPath(root), original));
+    QVERIFY(writeAll(backupPath(root), future));
+    const auto failure = primary_committed ? PreferencesStoreFaultPoint::AfterPrimaryCommit
+                                           : PreferencesStoreFaultPoint::BeforePrimaryCommit;
+    QtJsonWindowsPreferencesStore failing{
+        root, {.inject_fault = [failure](const PreferencesStoreFaultPoint point) { return point == failure; }}};
+    const PreferencesSaveRequest request{.preferences = nonDefaultPreferences(), .replace_future_version = true};
+
+    QCOMPARE(failing.save(request), PreferencesSaveStatus::Failed);
+    const QByteArray expected_primary =
+        primary_committed ? PreferencesJsonCodec::encode(request.preferences) : original;
+    QCOMPARE(readAll(preferencesPath(root)), expected_primary);
+    QCOMPARE(readAll(backupPath(root)), future);
+
+    QtJsonWindowsPreferencesStore retry{root};
+    QCOMPARE(retry.save({.preferences = request.preferences}), PreferencesSaveStatus::BlockedByFutureVersion);
+    QCOMPARE(retry.save(request), PreferencesSaveStatus::Saved);
+    QCOMPARE(retry.load().preferences, request.preferences);
+    QCOMPARE(readAll(backupPath(root)), expected_primary);
 }
 
 void QtJsonWindowsPreferencesStoreTests::injectedFaultBeforeCommitPreservesThePrimary() {
