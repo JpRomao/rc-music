@@ -24,7 +24,7 @@ Este arquivo é um índice do estado vigente, não um diário de desenvolvimento
 
 O objetivo do mantenedor é navegar no Brave/Chromium, selecionar a mídia da página pela extensão e acompanhar sua aquisição no RC Music, com entrega final em MP3. Quando a fonte for MP4, extrair e converter seu áudio; não salvar o vídeo como resultado alternativo. O exemplo indicado é a [página de Bleach no Letras](https://www.letras.mus.br/bleach/1222774/). A aceitação deve exercitar a jornada completa, não apenas o popup simulado ou o recebimento de um pedido.
 
-O candidato de desenvolvimento da extensão YouTube acrescentou descoberta no Letras. O mantenedor carregou o cliente, mas o primeiro teste nos dois sites não apresentou candidatos; o diagnóstico isolou a recusa de foco. A versão 0.1.2 corrige a vinculação janela/popup e aguarda repetição da jornada real. Os hosts instalados encontrados foram preservados. Estado, checks e limitação conhecida estão no [guia da extensão](browser-extension.md#vídeo-youtube-declarado-no-letras); ainda não há MP3 final comprovado nessa jornada.
+O candidato de desenvolvimento da extensão YouTube acrescentou descoberta no Letras. O primeiro teste nos dois sites isolou uma recusa de foco; com a versão 0.1.2 o mantenedor confirmou vídeo e campos. O pedido chegou ao app, mas a aquisição falhou com a mensagem ampla de conteúdo privado/protegido, sem MP3 publicado; a causa da transferência ainda não foi isolada. Os hosts instalados encontrados foram preservados. Estado, checks e limitação conhecida estão no [guia da extensão](browser-extension.md#vídeo-youtube-declarado-no-letras). Descoberta e admissão comprovadas não encerram o aceite de conversão/importação.
 
 A continuidade deve reaproveitar o que existe e distinguir:
 
