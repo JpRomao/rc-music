@@ -305,6 +305,16 @@ class YoutubeRuntimeReceiptTests final : public QObject {
         changeRecord(object, "sources", 1, "version", QStringLiteral("3.14.10"));
         QCOMPARE(decode(object).error, YoutubeRuntimeReceiptError::InvalidSource);
     }
+    void acceptsCurrentAndHistoricalNodeReceiptsWithoutAcceptingOtherVersions() {
+        auto current = expatFixture();
+        changeRecord(current, "sources", 1, "version", QStringLiteral("24.22.3"));
+        const auto result = decode(current);
+        QVERIFY(result.receipt);
+        QCOMPARE(result.receipt->sources.at(1).version, QStringLiteral("24.22.3"));
+        QVERIFY(decode(fixture()).receipt);
+        changeRecord(current, "sources", 1, "version", QStringLiteral("24.22.2"));
+        QCOMPARE(decode(current).error, YoutubeRuntimeReceiptError::InvalidSource);
+    }
     void acceptsBothReviewedExpatModulesWithMatchingArtifactPins() {
         const auto result = decode(expatFixture());
         QVERIFY(result.receipt);

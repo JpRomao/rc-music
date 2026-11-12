@@ -126,6 +126,17 @@ class OnedirPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unreviewed source version"):
             planner.make_build_plan(**values)
 
+    def test_new_build_requires_the_security_release_node_pin(self):
+        for mode in ("prod", "offline"):
+            with self.subTest(mode=mode):
+                values = inputs(mode)
+                node = next(source for source in values["sources"] if source["name"] == "node")
+                node["version"] = "24.22.3"
+                planner.make_build_plan(**values)
+                node["version"] = "24.20.0"
+                with self.assertRaisesRegex(ValueError, "unreviewed source version"):
+                    planner.make_build_plan(**values)
+
     def test_every_required_source_is_present_once(self):
         for index in range(len(inputs()["sources"])):
             values = inputs()

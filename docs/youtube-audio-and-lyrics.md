@@ -200,6 +200,14 @@ O runtime isolado carregou os dois módulos x64, informou CPython 3.14.10, Expat
 
 O PyInstaller gerou 36 arquivos para o candidato privado e 42 para o ensaio offline. O recibo de cada build vincula `pyexpat.pyd` e `_elementtree.pyd` às cópias recompiladas. `python314.dll` conserva o hash do ZIP oficial. O perfil privado em `out/product/download-tools-expat210-20261111/` tem 47 arquivos, 38 PEs conferidos e recibo SHA-256 `f5eef9fe27fb543c1e8aaf4cb93fc3963ba6d759221094f64add337063752011`. Passaram 101 testes Python do resolver e 27 do perfil. Recibos e inspeção em `out/product/youtube-runtime-expat210-20261111/`. Os dois módulos locais estão sem assinatura, e a validação pública e a qualificação de distribuição seguem pendentes.
 
+### Atualização do Node.js 24.22.3
+
+Em 2026-11-12, a receita privada do resolvedor passou a exigir o Node.js 24.22.3 LTS para novos builds Windows x64. O Node.js publicou a atualização para corrigir vulnerabilidades, incluindo falhas de severidade alta em HTTP/2 e TLS. O ZIP oficial passou pela verificação do SHA-256 no manifesto assinado, e o Authenticode de `node.exe` identificou a OpenJS Foundation. O recibo de proveniência está em `out/product/youtube-runtime-node24223-20261112/node-source-auth.json`. [Aviso oficial](https://nodejs.org/en/blog/vulnerability/november-2026-security-releases) · [Release oficial](https://nodejs.org/en/blog/release/v24.22.3)
+
+O perfil privado confere o SHA-256 do Node declarado no recibo de origem contra o binário do inventário antes de montar o pacote. A leitura dos recibos revisados de Node 24.20.0 continua disponível para reproduzir perfis históricos. O perfil novo está em `out/product/download-tools-node24223-20261112/` com os mesmos componentes de rede e Media Foundation do perfil Expat anterior.
+
+O worker offline executou os desafios `n` e `sig` com o Node novo a partir de uma raiz de 241 unidades UTF-16. Confirmou um handoff, a parada da worker e a limpeza dos temporários, sem tentativas de rede. O recibo `out/product/youtube-runtime-node24223-20261112/worker-offline-smoke.json` registra o resultado do consumidor sintético, que termina antes da transferência de áudio.
+
 ## Factory de runtime na worker
 
 **Estado deste incremento:** broker, factory e jornada real na worker implementados e validados no recorte abaixo. Os números e o smoke das seções anteriores pertencem aos respectivos recortes e não comprovam esta composição.

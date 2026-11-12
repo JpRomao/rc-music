@@ -115,9 +115,11 @@ class BuildProfileTests(unittest.TestCase):
                               "bytes": path.stat().st_size, "sha256": digest(path)})
         names = {**PINS, **{name: "project" for name in ("entrypoint", "spec", "hook", "build-lock",
                                                        "python-license", "node-license", "yt-dlp-license", "ejs-license", "pyinstaller-license")}}
+        node_hash = next(row["sha256"] for row in artifacts if row["role"] == "Node")
         sources = [{"name": name, "version": version,
                     "path": str(self.root / "historical-inputs" / (name + (".exe" if name in ("python", "node") else ".whl"))),
-                    "sha256": "0" * 64, "provenance": "Owned historical observation; original intentionally absent"}
+                    "sha256": node_hash if name == "node" else "0" * 64,
+                    "provenance": "Owned historical observation; original intentionally absent"}
                    for name, version in names.items()]
         receipt = {"schemaVersion": 1, "purpose": "production-candidate-v1", "artifact_root": str(tree),
                    "sources": sources, "artifacts": artifacts}
@@ -260,6 +262,23 @@ class BuildProfileTests(unittest.TestCase):
         for row in yt.receipt["artifacts"]:
             self.assertEqual(digest(self.output / "payload/download-tools/youtube" / row["path"]), row["sha256"])
         self.assertFalse((self.root / "historical-inputs").exists())
+
+    def test_current_node_receipt_binds_the_staged_binary_to_its_reviewed_source(self):
+        yt = self.add_youtube()
+        node = next(source for source in yt.receipt["sources"] if source["name"] == "node")
+        node["version"] = "24.22.3"
+        self.save_youtube()
+        candidate = self.module.plan(self.config)
+        staged = next(row for row in candidate["files"] if row["component"] == "youtube" and row["role"] == "Node")
+        self.assertEqual(staged["sha256"], node["sha256"])
+
+    def test_historical_node_receipt_rejects_an_artifact_different_from_its_source(self):
+        yt = self.add_youtube()
+        next(source for source in yt.receipt["sources"] if source["name"] == "node")["sha256"] = "f" * 64
+        self.save_youtube()
+        with self.assertRaisesRegex(ValueError, "Node artifact"):
+            self.module.plan(self.config)
+        self.assertFalse(self.output.exists())
 
     def test_youtube_profile_adds_the_exact_expat_notice_to_a_legacy_receipt_with_pyexpat(self):
         yt = self.add_youtube()

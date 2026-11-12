@@ -19,7 +19,7 @@ SOURCE_PINS = {
     "python": "3.14.10",
     "pyexpat": "2.10.0",
     "elementtree": "2.10.0",
-    "node": "24.20.0",
+    "node": "24.22.3",
     "altgraph": "0.17.5",
     "packaging": "26.3",
     "pefile": "2024.8.26",

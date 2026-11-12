@@ -272,12 +272,13 @@ def _youtube(value):
             del required[name]
     if type(values) is not list or len(values) != len(required):
         raise ValueError("incorrect production source list")
+    compatible_versions = {"python": EXPAT_LICENSES, "node": (planner.SOURCE_PINS["node"], "24.20.0")}
     source_hashes, paths = {}, set()
     python_version = None
     for source in values:
         _closed(source, ("name", "version", "path", "sha256", "provenance"))
         name = _text(source["name"], 64)
-        allowed_versions = EXPAT_LICENSES if name == "python" else (required.get(name),)
+        allowed_versions = compatible_versions.get(name, (required.get(name),))
         if (name not in required or name in source_hashes or type(source["version"]) is not str or
                 source["version"] not in allowed_versions):
             raise ValueError("unknown, duplicate or unreviewed production source")
@@ -292,6 +293,9 @@ def _youtube(value):
         # Historical observations are metadata from the trusted producer, not
         # fresh filesystem authority. Do not reopen the build's original inputs.
     inventory = planner.validate_inventory(receipt["artifacts"])
+    node_artifact = next(row for row in inventory if row["role"] == "Node")
+    if node_artifact["sha256"] != source_hashes["node"]:
+        raise ValueError("Node artifact does not match the reviewed source")
     if expat_names <= required.keys():
         if python_version != planner.SOURCE_PINS["python"]:
             raise ValueError("Expat modules require the reviewed CPython version")

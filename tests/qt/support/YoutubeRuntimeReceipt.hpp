@@ -104,7 +104,7 @@ inline YoutubeRuntimeReceiptError relative(const QString& text) {
 }
 inline constexpr std::array<std::pair<const char*, const char*>, 17> required_sources{
     {{"python", "3.13.1"},
-     {"node", "24.20.0"},
+     {"node", "24.22.3"},
      {"altgraph", "0.17.5"},
      {"packaging", "26.3"},
      {"pefile", "2024.8.26"},
@@ -137,6 +137,8 @@ inline constexpr std::array<const char*, 5> notice_paths{{"notices/python-LICENS
 inline bool matchesVersion(const QString& name, const QString& observed) {
     if (name == QLatin1String("python") && observed == QLatin1String("3.14.10"))
         return true;
+    if (name == QLatin1String("node") && observed == QLatin1String("24.20.0"))
+        return true; // Historical offline receipts.
     for (const auto& [known, pinned] : required_sources)
         if (name == QLatin1String(known))
             return observed == QLatin1String(pinned);
