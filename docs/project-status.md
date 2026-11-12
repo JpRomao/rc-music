@@ -22,13 +22,13 @@ Este arquivo é um índice do estado vigente, não um diário de desenvolvimento
 
 ## 2. Prioridade atual: navegador → aplicativo
 
-O objetivo do mantenedor é navegar no Brave/Chromium, selecionar a mídia da página pela extensão e acompanhar sua aquisição no RC Music, com MP3 ou MP4 conforme o resultado escolhido. O exemplo indicado é a [página de Bleach no Letras](https://www.letras.mus.br/bleach/1222774/). A aceitação deve exercitar a jornada completa, não apenas o popup simulado ou o recebimento de um pedido.
+O objetivo do mantenedor é navegar no Brave/Chromium, selecionar a mídia da página pela extensão e acompanhar sua aquisição no RC Music, com entrega final em MP3. Quando a fonte for MP4, extrair e converter seu áudio; não salvar o vídeo como resultado alternativo. O exemplo indicado é a [página de Bleach no Letras](https://www.letras.mus.br/bleach/1222774/). A aceitação deve exercitar a jornada completa, não apenas o popup simulado ou o recebimento de um pedido.
 
 A continuidade deve reaproveitar o que existe e distinguir:
 
 1. **Descoberta:** identificar a fonte real e reconferir a seleção. A principal encontra mídia direta e frames acessíveis; frames de outra origem, blob/MSE e fontes protegidas não estão automaticamente cobertos. Não presumir a tecnologia do player de um site sem observá-la.
 2. **Integração instalada:** conferir identidade da extensão, host registrado, canal compilado e ativação do componente no app. Compilar os opcionais não basta. O [perfil empacotado](packaged-download-profile.md) documenta o marcador e a configuração confiável.
-3. **Formato de saída:** o contrato existente publica/importa MP3, inclusive extraindo áudio de MP4. Isso não oferece por si só uma opção de salvar o vídeo MP4; essa opção precisa de contrato e validação próprios antes de ser anunciada.
+3. **Formato de saída:** preservar o contrato existente de publicação/importação em MP3, inclusive extraindo áudio de MP4. Validar os bytes e a conversão real, sem apenas trocar a extensão do arquivo e sem ampliar o escopo para saída de vídeo.
 4. **Conclusão observável:** progresso, cancelamento, erro acionável e arquivo final validado, sem sobrescrever arquivos pessoais, repetir pedidos automaticamente ou trocar a faixa em reprodução.
 
 A separação principal/YouTube do ADR-0006 continua vigente. Um embed YouTube não vira mídia direta da principal. DRM, conteúdo restrito, cookies do navegador e bloqueios de acesso não devem ser contornados para produzir uma aparente aprovação.
