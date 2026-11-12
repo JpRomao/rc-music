@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-Os setups privados mais recentes incluem a revisão de letras, a correção do cursor da fila e o worker YouTube com Expat 2.10.0. [Setups privados de 9189319](#setups-privados-de-9189319)
+Os setups privados mais recentes incluem a pesquisa de álbuns e faixas cadastrados no Lidarr, o reenvio de pedidos incertos pelas extensões, as correções de recuperação e o resolvedor opcional com Node.js 24.22.3 LTS. [Setups privados de dbf9e19](#setups-privados-de-dbf9e19)
 
 Os setups privados Lite e Completa experimental de `f8a593b` foram compilados em 2026-11-11, com associações e sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes. [Setups de f8a593b](#setups-de-f8a593b)
 
@@ -14,6 +14,17 @@ A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) documenta 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
 
 A [entrega Completa experimental de `51cd067`](local-delivery-complete-51cd067-20261104.md) registra o setup de **38.139.221 bytes**, SHA-256 `9a59e347ae8564669780e3a03be1d289019d3f3d370f1d19fbaa8e22910657e9`, com manifesto/receipt e notices conferidos. O setup não inclui/instala Evergreen, não foi executado e mantém integração externa e downloads OFF.
+
+## Setups privados de dbf9e19
+
+| Edição | Bytes | SHA-256 do setup |
+| --- | ---: | --- |
+| Lite | 91.857.137 | `1c11b9a9df21a15bf3df31fb151f7075886cb79e8f217f3bb52d9297092f645d` |
+| Completa experimental | 91.929.409 | `c1df831dfb34748871b08c91cd3cb35c86832199a7211c2e4d8a31d3c13385ed` |
+
+As duas edições passaram no build Release x64, no lint QML e em 17 cenários sintéticos de áudio por edição. A leitura estática conferiu o binário e a licença do Node.js embutidos, os recibos das duas extensões, as sete extensões de arquivo vinculadas às matrizes v2 e as cinco combinações de componentes opcionais. Ferramentas e extensões começam desmarcadas.
+
+Setups, matrizes e relatórios de inspeção ficam em `out/product/windows-refresh-driver-20261112/windows-dbf9e19/`. Os SBOMs CycloneDX 1.6 em `out/product/windows-node24223-sbom-20261112/` passaram na validação offline. A cobertura de dependências transitivas segue incompleta. Os setups são locais e sem assinatura. Instalação, atualização, remoção e aceitação nativa no Brave e WebView2 permanecem pendentes. [Proveniência do Node.js](youtube-audio-and-lyrics.md#atualização-do-nodejs-24223)
 
 ## Setups privados de 9189319
 

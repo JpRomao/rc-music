@@ -826,6 +826,8 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ### Checkpoint atual — candidatos Windows atualizados
 
+Os setups privados Lite e Completa experimental de `dbf9e19` incluem o Node.js 24.22.3 LTS no resolvedor opcional, as novas extensões com reenvio do mesmo ID e as correções locais de recuperação. As duas edições passaram na validação do pacote sem instalação. [Setups e evidências](windows-installer.md#setups-privados-de-dbf9e19)
+
 Em M4.7, quando o backend já recebeu a remoção do volume da faixa atual, a UI preserva a ocorrência e a última posição confirmada mesmo com erro ou fim de faixa já enfileirado. O Release Lite, o presenter e o teste do adaptador com remoção simulada passaram. A desconexão física e a ordem em que o aviso nativo só chega após o avanço continuam sem qualificação.
 
 Os setups privados Lite e Completa experimental de `9189319` incluem as correções de fila, letras e acessibilidade das playlists e o worker atualizado para Expat 2.10.0. As duas edições passaram no build Release, no áudio offscreen, na leitura estática e na validação offline do SBOM. Instalação e gates de distribuição permanecem pendentes. [Setups e evidências](windows-installer.md#setups-privados-de-9189319)
