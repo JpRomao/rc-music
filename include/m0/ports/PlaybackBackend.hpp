@@ -15,6 +15,8 @@ class PlaybackBackend {
     virtual ~PlaybackBackend() = default;
 
     [[nodiscard]] virtual const PlaybackSnapshot& snapshot() const noexcept = 0;
+    // True once removal of the source volume for this generation is known, even if its event is deferred.
+    [[nodiscard]] virtual bool sourceVolumeRemovalObserved(std::uint64_t) const noexcept { return false; }
     virtual void setEventCallback(PlaybackEventCallback callback) = 0;
     virtual PlaybackCommandResult load(const std::filesystem::path& source_path) = 0;
     virtual PlaybackCommandResult play() = 0;

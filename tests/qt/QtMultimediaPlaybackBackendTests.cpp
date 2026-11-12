@@ -113,15 +113,25 @@ class QtMultimediaPlaybackBackendTests final : public QObject {
             if (event.snapshot.status != PlaybackStatus::Loading || saw_loading)
                 return;
             saw_loading = true;
+            const auto generation = event.snapshot.generation;
+            const bool observed_before_notification = backend.sourceVolumeRemovalObserved(generation);
             backend.sourceVolumeRemoved(std::uint32_t{1} << ('X' - 'A'));
+            const bool observed_while_pending = backend.sourceVolumeRemovalObserved(generation);
+            const bool observed_for_another_generation = backend.sourceVolumeRemovalObserved(generation + 1);
             const auto initial_status = backend.snapshot().status;
             QCoreApplication::sendPostedEvents(&backend, QEvent::MetaCall);
             const auto error = backend.snapshot().error;
+            const bool observed_after_publication = backend.sourceVolumeRemovalObserved(generation);
             // Stop the outer load before it gives any synthetic path to Qt.
             const auto unload = backend.unload();
             QCOMPARE(unload, PlaybackCommandResult::Accepted);
             QCOMPARE(initial_status, PlaybackStatus::Loading);
             QCOMPARE(error, matches ? PlaybackErrorCode::SourceVolumeRemoved : PlaybackErrorCode::None);
+            QVERIFY(!observed_before_notification);
+            QCOMPARE(observed_while_pending, matches);
+            QVERIFY(!observed_for_another_generation);
+            QCOMPARE(observed_after_publication, matches);
+            QVERIFY(!backend.sourceVolumeRemovalObserved(generation));
         });
         QCOMPARE(backend.load(nativePath(path)), PlaybackCommandResult::Accepted);
         QVERIFY(saw_loading);

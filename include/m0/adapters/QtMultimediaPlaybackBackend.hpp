@@ -49,6 +49,7 @@ class QtMultimediaPlaybackBackend final : public QObject, public PlaybackBackend
     ~QtMultimediaPlaybackBackend() override;
 
     [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override;
+    [[nodiscard]] bool sourceVolumeRemovalObserved(std::uint64_t generation) const noexcept override;
     void setEventCallback(PlaybackEventCallback callback) override;
     PlaybackCommandResult load(const std::filesystem::path& source_path) override;
     PlaybackCommandResult play() override;

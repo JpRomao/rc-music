@@ -152,6 +152,12 @@ void QtMultimediaPlaybackBackend::connectPlayerSignals(QMediaPlayer& player) {
 
 const PlaybackSnapshot& QtMultimediaPlaybackBackend::snapshot() const noexcept { return snapshot_; }
 
+bool QtMultimediaPlaybackBackend::sourceVolumeRemovalObserved(const std::uint64_t generation) const noexcept {
+    return generation == generation_ &&
+           (source_volume_removal_pending_ ||
+            (snapshot_.generation == generation && snapshot_.error == PlaybackErrorCode::SourceVolumeRemoved));
+}
+
 void QtMultimediaPlaybackBackend::setEventCallback(PlaybackEventCallback callback) {
     event_callback_ = std::move(callback);
 }

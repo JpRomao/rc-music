@@ -153,6 +153,9 @@ class AvailableTrayPlatform final : public PlatformIntegration {
 class PresenterPlaybackBackend : public PlaybackBackend {
   public:
     [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override { return snapshot_; }
+    [[nodiscard]] bool sourceVolumeRemovalObserved(const std::uint64_t generation) const noexcept override {
+        return observed_source_volume_removal == std::optional{generation};
+    }
     void setEventCallback(PlaybackEventCallback callback) override {
         event_callback_ = std::move(callback);
         ++callback_assignments;
@@ -228,6 +231,7 @@ class PresenterPlaybackBackend : public PlaybackBackend {
     [[nodiscard]] bool callbackInstalled() const noexcept { return static_cast<bool>(event_callback_); }
 
     PlaybackSnapshot snapshot_{};
+    std::optional<std::uint64_t> observed_source_volume_removal;
     PlaybackEventCallback event_callback_{};
     PlaybackCommandResult load_result{PlaybackCommandResult::Accepted};
     std::optional<PlaybackStatus> accepted_load_status{};
@@ -664,6 +668,7 @@ class PlayerPresenterTests final : public QObject {
     void manualAudioOutputSwitchRestoresPausedAndTopologyAloneNeverResumes();
     void sourceVolumeRemovalKeepsTheOccurrenceAndRecoversPaused_data();
     void sourceVolumeRemovalKeepsTheOccurrenceAndRecoversPaused();
+    void observedSourceVolumeRemovalSupersedesQueuedTerminalDecoderEvents();
     void sourceVolumeRemovalDoesNotAutoplayLaterDiscoveryBatches();
     void repeatedAudioOutputRecoveryRetainsPositionAndRejectsBusyLoads();
     void supersededAudioOutputRecoveryCannotSeekTheNewSelection();
@@ -3900,6 +3905,45 @@ void PlayerPresenterTests::sourceVolumeRemovalKeepsTheOccurrenceAndRecoversPause
     QCOMPARE(presenter.currentOccurrenceId(), occurrence);
     QVERIFY(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
     QCOMPARE(backend.play_calls, 0);
+}
+
+void PlayerPresenterTests::observedSourceVolumeRemovalSupersedesQueuedTerminalDecoderEvents() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto source = localTestPath(u8"Unidade removida.wav");
+    const auto next = localTestPath(u8"Próxima faixa.wav");
+    PlayerPresenter presenter(platform, backend, metadata, [source, next] { return std::vector{source, next}; });
+    QVERIFY(presenter.openAudio());
+    const auto occurrence = presenter.currentOccurrenceId();
+    QSignalSpy skipped(&presenter, &PlayerPresenter::occurrenceAutomaticallySkipped);
+    const PlaybackSnapshot playing{
+        .status = PlaybackStatus::Playing, .position_ms = 750, .duration_ms = 2'000, .seekable = true, .generation = 1};
+    backend.publish(playing);
+    QTRY_COMPARE(presenter.confirmedPositionMs(), qint64{750});
+
+    auto latest = playing;
+    latest.position_ms = 900;
+    backend.publish(latest);
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    backend.publishEvent(PlaybackEventType::SnapshotChanged, {.status = PlaybackStatus::Empty, .generation = 1}, false);
+    backend.publishEvent(PlaybackEventType::Ended, {.status = PlaybackStatus::Paused, .generation = 1}, false);
+    backend.observed_source_volume_removal = 1;
+    // The removal has been received, but its own event has yet to be posted.
+    QCoreApplication::sendPostedEvents(&presenter, QEvent::MetaCall);
+    QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+    QCOMPARE(presenter.confirmedPositionMs(), qint64{900});
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QCOMPARE(backend.loaded_paths, std::vector{source});
+
+    backend.publish(
+        {.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceVolumeRemoved});
+    QTRY_VERIFY(presenter.canRetryCurrentOccurrence());
+    QCOMPARE(presenter.errorCode(), QStringLiteral("source_volume_removed"));
+    QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+    QCOMPARE(presenter.confirmedPositionMs(), qint64{900});
+    QCOMPARE(backend.loaded_paths, std::vector{source});
+    QCOMPARE(skipped.count(), 0);
 }
 
 void PlayerPresenterTests::sourceVolumeRemovalDoesNotAutoplayLaterDiscoveryBatches() {

@@ -2458,6 +2458,13 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
     if (uses_frozen_fixture_ || exit_committed_)
         return;
     const bool volume_removed = isSourceVolumeRemoval(event);
+    // A volume removal already observed by the backend takes precedence over
+    // queued decoder errors or completion from the same generation.
+    if (!volume_removed &&
+        (event.type == PlaybackEventType::Ended || event.snapshot.status == PlaybackStatus::Error ||
+         event.snapshot.status == PlaybackStatus::Empty) &&
+        backend_.sourceVolumeRemovalObserved(event.snapshot.generation))
+        return;
     if (exiting_ || download_append_in_progress_) {
         if (local_track_session_ != nullptr &&
             event.snapshot.generation == local_track_session_->playbackGeneration() &&
