@@ -150,7 +150,10 @@ function Get-RcMusicExtensionComponentPlan {
     $recipes = @('packaging/windows/New-RcMusicChromiumExtensionPackage.ps1',
         'packaging/windows/RcMusicYoutubeExtensionPackage.psm1', 'packaging/windows/RcMusicChromiumIdentity.psm1')
     if ($canonicalChannel -ceq 'Main') { $assets += @('detector.js', 'media-collector.js') }
-    else { $recipes = @('packaging/windows/New-RcMusicYoutubeExtensionPackage.ps1') + $recipes }
+    else {
+        $assets += 'page-video.mjs'
+        $recipes = @('packaging/windows/New-RcMusicYoutubeExtensionPackage.ps1') + $recipes
+    }
     $streams = [Collections.Generic.List[IO.Stream]]::new()
     $document = $null
     try {

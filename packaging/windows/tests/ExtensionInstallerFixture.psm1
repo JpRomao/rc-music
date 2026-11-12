@@ -68,6 +68,7 @@ function New-RcMusicExtensionInstallerFixture {
         $null = [IO.Directory]::CreateDirectory($extension)
         $assets = @('manifest.json','native-client.mjs','policy.mjs','popup-controller.mjs','popup.css','popup.html','popup.mjs')
         if (-not $youtube) { $assets += 'detector.js','media-collector.js' }
+        else { $assets += 'page-video.mjs' }
         $packageFiles = @(foreach ($name in $assets) {
             $target = Join-Path $extension $name
             [IO.File]::Copy((Join-Path $RepositoryRoot ('extensions/chromium/' + $folder + '/' + $name)), $target, $false)

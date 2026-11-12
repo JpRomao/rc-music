@@ -18,7 +18,7 @@ $script:families = @{
         channel = 'Youtube'; component = 'youtube-extension-source'; native_host_name = 'com.rcmusic.youtube'
         extension_path = 'extensions/chromium/youtube'
         assets = @('manifest.json', 'native-client.mjs', 'policy.mjs', 'popup-controller.mjs',
-            'popup.css', 'popup.html', 'popup.mjs')
+            'popup.css', 'popup.html', 'popup.mjs', 'page-video.mjs')
         recipes = @('packaging/windows/New-RcMusicYoutubeExtensionPackage.ps1',
             'packaging/windows/New-RcMusicChromiumExtensionPackage.ps1',
             'packaging/windows/RcMusicYoutubeExtensionPackage.psm1', 'packaging/windows/RcMusicChromiumIdentity.psm1')

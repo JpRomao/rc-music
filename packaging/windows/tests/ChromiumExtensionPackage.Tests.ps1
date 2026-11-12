@@ -66,6 +66,7 @@ function New-Fixture([ValidateSet('Main', 'Youtube')][string] $Channel = 'Main',
     $null = New-Item -ItemType Directory -Path $extension, $other, $packaging
     $assets = @($commonAssets)
     if ($Channel -ceq 'Main') { $assets += @('detector.js', 'media-collector.js') }
+    else { $assets += 'page-video.mjs' }
     foreach ($name in $assets) { Copy-Item -LiteralPath (Join-Path $repository ($relative + '/' + $name)) -Destination $extension }
     $manifestPath = Join-Path $extension 'manifest.json'
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -AsHashtable
@@ -118,7 +119,7 @@ try {
             Assert-True ($null -eq $p.extension_identity -and $null -eq $p.native_manifest) 'Keyless source invented an identity or registration manifest'
             Assert-Equal $p.source_commit $f.Commit
             Assert-True (-not $p.source_dirty -and -not $p.extension_dirty -and -not $p.recipe_dirty) 'Clean fixture was labelled dirty'
-            Assert-Equal $p.files.Count $(if ($channel -ceq 'Main') { 9 } else { 7 })
+            Assert-Equal $p.files.Count $(if ($channel -ceq 'Main') { 9 } else { 8 })
             Assert-Equal (@($p.files.relative_path | Sort-Object) -join '|') (@($f.Assets | ForEach-Object { 'extension/' + $_ } | Sort-Object) -join '|')
             Assert-Equal (@($p.recipe_files.path | Sort-Object) -join '|') (@($f.Recipes | ForEach-Object { 'packaging/windows/' + $_ } | Sort-Object) -join '|')
             foreach ($row in $p.files) { Assert-Equal $row.sha256 (Hash $row.source) }

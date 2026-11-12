@@ -6,7 +6,7 @@ $testParent = Join-Path $repository 'out/product/test-runs/youtube-extension-pac
 $testId = [Guid]::NewGuid().ToString('N')
 $testRoot = Join-Path $testParent $testId
 $state = @{ Passed = 0; Failed = 0; Fixtures = 0 }
-$assets = @('manifest.json', 'native-client.mjs', 'policy.mjs', 'popup-controller.mjs', 'popup.css', 'popup.html', 'popup.mjs')
+$assets = @('manifest.json', 'native-client.mjs', 'policy.mjs', 'popup-controller.mjs', 'popup.css', 'popup.html', 'popup.mjs', 'page-video.mjs')
 $recipes = @('New-RcMusicYoutubeExtensionPackage.ps1', 'New-RcMusicChromiumExtensionPackage.ps1',
     'RcMusicYoutubeExtensionPackage.psm1', 'RcMusicChromiumIdentity.psm1')
 $inputs = @('extensions/chromium/youtube', 'packaging/windows/New-RcMusicYoutubeExtensionPackage.ps1',
@@ -109,7 +109,7 @@ Assert-SafeTestRoot
 if (Test-Path -LiteralPath $testRoot) { throw 'Test root must be fresh' }
 $null = New-Item -ItemType Directory -Path $testRoot
 try {
-    Test-Case 'planning is read-only with a fixed seven-file YouTube inventory and all four recipe hashes' {
+    Test-Case 'planning includes the isolated Letras collector in the fixed eight-file YouTube inventory' {
         $f = New-Fixture
         $plan = New-Plan $f
         Assert-True ($null -ne $plan) 'Planner returned no candidate'
@@ -123,7 +123,7 @@ try {
         Assert-True ($plan.recipe_dirty -is [bool] -and -not $plan.recipe_dirty) 'Clean recipes were not observed'
         Assert-True ($plan.source_dirty -is [bool] -and -not $plan.source_dirty) 'Clean source state was not observed'
         Assert-Equal (@($plan.source_inputs | Sort-Object) -join '|') (($inputs | Sort-Object) -join '|')
-        Assert-Equal $plan.files.Count 7
+        Assert-Equal $plan.files.Count 8
         Assert-Equal (@($plan.files.relative_path | Sort-Object) -join '|') (($assets | ForEach-Object { 'extension/' + $_ } | Sort-Object) -join '|')
         foreach ($entry in $plan.files) {
             Assert-Equal $entry.sha256 (Hash $entry.source)
@@ -154,7 +154,7 @@ try {
         Assert-True ($null -eq $receipt.native_manifest) 'Source-only package gained an activatable native manifest'
         Assert-Equal $receipt.source_commit $f.Commit
         Assert-Equal $receipt.recipe_files.Count 4
-        Assert-Equal $receipt.files.Count 7
+        Assert-Equal $receipt.files.Count 8
         $physical = @(Get-ChildItem -LiteralPath $f.Output -File -Recurse | ForEach-Object {
             [IO.Path]::GetRelativePath($f.Output, $_.FullName).Replace('\', '/')
         } | Sort-Object)
@@ -202,7 +202,7 @@ try {
         $plan = New-Plan $f
         Assert-True ($null -ne $plan) 'No plan'
         Assert-True ($plan.extension_dirty -and $plan.source_dirty) 'Untracked extension input was ignored by provenance'
-        Assert-Equal $plan.files.Count 7
+        Assert-Equal $plan.files.Count 8
         Assert-True (-not ($plan.files.relative_path -match 'untracked|README|pem|main')) 'Extra source entered payload'
     }
     Test-Case 'an ignored untracked critical asset cannot be labelled clean by porcelain alone' {
@@ -218,7 +218,7 @@ try {
         $plan = New-Plan $f
         Assert-True ($null -ne $plan) 'No plan'
         Assert-True ($plan.extension_dirty -and $plan.source_dirty) 'Ignored critical asset was falsely labelled clean'
-        Assert-Equal $plan.files.Count 7
+        Assert-Equal $plan.files.Count 8
     }
     Test-Case 'a missing runtime asset fails before producing any output' {
         $f = New-Fixture
@@ -301,7 +301,7 @@ try {
         $receipt = Get-Content -LiteralPath (Join-Path $output 'package-receipt.json') -Raw | ConvertFrom-Json
         Assert-Equal $receipt.identity_state 'identity_pending'
         Assert-Equal $receipt.source_commit $f.Commit
-        Assert-Equal $receipt.files.Count 7
+        Assert-Equal $receipt.files.Count 8
         Assert-Equal (Hash $f.Main) $f.MainHash
     }
     Test-Case 'a fixed public manifest key binds the YouTube plan and receipt without rewriting any asset' {
@@ -325,7 +325,7 @@ try {
         Assert-True ($null -eq $receipt.native_manifest) 'The receipt invented native registration'
         Assert-Equal (Hash (Join-Path $result.extension_directory 'manifest.json')) $sourceHash
         Assert-Equal (Hash (Join-Path $f.Extension 'manifest.json')) $sourceHash
-        Assert-Equal (@(Get-ChildItem -LiteralPath $result.extension_directory -File).Count) 7
+        Assert-Equal (@(Get-ChildItem -LiteralPath $result.extension_directory -File).Count) 8
         Assert-Equal (Hash $f.Main) $f.MainHash
     }
     Test-Case 'malformed or ambiguous manifest identity is rejected before creating output' {

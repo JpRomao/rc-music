@@ -52,6 +52,7 @@ function New-Fixture([ValidateSet('Main', 'Youtube')][string] $Channel = 'Main')
     $null = [IO.Directory]::CreateDirectory($extension)
     $names = @('manifest.json', 'native-client.mjs', 'policy.mjs', 'popup-controller.mjs', 'popup.css', 'popup.html', 'popup.mjs')
     if ($Channel -ceq 'Main') { $names += @('detector.js', 'media-collector.js') }
+    else { $names += 'page-video.mjs' }
     $isMain = $Channel -ceq 'Main'
     $key = if ($isMain) { $mainPublic } else { $youtubePublic }
     $id = if ($isMain) { 'kggjfjbjhklkbpelddffdjelbiomoolc' } else { 'lhcdmfamadilnahlckpalijljfohjgkc' }
@@ -118,6 +119,19 @@ try {
                 Assert-Equal $row[0].sha256 (Hash $row[0].source)
             }
             Assert-Equal (Json $p) (Json (Plan $f))
+        }
+    }
+    Test-Case 'YouTube collector bytes and receipt membership cannot drift independently' {
+        foreach ($variant in @('receipt-missing', 'file-missing', 'same-length')) {
+            $f = New-Fixture Youtube
+            Assert-True ($null -ne (Plan $f)) 'Valid YouTube collector package was refused.'
+            $path = Join-Path $f.Extension 'page-video.mjs'
+            switch ($variant) {
+                receipt-missing { $f.Data.files = @($f.Data.files | Where-Object relative_path -CNE 'extension/page-video.mjs'); Save-Receipt $f }
+                file-missing { Remove-Item -LiteralPath $path }
+                same-length { $bytes = [IO.File]::ReadAllBytes($path); $bytes[0] = 88; [IO.File]::WriteAllBytes($path, $bytes) }
+            }
+            Assert-Rejected { Plan $f }
         }
     }
     Test-Case 'planning preserves sources native metadata and closes every input stream' {

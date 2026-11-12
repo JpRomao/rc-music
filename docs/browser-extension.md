@@ -78,6 +78,8 @@ Preenche o título e a página Letras, deixando o artista para conferência. Ant
 
 Green focado da implementação: **70 testes Node**, sem falhas/skips, após Red de descoberta e manifesto. Esta evidência usa DOM/Chrome simulados e não encerra a aceitação no Brave ou a geração/importação real do MP3. Desenho e plano estão em `docs/superpowers/specs/2026-11-12-brave-letras-mp3-design.md` e `docs/superpowers/plans/2026-11-12-brave-letras-mp3.md`.
 
+O pacote-fonte YouTube passou a exigir **oito assets**, incluindo `page-video.mjs`; a principal conserva nove. Produtor e consumidor de receipts usam a mesma whitelist fechada. Um pacote YouTube anterior de sete arquivos não é promovido como esta versão: é preciso gerar/conferir um candidato novo, sem modificar receipts antigos. O fechamento passou **270/270 testes Node** das duas extensões e os recortes PowerShell de pacote YouTube **20/20**, pacote Chromium **9/9**, componente de extensão **15/15** e planejamento do instalador **97/97**. São testes locais, não instalação ou prova de aquisição pública. Logs deste estado ficam no workspace isolado `.superpowers/sdd/2026-11-12-brave-letras-mp3/` até o fechamento da revisão.
+
 ### Cliente
 
 As duas extensões passaram em 247 testes Node após o incremento de reenvio. Os casos verificaram o envelope e ID originais, o clique explícito, a revogação após mudança de contexto e o isolamento de confirmações atrasadas. Logs em `out/product/test-runs/chromium-repeat-request-20261111/`.
