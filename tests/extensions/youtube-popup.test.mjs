@@ -370,6 +370,28 @@ test('unsupported pages and empty active tabs never become downloadable', async 
   assert.equal(h.controller.getState().candidate, null);
   assert.equal(h.controller.getState().canSend, false);
 });
+test('inspection failures identify the browser boundary without exposing raw page or API data', async t => {
+  for (const [code, change] of [
+    ['window_query', h => { h.chrome.windows.getLastFocused = async () => { throw new Error('private-api-detail'); }; }],
+    ['window_focus', h => { h.window.focused = false; }],
+    ['active_tab_count', h => { h.chrome.tabs.query = async () => []; }],
+    ['active_tab_window', h => { h.tab.windowId = 9; }],
+    ['active_tab_state', h => { h.tab.status = 'loading'; }],
+    ['active_tab_url', h => { delete h.tab.url; }],
+    ['page_inspection', h => { h.tab.url = 'https://www.letras.mus.br/bleach/1222774/';
+      h.chrome.scripting = { executeScript: async () => { throw new Error('private-api-detail'); } }; }],
+  ]) await t.test(code, async () => {
+    const h = harness(); change(h);
+    assert.equal(await h.controller.refresh(), false);
+    const state = h.controller.getState();
+    assert.equal(state.status, 'error');
+    assert.match(state.message, new RegExp(`\\[contexto: ${code}\\]`, 'u'));
+    assert.doesNotMatch(state.message, /private-api-detail|https:\/\//u);
+    assert.equal(state.candidate, null);
+    assert.equal(h.sends.length, 0);
+    h.controller.dispose();
+  });
+});
 test('mounted popup renders tab text literally and sends only after a real selected click', async () => {
   const h = harness();
   const elements = new Map();

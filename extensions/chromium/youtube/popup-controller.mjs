@@ -1,4 +1,4 @@
-import { videoFromTab, isLetrasVideoPage, videoFromLetrasPage, buildYoutubeAudioRequest } from './policy.mjs';
+import { videoFromTab, isLetrasVideoPage, videoFromLetrasPage, buildYoutubeAudioRequest, protocolError } from './policy.mjs';
 import { collectLetrasYoutubeVideo } from './page-video.mjs';
 import { sendYoutubeAudioRequest } from './native-client.mjs';
 
@@ -12,6 +12,25 @@ const messages = {
   limit_exceeded: 'Os dados do pedido excedem o limite. Reduza o título, o artista ou a página informada.',
 };
 const uncertainReply = new Set(['bridge_unavailable', 'bridge_timeout', 'invalid_response']);
+const inspectionMessages = {
+  window_query: 'Não foi possível consultar a janela do navegador.',
+  window_focus: 'O navegador não confirmou o foco da janela. Reabra a extensão pelo ícone na janela do vídeo.',
+  window_identity: 'O navegador não identificou a janela da extensão.',
+  window_changed: 'A janela mudou durante a leitura. Reabra a extensão na aba do vídeo.',
+  active_tab_query: 'Não foi possível consultar a aba ativa.',
+  active_tab_count: 'O navegador não informou uma única aba ativa para a extensão.',
+  active_tab_window: 'A aba recebida pertence a outra janela. Reabra a extensão na janela do vídeo.',
+  active_tab_state: 'A aba ainda está carregando ou mudou de estado. Aguarde e atualize o vídeo.',
+  active_tab_url: 'A extensão não recebeu o endereço da aba. Abra-a pelo ícone na barra do navegador para autorizar a leitura.',
+  active_tab_recheck: 'Não foi possível reconferir a aba após ler a página.',
+  page_inspection: 'O navegador não permitiu ler o player dessa página. Reabra a extensão pelo ícone da barra.',
+  page_document: 'O documento da página não pôde ser confirmado. Atualize a seleção.',
+  unsupported_page: 'Abra um vídeo do YouTube ou uma página Letras com vídeo reconhecido e clique em Atualizar vídeo.',
+  inspection_unknown: 'Não foi possível concluir a leitura do contexto da aba.',
+};
+async function inspect(code, operation) {
+  try { return await operation(); } catch { throw protocolError(code); }
+}
 export function createYoutubePopupController({ chrome, newRequestId, sendRequest = sendYoutubeAudioRequest, onState = () => {} }) {
   let disposed = false, epoch = 0;
   let binding = null, refreshWindowId = null, dispatched = false;
@@ -62,36 +81,39 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
   chrome.windows.onFocusChanged.addListener(onFocusChanged);
 
   async function focusedWindowId() {
-    const window = await chrome.windows.getLastFocused();
-    if (window?.focused !== true || !Number.isSafeInteger(window.id) || window.id < 0) throw new Error('unsupported_page');
+    const window = await inspect('window_query', () => chrome.windows.getLastFocused());
+    if (window?.focused !== true) throw protocolError('window_focus');
+    if (!Number.isSafeInteger(window.id) || window.id < 0) throw protocolError('window_identity');
     return window.id;
   }
 
   async function readLetrasSource(tab, documentId) {
-    const results = await chrome.scripting.executeScript({ world: 'ISOLATED',
+    const results = await inspect('page_inspection', () => chrome.scripting.executeScript({ world: 'ISOLATED',
       target: documentId ? { tabId: tab.id, documentIds: [documentId] } : { tabId: tab.id, frameIds: [0] },
-      func: collectLetrasYoutubeVideo });
+      func: collectLetrasYoutubeVideo }));
     if (!Array.isArray(results) || results.length !== 1 || results[0]?.frameId !== 0
       || typeof results[0].documentId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/u.test(results[0].documentId)
-      || (documentId && results[0].documentId !== documentId)) throw new Error('unsupported_page');
+      || (documentId && results[0].documentId !== documentId)) throw protocolError('page_document');
     return { candidate: videoFromLetrasPage(tab, results[0].result), documentId: results[0].documentId };
   }
 
   async function activeVideo(windowId, documentId) {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!Array.isArray(tabs) || tabs.length !== 1) throw new Error('unsupported_page');
+    const tabs = await inspect('active_tab_query', () => chrome.tabs.query({ active: true, currentWindow: true }));
+    if (!Array.isArray(tabs) || tabs.length !== 1) throw protocolError('active_tab_count');
     const tab = tabs[0];
-    if (tab?.active !== true || tab.windowId !== windowId || tab.discarded === true || (tab.pendingUrl ?? '') !== ''
-      || (tab.status !== undefined && tab.status !== 'complete')) throw new Error('unsupported_page');
+    if (!tab || tab.windowId !== windowId) throw protocolError('active_tab_window');
+    if (tab.active !== true || tab.discarded === true || (tab.pendingUrl ?? '') !== ''
+      || (tab.status !== undefined && tab.status !== 'complete')) throw protocolError('active_tab_state');
+    if (typeof tab.url !== 'string' || !tab.url) throw protocolError('active_tab_url');
     if (!isLetrasVideoPage(tab.url)) {
       const candidate = videoFromTab(tab);
       return { candidate, context: { tabId: candidate.tabId, windowId, pageUrl: tab.url } };
     }
     const source = await readLetrasSource(tab, documentId);
-    const current = await chrome.tabs.get(tab.id);
+    const current = await inspect('active_tab_recheck', () => chrome.tabs.get(tab.id));
     if (current?.id !== tab.id || current.active !== true || current.windowId !== windowId || current.url !== tab.url
       || current.discarded === true || (current.pendingUrl ?? '') !== ''
-      || (current.status !== undefined && current.status !== 'complete')) throw new Error('unsupported_page');
+      || (current.status !== undefined && current.status !== 'complete')) throw protocolError('active_tab_recheck');
     return { candidate: source.candidate, context: { tabId: tab.id, windowId, pageUrl: tab.url, documentId: source.documentId } };
   }
 
@@ -110,19 +132,20 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
       refreshWindowId = windowId;
       const { candidate, context } = await activeVideo(windowId);
       if (!live(token)) return false;
-      if (await focusedWindowId() !== windowId) throw new Error('unsupported_page');
+      if (await focusedWindowId() !== windowId) throw protocolError('window_changed');
       if (!live(token)) return false;
       binding = context;
       refreshWindowId = null;
       publish({ status: 'ready', candidate, title: candidate.title, lyricsPage: candidate.lyricsPage ?? '',
         message: 'Selecione o vídeo e confira os dados antes de baixar.' });
       return live(token);
-    } catch {
+    } catch (error) {
       if (live(token)) {
         binding = null;
         refreshWindowId = null;
+        const code = Object.hasOwn(inspectionMessages, error?.code) ? error.code : 'inspection_unknown';
         publish({ status: 'error', candidate: null, selected: false,
-          message: 'Abra um vídeo do YouTube ou uma página Letras com vídeo reconhecido e clique em Atualizar vídeo.' });
+          message: `${inspectionMessages[code]} [contexto: ${code}]` });
       }
       return false;
     }
