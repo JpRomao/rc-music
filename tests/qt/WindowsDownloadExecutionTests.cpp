@@ -48,6 +48,7 @@ struct Control final {
     bool block_factory{false}, block_start{false}, block_poll{false}, block_cancel{false}, block_destruction{false};
     bool start_result{true};
     std::atomic_bool throw_start{false}, throw_poll{false}, throw_cancel{false};
+    std::atomic_bool throw_retained_once{false};
     std::atomic_int factories{0}, starts{0}, polls{0}, cancels{0}, destructions{0};
     std::thread::id worker_id{}, destroyed_id{};
     DownloadExecutionUpdate update{};
@@ -102,6 +103,8 @@ class Task final : public WindowsDownloadTask {
         return c->update;
     }
     std::filesystem::path retainedPublicationPath() const override {
+        if (c->throw_retained_once.exchange(false))
+            throw std::runtime_error("optional recovery path unavailable");
         std::lock_guard lock(c->mutex);
         return c->retained;
     }
@@ -457,6 +460,32 @@ class WindowsDownloadExecutionTests final : public QObject {
         c->poll_gate.release();
         QTRY_COMPARE(execution.poll("job-1").state, DownloadExecutionState::Failed);
         QCOMPARE(execution.poll("job-1").error, error);
+        execution.shutdown();
+        QTRY_VERIFY(execution.stopped());
+    }
+    void retentionExceptionDoesNotReopenAcknowledgedTask_data() {
+        QTest::addColumn<DownloadExecutionState>("state");
+        QTest::addColumn<DownloadFailure>("error");
+        QTest::newRow("publication failure") << DownloadExecutionState::Failed << DownloadFailure::Publication;
+        QTest::newRow("cancelled") << DownloadExecutionState::Cancelled << DownloadFailure::None;
+    }
+    void retentionExceptionDoesNotReopenAcknowledgedTask() {
+        QFETCH(DownloadExecutionState, state);
+        QFETCH(DownloadFailure, error);
+        auto c = std::make_shared<Control>();
+        c->throw_retained_once = true;
+        c->publish({.job_id = "job-1", .state = state, .error = error});
+        WindowsDownloadExecution execution(factory(c));
+        Finish finish{c, execution};
+        QVERIFY(execution.start("job-1", item));
+        QTRY_VERIFY(execution.poll("job-1").state != DownloadExecutionState::Running);
+        QCOMPARE(execution.poll("job-1").state, state);
+        QCOMPARE(execution.poll("job-1").error, error);
+        QVERIFY(execution.retainedPublicationPath("job-1").empty());
+        QVERIFY(!c->throw_retained_once);
+        QCOMPARE(c->polls.load(), 1);
+        QCOMPARE(c->cancels.load(), 0);
+        QCOMPARE(c->destructions.load(), 1);
         execution.shutdown();
         QTRY_VERIFY(execution.stopped());
     }

@@ -545,12 +545,18 @@ struct WindowsDownloadExecution::Impl final {
                         invalid_result = true; // no valid native acknowledgement
                         cancel_sent = false;
                     } else if (terminal(update.state)) {
-                        auto retained = update.state == DownloadExecutionState::Published
-                                            ? update.published_mp3
-                                            : task->retainedPublicationPath();
-                        if (!retained.empty() && !validPath(retained)) {
+                        std::filesystem::path retained;
+                        try {
+                            retained = update.state == DownloadExecutionState::Published
+                                           ? update.published_mp3
+                                           : task->retainedPublicationPath();
+                            if (!retained.empty() && !validPath(retained)) {
+                                retained.clear();
+                                invalid_result = true;
+                            }
+                        } catch (...) {
+                            // Optional recovery evidence cannot revoke the validated terminal ACK.
                             retained.clear();
-                            invalid_result = true;
                         }
                         if (invalid_result || (start_refused && update.state != DownloadExecutionState::Failed)) {
                             update.state = DownloadExecutionState::Failed;
