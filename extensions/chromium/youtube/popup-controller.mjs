@@ -15,6 +15,7 @@ const uncertainReply = new Set(['bridge_unavailable', 'bridge_timeout', 'invalid
 const inspectionMessages = {
   window_query: 'Não foi possível consultar a janela do navegador.',
   window_focus: 'O navegador não confirmou o foco da janela. Reabra a extensão pelo ícone na janela do vídeo.',
+  popup_focus: 'O popup perdeu o foco. Reabra a extensão e atualize a seleção.',
   window_identity: 'O navegador não identificou a janela da extensão.',
   window_changed: 'A janela mudou durante a leitura. Reabra a extensão na aba do vídeo.',
   active_tab_query: 'Não foi possível consultar a aba ativa.',
@@ -31,7 +32,7 @@ const inspectionMessages = {
 async function inspect(code, operation) {
   try { return await operation(); } catch { throw protocolError(code); }
 }
-export function createYoutubePopupController({ chrome, newRequestId, sendRequest = sendYoutubeAudioRequest, onState = () => {} }) {
+export function createYoutubePopupController({ chrome, newRequestId, sendRequest = sendYoutubeAudioRequest, onState = () => {}, hasPopupFocus = null }) {
   let disposed = false, epoch = 0;
   let binding = null, refreshWindowId = null, dispatched = false;
   let retryableRequest = null;
@@ -80,10 +81,17 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
   chrome.tabs.onActivated.addListener(onActivated);
   chrome.windows.onFocusChanged.addListener(onFocusChanged);
 
+  function popupFocused() {
+    if (hasPopupFocus === null) return true;
+    try { return hasPopupFocus() === true; } catch { return false; }
+  }
   async function focusedWindowId() {
-    const window = await inspect('window_query', () => chrome.windows.getLastFocused());
-    if (window?.focused !== true) throw protocolError('window_focus');
-    if (!Number.isSafeInteger(window.id) || window.id < 0) throw protocolError('window_identity');
+    // The containing browser window is not necessarily the last-focused one.
+    // A native action popup can own focus while that window reports false.
+    const window = await inspect('window_query', () => chrome.windows.getCurrent());
+    if (!Number.isSafeInteger(window?.id) || window.id < 0) throw protocolError('window_identity');
+    if (hasPopupFocus === null && window.focused !== true) throw protocolError('window_focus');
+    if (!popupFocused()) throw protocolError('popup_focus');
     return window.id;
   }
 
@@ -185,6 +193,7 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
         if (!live(token)) return false;
         if (fresh.candidate.videoId !== candidate.videoId) { invalidate(); return false; }
       }
+      if (!popupFocused()) { invalidate(); return false; }
       request ??= buildYoutubeAudioRequest(candidate, metadata, newRequestId());
       if (!live(token) || state.status !== 'checking') return false;
       publish({ status: 'sending', message: 'Enviando pedido ao componente YouTube…' });
@@ -227,5 +236,5 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
     chrome.tabs.onActivated.removeListener(onActivated);
     chrome.windows.onFocusChanged.removeListener(onFocusChanged);
   }
-  return { getState, refresh, setSelected, setFields, send, retry, dispose };
+  return { getState, refresh, setSelected, setFields, send, retry, revokeFocus: invalidate, dispose };
 }

@@ -10,7 +10,7 @@ function harness({ autoAccept = false, onState = () => {} } = {}) {
   const window = { id: 3, focused: true }, sends = [], states = [];
   const chrome = {
     tabs: { query: async () => [{ ...tab }], get: async () => ({ ...tab }), onUpdated: event(), onRemoved: event(), onActivated: event() },
-    windows: { getLastFocused: async () => ({ ...window }), onFocusChanged: event() },
+    windows: { getCurrent: async () => ({ ...window }), getLastFocused: async () => ({ ...window }), onFocusChanged: event() },
   };
   const ack = { status: 'accepted', requestId, jobIds: ['job-1'] };
   let finish, uuidCalls = 0;
@@ -23,6 +23,52 @@ function harness({ autoAccept = false, onState = () => {} } = {}) {
   return { tab, window, sends, states, chrome, controller, get uuidCalls() { return uuidCalls; }, accept: () => finish(ack) };
 }
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+test('a focused action popup uses its owning window even when the browser reports that window unfocused', async t => {
+  for (const letras of [false, true]) await t.test(letras ? 'Letras' : 'YouTube', async () => {
+    const h = letras ? letrasHarness() : harness(); h.controller.dispose();
+    h.window.focused = false;
+    h.chrome.windows.getLastFocused = async () => ({ id: 99, focused: false });
+    const requests = [];
+    const controller = createYoutubePopupController({ chrome: h.chrome, hasPopupFocus: () => true,
+      newRequestId: () => requestId, async sendRequest(_chrome, request) {
+        requests.push(structuredClone(request));
+        return { status: 'accepted', requestId, jobIds: ['job-1'] };
+      } });
+    assert.equal(await controller.refresh(), true);
+    assert.equal(controller.getState().candidate.tabId, 7);
+    assert.equal(controller.getState().selected, false);
+    assert.equal(requests.length, 0);
+    controller.setSelected(true);
+    assert.equal(await controller.send(), true);
+    assert.equal(requests.length, 1);
+    controller.dispose();
+  });
+});
+test('popup focus does not authorize a different window or survive blur during checking', async t => {
+  for (const reason of ['different owner', 'blur at focus guard', 'blur during final source read']) await t.test(reason, async () => {
+    const h = letrasHarness(); h.controller.dispose();
+    let focused = true, calls = 0;
+    const controller = createYoutubePopupController({ chrome: h.chrome, hasPopupFocus: () => focused,
+      newRequestId: () => requestId, async sendRequest() { calls++; return { status: 'accepted', requestId, jobIds: ['job-1'] }; } });
+    assert.equal(await controller.refresh(), true);
+    controller.setSelected(true);
+    if (reason === 'different owner') h.chrome.windows.getCurrent = async () => ({ id: 9, focused: false });
+    if (reason === 'blur at focus guard') focused = false;
+    if (reason === 'blur during final source read') {
+      const execute = h.chrome.scripting.executeScript;
+      let reads = 0;
+      h.chrome.scripting.executeScript = async options => {
+        const result = await execute(options);
+        if (++reads === 2) focused = false;
+        return result;
+      };
+    }
+    assert.equal(await controller.send(), false);
+    assert.equal(calls, 0);
+    assert.equal(controller.getState().status, 'stale');
+    controller.dispose();
+  });
+});
 function letrasHarness(options = {}) {
   const h = harness(options);
   h.tab.url = 'https://www.letras.mus.br/bleach/1222774/';
@@ -146,7 +192,7 @@ test('Letras source replacement during the final asynchronous guards prevents se
         h.snapshot.videoId = 'aB_0123-xYz';
         return { ...h.tab };
       };
-      else h.chrome.windows.getLastFocused = async () => {
+      else h.chrome.windows.getCurrent = async () => {
         h.snapshot.videoId = 'aB_0123-xYz';
         return { ...h.window };
       };
@@ -372,7 +418,7 @@ test('unsupported pages and empty active tabs never become downloadable', async 
 });
 test('inspection failures identify the browser boundary without exposing raw page or API data', async t => {
   for (const [code, change] of [
-    ['window_query', h => { h.chrome.windows.getLastFocused = async () => { throw new Error('private-api-detail'); }; }],
+    ['window_query', h => { h.chrome.windows.getCurrent = async () => { throw new Error('private-api-detail'); }; }],
     ['window_focus', h => { h.window.focused = false; }],
     ['active_tab_count', h => { h.chrome.tabs.query = async () => []; }],
     ['active_tab_window', h => { h.tab.windowId = 9; }],
@@ -394,6 +440,7 @@ test('inspection failures identify the browser boundary without exposing raw pag
 });
 test('mounted popup renders tab text literally and sends only after a real selected click', async () => {
   const h = harness();
+  h.window.focused = false;
   const elements = new Map();
   for (const id of ['refresh', 'status', 'selection', 'selected', 'video-title', 'title', 'artist', 'lyrics-page', 'fetch-lyrics', 'send']) {
     const listeners = new Map();
@@ -401,7 +448,12 @@ test('mounted popup renders tab text literally and sends only after a real selec
       addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name),
       emit: name => listeners.get(name)?.({ preventDefault() {} }), get listenerCount() { return listeners.size; } });
   }
-  const document = { getElementById: id => elements.get(id) };
+  let popupFocused = true;
+  const popupListeners = new Map();
+  const document = { hasFocus: () => popupFocused, getElementById: id => elements.get(id), defaultView: {
+    addEventListener: (name, callback) => popupListeners.set(name, callback),
+    removeEventListener: name => popupListeners.delete(name),
+  } };
   const view = mountYoutubePopup({ document, chrome: h.chrome, newRequestId: () => requestId,
     sendRequest: async (_, request) => {
       h.sends.push(request);
@@ -413,6 +465,12 @@ test('mounted popup renders tab text literally and sends only after a real selec
   assert.equal(elements.get('selection').hidden, false);
   assert.equal(elements.get('send').disabled, true);
   assert.equal(h.sends.length, 0);
+  elements.get('selected').checked = true; elements.get('selected').emit('change');
+  popupFocused = false; popupListeners.get('blur')();
+  assert.equal(elements.get('send').disabled, true);
+  assert.equal(elements.get('selected').checked, false);
+  assert.equal(h.sends.length, 0);
+  popupFocused = true; elements.get('refresh').emit('click'); await flush();
   elements.get('selected').checked = true; elements.get('selected').emit('change');
   elements.get('title').value = '<img src=x> 曲名'; elements.get('title').emit('input');
   elements.get('artist').value = 'Artist'; elements.get('artist').emit('input');
@@ -427,4 +485,5 @@ test('mounted popup renders tab text literally and sends only after a real selec
   assert.match(elements.get('status').textContent, /Pedido aceito/u);
   view.dispose();
   assert.equal([...elements.values()].reduce((count, node) => count + node.listenerCount, 0), 0);
+  assert.equal(popupListeners.size, 0);
 });

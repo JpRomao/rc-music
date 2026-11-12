@@ -86,6 +86,8 @@ A revisão independente reproduziu a troca do vídeo durante as esperas de aba/f
 
 A versão de desenvolvimento **0.1.1** substitui a falha genérica de leitura por mensagens com código fechado `[contexto: ...]`: consulta/foco da janela, estado/URL da aba, inspeção e identidade do documento. Não imprime URLs, título, cookies ou detalhes brutos das APIs. Isso é instrumentação para localizar a falha no navegador real, não correção presumida nem autorização para remover gates de foco/consentimento. O recorte de diagnóstico teve Red **0/8**, seguido de regressão Node **283/283**, sem skips.
 
+O mantenedor observou `[contexto: window_focus]` nos testes reais. A **0.1.2** vincula o popup à janela que o contém por `chrome.windows.getCurrent()` e usa `document.hasFocus()` para o foco do próprio popup, em vez de exigir o booleano da última janela focada. A aba deve continuar ativa nessa mesma janela; `blur` revoga a seleção e uma última conferência síncrona do popup precede o handoff. Sem o sinal de foco do popup, o controller continua exigindo o foco da janela. A regressão reproduziu a janela marcada sem foco com o popup focado, preservando negativos de outra janela/perda de foco: Red **0/7**, mais Red do popup montado; fechamento Node **290/290**, sem skips. A correção local não substitui o novo teste no Brave.
+
 ### Cliente
 
 As duas extensões passaram em 247 testes Node após o incremento de reenvio. Os casos verificaram o envelope e ID originais, o clique explícito, a revogação após mudança de contexto e o isolamento de confirmações atrasadas. Logs em `out/product/test-runs/chromium-repeat-request-20261111/`.

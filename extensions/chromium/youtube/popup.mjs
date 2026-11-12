@@ -26,7 +26,8 @@ export function mountYoutubePopup({ document, chrome, newRequestId = () => crypt
     nodes.send.disabled = !state.canSend && !state.canRetry;
     nodes.refresh.disabled = ['loading', 'checking', 'sending'].includes(state.status);
   }
-  const controller = createYoutubePopupController({ chrome, newRequestId, sendRequest, onState: render });
+  const controller = createYoutubePopupController({ chrome, newRequestId, sendRequest, onState: render,
+    hasPopupFocus: () => document.hasFocus() });
   function listen(node, name, callback) {
     node.addEventListener(name, callback);
     listeners.push([node, name, callback]);
@@ -35,6 +36,7 @@ export function mountYoutubePopup({ document, chrome, newRequestId = () => crypt
     lyricsPage: nodes['lyrics-page'].value, fetchLyrics: nodes['fetch-lyrics'].checked });
   listen(nodes.refresh, 'click', () => { void controller.refresh(); });
   listen(nodes.selected, 'change', () => controller.setSelected(nodes.selected.checked));
+  if (document.defaultView) listen(document.defaultView, 'blur', () => controller.revokeFocus());
   for (const id of ['title', 'artist', 'lyrics-page']) listen(nodes[id], 'input', edit);
   listen(nodes['fetch-lyrics'], 'change', edit);
   listen(nodes.send, 'click', () => {
