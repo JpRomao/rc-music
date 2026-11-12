@@ -52,6 +52,7 @@ bool DirectDownloadSession::startImpl(const QString& url, const qint64 now_ms,
     if (!target_) {
         snapshot_.state = DirectDownloadState::Failed;
         snapshot_.error = DownloadFailure::Restricted;
+        observeRestriction(DirectDownloadRestriction::Target);
         return false;
     }
     if (capability) {
@@ -124,7 +125,7 @@ void DirectDownloadSession::tick(qint64 now_ms) {
             }
             const auto addresses = approveDownloadAddresses(resolution.addresses);
             if (!addresses) {
-                fail(DownloadFailure::Restricted);
+                fail(DownloadFailure::Restricted, DirectDownloadRestriction::Dns);
                 return;
             }
             PinnedDownloadEndpoint endpoint;
@@ -189,7 +190,7 @@ void DirectDownloadSession::tick(qint64 now_ms) {
                                                                               *youtube_capability_)
                                                 : resolveDownloadRedirect(*target_, response_->header("location"));
                 if (!next) {
-                    fail(DownloadFailure::Restricted);
+                    fail(DownloadFailure::Restricted, DirectDownloadRestriction::Redirect);
                     return;
                 }
                 ++redirects_;
@@ -201,10 +202,13 @@ void DirectDownloadSession::tick(qint64 now_ms) {
                 return;
             }
             if (status != 200) {
-                fail(status == 401 || status == 403   ? DownloadFailure::Restricted
-                     : status == 404 || status == 410 ? DownloadFailure::Expired
-                     : status == 206                  ? DownloadFailure::UnsupportedMedia
-                                                      : DownloadFailure::Network);
+                if (status == 401 || status == 403)
+                    fail(DownloadFailure::Restricted,
+                         status == 401 ? DirectDownloadRestriction::Http401 : DirectDownloadRestriction::Http403);
+                else
+                    fail(status == 404 || status == 410 ? DownloadFailure::Expired
+                         : status == 206                ? DownloadFailure::UnsupportedMedia
+                                                        : DownloadFailure::Network);
                 return;
             }
             snapshot_.total_bytes = response_->contentLength();
@@ -274,7 +278,19 @@ DownloadFailure DirectDownloadSession::ioFailure() const noexcept {
         return DownloadFailure::Network;
     }
 }
-void DirectDownloadSession::fail(DownloadFailure error) {
+void DirectDownloadSession::observeRestriction(DirectDownloadRestriction reason) noexcept {
+    if (restriction_observed_)
+        return;
+    restriction_observed_ = true;
+    if (limits_.on_restricted) {
+        try {
+            limits_.on_restricted(reason);
+        } catch (...) {
+            // Observability never replaces the original failure or stop policy.
+        }
+    }
+}
+void DirectDownloadSession::fail(DownloadFailure error, DirectDownloadRestriction reason) {
     if (snapshot_.state == DirectDownloadState::Cancelled)
         return;
     snapshot_.state = DirectDownloadState::Failed;
@@ -283,5 +299,7 @@ void DirectDownloadSession::fail(DownloadFailure error) {
         io_.cancel();
     } catch (...) {
     }
+    if (error == DownloadFailure::Restricted)
+        observeRestriction(reason);
 }
 } // namespace music_player::m0

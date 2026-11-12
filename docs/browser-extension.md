@@ -90,6 +90,8 @@ O mantenedor observou `[contexto: window_focus]` nos testes reais. A **0.1.2** v
 
 Na repetição real com **0.1.2**, o mantenedor confirmou que vídeo e campos apareceram. O app recebeu um pedido Asterisk, mas o painel Downloads mostrou `Falhou` com a mensagem genérica de conteúdo privado/protegido. A conferência somente de leitura correlacionou recibo de admissão e ownership do mesmo job: `workspace-ready`, entrada/saída zero e limpeza concluída; nenhum MP3 publicado. O checkpoint ainda é o snapshot da admissão, não o erro corrente do painel. `DownloadFailure::Restricted` também cobre política de rede, DNS, redirect e HTTP 401/403; a mensagem não comprova conteúdo privado ou DRM. A causa exata da transferência segue em diagnóstico, sem alteração de ferramentas/proteções ou novo envio automático.
 
+O [diagnóstico nativo temporário autorizado](superpowers/specs/2026-11-12-native-restricted-diagnostic-design.md) acrescenta `DirectDownloadLimits::on_restricted`, observador opcional que recebe somente um enum fechado para target, DNS, redirect, HTTP 401/403 ou IO. Não recebe dados remotos, não registra nada por padrão e não substitui a recusa ou os ACKs; exceção do observador é contida. O [plano](superpowers/plans/2026-11-12-native-restricted-diagnostic.md) separa Red/Green e consumidores do transporte da futura tentativa real e da restauração da ponte.
+
 ### Cliente
 
 As duas extensões passaram em 247 testes Node após o incremento de reenvio. Os casos verificaram o envelope e ID originais, o clique explícito, a revogação após mudança de contexto e o isolamento de confirmações atrasadas. Logs em `out/product/test-runs/chromium-repeat-request-20261111/`.

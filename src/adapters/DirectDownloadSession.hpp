@@ -6,6 +6,7 @@
 #include "m0/ports/DownloadExecution.hpp"
 
 #include <QIODevice>
+#include <functional>
 #include <memory>
 
 namespace music_player::m0 {
@@ -49,6 +50,7 @@ struct DirectDownloadSnapshot final {
     quint64 received_bytes{0};
     std::optional<quint64> total_bytes{};
 };
+enum class DirectDownloadRestriction { Target, Dns, Redirect, Http401, Http403, Io };
 struct DirectDownloadLimits final {
     quint64 max_body_bytes{512 * 1024 * 1024};
     quint64 max_wire_bytes{514 * 1024 * 1024};
@@ -56,6 +58,9 @@ struct DirectDownloadLimits final {
     qint64 total_timeout_ms{30 * 60 * 1000};
     qint64 idle_timeout_ms{15 * 1000};
     qint64 dns_timeout_ms{10 * 1000};
+    // Trusted, optional observer: closed code only, no remote data or text.
+    // Must not reenter or destroy the session. Exceptions are contained.
+    std::function<void(DirectDownloadRestriction)> on_restricted{};
 };
 
 // Caller-driven transport session, NOT a published/validated MP3. Sink is a fresh empty
@@ -78,7 +83,8 @@ class DirectDownloadSession final {
     bool startImpl(const QString& url, qint64 now_ms, std::shared_ptr<const ResolvedYoutubeAudioCapability> capability,
                    qint64 trusted_epoch_seconds);
     DownloadFailure ioFailure() const noexcept;
-    void fail(DownloadFailure error);
+    void fail(DownloadFailure error, DirectDownloadRestriction reason = DirectDownloadRestriction::Io);
+    void observeRestriction(DirectDownloadRestriction reason) noexcept;
     bool beginHop(qint64 now_ms);
     DirectDownloadIo& io_;
     QIODevice& sink_;
@@ -97,6 +103,7 @@ class DirectDownloadSession final {
     quint64 wire_bytes_{0};
     int redirects_{0};
     bool operating_{false};
+    bool restriction_observed_{false};
 };
 
 } // namespace music_player::m0

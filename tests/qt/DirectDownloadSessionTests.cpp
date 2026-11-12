@@ -12,6 +12,10 @@
 using namespace music_player::m0;
 
 namespace {
+QByteArray diagnosticResponse(QByteArray wire) {
+    const auto crlf = QByteArray(1, char{13}) + char{10};
+    return wire.replace("|", crlf);
+}
 class Io final : public DirectDownloadIo {
   public:
     QStringList hosts{};
@@ -91,6 +95,80 @@ struct Harness final {
 class DirectDownloadSessionTests final : public QObject {
     Q_OBJECT
   private slots:
+    void restrictionObservationNamesOnlyTheClosedFailureBranch_data() {
+        QTest::addColumn<QString>("cause");
+        QTest::addColumn<int>("reason");
+        QTest::newRow("target") << QStringLiteral("target") << int(DirectDownloadRestriction::Target);
+        QTest::newRow("DNS") << QStringLiteral("DNS") << int(DirectDownloadRestriction::Dns);
+        QTest::newRow("redirect") << QStringLiteral("redirect") << int(DirectDownloadRestriction::Redirect);
+        QTest::newRow("HTTP401") << QStringLiteral("HTTP401") << int(DirectDownloadRestriction::Http401);
+        QTest::newRow("HTTP403") << QStringLiteral("HTTP403") << int(DirectDownloadRestriction::Http403);
+        QTest::newRow("IO") << QStringLiteral("IO") << int(DirectDownloadRestriction::Io);
+    }
+    void restrictionObservationNamesOnlyTheClosedFailureBranch() {
+        QFETCH(QString, cause);
+        QFETCH(int, reason);
+        QList<DirectDownloadRestriction> observed;
+        Harness h({.on_restricted = [&](DirectDownloadRestriction value) { observed.push_back(value); }});
+        if (cause == QStringLiteral("target")) {
+            QVERIFY(!h.session.start("file:///private/not-a-network-source.mp3", 0));
+        } else if (cause == QStringLiteral("IO")) {
+            h.io.resolve_ok = false;
+            h.io.failure_value = DownloadFailure::Restricted;
+            QVERIFY(!h.session.start("https://media.example.test/clip.mp4?sig=not-logged", 0));
+        } else {
+            if (cause == QStringLiteral("DNS"))
+                h.io.dns.addresses.push_back(QHostAddress("127.0.0.1"));
+            h.connect();
+            if (cause == QStringLiteral("redirect"))
+                h.io.chunks = {diagnosticResponse(
+                    "HTTP/1.1 302 Found|Location: http://127.0.0.1/private?sig=not-logged|Content-Length: 0||")};
+            else if (cause == QStringLiteral("HTTP401"))
+                h.io.chunks = {diagnosticResponse("HTTP/1.1 401 Unauthorized|Content-Length: 4||DATA")};
+            else if (cause == QStringLiteral("HTTP403"))
+                h.io.chunks = {diagnosticResponse("HTTP/1.1 403 Forbidden|Content-Length: 4||DATA")};
+            h.session.tick(2);
+        }
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Failed);
+        QCOMPARE(h.session.snapshot().error, DownloadFailure::Restricted);
+        QVERIFY(h.sink.data().isEmpty());
+        QCOMPARE(observed.size(), qsizetype{1});
+        QCOMPARE(int(observed.front()), reason);
+        h.session.tick(3);
+        h.session.tick(4);
+        QVERIFY(!h.session.start("https://media.example.test/again.mp4", 5));
+        QCOMPARE(observed.size(), qsizetype{1});
+        QVERIFY(h.io.endpoints.size() <= 1);
+    }
+    void restrictionObserverExceptionsCannotReplaceTheFailureOrWriteAudio() {
+        int calls = 0;
+        Harness h({.on_restricted = [&](DirectDownloadRestriction) {
+            ++calls;
+            throw std::runtime_error("observer failure must not escape");
+        }});
+        h.connect();
+        h.io.chunks = {diagnosticResponse("HTTP/1.1 403 Forbidden|Content-Length: 4||DATA")};
+        h.session.tick(2);
+        QCOMPARE(calls, 1);
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Failed);
+        QCOMPARE(h.session.snapshot().error, DownloadFailure::Restricted);
+        QCOMPARE(h.io.cancels, 1);
+        QVERIFY(h.sink.data().isEmpty());
+    }
+    void successfulAndUnrelatedFailuresDoNotNotifyTheRestrictionObserver() {
+        int calls = 0;
+        const DirectDownloadLimits limits{.on_restricted = [&](DirectDownloadRestriction) { ++calls; }};
+        Harness success(limits);
+        success.connect();
+        success.io.chunks = {diagnosticResponse("HTTP/1.1 200 OK|Content-Length: 4||DATA")};
+        success.session.tick(2);
+        QCOMPARE(success.session.snapshot().state, DirectDownloadState::Completed);
+        Harness network(limits);
+        network.io.resolve_ok = false;
+        QVERIFY(!network.session.start("https://media.example.test/clip.mp4", 0));
+        QCOMPARE(network.session.snapshot().error, DownloadFailure::Network);
+        QCOMPARE(calls, 0);
+    }
     void resolvedYoutubeAudioUsesTheExistingPublicDnsPinAndHttpSink() {
         const auto capability = test::resolvedYoutubeFixture();
         QVERIFY(capability);

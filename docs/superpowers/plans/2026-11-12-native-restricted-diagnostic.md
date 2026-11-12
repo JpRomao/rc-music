@@ -35,7 +35,7 @@
 
 ### Task 2: Candidato isolado e prova real
 
-**Files:** artefatos novos ignorados em `out/dg/`; consumir header confiável `out/product/download-tools-expat210-20261111/PlayerDownloadPackageProfile.hpp` do checkout principal, sem editar o original.
+**Files:** artefatos novos ignorados em `out/dg/`; consumir header confiável `out/product/download-tools-node24223-20261112/PlayerDownloadPackageProfile.hpp` do checkout principal, sem editar o original. O cache anterior apontava ao perfil expat210, mas a composição instalada usa o perfil Node24223; não atualizar pins antigos para esconder a diferença.
 **Interfaces:** copiar pins/configuração revisados, compor callback em header novo; shell diagnóstico usa main/presenter reais e dados em `out/dg/data`; Native YouTube mantém origem `chrome-extension://lhcdmfamadilnahlckpalijljfohjgkc/`.
 
 - [ ] Configurar/buildar candidato pela composição existente; conferir fontes e dependências reais, sem adivinhar flags ou caminhos.

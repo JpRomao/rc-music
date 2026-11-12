@@ -3,6 +3,7 @@
 /tests/youtube/__pycache__/
 /out/m0/
 /out/product/
+/out/dg/
 /q/*
 !/q/.gitkeep
 /experiments/m0/candidates/*/shell/node_modules/
