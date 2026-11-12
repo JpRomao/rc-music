@@ -1,4 +1,5 @@
-import { videoFromTab, buildYoutubeAudioRequest } from './policy.mjs';
+import { videoFromTab, isLetrasVideoPage, videoFromLetrasPage, buildYoutubeAudioRequest } from './policy.mjs';
+import { collectLetrasYoutubeVideo } from './page-video.mjs';
 import { sendYoutubeAudioRequest } from './native-client.mjs';
 
 const previewId = '00000000-0000-4000-8000-000000000000';
@@ -16,7 +17,7 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
   let binding = null, refreshWindowId = null, dispatched = false;
   let retryableRequest = null;
   let state = { status: 'idle', candidate: null, selected: false, title: '', artist: '', lyricsPage: '',
-    fetchLyrics: true, message: 'Abra um vídeo do YouTube e clique em Atualizar vídeo.' };
+    fetchLyrics: true, message: 'Abra um vídeo do YouTube ou uma música no Letras e clique em Atualizar vídeo.' };
   const fields = () => ({ title: state.title, artist: state.artist, lyricsPage: state.lyricsPage, fetchLyrics: state.fetchLyrics });
   const canSend = () => {
     if (disposed || state.status !== 'ready' || !state.candidate || !state.selected) return false;
@@ -66,15 +67,28 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
     return window.id;
   }
 
-  async function activeVideo(windowId) {
+  async function activeVideo(windowId, documentId) {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!Array.isArray(tabs) || tabs.length !== 1) throw new Error('unsupported_page');
     const tab = tabs[0];
     if (tab?.active !== true || tab.windowId !== windowId || tab.discarded === true || (tab.pendingUrl ?? '') !== ''
       || (tab.status !== undefined && tab.status !== 'complete')) throw new Error('unsupported_page');
-    const candidate = videoFromTab(tab);
-    // The original page is only used to recheck the selection. It never enters the view or native request.
-    return { candidate, context: { tabId: candidate.tabId, windowId, pageUrl: tab.url } };
+    if (!isLetrasVideoPage(tab.url)) {
+      const candidate = videoFromTab(tab);
+      return { candidate, context: { tabId: candidate.tabId, windowId, pageUrl: tab.url } };
+    }
+    const results = await chrome.scripting.executeScript({ world: 'ISOLATED',
+      target: documentId ? { tabId: tab.id, documentIds: [documentId] } : { tabId: tab.id, frameIds: [0] },
+      func: collectLetrasYoutubeVideo });
+    if (!Array.isArray(results) || results.length !== 1 || results[0]?.frameId !== 0
+      || typeof results[0].documentId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/u.test(results[0].documentId)
+      || (documentId && results[0].documentId !== documentId)) throw new Error('unsupported_page');
+    const current = await chrome.tabs.get(tab.id);
+    if (current?.id !== tab.id || current.active !== true || current.windowId !== windowId || current.url !== tab.url
+      || current.discarded === true || (current.pendingUrl ?? '') !== ''
+      || (current.status !== undefined && current.status !== 'complete')) throw new Error('unsupported_page');
+    const candidate = videoFromLetrasPage(tab, results[0].result);
+    return { candidate, context: { tabId: candidate.tabId, windowId, pageUrl: tab.url, documentId: results[0].documentId } };
   }
 
   async function refresh() {
@@ -92,16 +106,19 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
       refreshWindowId = windowId;
       const { candidate, context } = await activeVideo(windowId);
       if (!live(token)) return false;
+      if (await focusedWindowId() !== windowId) throw new Error('unsupported_page');
+      if (!live(token)) return false;
       binding = context;
       refreshWindowId = null;
-      publish({ status: 'ready', candidate, title: candidate.title, message: 'Selecione o vídeo e confira os dados antes de baixar.' });
+      publish({ status: 'ready', candidate, title: candidate.title, lyricsPage: candidate.lyricsPage ?? '',
+        message: 'Selecione o vídeo e confira os dados antes de baixar.' });
       return live(token);
     } catch {
       if (live(token)) {
         binding = null;
         refreshWindowId = null;
         publish({ status: 'error', candidate: null, selected: false,
-          message: 'Abra uma página de vídeo do YouTube compatível e clique em Atualizar vídeo.' });
+          message: 'Abra um vídeo do YouTube ou uma página Letras com vídeo reconhecido e clique em Atualizar vídeo.' });
       }
       return false;
     }
@@ -127,9 +144,10 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
     publish({ status: 'checking', message: 'Conferindo o vídeo selecionado…' });
     if (!live(token)) return false;
     try {
-      const current = await activeVideo(expected.windowId);
+      const current = await activeVideo(expected.windowId, expected.documentId);
       if (!live(token)) return false;
-      if (current.context.tabId !== expected.tabId || current.context.pageUrl !== expected.pageUrl) { invalidate(); return false; }
+      if (current.context.tabId !== expected.tabId || current.context.pageUrl !== expected.pageUrl
+        || current.context.documentId !== expected.documentId || current.candidate.videoId !== candidate.videoId) { invalidate(); return false; }
       const windowId = await focusedWindowId();
       if (!live(token)) return false;
       if (windowId !== expected.windowId) { invalidate(); return false; }

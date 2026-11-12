@@ -23,6 +23,107 @@ function harness({ autoAccept = false, onState = () => {} } = {}) {
   return { tab, window, sends, states, chrome, controller, get uuidCalls() { return uuidCalls; }, accept: () => finish(ack) };
 }
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+function letrasHarness(options = {}) {
+  const h = harness(options);
+  h.tab.url = 'https://www.letras.mus.br/bleach/1222774/';
+  h.tab.title = 'Asterisk - Bleach - LETRAS.MUS.BR';
+  h.snapshot = { pageUrl: h.tab.url, videoId: 'wW9TwZdWpjw', title: 'Asterisk' };
+  h.documentId = 'letras-document-1';
+  h.injections = [];
+  h.chrome.scripting = { executeScript: async options => {
+    h.injections.push(options);
+    return [{ frameId: 0, documentId: h.documentId, result: structuredClone(h.snapshot) }];
+  } };
+  return h;
+}
+test('Letras offers its declared YouTube video without sending or inferring an artist', async () => {
+  const h = letrasHarness({ autoAccept: true });
+  assert.equal(await h.controller.refresh(), true);
+  const state = h.controller.getState();
+  assert.equal(state.candidate.videoId, 'wW9TwZdWpjw');
+  assert.equal(state.candidate.url, 'https://www.youtube.com/watch?v=wW9TwZdWpjw');
+  assert.equal(state.title, 'Asterisk');
+  assert.equal(state.lyricsPage, 'https://www.letras.mus.br/bleach/1222774/');
+  assert.equal(state.artist, '');
+  assert.equal(state.canSend, false);
+  assert.equal(h.sends.length, 0);
+  h.controller.setSelected(true);
+  h.controller.setFields({ fetchLyrics: false });
+  assert.equal(await h.controller.send(), true);
+  assert.deepEqual(h.sends, [{ schemaVersion: 1, type: 'youtube.audio.request', requestId,
+    items: [{ videoId: 'wW9TwZdWpjw', title: 'Asterisk', artist: '',
+      lyricsPage: 'https://www.letras.mus.br/bleach/1222774/', fetchLyrics: false }] }]);
+  assert.equal(h.injections.length, 2);
+  assert.equal(h.injections[0].world, 'ISOLATED');
+  assert.deepEqual(h.injections[0].target, { tabId: 7, frameIds: [0] });
+  assert.deepEqual(h.injections[1].target, { tabId: 7, documentIds: ['letras-document-1'] });
+});
+test('Letras same-URL document or video replacement revokes selected consent before native handoff', async t => {
+  for (const [name, change] of [
+    ['document', h => { h.documentId = 'letras-document-2'; }],
+    ['video', h => { h.snapshot.videoId = 'aB_0123-xYz'; }],
+    ['page origin', h => { h.snapshot.pageUrl = 'https://other.test/bleach/1222774/'; }],
+    ['missing source', h => { h.snapshot = null; }],
+  ]) await t.test(name, async () => {
+    const h = letrasHarness({ autoAccept: true });
+    assert.equal(await h.controller.refresh(), true);
+    h.controller.setSelected(true); change(h);
+    assert.equal(await h.controller.send(), false);
+    assert.equal(h.sends.length, 0);
+    assert.equal(h.uuidCalls, 0);
+    assert.equal(h.controller.getState().status, 'stale');
+  });
+});
+test('Letras rejects unavailable scripting, unidentified documents and subframe-only replies', async t => {
+  for (const reply of [[], [{ frameId: 0, result: {} }], [{ frameId: 9, documentId: 'subframe', result: {} }]]) {
+    await t.test(JSON.stringify(reply), async () => {
+      const h = letrasHarness(); h.chrome.scripting.executeScript = async () => reply;
+      assert.equal(await h.controller.refresh(), false);
+      assert.equal(h.controller.getState().candidate, null);
+      assert.equal(h.sends.length, 0);
+    });
+  }
+  const h = letrasHarness();
+  h.chrome.scripting.executeScript = async () => { throw new Error('Cannot access contents of the page'); };
+  assert.equal(await h.controller.refresh(), false);
+  assert.equal(h.controller.getState().candidate, null);
+  assert.doesNotMatch(h.controller.getState().message, /Cannot access/u);
+});
+test('Letras late snapshot after focus or URL change cannot restore consent', async t => {
+  for (const action of ['focus', 'silent navigation']) await t.test(action, async () => {
+    const h = letrasHarness();
+    const execute = h.chrome.scripting.executeScript;
+    h.chrome.scripting.executeScript = async options => {
+      const result = await execute(options);
+      if (action === 'focus') h.chrome.windows.onFocusChanged.emit(4);
+      else h.tab.url = 'https://www.letras.mus.br/other/song/';
+      return result;
+    };
+    assert.equal(await h.controller.refresh(), false);
+    assert.equal(h.controller.getState().candidate, null);
+    assert.equal(h.sends.length, 0);
+  });
+});
+test('Letras retry preserves the admitted identity and rejects a replaced embedded video', async () => {
+  const h = letrasHarness(); h.controller.dispose();
+  const requests = [];
+  const controller = createYoutubePopupController({ chrome: h.chrome, newRequestId: () => requestId,
+    async sendRequest(_chrome, request) {
+      requests.push(structuredClone(request));
+      throw Object.assign(new Error('Uncertain'), { code: 'bridge_timeout' });
+    } });
+  assert.equal(await controller.refresh(), true);
+  controller.setSelected(true);
+  assert.equal(await controller.send(), false);
+  assert.equal(controller.getState().canRetry, true);
+  assert.equal(await controller.retry(), false);
+  assert.deepEqual(requests[1], requests[0]);
+  h.snapshot.videoId = 'aB_0123-xYz';
+  assert.equal(await controller.retry(), false);
+  assert.equal(requests.length, 2);
+  assert.equal(controller.getState().status, 'stale');
+  controller.dispose();
+});
 test('opening or refreshing reads only the current tab and never submits a request', async () => {
   const h = harness();
   assert.equal(h.sends.length, 0);

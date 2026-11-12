@@ -6,7 +6,7 @@ const root = new URL('../../extensions/chromium/youtube/', import.meta.url);
 test('YouTube extension is optional and permission-isolated from the main package', async () => {
   const manifest = JSON.parse(await readFile(new URL('manifest.json', root), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.permissions, ['activeTab', 'nativeMessaging']);
+  assert.deepEqual(manifest.permissions, ['activeTab', 'scripting', 'nativeMessaging']);
   assert.equal(manifest.host_permissions, undefined);
   assert.equal(manifest.background, undefined);
   assert.equal(manifest.content_scripts, undefined);

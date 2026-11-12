@@ -83,6 +83,18 @@ export function videoFromTab(tab) {
   if (!id || !videoId.test(id)) throw protocolError('unsupported_page');
   return { tabId: tab.id, videoId: id, url: `https://www.youtube.com/watch?v=${id}`, title: safeTabTitle(tab.title) };
 }
+export function isLetrasVideoPage(raw) {
+  const url = parsedHttps(raw, 2048);
+  return Boolean(url && validLyricsPage(raw) && url.pathname.slice(1).replace(/\/$/u, '').split('/').length === 2);
+}
+export function videoFromLetrasPage(tab, snapshot) {
+  if (!tab || !Number.isSafeInteger(tab.id) || tab.id < 0 || !isLetrasVideoPage(tab.url)
+    || !exactKeys(snapshot, ['pageUrl', 'videoId', 'title']) || snapshot.pageUrl !== tab.url
+    || typeof snapshot.videoId !== 'string' || !videoId.test(snapshot.videoId)
+    || typeof snapshot.title !== 'string' || snapshot.title.length > 2048) throw protocolError('unsupported_page');
+  return { tabId: tab.id, videoId: snapshot.videoId, url: `https://www.youtube.com/watch?v=${snapshot.videoId}`,
+    title: safeTabTitle(snapshot.title), lyricsPage: tab.url };
+}
 export function validateYoutubeAudioRequest(raw) {
   if (!exactKeys(raw, ['schemaVersion', 'type', 'requestId', 'items']) || raw.schemaVersion !== 1
     || raw.type !== 'youtube.audio.request' || typeof raw.requestId !== 'string' || !uuid.test(raw.requestId)

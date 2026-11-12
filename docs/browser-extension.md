@@ -68,6 +68,16 @@ Quando a confirmação fica incerta, o popup aberto oferece **Repetir o mesmo pe
 
 ## Checks locais
 
+### Vídeo YouTube declarado no Letras
+
+A extensão **RC Music — YouTube**, não a principal, também reconhece o vídeo do player em páginas de música dos hosts exatos `letras.mus.br`/`www.letras.mus.br`. O exemplo solicitado `https://www.letras.mus.br/bleach/1222774/` declara `wW9TwZdWpjw` no descriptor público `ui/player`. Isso identifica a origem; não comprova download, disponibilidade do vídeo ou contrato oficial do site.
+
+O popup usa `activeTab`/`scripting` em mundo isolado, sem permissões globais, rede própria, leitura de cookies ou execução dos scripts da página. Lê somente dados JSON reconhecidos ou URLs de iframes YouTube dentro de `#player`, com até 64 scripts/64 KiB por script/1 MiB agregado e oito iframes. Descriptor inválido, vídeo divergente ou limite excedido produz indisponibilidade, não escolha arbitrária. Não atravessa o documento do iframe.
+
+Preenche o título e a página Letras, deixando o artista para conferência. Antes do clique de envio ou reenvio, reconfere aba, janela, URL, `documentId` e ID do vídeo; mudanças revogam a seleção. O schema Native e o pipeline de MP3 são os existentes. MP4 segue somente como entrada de conversão da principal, sem saída de vídeo.
+
+Green focado da implementação: **70 testes Node**, sem falhas/skips, após Red de descoberta e manifesto. Esta evidência usa DOM/Chrome simulados e não encerra a aceitação no Brave ou a geração/importação real do MP3. Desenho e plano estão em `docs/superpowers/specs/2026-11-12-brave-letras-mp3-design.md` e `docs/superpowers/plans/2026-11-12-brave-letras-mp3.md`.
+
 ### Cliente
 
 As duas extensões passaram em 247 testes Node após o incremento de reenvio. Os casos verificaram o envelope e ID originais, o clique explícito, a revogação após mudança de contexto e o isolamento de confirmações atrasadas. Logs em `out/product/test-runs/chromium-repeat-request-20261111/`.
