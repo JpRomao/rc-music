@@ -31,6 +31,7 @@ WindowsDownloadJobSessionConfig copiedJob(const WindowsDownloadJobSessionConfig&
     auto result = source;
     result.workspace.staging_parent = owned(source.workspace.staging_parent);
     result.workspace.publish_parent = owned(source.workspace.publish_parent);
+    result.workspace.custom_publish_parent = owned(source.workspace.custom_publish_parent);
     result.converter.ffmpeg_executable = owned(source.converter.ffmpeg_executable);
     result.converter.ffprobe_executable = owned(source.converter.ffprobe_executable);
     result.converter.media_foundation_executable = owned(source.converter.media_foundation_executable);
@@ -74,13 +75,17 @@ makeWindowsConfiguredDownloadExecution(WindowsDownloadExecutionProfile profile,
     };
     WindowsDownloadExecution::TaskFactory destination =
         [network = copiedNetwork(profile.network), media = copiedMedia(profile.media), job, journal,
+         publication_directory = std::move(profile.publication_directory),
          network_prepare = std::move(preparers.network), media_prepare = std::move(preparers.media),
          media_profile = std::move(media_profile)] {
             // This factory is invoked only on the existing execution worker.
             // Construction stays inert; start owns journal validation/preparation
             // and the first uncancelled poll owns the session launch.
-            return makeWindowsOwnedPreparedDownloadTask(network, media, job, journal, network_prepare, media_prepare,
-                                                        media_profile);
+            auto selected_job = job;
+            if (publication_directory)
+                selected_job.workspace.custom_publish_parent = publication_directory();
+            return makeWindowsOwnedPreparedDownloadTask(network, media, std::move(selected_job), journal,
+                                                        network_prepare, media_prepare, media_profile);
         };
     if (!profile.youtube)
         return std::make_unique<WindowsDownloadExecution>(std::move(destination), std::move(preflight));

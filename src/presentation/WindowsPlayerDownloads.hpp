@@ -39,6 +39,7 @@ struct WindowsPlayerDownloadsOptions final {
     std::optional<WindowsPlayerNativeIngressOptions> native_ingress{};
     // Trusted opt-in for a qualified embedded media composition.
     bool embedded_browser_ingress{false};
+    bool configurable_download_directory{false};
 };
 
 // Optional Windows application-thread composition, never a QML-created object.

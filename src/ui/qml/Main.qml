@@ -565,6 +565,7 @@ ApplicationWindow {
         y: mainLayout.y + contentArea.y
         contract: window.uiContract
         presenter: window.presenter
+        downloads: window.downloads
         onClosed: {
             if (!window.presenter.exiting) {
                 if (windowNotice.visible)

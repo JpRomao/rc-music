@@ -3692,6 +3692,12 @@ bool PlayerPresenter::setStartMinimized(const bool minimized) {
     preferenceDidChange();
     return true;
 }
+bool PlayerPresenter::setDownloadDirectory(std::string directory) {
+    if (exiting_ || !controller_.setDownloadDirectory(std::move(directory)))
+        return false;
+    preferenceDidChange();
+    return true;
+}
 bool PlayerPresenter::setQueueEndPreference(const QueueEndPreference behavior) {
     if (exiting_)
         return false;

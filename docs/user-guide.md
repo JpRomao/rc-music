@@ -122,6 +122,8 @@ Quando a lista de tarefas tem foco, o contorno identifica o cartão sob o cursor
 
 Quando o componente de downloads está ativo, abra **Downloads** no player para acompanhar pedidos, progresso e histórico. Use **Cancelar** em um pedido que ainda permite cancelamento e **Tentar importar novamente** se o MP3 já estiver pronto e a importação para a fila falhar. As opções de repetir o carregamento ou o salvamento aparecem conforme o erro.
 
+**Abrir pasta de downloads** abre o destino atual no Explorador. Em **Preferências → Downloads → Alterar pasta**, escolha uma pasta local existente no mesmo volume da pasta de downloads do aplicativo. A mudança vale para novas transferências. Os arquivos que já foram baixados ficam onde estão.
+
 Em **Revisar letras**, use **Abrir no Letras.mus.br** para acessar a página associada. Copie cada versão que quiser guardar. No player, escolha **Colar letra**, marque **Usar página do Letras como origem** e use **Colar outra versão** para reunir original, romanização e traduções. Clique em **Guardar versões** para salvar o conjunto. [Fluxo de revisão](download-lyrics.md)
 
 Se uma gravação for recusada, confirme **Descartar tentativa** para continuar a revisão. Use **Fechar** para voltar ao diálogo na mesma sessão ou **Concluir revisão** para liberar o pedido para arquivamento. Para acrescentar outra letra depois, abra o mesmo MP3 e use **Versões**.

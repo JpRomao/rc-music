@@ -23,6 +23,34 @@ TestCase {
             presenter: testCase.localPresenter
         }
     }
+    Component {
+        id: downloadsComponent
+
+        QtObject {
+            property url downloadDirectory: "file:///C:/Audio/Downloads"
+            property string downloadDirectoryText: "C:/Audio/Downloads"
+            property string downloadDirectoryStatus: ""
+            property bool downloadDirectoryPending: false
+            property url requestedDirectory
+            property int folderChanges: 0
+            property bool canCloseAfterFinalSaveFailure: false
+            property bool canRetryFinalSave: false
+            property bool canArchiveSettled: false
+            property bool canRetryArchive: false
+            property bool canRetryStartup: false
+            property bool canRenewNamespace: false
+            property bool canRetryAdmission: false
+            property string warningText: ""
+            property string statusText: ""
+            property var jobsModel: null
+
+            function setDownloadDirectory(directory) {
+                requestedDirectory = directory;
+                ++folderChanges;
+                return true;
+            }
+        }
+    }
 
     property var shell
 
@@ -102,6 +130,68 @@ TestCase {
                 return expected.activeFocus;
             });
         }
+    }
+    function test_downloadFolderPickerUsesCurrentPreferenceAndRejectsStaleSelection() {
+        shell = createTemporaryObject(shellComponent, null);
+        verify(shell);
+        shell.width = shell.minimumWidth;
+        shell.height = shell.minimumHeight;
+        shell.requestActivate();
+        tryCompare(shell, "active", true);
+        mouseClick(findChild(shell, "preferences"));
+        const panel = findChild(shell, "preferences-panel");
+        tryCompare(panel, "opened", true);
+        const section = findChild(shell, "preferences-downloads");
+        verify(section && !section.visible);
+
+        const downloads = createTemporaryObject(downloadsComponent, testCase);
+        downloads.downloadDirectory = Qt.resolvedUrl(".");
+        shell.downloads = downloads;
+        tryCompare(section, "visible", true);
+        mouseClick(section);
+        const folder = findChild(shell, "preferences-download-directory");
+        const button = findChild(shell, "preferences-change-download-directory");
+        const feedback = findChild(shell, "preferences-download-directory-feedback");
+        const picker = findChild(shell, "preferences-download-directory-picker");
+        verify(folder && feedback && picker);
+        verifyControl(button, "Alterar pasta…");
+        compare(folder.text, downloads.downloadDirectoryText);
+        compare(folder.textFormat, Text.PlainText);
+        downloads.downloadDirectoryPending = true;
+        tryCompare(button, "enabled", false);
+        downloads.downloadDirectoryPending = false;
+        tryCompare(button, "enabled", true);
+
+        button.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        tryCompare(picker, "visible", true);
+        picker.reject();
+        tryCompare(picker, "visible", false);
+        compare(downloads.folderChanges, 0);
+        tryCompare(button, "activeFocus", true);
+
+        keyClick(Qt.Key_Return);
+        tryCompare(picker, "visible", true);
+        const selected = Qt.resolvedUrl("..");
+        picker.selectedFolder = selected;
+        compare(picker.selectedFolder.toString(), selected.toString());
+        picker.accept();
+        tryCompare(picker, "visible", false);
+        compare(downloads.folderChanges, 1);
+        compare(downloads.requestedDirectory.toString(), selected.toString());
+        downloads.downloadDirectoryText = "D:/Música/MP3";
+        downloads.downloadDirectoryStatus = "Pasta atualizada.";
+        tryCompare(folder, "text", downloads.downloadDirectoryText);
+        tryCompare(feedback, "text", downloads.downloadDirectoryStatus);
+
+        tryCompare(button, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        tryCompare(picker, "visible", true);
+        shell.downloads = createTemporaryObject(downloadsComponent, testCase);
+        tryCompare(picker, "visible", false);
+        picker.accepted();
+        compare(downloads.folderChanges, 1);
+        compare(shell.downloads.folderChanges, 0);
     }
     function test_audioOutputChoiceUsesConfirmedIdentityAcrossTopologyChanges() {
         driver.resetLocalScenario();

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs as NativeDialogs
 import QtQuick.Layouts
 import MusicPlayer.M0
 
@@ -8,9 +9,12 @@ Popup {
     objectName: "preferences-panel"
     required property ShellUiContract contract
     required property PlayerPresenter presenter
+    property var downloads: null
     property int section: 0
+    property var directoryChoiceOwner: null
     property string announcedDefaultAppsSettingsFeedback: ""
     property bool audioOutputSelectionRejected: false
+    readonly property bool downloadFolderAvailable: downloads !== null && typeof downloads.setDownloadDirectory === "function" && typeof downloads.downloadDirectoryText === "string" && downloads.downloadDirectoryText.length > 0
     readonly property var audioOutputDevices: presenter.audioOutputSelectionSupported ? presenter.audioOutputDevices : []
     readonly property int selectedAudioOutputIndex: {
         const id = presenter.selectedAudioOutputId;
@@ -32,6 +36,35 @@ Popup {
     }
     function focusFirst() {
         generalButton.forceActiveFocus(Qt.TabFocusReason);
+    }
+    function chooseDownloadDirectory() {
+        if (!opened || section !== 3 || !changeDownloadDirectoryButton.enabled || downloadDirectoryPicker.visible)
+            return;
+        directoryChoiceOwner = downloads;
+        downloadDirectoryPicker.currentFolder = downloads.downloadDirectory;
+        downloadDirectoryPicker.open();
+        if (!downloadDirectoryPicker.visible)
+            directoryChoiceOwner = null;
+    }
+    function finishDownloadDirectoryChoice(directory) {
+        const owner = directoryChoiceOwner;
+        directoryChoiceOwner = null;
+        if (opened && section === 3 && downloadFolderAvailable && owner === downloads && !presenter.exiting)
+            owner.setDownloadDirectory(directory);
+        restoreDownloadDirectoryFocus();
+    }
+    function cancelDownloadDirectoryChoice() {
+        directoryChoiceOwner = null;
+        if (downloadDirectoryPicker.visible)
+            downloadDirectoryPicker.close();
+    }
+    function restoreDownloadDirectoryFocus() {
+        Qt.callLater(function () {
+            if (root.opened && root.section === 3 && !downloadDirectoryPicker.visible) {
+                const target = changeDownloadDirectoryButton.enabled ? changeDownloadDirectoryButton : downloadsSectionButton;
+                target.forceActiveFocus(Qt.TabFocusReason);
+            }
+        });
     }
     function selectAudioOutput(index) {
         if (!opened || section !== 1 || !presenter.audioOutputSelectionSupported || presenter.exiting || index < 0 || index > audioOutputDevices.length)
@@ -57,10 +90,38 @@ Popup {
         forwardField.resetDraft();
     }
     onOpened: focusFirst()
+    onAboutToHide: cancelDownloadDirectoryChoice()
+    onDownloadsChanged: cancelDownloadDirectoryChoice()
+    onSectionChanged: {
+        if (section !== 3)
+            cancelDownloadDirectoryChoice();
+    }
+    onDownloadFolderAvailableChanged: {
+        if (!downloadFolderAvailable && section === 3) {
+            section = 0;
+            if (opened)
+                focusFirst();
+        }
+    }
     onClosed: {
         backwardField.resetDraft();
         forwardField.resetDraft();
         announcedDefaultAppsSettingsFeedback = "";
+    }
+    NativeDialogs.FolderDialog {
+        id: downloadDirectoryPicker
+
+        objectName: "preferences-download-directory-picker"
+        modality: Qt.WindowModal
+        parentWindow: root.parent ? root.parent.Window.window : null
+        popupType: Popup.Item
+        title: labels.chooseDownloadDirectory
+
+        onAccepted: root.finishDownloadDirectoryChoice(selectedFolder)
+        onRejected: {
+            root.directoryChoiceOwner = null;
+            root.restoreDownloadDirectoryFocus();
+        }
     }
     background: Rectangle {
         color: root.contract.surfaceRaisedColor
@@ -144,6 +205,21 @@ Popup {
                 Accessible.checkable: true
                 Accessible.checked: checked
                 onClicked: root.section = 2
+            }
+            AccessibleTransportButton {
+                id: downloadsSectionButton
+
+                objectName: "preferences-downloads"
+                Layout.fillWidth: true
+                contract: root.contract
+                text: labels.downloads
+                visible: root.downloadFolderAvailable
+                checkable: true
+                autoExclusive: true
+                checked: root.section === 3
+                Accessible.checkable: true
+                Accessible.checked: checked
+                onClicked: root.section = 3
             }
         }
         StackLayout {
@@ -330,6 +406,53 @@ Popup {
                     visible: root.contract.highContrast
                     Accessible.id: objectName
                     Accessible.name: text
+                }
+                Item {
+                    Layout.fillHeight: true
+                }
+            }
+            ColumnLayout {
+                spacing: root.contract.spacingUnit
+
+                Text {
+                    Layout.fillWidth: true
+                    color: root.contract.textPrimaryColor
+                    text: labels.downloadDirectory
+                    textFormat: Text.PlainText
+                }
+                Text {
+                    Accessible.name: text
+                    Accessible.role: Accessible.StaticText
+                    Layout.fillWidth: true
+                    color: root.contract.textSecondaryColor
+                    maximumLineCount: 3
+                    elide: Text.ElideMiddle
+                    objectName: "preferences-download-directory"
+                    text: root.downloadFolderAvailable ? root.downloads.downloadDirectoryText : ""
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WrapAnywhere
+                }
+                AccessibleTransportButton {
+                    id: changeDownloadDirectoryButton
+
+                    contract: root.contract
+                    enabled: root.downloadFolderAvailable && root.downloads.downloadDirectoryPending !== true && !root.presenter.exiting
+                    objectName: "preferences-change-download-directory"
+                    text: labels.changeDownloadDirectory
+                    accessibleName: labels.changeDownloadDirectory
+
+                    onClicked: root.chooseDownloadDirectory()
+                }
+                Text {
+                    Accessible.name: text
+                    Accessible.role: Accessible.StaticText
+                    Layout.fillWidth: true
+                    color: root.contract.textSecondaryColor
+                    objectName: "preferences-download-directory-feedback"
+                    text: root.downloadFolderAvailable ? root.downloads.downloadDirectoryStatus : ""
+                    textFormat: Text.PlainText
+                    visible: text.length > 0
+                    wrapMode: Text.Wrap
                 }
                 Item {
                     Layout.fillHeight: true

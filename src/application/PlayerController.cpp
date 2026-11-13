@@ -1,4 +1,5 @@
 #include "m0/application/PlayerController.hpp"
+#include "m0/domain/DownloadDirectory.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -327,6 +328,13 @@ void PlayerController::setQueueEndBehavior(const QueueEndBehavior behavior) {
 void PlayerController::setRepeatQueueEnabled(const bool enabled) { preferences_.repeat_queue_enabled = enabled; }
 
 void PlayerController::setShuffleQueueEnabled(const bool enabled) { preferences_.shuffle_queue_enabled = enabled; }
+
+bool PlayerController::setDownloadDirectory(std::string directory) {
+    if ((!directory.empty() && !validDownloadDirectory(directory)) || directory == preferences_.download_directory)
+        return false;
+    preferences_.download_directory = std::move(directory);
+    return true;
+}
 
 bool PlayerController::setWindowPlacement(const WindowPlacement placement) {
     if (placement.width <= 0 || placement.height <= 0)

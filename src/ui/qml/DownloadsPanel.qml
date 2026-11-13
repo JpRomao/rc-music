@@ -28,6 +28,8 @@ Popup {
     readonly property bool closeWithoutSaveAvailable: downloads !== null && downloads.canCloseAfterFinalSaveFailure
     required property ShellUiContract contract
     property var downloads: null
+    readonly property bool openFolderAvailable: downloads !== null && typeof downloads.openDownloadDirectory === "function" && typeof downloads.downloadDirectoryText === "string" && downloads.downloadDirectoryText.length > 0
+    readonly property bool directoryActionPending: openFolderAvailable && downloads.downloadDirectoryPending === true
     readonly property var lyricsBackend: downloads !== null && typeof downloads.lyrics !== "undefined" ? downloads.lyrics : null
     readonly property bool lyricsAvailable: lyricsBackend !== null && lyricsBackend.hasRequest
     property Item fallbackFocusItem: null
@@ -233,7 +235,7 @@ Popup {
         jobsList.positionViewAtIndex(index, ListView.Contain);
     }
     function topControls() {
-        return [closeButton, lyricsButton, archiveButton, retryStartupButton, renewNamespaceButton, retryAdmissionButton, retryFinalSaveButton, closeWithoutSaveButton].filter(function (item) {
+        return [closeButton, openFolderButton, lyricsButton, archiveButton, retryStartupButton, renewNamespaceButton, retryAdmissionButton, retryFinalSaveButton, closeWithoutSaveButton].filter(function (item) {
             return item && item.visible && item.enabled;
         });
     }
@@ -268,6 +270,26 @@ Popup {
                 font.pixelSize: 20
                 text: labels.title
                 textFormat: Text.PlainText
+            }
+            AccessibleTransportButton {
+                id: openFolderButton
+
+                KeyNavigation.backtab: root.nextTopControl(openFolderButton, true)
+                KeyNavigation.tab: root.nextTopControl(openFolderButton, false)
+                contract: root.contract
+                enabled: root.openFolderAvailable && !root.directoryActionPending
+                objectName: "downloads-open-folder"
+                text: labels.openFolder
+                visible: root.openFolderAvailable
+
+                onClicked: {
+                    if (root.opened && openFolderButton.enabled)
+                        root.downloads.openDownloadDirectory();
+                }
+                onEnabledChanged: {
+                    if (!enabled && activeFocus)
+                        closeButton.forceActiveFocus(Qt.TabFocusReason);
+                }
             }
             AccessibleTransportButton {
                 id: closeButton
@@ -308,6 +330,17 @@ Popup {
             objectName: "downloads-status"
             text: root.downloads !== null ? root.downloads.statusText : ""
             textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+        }
+        Text {
+            Accessible.name: text
+            Accessible.role: Accessible.StaticText
+            Layout.fillWidth: true
+            color: root.contract.textSecondaryColor
+            objectName: "downloads-folder-feedback"
+            text: root.openFolderAvailable && typeof root.downloads.downloadDirectoryStatus === "string" ? root.downloads.downloadDirectoryStatus : ""
+            textFormat: Text.PlainText
+            visible: text.length > 0
             wrapMode: Text.Wrap
         }
         Text {

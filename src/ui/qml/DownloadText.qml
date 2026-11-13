@@ -9,6 +9,7 @@ QtObject {
     readonly property string closeWithoutSave: qsTr("Sair sem salvar o histórico")
     readonly property string closeWithoutSaveAdvice: qsTr("O histórico de downloads não foi salvo. Sair agora pode perder os últimos estados. Os arquivos não serão removidos.")
     readonly property string empty: qsTr("Nenhum download nesta sessão.")
+    readonly property string openFolder: qsTr("Abrir pasta de downloads")
     readonly property string keepOpen: qsTr("Voltar")
     readonly property string cancelDiscard: qsTr("Cancelar")
     readonly property string confirmDiscard: qsTr("Encerrar recuperação")

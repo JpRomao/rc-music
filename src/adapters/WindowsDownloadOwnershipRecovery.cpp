@@ -268,9 +268,13 @@ std::optional<Assessment> pinWorkspaceRoots(const WindowsDownloadWorkspaceConfig
     QString staging_path;
     QString publication_path;
     if (!validDownloadOwnershipRecord(record) || !config.max_workspace_bytes ||
-        config.max_workspace_bytes > maximum_workspace_bytes ||
-        !download_artifacts::validPath(config.staging_parent, staging_path) ||
-        !download_artifacts::validPath(config.publish_parent, publication_path))
+        config.max_workspace_bytes > maximum_workspace_bytes)
+        return Assessment::Unverified;
+    const auto configured_publication = record.publication_directory.empty()
+                                            ? config.publish_parent
+                                            : QString::fromStdString(record.publication_directory);
+    if (!download_artifacts::validPath(config.staging_parent, staging_path) ||
+        !download_artifacts::validPath(configured_publication, publication_path))
         return Assessment::Unverified;
 
     auto& staging = workspace.staging;

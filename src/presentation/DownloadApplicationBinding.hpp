@@ -3,6 +3,7 @@
 #include <QAbstractItemModel>
 #include <QObject>
 #include <QString>
+#include <QUrl>
 
 #include <cstdint>
 #include <functional>
@@ -66,6 +67,10 @@ class DownloadApplicationBinding final : public QObject {
     Q_PROPERTY(QString importConsentJobId READ importConsentJobId NOTIFY importConsentChanged)
     Q_PROPERTY(QString importConsentToken READ importConsentToken NOTIFY importConsentChanged)
     Q_PROPERTY(QString archiveConsentToken READ archiveConsentToken NOTIFY archiveConsentChanged)
+    Q_PROPERTY(QUrl downloadDirectory READ downloadDirectory NOTIFY downloadDirectoryChanged)
+    Q_PROPERTY(QString downloadDirectoryText READ downloadDirectoryText NOTIFY downloadDirectoryChanged)
+    Q_PROPERTY(QString downloadDirectoryStatus READ downloadDirectoryStatus NOTIFY downloadDirectoryChanged)
+    Q_PROPERTY(bool downloadDirectoryPending READ downloadDirectoryPending NOTIFY downloadDirectoryChanged)
 
   public:
     DownloadApplicationBinding(PlayerPresenter& presenter, DownloadAdmissionController& controller,
@@ -93,6 +98,14 @@ class DownloadApplicationBinding final : public QObject {
     [[nodiscard]] QString importConsentJobId() const;
     [[nodiscard]] QString importConsentToken() const;
     [[nodiscard]] QString archiveConsentToken() const;
+    void configureDownloadDirectory(QString default_directory, std::function<bool(const QString&)> validator,
+                                    std::function<void(QString)> select);
+    [[nodiscard]] QUrl downloadDirectory() const;
+    [[nodiscard]] QString downloadDirectoryText() const;
+    [[nodiscard]] QString downloadDirectoryStatus() const;
+    [[nodiscard]] bool downloadDirectoryPending() const;
+    Q_INVOKABLE bool setDownloadDirectory(const QUrl& url);
+    Q_INVOKABLE bool openDownloadDirectory();
     // Trusted composition only, not exposed to QML. poll is deterministic when
     // automatic_polling is false. Neither method admits remote requests.
     [[nodiscard]] bool start();
@@ -124,8 +137,10 @@ class DownloadApplicationBinding final : public QObject {
     void discardConsentChanged();
     void importConsentChanged();
     void archiveConsentChanged();
+    void downloadDirectoryChanged();
 
   private:
+    [[nodiscard]] bool inspectDownloadDirectory(QString directory, bool open);
     [[nodiscard]] bool requestClosure();
     void beginShutdown();
     void shutdownReview();

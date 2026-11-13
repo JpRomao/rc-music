@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 
 namespace music_player::m0 {
 
@@ -99,6 +100,7 @@ struct Preferences final {
     std::optional<WindowPlacement> window_placement{std::nullopt};
     bool repeat_queue_enabled{false};
     bool shuffle_queue_enabled{false};
+    std::string download_directory{};
 
     [[nodiscard]] bool operator==(const Preferences&) const noexcept = default;
 };

@@ -26,6 +26,9 @@ struct WindowsDownloadExecutionProfile final {
     // Explicit trusted opt-in for a per-job AppContainer. Conflicts with a
     // borrowed media.app_container and is off for the current package profile.
     bool provision_media_profile{false};
+    // Trusted composition provides a synchronized snapshot when a new local
+    // job is created. An empty selection keeps the existing publish parent.
+    std::function<QString()> publication_directory{};
 };
 
 struct WindowsDownloadExecutionPreparers final {

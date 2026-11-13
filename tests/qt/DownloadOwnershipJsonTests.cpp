@@ -60,6 +60,26 @@ QByteArray json(const QJsonObject& value) { return QJsonDocument(value).toJson(Q
 class DownloadOwnershipJsonTests final : public QObject {
     Q_OBJECT
   private slots:
+    void customPublicationRootRequiresVersionTwoAndSurvivesReencode() {
+        auto root = object();
+        auto rows = root.value(u"records"_s).toArray();
+        auto item = rows[0].toObject();
+        item.insert(u"publicationDirectory"_s, u"C:/Música/RC Music"_s);
+        rows[0] = item;
+        root.insert(u"records"_s, rows);
+        QVERIFY(!DownloadOwnershipJson::decode(json(root)).journal);
+        root.insert(u"schemaVersion"_s, 2);
+        const auto decoded = DownloadOwnershipJson::decode(json(root));
+        QCOMPARE(decoded.status, DownloadCheckpointLoadStatus::Loaded);
+        QVERIFY(decoded.journal);
+        const auto reencoded = QJsonDocument::fromJson(DownloadOwnershipJson::encode(*decoded.journal)).object();
+        QCOMPARE(reencoded, root);
+        item.insert(u"publicationDirectory"_s, u"C:/unsafe/../directory"_s);
+        rows[0] = item;
+        root.insert(u"records"_s, rows);
+        QCOMPARE(DownloadOwnershipJson::decode(json(root)).status, DownloadCheckpointLoadStatus::Invalid);
+    }
+
     void emptyAndEveryStageRoundTrip() {
         auto encoded = DownloadOwnershipJson::encode({});
         QVERIFY(!encoded.isEmpty());
@@ -290,7 +310,7 @@ class DownloadOwnershipJsonTests final : public QObject {
     }
     void futureVersionIsPreservedAndLimitAllowsWhitespace() {
         auto value = object();
-        value.insert(u"schemaVersion"_s, 2);
+        value.insert(u"schemaVersion"_s, 3);
         QCOMPARE(DownloadOwnershipJson::decode(json(value)).status, DownloadCheckpointLoadStatus::FutureVersion);
         auto encoded = json(object());
         encoded.append(QByteArray(DownloadOwnershipJson::maximum_file_size - encoded.size(), ' '));

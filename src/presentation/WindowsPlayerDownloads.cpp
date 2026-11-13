@@ -28,12 +28,27 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <mutex>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
 
 namespace music_player::m0 {
 namespace {
+struct PublicationDirectory final {
+    QString current() const {
+        const std::lock_guard lock{mutex};
+        return selected;
+    }
+    void select(QString directory) {
+        const std::lock_guard lock{mutex};
+        selected = std::move(directory);
+    }
+
+    mutable std::mutex mutex;
+    QString selected;
+};
+
 bool nativeProfileActive(const NativeHostConfiguration& profile) {
     return !profile.allowed_origin.isEmpty() || !profile.endpoint_name.isEmpty();
 }
@@ -303,20 +318,31 @@ std::unique_ptr<WindowsPlayerDownloads> WindowsPlayerDownloads::createConfigured
     const auto timeout = profile.job.converter.total_timeout_ms;
     const bool validation_available =
         !profile.provision_media_profile && !media.require_app_container && !media.app_container;
+    const auto publication_directory =
+        options.configurable_download_directory ? std::make_shared<PublicationDirectory>() : nullptr;
+    if (publication_directory)
+        profile.publication_directory = [publication_directory] { return publication_directory->current(); };
     auto execution = makeWindowsConfiguredDownloadExecution(std::move(profile));
     if (!execution)
         return {};
-    if (options.binding.recovery_review || options.binding.recovery_validation)
-        return std::make_unique<WindowsPlayerDownloads>(presenter, session, std::move(execution),
-                                                        std::move(checkpoint_store), std::move(options));
-    auto review = std::make_unique<WindowsDownloadRecoveryReview>(journal, workspace);
+    const bool use_owned_recovery = !options.binding.recovery_review && !options.binding.recovery_validation;
+    auto review = use_owned_recovery ? std::make_unique<WindowsDownloadRecoveryReview>(journal, workspace) : nullptr;
     auto validation =
-        validation_available
-            ? std::make_unique<WindowsDownloadRecoveryValidation>(journal, std::move(workspace), media, memory, timeout)
+        use_owned_recovery && validation_available
+            ? std::make_unique<WindowsDownloadRecoveryValidation>(journal, workspace, media, memory, timeout)
             : nullptr;
-    return std::unique_ptr<WindowsPlayerDownloads>{
+    auto owner = std::unique_ptr<WindowsPlayerDownloads>{
         new WindowsPlayerDownloads(presenter, session, std::move(execution), std::move(checkpoint_store),
                                    std::move(options), std::move(review), std::move(validation))};
+    if (publication_directory) {
+        owner->binding()->configureDownloadDirectory(
+            workspace.publish_parent,
+            [staging = workspace.staging_parent](const QString& directory) {
+                return validateWindowsDownloadDirectory(staging, directory);
+            },
+            [publication_directory](QString directory) { publication_directory->select(std::move(directory)); });
+    }
+    return owner;
 }
 bool WindowsPlayerDownloads::start() { return impl_->start(); }
 DownloadApplicationBinding* WindowsPlayerDownloads::binding() const { return &impl_->view; }

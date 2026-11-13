@@ -362,6 +362,7 @@ class PlayerPresenter final : public QObject {
     // An active/used gate cannot be detached or replaced to bypass preparation.
     [[nodiscard]] bool setExitPreparationCallbacks(ExitPreparationCallbacks callbacks);
     [[nodiscard]] const Preferences& preferences() const noexcept;
+    [[nodiscard]] bool setDownloadDirectory(std::string directory);
     [[nodiscard]] double volume() const noexcept;
     [[nodiscard]] bool muted() const noexcept;
     [[nodiscard]] bool audioOutputSelectionSupported() const noexcept;

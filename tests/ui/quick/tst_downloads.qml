@@ -125,6 +125,35 @@ TestCase {
         verify(shell.windowShortcutsEnabled);
         compare(presenter.playbackState, PlayerPresenter.Unloaded);
     }
+    function test_openDownloadsFolderUsesCurrentBackendAndReportsFailure() {
+        const panel = openDownloads();
+        const close = findChild(shell, "downloads-close");
+        const openFolder = findChild(shell, "downloads-open-folder");
+        verifyTarget(openFolder);
+        compare(openFolder.Accessible.name, "Abrir pasta de downloads");
+        verify(openFolder.visible && openFolder.enabled);
+        tryCompare(close, "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        tryCompare(openFolder, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(downloads.folderOpens, 1);
+        verify(panel.opened);
+        compare(presenter.playbackState, PlayerPresenter.Unloaded);
+
+        downloads.downloadDirectoryPending = true;
+        tryCompare(openFolder, "enabled", false);
+        openFolder.clicked();
+        compare(downloads.folderOpens, 1);
+        downloads.downloadDirectoryPending = false;
+        tryCompare(openFolder, "enabled", true);
+        downloads.downloadDirectoryStatus = "Não foi possível abrir a pasta de downloads.";
+        const feedback = findChild(shell, "downloads-folder-feedback");
+        tryCompare(feedback, "visible", true);
+        compare(feedback.textFormat, Text.PlainText);
+        compare(feedback.Accessible.name, downloads.downloadDirectoryStatus);
+        downloads.downloadDirectoryText = "";
+        tryCompare(openFolder, "visible", false);
+    }
     function test_historyCapacityReportsExactCountersAtMinimumWindow() {
         downloads.historyCapacityText = "Histórico: 3/64 pedidos · 5/128 itens · 2048/1048576 bytes de pedidos";
         const panel = openDownloads();
@@ -173,6 +202,8 @@ TestCase {
         verify(!action.visible);
         downloads.canArchiveSettled = true;
         verifyTarget(action);
+        keyClick(Qt.Key_Tab);
+        tryCompare(findChild(shell, "downloads-open-folder"), "activeFocus", true);
         keyClick(Qt.Key_Tab);
         tryVerify(function () {
             return action.activeFocus;
@@ -571,6 +602,8 @@ TestCase {
         openDownloads();
         const list = findChild(shell, "downloads-list");
         keyClick(Qt.Key_Tab);
+        tryCompare(findChild(shell, "downloads-open-folder"), "activeFocus", true);
+        keyClick(Qt.Key_Tab);
         tryCompare(list, "activeFocus", true);
         const first = rowAt(0);
         const second = rowAt(1);
@@ -603,6 +636,8 @@ TestCase {
             addJob("job-" + index, "queued", "Na fila", true, false, true, 0);
         openDownloads();
         const list = findChild(shell, "downloads-list");
+        keyClick(Qt.Key_Tab);
+        tryCompare(findChild(shell, "downloads-open-folder"), "activeFocus", true);
         keyClick(Qt.Key_Tab);
         tryCompare(list, "activeFocus", true);
         verify(list.itemAtIndex(count - 1) === null);
@@ -1316,6 +1351,10 @@ TestCase {
             property bool canRetryStartup: false
             property bool canRenewNamespace: false
             property int finalSaveRetries: 0
+            property string downloadDirectoryText: "C:/Músicas"
+            property bool downloadDirectoryPending: false
+            property string downloadDirectoryStatus: ""
+            property int folderOpens: 0
             property bool exitObservedDuringAbandonment: false
             property int exitCallsObservedDuringAbandonment: -1
             property var jobsModel: jobs
@@ -1340,6 +1379,10 @@ TestCase {
             property int unsafeCloses: 0
             property string warningText: ""
 
+            function openDownloadDirectory() {
+                ++folderOpens;
+                return true;
+            }
             function closeAfterFinalSaveFailure() {
                 ++unsafeCloses;
                 exitObservedDuringAbandonment = testCase.presenter.exiting;

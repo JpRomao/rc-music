@@ -35,6 +35,14 @@ Os pins do preparador mantêm o pai existente e os diretórios preparados sem so
 
 Com o opt-in desligado, a factory usa o store e o caminho existentes, sem chamar o preparador. A preparação de saída e a drenagem continuam pertencendo ao owner e aos workers existentes. O provisionamento não fornece um novo ACK de publicação, importação ou saída.
 
+## Pasta de destino escolhida pelo usuário
+
+**Preferências → Downloads → Alterar pasta** permite escolher um diretório local existente no mesmo volume do armazenamento temporário. **Abrir pasta de downloads** abre o destino atual no Explorador. A escolha vale para novos trabalhos de transferência. Os MP3 anteriores permanecem nos caminhos já registrados na fila e nas playlists.
+
+O staging e os documentos de estado continuam na pasta privada. O journal de ownership registra o caminho de destino personalizado para permitir reabrir o pai que aquele trabalho usou. A recuperação confirma a identidade física do diretório antes de aceitar a prova existente de propriedade e conteúdo. Registros antigos continuam usando o destino padrão original.
+
+Se o destino deixar de estar disponível, escolha outra pasta nas preferências. Novas transferências preservam o destino selecionado até que o usuário o altere.
+
 ## Evidência do adaptador
 
 O Red observado de `WindowsDownloadStorageTests` teve **16 passagens e 6 falhas** contra os stubs; o Green passou **22/22 Qt**, sem falhas ou skips. Os três casos de junction em TEMP próprio — no pai, no root de downloads e em `state` — foram executados sem skip e preservaram seus alvos.

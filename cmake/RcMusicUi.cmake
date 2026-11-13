@@ -134,7 +134,7 @@ function(rc_music_add_ui target support qml_output)
         target_sources(${target} PRIVATE
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/DownloadApplicationBinding.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/DownloadApplicationBinding.cpp")
-        target_link_libraries(${target} PRIVATE rc_music_browser_integration)
+        target_link_libraries(${target} PRIVATE rc_music_browser_integration Qt6::Concurrent)
         target_compile_definitions(${target} PUBLIC RC_MUSIC_DOWNLOAD_UI_AVAILABLE)
     endif()
     rc_music_configure_cpp(${target})

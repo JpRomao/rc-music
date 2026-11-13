@@ -121,6 +121,36 @@ class PreferencesJsonCodecTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void downloadDirectoryRoundTripsAndDefaultsForLegacyPreferences() {
+        auto object = validObject();
+        const auto directory = u"C:/Música/Publicações"_s;
+        object.insert(u"downloadDirectory"_s, directory);
+        const auto decoded = PreferencesJsonCodec::decode(bytes(object));
+        QCOMPARE(decoded.status, PreferencesJsonDecodeStatus::Valid);
+        QVERIFY(decoded.preferences);
+        QCOMPARE(QJsonDocument::fromJson(PreferencesJsonCodec::encode(*decoded.preferences))
+                     .object()
+                     .value(u"downloadDirectory"_s),
+                 QJsonValue{directory});
+        for (const auto& legacy : {validVersionOneObject(), validObject()}) {
+            const auto old = PreferencesJsonCodec::decode(bytes(legacy));
+            QVERIFY(old.preferences);
+            QVERIFY(!QJsonDocument::fromJson(PreferencesJsonCodec::encode(*old.preferences))
+                         .object()
+                         .contains(u"downloadDirectory"_s));
+        }
+    }
+
+    void rejectsUnsupportedDownloadDirectoryValues() {
+        for (const auto& value : {QJsonValue{false}, QJsonValue{u"//server/music"_s}, QJsonValue{u"C:/a/../b"_s},
+                                  QJsonValue{u"C:/alternate:stream"_s}, QJsonValue{u"C:/a "_s}}) {
+            auto object = validObject();
+            object.insert(u"downloadDirectory"_s, value);
+            const auto decoded = PreferencesJsonCodec::decode(bytes(object));
+            QCOMPARE(decoded.status, PreferencesJsonDecodeStatus::Invalid);
+        }
+    }
+
     void repeatQueueRoundTripsAndDefaultsForLegacyVersions() {
         for (const bool enabled : {false, true}) {
             auto object = validObject();

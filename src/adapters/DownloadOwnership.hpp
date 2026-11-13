@@ -30,6 +30,9 @@ struct DownloadOwnershipRecord final {
     std::uint64_t input_bytes{}, output_bytes{};
     std::string output_sha256{};
     bool cleanup_complete{false};
+    // A locally selected directory locator. Recovery must still match both
+    // pinned parent identities and prove ownership of the exact artifact.
+    std::string publication_directory{};
     friend bool operator==(const DownloadOwnershipRecord&, const DownloadOwnershipRecord&) = default;
 };
 

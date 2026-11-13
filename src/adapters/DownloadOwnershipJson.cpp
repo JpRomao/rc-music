@@ -1,5 +1,6 @@
 #include "adapters/DownloadOwnershipJson.hpp"
 #include "adapters/DownloadCheckpointJson.hpp"
+#include "m0/domain/DownloadDirectory.hpp"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -85,10 +86,15 @@ std::optional<DownloadFileIdentity> identity(const QJsonValue& value) {
         result.file_id[i] = static_cast<std::uint8_t>(decoded[static_cast<qsizetype>(i)]);
     return identityValid(result) ? std::optional{result} : std::nullopt;
 }
-std::optional<DownloadOwnershipRecord> record(const QJsonValue& value) {
+std::optional<DownloadOwnershipRecord> record(const QJsonValue& value, const bool custom_directories) {
     if (!value.isObject())
         return {};
-    const auto object = value.toObject();
+    auto object = value.toObject();
+    const auto directory = object.take(QStringLiteral("publicationDirectory"));
+    if (!directory.isUndefined() &&
+        (!custom_directories || !directory.isString() || !validDownloadDirectory(directory.toString().toStdString()) ||
+         QString::fromStdString(directory.toString().toStdString()) != directory.toString()))
+        return {};
     if (!keys(object,
               {"jobId", "workspaceId", "stage", "stagingParent", "publishParent", "jobDirectory", "input", "output",
                "maximumWorkspaceBytes", "inputBytes", "outputBytes", "outputSha256", "cleanupComplete"}))
@@ -122,7 +128,8 @@ std::optional<DownloadOwnershipRecord> record(const QJsonValue& value) {
                                    .output_bytes = *output_bytes,
                                    .output_sha256 =
                                        object.value(QStringLiteral("outputSha256")).toString().toStdString(),
-                                   .cleanup_complete = object.value(QStringLiteral("cleanupComplete")).toBool()};
+                                   .cleanup_complete = object.value(QStringLiteral("cleanupComplete")).toBool(),
+                                   .publication_directory = directory.toString().toStdString()};
     for (auto [name, destination] : {std::pair{"jobDirectory", &result.job_directory},
                                      std::pair{"input", &result.input}, std::pair{"output", &result.output}}) {
         const auto field = object.value(QString::fromLatin1(name));
@@ -146,7 +153,8 @@ bool validDownloadOwnershipRecord(const DownloadOwnershipRecord& value) noexcept
         !uuid(value.workspace_id) || static_cast<std::size_t>(value.stage) >= stages.size() ||
         !identityValid(value.staging_parent) || !identityValid(value.publish_parent) ||
         value.staging_parent.volume_serial != value.publish_parent.volume_serial ||
-        value.maximum_workspace_bytes == 0 || value.maximum_workspace_bytes > 512ULL * 1024 * 1024)
+        value.maximum_workspace_bytes == 0 || value.maximum_workspace_bytes > 512ULL * 1024 * 1024 ||
+        (!value.publication_directory.empty() && !validDownloadDirectory(value.publication_directory)))
         return false;
     if (value.stage == DownloadOwnershipStage::Planned)
         return !value.job_directory && !value.input && !value.output && value.input_bytes == 0 &&
@@ -183,6 +191,7 @@ bool mayReplaceDownloadOwnershipRecord(const DownloadOwnershipRecord& previous,
         previous.job_id != next.job_id || previous.workspace_id != next.workspace_id ||
         previous.staging_parent != next.staging_parent || previous.publish_parent != next.publish_parent ||
         previous.maximum_workspace_bytes != next.maximum_workspace_bytes ||
+        previous.publication_directory != next.publication_directory ||
         (previous.cleanup_complete && !next.cleanup_complete))
         return false;
     const auto before = static_cast<std::size_t>(previous.stage), after = static_cast<std::size_t>(next.stage);
@@ -207,23 +216,32 @@ QByteArray DownloadOwnershipJson::encode(const DownloadOwnershipJournal& journal
     if (!validDownloadOwnershipJournal(journal))
         return {};
     QJsonArray records;
+    bool custom_directories = false;
     for (const auto& value : journal.records) {
-        records.append(QJsonObject{{QStringLiteral("jobId"), text(value.job_id)},
-                                   {QStringLiteral("workspaceId"), text(value.workspace_id)},
-                                   {QStringLiteral("stage"), text(stages[static_cast<std::size_t>(value.stage)])},
-                                   {QStringLiteral("stagingParent"), identity(value.staging_parent)},
-                                   {QStringLiteral("publishParent"), identity(value.publish_parent)},
-                                   {QStringLiteral("jobDirectory"), identity(value.job_directory)},
-                                   {QStringLiteral("input"), identity(value.input)},
-                                   {QStringLiteral("output"), identity(value.output)},
-                                   {QStringLiteral("maximumWorkspaceBytes"), number(value.maximum_workspace_bytes)},
-                                   {QStringLiteral("inputBytes"), number(value.input_bytes)},
-                                   {QStringLiteral("outputBytes"), number(value.output_bytes)},
-                                   {QStringLiteral("outputSha256"), text(value.output_sha256)},
-                                   {QStringLiteral("cleanupComplete"), value.cleanup_complete}});
+        QJsonObject record{{QStringLiteral("jobId"), text(value.job_id)},
+                           {QStringLiteral("workspaceId"), text(value.workspace_id)},
+                           {QStringLiteral("stage"), text(stages[static_cast<std::size_t>(value.stage)])},
+                           {QStringLiteral("stagingParent"), identity(value.staging_parent)},
+                           {QStringLiteral("publishParent"), identity(value.publish_parent)},
+                           {QStringLiteral("jobDirectory"), identity(value.job_directory)},
+                           {QStringLiteral("input"), identity(value.input)},
+                           {QStringLiteral("output"), identity(value.output)},
+                           {QStringLiteral("maximumWorkspaceBytes"), number(value.maximum_workspace_bytes)},
+                           {QStringLiteral("inputBytes"), number(value.input_bytes)},
+                           {QStringLiteral("outputBytes"), number(value.output_bytes)},
+                           {QStringLiteral("outputSha256"), text(value.output_sha256)},
+                           {QStringLiteral("cleanupComplete"), value.cleanup_complete}};
+        if (!value.publication_directory.empty()) {
+            const auto directory = QString::fromStdString(value.publication_directory);
+            if (directory.toStdString() != value.publication_directory)
+                return {};
+            record.insert(QStringLiteral("publicationDirectory"), directory);
+            custom_directories = true;
+        }
+        records.append(record);
     }
     const auto encoded =
-        QJsonDocument(QJsonObject{{QStringLiteral("schemaVersion"), 1},
+        QJsonDocument(QJsonObject{{QStringLiteral("schemaVersion"), custom_directories ? 2 : 1},
                                   {QStringLiteral("owner"), QStringLiteral("rc-music-download-ownership")},
                                   {QStringLiteral("records"), records}})
             .toJson(QJsonDocument::Compact);
@@ -242,7 +260,7 @@ DownloadOwnershipJsonResult DownloadOwnershipJson::decode(const QByteArrayView b
         std::trunc(version.toDouble()) != version.toDouble() ||
         object.value(QStringLiteral("owner")) != QJsonValue(QStringLiteral("rc-music-download-ownership")))
         return {};
-    if (version.toDouble() > 1)
+    if (version.toDouble() > 2)
         return {.status = DownloadCheckpointLoadStatus::FutureVersion};
     if (!keys(object, {"schemaVersion", "owner", "records"}) || !object.value(QStringLiteral("records")).isArray())
         return {};
@@ -252,7 +270,7 @@ DownloadOwnershipJsonResult DownloadOwnershipJson::decode(const QByteArrayView b
     DownloadOwnershipJournal result;
     result.records.reserve(static_cast<std::size_t>(records.size()));
     for (const auto& value : records) {
-        const auto decoded = record(value);
+        const auto decoded = record(value, version.toInt() == 2);
         if (!decoded)
             return {};
         result.records.push_back(*decoded);

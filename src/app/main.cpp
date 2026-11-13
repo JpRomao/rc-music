@@ -637,6 +637,7 @@ int main(int argc, char* argv[]) {
         const auto compose_player_downloads = [&](music_player::m0::WindowsPlayerDownloadProfile profile) {
             auto checkpoint_factory = music_player::m0::makePlayerDownloadCheckpointFactory(profile, config_root);
             profile.options.lyrics_writer = &lyrics_binding;
+            profile.options.configurable_download_directory = profile.prepare_storage;
             player_downloads = music_player::m0::WindowsPlayerDownloads::createConfigured(
                 presenter, downloads_initial_session, std::move(profile.execution), std::move(checkpoint_factory),
                 std::move(profile.options));

@@ -7,6 +7,7 @@
 #include "presentation/PlayerPresenterTestAccess.hpp"
 
 #include <QAbstractItemModel>
+#include <QDesktopServices>
 #include <QPersistentModelIndex>
 #include <QPointer>
 #include <QSignalSpy>
@@ -22,6 +23,16 @@
 
 namespace music_player::m0::test {
 namespace {
+class FolderOpenCapture final : public QObject {
+    Q_OBJECT
+  public:
+    FolderOpenCapture() { QDesktopServices::setUrlHandler("file", this, "capture"); }
+    ~FolderOpenCapture() override { QDesktopServices::unsetUrlHandler("file"); }
+    QList<QUrl> urls;
+
+  private slots:
+    void capture(const QUrl& url) { urls.push_back(url); }
+};
 const std::string request_id = "01234567-89ab-4cde-8fab-0123456789ab";
 DownloadRequest input() {
     return {.request_id = request_id,
@@ -366,6 +377,38 @@ struct Harness final {
 class DownloadApplicationBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void opensAndChangesTheValidatedDownloadDirectory() {
+        Harness h;
+        FolderOpenCapture opened;
+        const QString initial = "C:/Synthetic/Default";
+        const QString selected = QStringLiteral("C:/Synthetic/Músicas");
+        QString destination;
+        h.binding.configureDownloadDirectory(
+            initial, [=](const QString& directory) { return directory == initial || directory == selected; },
+            [&](QString directory) { destination = std::move(directory); });
+        QCOMPARE(h.binding.downloadDirectory(), QUrl::fromLocalFile(initial));
+        QVERIFY(destination.isEmpty());
+        QVERIFY(!h.binding.setDownloadDirectory(QUrl("https://synthetic.example.test/path")));
+        QVERIFY(h.binding.setDownloadDirectory(QUrl::fromLocalFile(selected)));
+        QVERIFY(h.binding.downloadDirectoryPending());
+        QVERIFY(!h.binding.openDownloadDirectory());
+        QTRY_VERIFY(!h.binding.downloadDirectoryPending());
+        QCOMPARE(h.binding.downloadDirectory(), QUrl::fromLocalFile(selected));
+        QCOMPARE(h.presenter.preferences().download_directory, selected.toStdString());
+        QCOMPARE(destination, selected);
+        QVERIFY(h.binding.setDownloadDirectory(QUrl::fromLocalFile("D:/Synthetic/Unavailable")));
+        QTRY_VERIFY(!h.binding.downloadDirectoryPending());
+        QCOMPARE(h.binding.downloadDirectory(), QUrl::fromLocalFile(selected));
+        QCOMPARE(destination, selected);
+        QVERIFY(!h.binding.downloadDirectoryStatus().isEmpty());
+        QVERIFY(h.binding.openDownloadDirectory());
+        QTRY_COMPARE(opened.urls, QList<QUrl>{QUrl::fromLocalFile(selected)});
+        QVERIFY(h.binding.setDownloadDirectory(QUrl::fromLocalFile(initial)));
+        QTRY_VERIFY(!h.binding.downloadDirectoryPending());
+        QCOMPARE(h.binding.downloadDirectory(), QUrl::fromLocalFile(initial));
+        QVERIFY(h.presenter.preferences().download_directory.empty());
+        QVERIFY(destination.isEmpty());
+    }
     void historyCapacityCountsStagedRequestsAndUpdatesWithoutExposingTheirContents() {
         Harness h({}, false, false, {.max_jobs = 2, .max_requests = 3, .max_retained_request_bytes = 1024});
         QVERIFY(h.binding.historyCapacityText().isEmpty());

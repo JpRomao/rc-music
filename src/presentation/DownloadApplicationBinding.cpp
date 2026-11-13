@@ -2,13 +2,18 @@
 
 #include "adapters/DownloadJobsModel.hpp"
 #include "m0/application/DownloadAdmissionController.hpp"
+#include "m0/domain/DownloadDirectory.hpp"
 #include "m0/ports/DownloadRecoveryValidation.hpp"
 #include "presentation/PlayerPresenter.hpp"
 
+#include <QDesktopServices>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QFutureWatcher>
 #include <QPointer>
 #include <QThread>
 #include <QTimer>
+#include <QtConcurrent/QtConcurrentRun>
 
 #include <algorithm>
 #include <limits>
@@ -122,6 +127,15 @@ struct DownloadApplicationBinding::Impl {
     DownloadApplicationBindingOptions options;
     DownloadJobsModel model;
     QPointer<QObject> lyrics;
+    QString default_directory;
+    QString selected_directory;
+    QString checking_directory;
+    QString directory_status;
+    std::function<bool(const QString&)> validate_directory;
+    std::function<void(QString)> select_directory;
+    QFutureWatcher<bool> directory_check;
+    bool directory_pending{};
+    bool open_checked_directory{};
     QTimer timer;
     QElapsedTimer elapsed;
     std::int64_t last_now{0};
@@ -178,6 +192,35 @@ DownloadApplicationBinding::DownloadApplicationBinding(PlayerPresenter& presente
         !impl_->execution.stopped)
         throw std::invalid_argument{"download binding requires same-thread owner and complete drain callbacks"};
     connect(&impl_->timer, &QTimer::timeout, this, &DownloadApplicationBinding::poll);
+    connect(&impl_->directory_check, &QFutureWatcher<bool>::finished, this, [this] {
+        auto& value = *impl_;
+        const auto directory = std::exchange(value.checking_directory, QString{});
+        const bool open = value.open_checked_directory;
+        value.directory_pending = false;
+        if (value.closing || !value.presenter || value.presenter->exiting())
+            return;
+        const QPointer<DownloadApplicationBinding> guard{this};
+        if (!value.directory_check.result()) {
+            value.directory_status =
+                open ? tr("A pasta de downloads está indisponível.")
+                     : tr("Escolha uma pasta local gravável no mesmo drive da pasta de downloads do aplicativo.");
+        } else if (open) {
+            const bool opened = QDesktopServices::openUrl(QUrl::fromLocalFile(directory));
+            if (!guard)
+                return;
+            value.directory_status = opened ? QString{} : tr("Não foi possível abrir a pasta de downloads.");
+        } else {
+            const auto selection =
+                directory.compare(value.default_directory, Qt::CaseInsensitive) == 0 ? QString{} : directory;
+            value.selected_directory = selection;
+            value.select_directory(selection);
+            value.directory_status = tr("Pasta definida para os próximos downloads.");
+            static_cast<void>(value.presenter->setDownloadDirectory(selection.toStdString()));
+            if (!guard)
+                return;
+        }
+        emit downloadDirectoryChanged();
+    });
     refreshProjection();
 }
 DownloadApplicationBinding::~DownloadApplicationBinding() {
@@ -186,6 +229,77 @@ DownloadApplicationBinding::~DownloadApplicationBinding() {
     // its expired QPointer returning Failed, never silently approving exit.
     if (impl_->gate_attached && impl_->presenter)
         static_cast<void>(impl_->presenter->setExitPreparationCallbacks({}));
+}
+void DownloadApplicationBinding::configureDownloadDirectory(QString default_directory,
+                                                            std::function<bool(const QString&)> validator,
+                                                            std::function<void(QString)> select) {
+    auto& value = *impl_;
+    if (value.validate_directory || default_directory.isEmpty() || !validator || !select || !value.presenter)
+        return;
+    value.default_directory = QDir::fromNativeSeparators(default_directory);
+    value.selected_directory = QString::fromStdString(value.presenter->preferences().download_directory);
+    value.validate_directory = std::move(validator);
+    value.select_directory = std::move(select);
+    value.select_directory(value.selected_directory);
+    emit downloadDirectoryChanged();
+}
+QUrl DownloadApplicationBinding::downloadDirectory() const {
+    const auto& value = *impl_;
+    const auto& path = value.selected_directory.isEmpty() ? value.default_directory : value.selected_directory;
+    return path.isEmpty() ? QUrl{} : QUrl::fromLocalFile(path);
+}
+QString DownloadApplicationBinding::downloadDirectoryText() const {
+    return QDir::toNativeSeparators(downloadDirectory().toLocalFile());
+}
+QString DownloadApplicationBinding::downloadDirectoryStatus() const { return impl_->directory_status; }
+bool DownloadApplicationBinding::downloadDirectoryPending() const { return impl_->directory_pending; }
+bool DownloadApplicationBinding::setDownloadDirectory(const QUrl& url) {
+    auto& value = *impl_;
+    if (QThread::currentThread() != thread() || !value.validate_directory || value.directory_pending || value.closing ||
+        !value.presenter || value.presenter->exiting())
+        return false;
+    auto directory = QDir::fromNativeSeparators(url.toLocalFile());
+    if (directory.size() > 3 && directory.endsWith(QLatin1Char('/')))
+        directory.chop(1);
+    const auto bytes = directory.toStdString();
+    if (!url.isLocalFile() || !url.host().isEmpty() || url.hasQuery() || url.hasFragment() ||
+        !validDownloadDirectory(bytes) || QString::fromStdString(bytes) != directory) {
+        value.directory_status =
+            tr("Escolha uma pasta local gravável no mesmo drive da pasta de downloads do aplicativo.");
+        emit downloadDirectoryChanged();
+        return false;
+    }
+    return inspectDownloadDirectory(std::move(directory), false);
+}
+bool DownloadApplicationBinding::openDownloadDirectory() {
+    return inspectDownloadDirectory(downloadDirectory().toLocalFile(), true);
+}
+bool DownloadApplicationBinding::inspectDownloadDirectory(QString directory, const bool open) {
+    auto& value = *impl_;
+    if (QThread::currentThread() != thread() || !value.validate_directory || value.directory_pending ||
+        directory.isEmpty() || value.closing || !value.presenter || value.presenter->exiting())
+        return false;
+    try {
+        const auto validate = value.validate_directory;
+        value.checking_directory = directory;
+        value.open_checked_directory = open;
+        value.directory_pending = true;
+        value.directory_status.clear();
+        value.directory_check.setFuture(QtConcurrent::run([validate, directory = std::move(directory)] {
+            try {
+                return validate(directory);
+            } catch (...) {
+                return false;
+            }
+        }));
+    } catch (...) {
+        value.directory_pending = false;
+        value.directory_status = tr("Não foi possível verificar a pasta de downloads.");
+        emit downloadDirectoryChanged();
+        return false;
+    }
+    emit downloadDirectoryChanged();
+    return true;
 }
 QString DownloadApplicationBinding::importConsentJobId() const {
     return impl_->import_consent ? impl_->import_consent->job_id : QString{};

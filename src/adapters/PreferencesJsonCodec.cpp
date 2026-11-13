@@ -1,4 +1,5 @@
 #include "adapters/PreferencesJsonCodec.hpp"
+#include "m0/domain/DownloadDirectory.hpp"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -144,12 +145,15 @@ struct WindowPlacementDecodeResult final {
 }
 
 [[nodiscard]] bool validPreferences(const Preferences& preferences) {
+    const auto& directory = preferences.download_directory;
     return !encodeTheme(preferences.theme).isEmpty() && !encodeMotion(preferences.motion).isEmpty() &&
            std::isfinite(preferences.volume) && preferences.volume >= 0.0 && preferences.volume <= 1.0 &&
            preferences.skip_backward_seconds >= 1 && preferences.skip_backward_seconds <= 300 &&
            preferences.skip_forward_seconds >= 1 && preferences.skip_forward_seconds <= 300 &&
            !encodeCloseBehavior(preferences.close_behavior).isEmpty() &&
            !encodeQueueEndBehavior(preferences.queue_end_behavior).isEmpty() &&
+           (directory.empty() ||
+            (validDownloadDirectory(directory) && QString::fromStdString(directory).toStdString() == directory)) &&
            (!preferences.window_placement ||
             (preferences.window_placement->width > 0 && preferences.window_placement->height > 0));
 }
@@ -175,6 +179,8 @@ QByteArray PreferencesJsonCodec::encode(const Preferences& preferences) {
     object.insert(QStringLiteral("windowPlacement"), encodeWindowPlacement(preferences.window_placement));
     object.insert(QStringLiteral("repeatQueueEnabled"), preferences.repeat_queue_enabled);
     object.insert(QStringLiteral("shuffleQueueEnabled"), preferences.shuffle_queue_enabled);
+    if (!preferences.download_directory.empty())
+        object.insert(QStringLiteral("downloadDirectory"), QString::fromStdString(preferences.download_directory));
     return QJsonDocument{object}.toJson(QJsonDocument::Compact);
 }
 
@@ -216,13 +222,17 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
         window_placement = decodeWindowPlacement(object.value(QStringLiteral("windowPlacement")));
     const QJsonValue repeat_queue = object.value(QStringLiteral("repeatQueueEnabled"));
     const QJsonValue shuffle_queue = object.value(QStringLiteral("shuffleQueueEnabled"));
+    const auto directory_value = object.value(QStringLiteral("downloadDirectory"));
+    auto directory = directory_value.toString().toStdString();
 
     if (!theme.has_value() || !motion.has_value() || !volume_value.isDouble() || !std::isfinite(volume) ||
         volume < 0.0 || volume > 1.0 || !muted_value.isBool() || !skip_backward.has_value() ||
         !skip_forward.has_value() || !close_behavior.has_value() || !restore_last_session_value.isBool() ||
         !start_minimized_value.isBool() || !queue_end_behavior.has_value() || !window_placement.valid ||
         (!repeat_queue.isUndefined() && !repeat_queue.isBool()) ||
-        (!shuffle_queue.isUndefined() && !shuffle_queue.isBool())) {
+        (!shuffle_queue.isUndefined() && !shuffle_queue.isBool()) ||
+        (!directory_value.isUndefined() && (!directory_value.isString() || !validDownloadDirectory(directory) ||
+                                            QString::fromStdString(directory) != directory_value.toString()))) {
         return {};
     }
 
@@ -239,7 +249,8 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
                                        .queue_end_behavior = *queue_end_behavior,
                                        .window_placement = window_placement.placement,
                                        .repeat_queue_enabled = repeat_queue.toBool(false),
-                                       .shuffle_queue_enabled = shuffle_queue.toBool(false)}};
+                                       .shuffle_queue_enabled = shuffle_queue.toBool(false),
+                                       .download_directory = std::move(directory)}};
 }
 
 } // namespace music_player::m0

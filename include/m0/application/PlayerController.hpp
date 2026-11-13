@@ -46,6 +46,7 @@ class PlayerController final {
     void setQueueEndBehavior(QueueEndBehavior behavior);
     void setRepeatQueueEnabled(bool enabled);
     void setShuffleQueueEnabled(bool enabled);
+    [[nodiscard]] bool setDownloadDirectory(std::string directory);
     [[nodiscard]] bool setWindowPlacement(WindowPlacement placement);
 
     [[nodiscard]] CloseDisposition requestClose();

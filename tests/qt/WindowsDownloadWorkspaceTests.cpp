@@ -211,6 +211,35 @@ class WindowsDownloadWorkspaceTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void customPublicationCanBeRecoveredAfterChangingDefaultFolder() {
+        Fixture fixture;
+        QVERIFY(fixture.root.isValid());
+        auto config = fixture.config();
+        const auto custom = fixture.root.filePath(QStringLiteral("Custom music"));
+        QVERIFY(QDir().mkdir(custom));
+        QVERIFY(validateWindowsDownloadDirectory(config.staging_parent, custom));
+        QVERIFY(!validateWindowsDownloadDirectory(config.staging_parent, fixture.root.filePath("missing")));
+        QVERIFY(!validateWindowsDownloadDirectory(config.staging_parent, config.staging_parent));
+        config.custom_publish_parent = custom;
+        OwnershipStore journal;
+        WindowsDownloadWorkspace workspace(config, "custom-download", journal);
+        QVERIFY(workspace.create());
+        QVERIFY(fillAndSeal(workspace));
+        const auto result = workspace.validateAndPublish([](const QString&) { return true; });
+        QCOMPARE(QFileInfo(result).absolutePath(), custom);
+        QVERIFY(workspace.cleanup());
+        QCOMPARE(journal.attempts.back().publication_directory, custom.toStdString());
+
+        auto later = fixture.config();
+        later.custom_publish_parent = fixture.root.filePath(QStringLiteral("another choice"));
+        const auto recovered = WindowsDownloadOwnershipRecovery::pinFinal(later, journal.attempts.back());
+        QVERIFY(recovered.candidate);
+        QCOMPARE(recovered.candidate->pathForValidation(), result);
+        auto replaced = journal.attempts.back();
+        replaced.publication_directory = fixture.publication.toStdString();
+        QCOMPARE(WindowsDownloadOwnershipRecovery::assess(later, replaced), DownloadOwnershipAssessment::Conflict);
+    }
+
     void readCapabilitiesRequireTheirOwnSealAndDisappearAfterCleanup() {
         Fixture fixture;
         WindowsDownloadWorkspace workspace(fixture.config());

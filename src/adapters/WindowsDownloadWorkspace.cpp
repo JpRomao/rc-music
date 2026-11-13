@@ -1,5 +1,6 @@
 #include "adapters/WindowsDownloadWorkspace.hpp"
 #include "adapters/WindowsDownloadReadInput.hpp"
+#include "m0/domain/DownloadDirectory.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -158,6 +159,23 @@ bool pinParent(const QString& parent, std::vector<Handle>& pins, BY_HANDLE_FILE_
         pins.push_back(std::move(directory));
     }
     return true;
+}
+
+bool samePublicationVolume(const QString& staging, const QString& publication, std::vector<Handle>& staging_pins,
+                           std::vector<Handle>& publication_pins, BY_HANDLE_FILE_INFORMATION& publication_id) {
+    BY_HANDLE_FILE_INFORMATION staging_id{};
+    return safeParentSyntax(staging) && safeParentSyntax(publication) && pinParent(staging, staging_pins, staging_id) &&
+           pinParent(publication, publication_pins, publication_id, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                     FILE_ADD_FILE | SYNCHRONIZE) &&
+           staging_id.dwVolumeSerialNumber == publication_id.dwVolumeSerialNumber;
+}
+
+bool outsideStaging(const HANDLE staging, const HANDLE publication) {
+    const auto staging_path = finalPath(staging);
+    const auto publication_path = finalPath(publication);
+    return !staging_path.isEmpty() && !publication_path.isEmpty() &&
+           publication_path.compare(staging_path, Qt::CaseInsensitive) != 0 &&
+           !publication_path.startsWith(staging_path + QLatin1Char('\\'), Qt::CaseInsensitive);
 }
 
 class PrivateSecurity final {
@@ -470,6 +488,22 @@ WindowsDownloadWorkspace::WindowsDownloadWorkspace(WindowsDownloadWorkspaceConfi
 }
 WindowsDownloadWorkspace::~WindowsDownloadWorkspace() { static_cast<void>(cleanup()); }
 
+bool validateWindowsDownloadDirectory(const QString& staging, const QString& publication) {
+    try {
+        const auto directory = QDir::fromNativeSeparators(publication);
+        const auto bytes = directory.toStdString();
+        if (!validDownloadDirectory(bytes) || QString::fromStdString(bytes) != directory)
+            return false;
+        std::vector<Handle> staging_pins, publication_pins;
+        BY_HANDLE_FILE_INFORMATION publication_id{};
+        return samePublicationVolume(QDir::fromNativeSeparators(staging), directory, staging_pins, publication_pins,
+                                     publication_id) &&
+               outsideStaging(staging_pins.back().get(), publication_pins.back().get());
+    } catch (...) {
+        return false;
+    }
+}
+
 bool WindowsDownloadWorkspace::create(const std::function<bool()>& continue_allowed) {
     if (impl_->created || impl_->cleanup_requested || impl_->operating || impl_->failure != DownloadFailure::None) {
         return false;
@@ -478,16 +512,21 @@ bool WindowsDownloadWorkspace::create(const std::function<bool()>& continue_allo
     try {
         impl_->config.staging_parent = QDir::fromNativeSeparators(impl_->config.staging_parent);
         impl_->config.publish_parent = QDir::fromNativeSeparators(impl_->config.publish_parent);
+        const auto custom_parent = QDir::fromNativeSeparators(impl_->config.custom_publish_parent);
+        const auto custom_bytes = custom_parent.toStdString();
+        if (!custom_parent.isEmpty()) {
+            if (!validDownloadDirectory(custom_bytes) || QString::fromStdString(custom_bytes) != custom_parent)
+                return impl_->fail(DownloadFailure::InvalidResult);
+            impl_->config.publish_parent = custom_parent;
+        }
         if ((impl_->ownership && !validJobId(impl_->job_id)) || impl_->config.max_workspace_bytes == 0 ||
-            impl_->config.max_workspace_bytes > maximumWorkspaceBytes ||
-            !safeParentSyntax(impl_->config.staging_parent) || !safeParentSyntax(impl_->config.publish_parent)) {
+            impl_->config.max_workspace_bytes > maximumWorkspaceBytes) {
             return impl_->fail(DownloadFailure::InvalidResult);
         }
-        BY_HANDLE_FILE_INFORMATION staging_identity{};
-        if (!pinParent(impl_->config.staging_parent, impl_->staging_pins, staging_identity) ||
-            !pinParent(impl_->config.publish_parent, impl_->publication_pins, impl_->publication_identity,
-                       FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_ADD_FILE | SYNCHRONIZE) ||
-            staging_identity.dwVolumeSerialNumber != impl_->publication_identity.dwVolumeSerialNumber) {
+        if (!samePublicationVolume(impl_->config.staging_parent, impl_->config.publish_parent, impl_->staging_pins,
+                                   impl_->publication_pins, impl_->publication_identity) ||
+            (!custom_parent.isEmpty() &&
+             !outsideStaging(impl_->staging_pins.back().get(), impl_->publication_pins.back().get()))) {
             impl_->fail(DownloadFailure::InvalidResult);
             static_cast<void>(cleanup());
             return false;
@@ -516,7 +555,8 @@ bool WindowsDownloadWorkspace::create(const std::function<bool()>& continue_allo
             ready_record = DownloadOwnershipRecord{.job_id = impl_->job_id,
                                                    .staging_parent = *staging,
                                                    .publish_parent = *publication,
-                                                   .maximum_workspace_bytes = impl_->config.max_workspace_bytes};
+                                                   .maximum_workspace_bytes = impl_->config.max_workspace_bytes,
+                                                   .publication_directory = custom_bytes};
         }
         for (int attempt = 0; attempt < 16; ++attempt) {
             const auto uuid = QUuid::createUuid().toString(QUuid::WithoutBraces);
