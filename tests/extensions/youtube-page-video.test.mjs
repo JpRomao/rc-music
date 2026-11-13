@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { collectLetrasYoutubeVideo } from '../../extensions/chromium/youtube/page-video.mjs';
 
+const collectorSource = '(' + collectLetrasYoutubeVideo.toString() + ')()';
 const pageUrl = 'https://www.letras.mus.br/bleach/1222774/';
 // Minimal public data shape observed in the maintainer's chosen page, not its lyrics or full HTML.
 const descriptor = `_omq.push(['ui/player', {"Artist":"Bleach","DNS":"bleach","ID":1222774,"Name":"＊〜アスタリスク〜 (Asterisk)","URL":"1222774","YoutubeID":"wW9TwZdWpjw"}]);`;
@@ -74,4 +75,45 @@ test('Letras iframe discovery rejects lookalike and credentialed hosts without f
     'https://www.youtube.com/embed/invalid', 'javascript:alert(1)']) {
     assert.equal(collectLetrasYoutubeVideo(documentFixture({ scripts: [], frames: [src] })), null);
   }
+});
+
+const numberOnePage = 'https://www.letras.mus.br/bleach/453185/';
+const numberOneDescriptor = '_omq.push(["ui/player", {"Artist":"Bleach","DNS":"bleach","ID":453185,"Name":"Number One","URL":"453185","YoutubeID":""}]);';
+const numberOneVideo = 'DW6toOrQkkU';
+function letrasProxy({ id = numberOneVideo, paramsId = id, host = 'https://www.letras.mus.br' } = {}) {
+  const url = new URL('https://solr.sscdn.co/iframe_proxy_player_letras_endpoint.html');
+  url.search = new URLSearchParams({ v: '1', host, api_player: 'Iframe',
+    player_vars: JSON.stringify({ autoplay: 1, type: 'Iframe', videoId: paramsId }), video_id: id });
+  return url.href;
+}
+function numberOneFixture(frames, scripts = [numberOneDescriptor]) {
+  return documentFixture({ url: numberOnePage, scripts, frames });
+}
+test('Number One is recognized when Letras loads its proxy iframe with the video ID', () => {
+  const beforePlayback = numberOneFixture(['about:blank']);
+  assert.equal(collectLetrasYoutubeVideo(beforePlayback), null);
+  const afterPlayback = numberOneFixture(['about:blank', letrasProxy()]);
+  const context = { document: afterPlayback, URL, TextEncoder };
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInNewContext(collectorSource, context))),
+    { pageUrl: numberOnePage, videoId: numberOneVideo, title: 'Number One' });
+});
+test('Letras proxy requires its exact endpoint, one consistent video ID and the current page origin', () => {
+  for (const src of [
+    letrasProxy().replace('solr.sscdn.co', 'solr.sscdn.co.evil.test'),
+    letrasProxy().replace('solr.sscdn.co', 'user@solr.sscdn.co'),
+    letrasProxy().replace('solr.sscdn.co', 'solr.sscdn.co:444'),
+    letrasProxy().replace('/iframe_proxy_player_letras_endpoint.html', '/other.html'),
+    letrasProxy({ host: 'https://letras.mus.br' }),
+    letrasProxy({ paramsId: 'aB_0123-xYz' }),
+    letrasProxy({ id: 'invalid' }),
+    letrasProxy() + '&video_id=DW6toOrQkkU',
+    letrasProxy() + '&player_vars=%7B%7D',
+  ]) assert.equal(collectLetrasYoutubeVideo(numberOneFixture([src])), null, src);
+  assert.equal(collectLetrasYoutubeVideo(numberOneFixture([letrasProxy()], [])), null);
+  assert.equal(collectLetrasYoutubeVideo(numberOneFixture([letrasProxy()], [numberOneDescriptor.replace('"453185"', '"other"')])), null);
+});
+test('Letras rejects conflicting direct and proxy videos instead of choosing one', () => {
+  assert.equal(collectLetrasYoutubeVideo(numberOneFixture([letrasProxy(), 'https://www.youtube.com/embed/aB_0123-xYz'])), null);
+  const staticOther = numberOneDescriptor.replace('"YoutubeID":""', '"YoutubeID":"aB_0123-xYz"');
+  assert.equal(collectLetrasYoutubeVideo(numberOneFixture([letrasProxy()], [staticOther])), null);
 });

@@ -26,6 +26,7 @@ const inspectionMessages = {
   active_tab_recheck: 'Não foi possível reconferir a aba após ler a página.',
   page_inspection: 'O navegador não permitiu ler o player dessa página. Reabra a extensão pelo ícone da barra.',
   page_document: 'O documento da página não pôde ser confirmado. Atualize a seleção.',
+  letras_video_unavailable: 'Nenhum vídeo do YouTube foi identificado nessa música. Se a página tiver player, clique em Play no Letras e depois em Atualizar vídeo.',
   unsupported_page: 'Abra um vídeo do YouTube ou uma página Letras com vídeo reconhecido e clique em Atualizar vídeo.',
   inspection_unknown: 'Não foi possível concluir a leitura do contexto da aba.',
 };
@@ -102,6 +103,7 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
     if (!Array.isArray(results) || results.length !== 1 || results[0]?.frameId !== 0
       || typeof results[0].documentId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/u.test(results[0].documentId)
       || (documentId && results[0].documentId !== documentId)) throw protocolError('page_document');
+    if (results[0].result === null) throw protocolError('letras_video_unavailable');
     return { candidate: videoFromLetrasPage(tab, results[0].result), documentId: results[0].documentId };
   }
 

@@ -12,6 +12,7 @@ export function collectLetrasYoutubeVideo(document = globalThis.document) {
     const player = document.getElementById('player');
     if (!player) return null;
     const ids = new Set(), encoder = new TextEncoder();
+    const validId = /^[a-zA-Z0-9_-]{11}$/u;
     let title = '', bytes = 0;
     const scripts = document.scripts;
     if (!scripts || scripts.length > 64) return null;
@@ -27,9 +28,9 @@ export function collectLetrasYoutubeVideo(document = globalThis.document) {
       const data = JSON.parse(match[2]);
       if (data === null || typeof data !== 'object' || Array.isArray(data)
         || data.DNS !== decodeURIComponent(segments[0]) || data.URL !== decodeURIComponent(segments[1])
-        || typeof data.YoutubeID !== 'string' || !/^[a-zA-Z0-9_-]{11}$/u.test(data.YoutubeID)
+        || typeof data.YoutubeID !== 'string' || (data.YoutubeID !== '' && !validId.test(data.YoutubeID))
         || typeof data.Name !== 'string' || data.Name.length > 2048 || !data.Name.trim()) return null;
-      ids.add(data.YoutubeID);
+      if (data.YoutubeID) ids.add(data.YoutubeID);
       title ||= data.Name;
     }
     const frames = player.querySelectorAll('iframe');
@@ -39,10 +40,26 @@ export function collectLetrasYoutubeVideo(document = globalThis.document) {
       if (typeof source !== 'string' || source.length > 8192 || /[\s\\]/u.test(source)) continue;
       let url;
       try { url = new URL(source, pageUrl); } catch { continue; }
-      if (url.protocol !== 'https:' || url.username || url.password || url.port
-        || !['youtube.com', 'www.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(url.hostname)) continue;
-      const id = /^\/embed\/([a-zA-Z0-9_-]{11})\/?$/u.exec(url.pathname)?.[1];
-      if (id) ids.add(id);
+      if (url.protocol !== 'https:' || url.username || url.password || url.port) continue;
+      if (['youtube.com', 'www.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(url.hostname)) {
+        const id = /^\/embed\/([a-zA-Z0-9_-]{11})\/?$/u.exec(url.pathname)?.[1];
+        if (id) ids.add(id);
+        continue;
+      }
+      // Letras can leave YoutubeID empty and load this iframe only when its player starts.
+      // The proxy's URL carries the video ID, so its cross-origin contents are unnecessary.
+      if (!title || url.origin !== 'https://solr.sscdn.co'
+        || url.pathname !== '/iframe_proxy_player_letras_endpoint.html' || url.hash) continue;
+      const parameter = name => {
+        const values = url.searchParams.getAll(name);
+        return values.length === 1 ? values[0] : null;
+      };
+      const id = parameter('video_id'), encodedVars = parameter('player_vars');
+      if (parameter('host') !== page.origin || parameter('v') !== '1'
+        || parameter('api_player') !== 'Iframe' || id === null || !validId.test(id) || encodedVars === null) return null;
+      const vars = JSON.parse(encodedVars);
+      if (vars?.type !== 'Iframe' || vars.videoId !== id) return null;
+      ids.add(id);
     }
     if (ids.size !== 1) return null;
     return { pageUrl, videoId: [...ids][0], title: title || String(document.title ?? '').slice(0, 2048) };

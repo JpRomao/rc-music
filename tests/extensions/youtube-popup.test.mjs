@@ -105,6 +105,20 @@ test('Letras offers its declared YouTube video without sending or inferring an a
   assert.deepEqual(h.injections[1].target, { tabId: 7, documentIds: ['letras-document-1'] });
   assert.deepEqual(h.injections[2].target, { tabId: 7, documentIds: ['letras-document-1'] });
 });
+test('Letras with no loaded video explains how to refresh without sending a request', async () => {
+  const h = letrasHarness();
+  h.tab.url = 'https://www.letras.mus.br/bleach/453185/';
+  h.snapshot = null;
+  assert.equal(await h.controller.refresh(), false);
+  assert.match(h.controller.getState().message, /Play.*Atualizar vídeo/u);
+  assert.equal(h.sends.length, 0);
+
+  h.snapshot = { pageUrl: h.tab.url, videoId: 'DW6toOrQkkU', title: 'Number One' };
+  assert.equal(await h.controller.refresh(), true);
+  assert.equal(h.controller.getState().title, 'Number One');
+  assert.equal(h.controller.getState().canSend, false);
+  assert.equal(h.sends.length, 0);
+});
 test('Letras same-URL document or video replacement revokes selected consent before native handoff', async t => {
   for (const [name, change] of [
     ['document', h => { h.documentId = 'letras-document-2'; }],
