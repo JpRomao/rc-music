@@ -161,7 +161,10 @@ YoutubeAudioDecodingResult decodeYoutubeAudioRequest(const QByteArray& payload) 
     for (const auto& value : items) {
         if (!value.isObject())
             return result;
-        const auto item = value.toObject();
+        auto item = value.toObject();
+        const auto name = item.take(QStringLiteral("fileName"));
+        if (!name.isUndefined() && (!name.isString() || name.toString().isEmpty()))
+            return result;
         if (!exactKeys(item, std::array{QStringLiteral("videoId"), QStringLiteral("title"), QStringLiteral("artist"),
                                         QStringLiteral("lyricsPage"), QStringLiteral("fetchLyrics")}) ||
             !item.value(QStringLiteral("videoId")).isString() || !item.value(QStringLiteral("title")).isString() ||
@@ -172,12 +175,14 @@ YoutubeAudioDecodingResult decodeYoutubeAudioRequest(const QByteArray& payload) 
         const auto title = item.value(QStringLiteral("title")).toString();
         const auto artist = item.value(QStringLiteral("artist")).toString();
         const auto lyrics_page = item.value(QStringLiteral("lyricsPage")).toString();
-        if (title.toUtf8().size() > 512 || artist.toUtf8().size() > 512 || lyrics_page.toUtf8().size() > 2048) {
+        const auto file_name = name.toString();
+        if (title.toUtf8().size() > 512 || artist.toUtf8().size() > 512 || lyrics_page.toUtf8().size() > 2048 ||
+            file_name.toUtf8().size() > 512) {
             result.error = DownloadSubmissionError::LimitExceeded;
             return result;
         }
         if (!validVideoId(video_id.toStdString()) || seen.contains(video_id) || !validMetadata(title, false) ||
-            !validMetadata(artist, true))
+            !validMetadata(artist, true) || !validMetadata(file_name, true))
             return result;
         if (!validLyricsPage(lyrics_page)) {
             result.error = DownloadSubmissionError::UnsupportedSource;
@@ -185,7 +190,7 @@ YoutubeAudioDecodingResult decodeYoutubeAudioRequest(const QByteArray& payload) 
         }
         seen.insert(video_id);
         decoded.push_back({video_id.toStdString(), title.toStdString(), artist.toStdString(), lyrics_page.toStdString(),
-                           item.value(QStringLiteral("fetchLyrics")).toBool()});
+                           item.value(QStringLiteral("fetchLyrics")).toBool(), file_name.toStdString()});
     }
     result.request.items = std::move(decoded);
     result.error = DownloadSubmissionError::None;
@@ -197,13 +202,16 @@ QByteArray encodeYoutubeAudioRequest(const YoutubeAudioRequest& request) {
     QJsonArray items;
     for (const auto& item : request.items) {
         if (!validVideoId(item.video_id) || item.title.size() > 512 || item.artist.size() > 512 ||
-            item.lyrics_page.size() > 2048)
+            item.lyrics_page.size() > 2048 || item.file_name.size() > 512)
             return {};
-        items.push_back(QJsonObject{{QStringLiteral("videoId"), QString::fromStdString(item.video_id)},
-                                    {QStringLiteral("title"), QString::fromStdString(item.title)},
-                                    {QStringLiteral("artist"), QString::fromStdString(item.artist)},
-                                    {QStringLiteral("lyricsPage"), QString::fromStdString(item.lyrics_page)},
-                                    {QStringLiteral("fetchLyrics"), item.fetch_lyrics}});
+        QJsonObject encoded{{QStringLiteral("videoId"), QString::fromStdString(item.video_id)},
+                            {QStringLiteral("title"), QString::fromStdString(item.title)},
+                            {QStringLiteral("artist"), QString::fromStdString(item.artist)},
+                            {QStringLiteral("lyricsPage"), QString::fromStdString(item.lyrics_page)},
+                            {QStringLiteral("fetchLyrics"), item.fetch_lyrics}};
+        if (!item.file_name.empty())
+            encoded.insert(QStringLiteral("fileName"), QString::fromStdString(item.file_name));
+        items.push_back(encoded);
     }
     const auto bytes =
         QJsonDocument(QJsonObject{{QStringLiteral("schemaVersion"), 1},

@@ -1,10 +1,12 @@
 #include "adapters/WindowsDownloadWorkspace.hpp"
+#include "adapters/DownloadOwnershipJson.hpp"
 #include "adapters/WindowsDownloadReadInput.hpp"
 #include "m0/domain/DownloadDirectory.hpp"
 
 #include <QCryptographicHash>
 #include <QDir>
 #include <QScopedValueRollback>
+#include <QStringList>
 #include <QUuid>
 
 #include <algorithm>
@@ -56,6 +58,64 @@ class Handle final {
 
 std::wstring nativePath(const QString& path) {
     return (QStringLiteral("\\\\?\\") + QDir::toNativeSeparators(path)).toStdWString();
+}
+
+void trimFilenameEdges(QString& stem) {
+    const auto boundary = [](const QChar unit) { return unit.isSpace() || unit == QLatin1Char('.'); };
+    qsizetype begin = 0;
+    auto end = stem.size();
+    while (begin < end && boundary(stem[begin]))
+        ++begin;
+    while (end > begin && boundary(stem[end - 1]))
+        --end;
+    stem = stem.mid(begin, end - begin);
+}
+
+QString safePublicationStem(QString suggested) {
+    if (suggested.endsWith(QLatin1String(".mp3"), Qt::CaseInsensitive))
+        suggested.chop(4);
+    for (qsizetype index = 0; index < suggested.size(); ++index) {
+        const auto unit = suggested.at(index);
+        const auto value = unit.unicode();
+        if (value <= 0x1f || (value >= 0x7f && value <= 0x9f) || (value >= 0x2028 && value <= 0x202e) ||
+            (value >= 0x2066 && value <= 0x2069) || QStringLiteral("/\\:<>\"|?*").contains(unit))
+            suggested[index] = QLatin1Char('_');
+    }
+    constexpr auto maximum_stem =
+        maximum_download_publication_leaf_units - 4 - 6 - 1; // Extension, suffix and device prefix.
+    if (suggested.size() > maximum_stem) {
+        suggested.truncate(maximum_stem);
+        if (suggested.back().isHighSurrogate())
+            suggested.chop(1);
+    }
+    trimFilenameEdges(suggested);
+    if (suggested.isEmpty())
+        suggested = QStringLiteral("RC Music");
+    // A device basename (possibly before another extension) needs a prefix.
+    if (!validDownloadPublicationLeaf(suggested + QStringLiteral(".mp3")))
+        suggested.prepend(QLatin1Char('_'));
+    return suggested;
+}
+
+QString availablePublicationLeaf(const QString& parent, const QString& suggested, const QStringList& reserved) {
+    const auto stem = safePublicationStem(suggested);
+    for (int index = 1; index <= 129; ++index) {
+        auto name = stem;
+        if (index > 1)
+            name += QStringLiteral(" (%1)").arg(index);
+        name += QStringLiteral(".mp3");
+        if (!validDownloadPublicationLeaf(name))
+            break;
+        if (reserved.contains(name, Qt::CaseInsensitive))
+            continue;
+        const auto path = nativePath(parent + QLatin1Char('/') + name);
+        if (GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            if (GetLastError() == ERROR_FILE_NOT_FOUND)
+                return name;
+            break;
+        }
+    }
+    return {};
 }
 
 bool safeParentSyntax(const QString& path) {
@@ -558,13 +618,44 @@ bool WindowsDownloadWorkspace::create(const std::function<bool()>& continue_allo
                                                    .maximum_workspace_bytes = impl_->config.max_workspace_bytes,
                                                    .publication_directory = custom_bytes};
         }
+        QString selected_leaf;
+        if (!impl_->config.publication_name.isEmpty()) {
+            QStringList reserved;
+            if (ready_record) {
+                const auto journal = impl_->ownership->load();
+                if (journal.status == DownloadCheckpointLoadStatus::Loaded && journal.journal &&
+                    validDownloadOwnershipJournal(*journal.journal)) {
+                    for (const auto& record : journal.journal->records) {
+                        if (record.publish_parent != ready_record->publish_parent)
+                            continue;
+                        reserved.push_back(
+                            record.publication_leaf.empty()
+                                ? QStringLiteral("rc-music-%1.mp3").arg(QString::fromStdString(record.workspace_id))
+                                : QString::fromStdString(record.publication_leaf));
+                    }
+                } else if (journal.status != DownloadCheckpointLoadStatus::Missing) {
+                    impl_->fail(DownloadFailure::Publication);
+                    static_cast<void>(cleanup());
+                    return false;
+                }
+            }
+            selected_leaf =
+                availablePublicationLeaf(impl_->config.publish_parent, impl_->config.publication_name, reserved);
+            if (selected_leaf.isEmpty()) {
+                impl_->fail(DownloadFailure::Publication);
+                static_cast<void>(cleanup());
+                return false;
+            }
+        }
         for (int attempt = 0; attempt < 16; ++attempt) {
             const auto uuid = QUuid::createUuid().toString(QUuid::WithoutBraces);
             const auto path = impl_->config.staging_parent + QStringLiteral("/rc-music-job-") + uuid;
-            impl_->publication_leaf = QStringLiteral("rc-music-") + uuid + QStringLiteral(".mp3");
+            impl_->publication_leaf =
+                selected_leaf.isEmpty() ? QStringLiteral("rc-music-") + uuid + QStringLiteral(".mp3") : selected_leaf;
             impl_->planned_publication = impl_->config.publish_parent + QLatin1Char('/') + impl_->publication_leaf;
             if (ready_record) {
                 ready_record->workspace_id = uuid.toStdString();
+                ready_record->publication_leaf = selected_leaf.toStdString();
                 if (!impl_->persist(*ready_record) || impl_->cleanup_requested) {
                     impl_->fail(DownloadFailure::Publication);
                     static_cast<void>(cleanup());
@@ -713,7 +804,7 @@ QString WindowsDownloadWorkspace::validateAndPublish(const std::function<bool(co
             return {};
         }
         // The Win32 wrapper rejects relative RootDirectory here. Ancestors and
-        // directory identity stay pinned; prove the actual normalized GUID path
+        // directory identity stay pinned; prove the actual normalized path
         // from the renamed file handle before acknowledging its public path.
         const auto name = nativePath(impl_->planned_publication);
         const auto name_bytes = name.size() * sizeof(wchar_t);

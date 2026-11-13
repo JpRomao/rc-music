@@ -63,7 +63,7 @@ bool validYoutubeContext(const DownloadItem& item) {
                        }) &&
            item.url.starts_with(prefix) && std::string_view{item.url}.substr(prefix.size()) == youtube.video_id &&
            validText(youtube.title, 512) && youtube.title == item.title && optional_text(youtube.artist, 512) &&
-           optional_text(youtube.lyrics_page, 2048);
+           optional_text(youtube.lyrics_page, 2048) && optional_text(youtube.file_name, 512);
 }
 
 bool validRequest(const DownloadRequest& request) {
@@ -820,8 +820,8 @@ DownloadSubmissionResult DownloadService::submitImpl(const DownloadRequest& requ
         bytes += item.url.size() + item.title.size();
         if (item.youtube) {
             const auto& youtube = *item.youtube;
-            bytes +=
-                youtube.video_id.size() + youtube.title.size() + youtube.artist.size() + youtube.lyrics_page.size() + 1;
+            bytes += youtube.video_id.size() + youtube.title.size() + youtube.artist.size() +
+                     youtube.lyrics_page.size() + youtube.file_name.size() + 1;
         }
     }
     if (bytes > state.limits.max_retained_request_bytes - state.retained_request_bytes)

@@ -460,7 +460,7 @@ class WorkerAuditConsumer final : public WindowsDownloadTask {
         return true;
     }
     bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> capability, qint64,
-                              const qint64 epoch) override {
+                              const qint64 epoch, const QString&) override {
         observations_->observeConsumerThread();
         if (!capability || capability->expiresAtSeconds() <= epoch)
             return false;

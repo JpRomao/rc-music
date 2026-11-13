@@ -9,6 +9,7 @@ namespace music_player::m0 {
 struct YoutubeAudioItem final {
     std::string video_id{}, title{}, artist{}, lyrics_page{};
     bool fetch_lyrics{false};
+    std::string file_name{};
     bool operator==(const YoutubeAudioItem&) const = default;
 };
 

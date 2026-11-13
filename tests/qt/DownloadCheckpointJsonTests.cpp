@@ -488,6 +488,13 @@ class DownloadCheckpointJsonTests final : public QObject {
         changed.items.front().youtube->lyrics_page += "alternate/";
         QVERIFY(identity.fingerprint(changed) != fingerprint);
         changed = original;
+        changed.items.front().youtube->file_name = "Canção preferida.mp3";
+        const auto named = identity.fingerprint(changed);
+        QVERIFY(!named.empty());
+        QVERIFY(named != fingerprint);
+        changed.items.front().youtube->file_name = "Outra canção";
+        QVERIFY(identity.fingerprint(changed) != named);
+        changed = original;
         changed.items.front().youtube->fetch_lyrics = false;
         QVERIFY(identity.fingerprint(changed) != fingerprint);
         changed = original;
@@ -641,14 +648,16 @@ class DownloadCheckpointJsonTests final : public QObject {
         DownloadService restored{restored_execution, restored_import, "after", {}, &identity};
         QVERIFY(restored.restore(*decoded.checkpoint));
         QCOMPARE(restored.submitStaged(original).job_ids, accepted.job_ids);
-        for (int field = 0; field < 3; ++field) {
+        for (int field = 0; field < 4; ++field) {
             auto changed = original;
             if (field == 0)
                 changed.items.front().youtube->artist += " changed";
             else if (field == 1)
                 changed.items.front().youtube->lyrics_page += "alternate/";
-            else
+            else if (field == 2)
                 changed.items.front().youtube->fetch_lyrics = false;
+            else
+                changed.items.front().youtube->file_name = "Canção preferida.mp3";
             QCOMPARE(restored.submitStaged(changed).error, DownloadSubmissionError::InvalidRequest);
         }
         QCOMPARE(restored.submitStaged(original).job_ids, accepted.job_ids);

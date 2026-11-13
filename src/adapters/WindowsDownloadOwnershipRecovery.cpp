@@ -293,7 +293,9 @@ std::optional<Assessment> pinWorkspaceRoots(const WindowsDownloadWorkspaceConfig
     const auto uuid =
         QString::fromLatin1(record.workspace_id.data(), static_cast<qsizetype>(record.workspace_id.size()));
     const auto job_leaf = QStringLiteral("rc-music-job-") + uuid;
-    const auto final_leaf = QStringLiteral("rc-music-") + uuid + QStringLiteral(".mp3");
+    const auto final_leaf = record.publication_leaf.empty()
+                                ? QStringLiteral("rc-music-") + uuid + QStringLiteral(".mp3")
+                                : QString::fromStdString(record.publication_leaf);
     workspace.job_path = staging_path + QLatin1Char('/') + job_leaf;
     workspace.input_path = workspace.job_path + QStringLiteral("/input.bin");
     workspace.output_path = workspace.job_path + QStringLiteral("/converted.part");

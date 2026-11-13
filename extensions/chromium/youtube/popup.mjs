@@ -2,7 +2,7 @@ import { createYoutubePopupController } from './popup-controller.mjs';
 
 export function mountYoutubePopup({ document, chrome, newRequestId = () => crypto.randomUUID(), sendRequest }) {
   const nodes = {};
-  for (const id of ['refresh', 'status', 'selection', 'selected', 'video-title', 'title', 'artist', 'lyrics-page', 'fetch-lyrics', 'send']) {
+  for (const id of ['refresh', 'status', 'selection', 'selected', 'video-title', 'title', 'artist', 'file-name', 'lyrics-page', 'fetch-lyrics', 'send']) {
     nodes[id] = document.getElementById(id);
     if (!nodes[id]) throw new Error('Missing popup control');
   }
@@ -16,7 +16,7 @@ export function mountYoutubePopup({ document, chrome, newRequestId = () => crypt
     nodes['video-title'].textContent = state.candidate?.title || '';
     nodes.selected.checked = state.selected;
     nodes.selected.disabled = !editable;
-    for (const [id, value] of [['title', state.title], ['artist', state.artist], ['lyrics-page', state.lyricsPage]]) {
+    for (const [id, value] of [['title', state.title], ['artist', state.artist], ['file-name', state.fileName], ['lyrics-page', state.lyricsPage]]) {
       if (nodes[id].value !== value) nodes[id].value = value;
       nodes[id].disabled = !editable;
     }
@@ -33,11 +33,11 @@ export function mountYoutubePopup({ document, chrome, newRequestId = () => crypt
     listeners.push([node, name, callback]);
   }
   const edit = () => controller.setFields({ title: nodes.title.value, artist: nodes.artist.value,
-    lyricsPage: nodes['lyrics-page'].value, fetchLyrics: nodes['fetch-lyrics'].checked });
+    fileName: nodes['file-name'].value, lyricsPage: nodes['lyrics-page'].value, fetchLyrics: nodes['fetch-lyrics'].checked });
   listen(nodes.refresh, 'click', () => { void controller.refresh(); });
   listen(nodes.selected, 'change', () => controller.setSelected(nodes.selected.checked));
   if (document.defaultView) listen(document.defaultView, 'blur', () => controller.revokeFocus());
-  for (const id of ['title', 'artist', 'lyrics-page']) listen(nodes[id], 'input', edit);
+  for (const id of ['title', 'artist', 'file-name', 'lyrics-page']) listen(nodes[id], 'input', edit);
   listen(nodes['fetch-lyrics'], 'change', edit);
   listen(nodes.send, 'click', () => {
     if (controller.getState().canRetry) void controller.retry();

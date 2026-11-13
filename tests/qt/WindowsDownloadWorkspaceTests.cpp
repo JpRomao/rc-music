@@ -211,6 +211,51 @@ class WindowsDownloadWorkspaceTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void publishesSafeNamedMp3WithoutOverwritingEarlierOrRacingFiles() {
+        Fixture f;
+        auto config = f.config();
+        config.publication_name = QStringLiteral("Faixa 日本 - Artista.MP3");
+        const auto occupied = f.publication + QStringLiteral("/Faixa 日本 - Artista.mp3");
+        QVERIFY(writeFile(occupied, "original"));
+        OwnershipStore store;
+        WindowsDownloadWorkspace workspace(config, "named", store);
+        QVERIFY(workspace.create());
+        const auto planned = f.publication + QStringLiteral("/Faixa 日本 - Artista (2).mp3");
+        QCOMPARE(workspace.plannedPublicationPath(), planned);
+        QVERIFY(!store.attempts.empty());
+        QCOMPARE(QString::fromStdString(store.attempts.front().publication_leaf), QFileInfo(planned).fileName());
+        QVERIFY(fillAndSeal(workspace));
+        QCOMPARE(workspace.validateAndPublish([](const QString&) { return true; }), planned);
+        QCOMPARE(readFile(occupied), QByteArray("original"));
+        QCOMPARE(readFile(planned), QByteArray("synthetic-mp3"));
+        QVERIFY(workspace.cleanup());
+        QVERIFY(std::ranges::all_of(store.attempts, [&](const auto& record) {
+            return record.publication_leaf == store.attempts.front().publication_leaf;
+        }));
+
+        WindowsDownloadWorkspace racing(config);
+        QVERIFY(racing.create());
+        const auto raced = racing.plannedPublicationPath();
+        QCOMPARE(raced, f.publication + QStringLiteral("/Faixa 日本 - Artista (3).mp3"));
+        QVERIFY(fillAndSeal(racing));
+        QVERIFY(writeFile(raced, "racing file"));
+        QVERIFY(racing.validateAndPublish([](const QString&) { return true; }).isEmpty());
+        QCOMPARE(readFile(raced), QByteArray("racing file"));
+    }
+    void suggestedNameIsOnlyALeafEvenWithPathOrDeviceSyntax() {
+        Fixture f;
+        auto config = f.config();
+        config.publication_name = QStringLiteral("../a:b\\c?.mp3");
+        WindowsDownloadWorkspace invalid(config);
+        QVERIFY(invalid.create());
+        QCOMPARE(QFileInfo(invalid.plannedPublicationPath()).absolutePath(), f.publication);
+        QCOMPARE(QFileInfo(invalid.plannedPublicationPath()).fileName(), QStringLiteral("_a_b_c_.mp3"));
+
+        config.publication_name = QStringLiteral("CON.MP3");
+        WindowsDownloadWorkspace device(config);
+        QVERIFY(device.create());
+        QCOMPARE(QFileInfo(device.plannedPublicationPath()).fileName(), QStringLiteral("_CON.mp3"));
+    }
     void customPublicationCanBeRecoveredAfterChangingDefaultFolder() {
         Fixture fixture;
         QVERIFY(fixture.root.isValid());

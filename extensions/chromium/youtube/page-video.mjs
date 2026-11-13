@@ -13,7 +13,7 @@ export function collectLetrasYoutubeVideo(document = globalThis.document) {
     if (!player) return null;
     const ids = new Set(), encoder = new TextEncoder();
     const validId = /^[a-zA-Z0-9_-]{11}$/u;
-    let title = '', bytes = 0;
+    let title = '', artist = '', bytes = 0;
     const scripts = document.scripts;
     if (!scripts || scripts.length > 64) return null;
     for (const script of scripts) {
@@ -32,6 +32,7 @@ export function collectLetrasYoutubeVideo(document = globalThis.document) {
         || typeof data.Name !== 'string' || data.Name.length > 2048 || !data.Name.trim()) return null;
       if (data.YoutubeID) ids.add(data.YoutubeID);
       title ||= data.Name;
+      if (typeof data.Artist === 'string' && data.Artist.length <= 2048) artist ||= data.Artist;
     }
     const frames = player.querySelectorAll('iframe');
     if (frames.length > 8) return null;
@@ -62,7 +63,8 @@ export function collectLetrasYoutubeVideo(document = globalThis.document) {
       ids.add(id);
     }
     if (ids.size !== 1) return null;
-    return { pageUrl, videoId: [...ids][0], title: title || String(document.title ?? '').slice(0, 2048) };
+    return { pageUrl, videoId: [...ids][0], title: title || String(document.title ?? '').slice(0, 2048),
+      ...(artist ? { artist } : {}) };
   } catch {
     return null;
   }

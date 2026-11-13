@@ -80,6 +80,44 @@ class DownloadOwnershipJsonTests final : public QObject {
         QCOMPARE(DownloadOwnershipJson::decode(json(root)).status, DownloadCheckpointLoadStatus::Invalid);
     }
 
+    void namedPublicationRequiresVersionThreeAndPreservesLegacyRows() {
+        auto root = object();
+        auto rows = root.value(u"records"_s).toArray();
+        auto item = rows[0].toObject();
+        item.insert(u"publicationLeaf"_s, u"曲名 - Artista (2).mp3"_s);
+        rows[0] = item;
+        auto legacy = object().value(u"records"_s).toArray()[0].toObject();
+        legacy.insert(u"jobId"_s, u"job-2"_s);
+        legacy.insert(u"workspaceId"_s, u"12345678-1234-4234-8234-123456789abd"_s);
+        rows.append(legacy);
+        root.insert(u"records"_s, rows);
+        for (const int version : {1, 2}) {
+            root.insert(u"schemaVersion"_s, version);
+            QCOMPARE(DownloadOwnershipJson::decode(json(root)).status, DownloadCheckpointLoadStatus::Invalid);
+        }
+        root.insert(u"schemaVersion"_s, 3);
+        const auto decoded = DownloadOwnershipJson::decode(json(root));
+        QCOMPARE(decoded.status, DownloadCheckpointLoadStatus::Loaded);
+        QVERIFY(decoded.journal);
+        QCOMPARE(QJsonDocument::fromJson(DownloadOwnershipJson::encode(*decoded.journal)).object(), root);
+    }
+
+    void namedPublicationRejectsUntrustedLeaf() {
+        auto root = object();
+        root.insert(u"schemaVersion"_s, 3);
+        auto rows = root.value(u"records"_s).toArray();
+        auto item = rows[0].toObject();
+        for (const auto& name :
+             {u""_s, u"../other.mp3"_s, u"part\\other.mp3"_s, u"C:track.mp3"_s, u"NUL.mp3"_s, u"LPT¹.alias.mp3"_s,
+              u"CON .mp3"_s, u"track.mp3:stream"_s, u".track.mp3"_s, u" track.mp3"_s, u"track .mp3"_s, u"track..mp3"_s,
+              u"track.wav"_s, u"a\u202Eb.mp3"_s, QString(177, u'x') + u".mp3"_s}) {
+            item.insert(u"publicationLeaf"_s, name);
+            rows[0] = item;
+            root.insert(u"records"_s, rows);
+            QCOMPARE(DownloadOwnershipJson::decode(json(root)).status, DownloadCheckpointLoadStatus::Invalid);
+        }
+    }
+
     void emptyAndEveryStageRoundTrip() {
         auto encoded = DownloadOwnershipJson::encode({});
         QVERIFY(!encoded.isEmpty());
@@ -310,7 +348,7 @@ class DownloadOwnershipJsonTests final : public QObject {
     }
     void futureVersionIsPreservedAndLimitAllowsWhitespace() {
         auto value = object();
-        value.insert(u"schemaVersion"_s, 3);
+        value.insert(u"schemaVersion"_s, 4);
         QCOMPARE(DownloadOwnershipJson::decode(json(value)).status, DownloadCheckpointLoadStatus::FutureVersion);
         auto encoded = json(object());
         encoded.append(QByteArray(DownloadOwnershipJson::maximum_file_size - encoded.size(), ' '));

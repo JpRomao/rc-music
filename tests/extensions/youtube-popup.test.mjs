@@ -113,9 +113,10 @@ test('Letras with no loaded video explains how to refresh without sending a requ
   assert.match(h.controller.getState().message, /Play.*Atualizar vídeo/u);
   assert.equal(h.sends.length, 0);
 
-  h.snapshot = { pageUrl: h.tab.url, videoId: 'DW6toOrQkkU', title: 'Number One' };
+  h.snapshot = { pageUrl: h.tab.url, videoId: 'DW6toOrQkkU', title: 'Number One', artist: 'Bleach' };
   assert.equal(await h.controller.refresh(), true);
   assert.equal(h.controller.getState().title, 'Number One');
+  assert.equal(h.controller.getState().artist, 'Bleach');
   assert.equal(h.controller.getState().canSend, false);
   assert.equal(h.sends.length, 0);
 });
@@ -456,7 +457,7 @@ test('mounted popup renders tab text literally and sends only after a real selec
   const h = harness();
   h.window.focused = false;
   const elements = new Map();
-  for (const id of ['refresh', 'status', 'selection', 'selected', 'video-title', 'title', 'artist', 'lyrics-page', 'fetch-lyrics', 'send']) {
+  for (const id of ['refresh', 'status', 'selection', 'selected', 'video-title', 'title', 'artist', 'file-name', 'lyrics-page', 'fetch-lyrics', 'send']) {
     const listeners = new Map();
     elements.set(id, { textContent: '', value: '', checked: false, hidden: true, disabled: false,
       addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name),
@@ -488,10 +489,12 @@ test('mounted popup renders tab text literally and sends only after a real selec
   elements.get('selected').checked = true; elements.get('selected').emit('change');
   elements.get('title').value = '<img src=x> 曲名'; elements.get('title').emit('input');
   elements.get('artist').value = 'Artist'; elements.get('artist').emit('input');
+  elements.get('file-name').value = '  Minha faixa.MP3  '; elements.get('file-name').emit('input');
   assert.equal(elements.get('send').disabled, false);
   elements.get('send').emit('click'); await flush();
   assert.equal(h.sends.length, 1);
   assert.equal(h.sends[0].items[0].title, '<img src=x> 曲名');
+  assert.equal(h.sends[0].items[0].fileName, 'Minha faixa.MP3');
   assert.equal(elements.get('send').disabled, false);
   assert.equal(elements.get('send').textContent, 'Repetir o mesmo pedido');
   elements.get('send').emit('click'); await flush();

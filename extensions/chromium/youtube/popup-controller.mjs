@@ -8,7 +8,7 @@ const messages = {
   bridge_timeout: 'O componente YouTube não confirmou a tempo. Confira a fila no app antes de reenviar.',
   invalid_response: 'A resposta do componente YouTube não pôde ser validada. Confira a fila no app antes de reenviar.',
   rejected: 'O componente YouTube recusou o pedido. Verifique a integração e atualize a seleção.',
-  invalid_request: 'Confira o título, o artista e a página do Letras antes de enviar.',
+  invalid_request: 'Confira o título, o artista, o nome do arquivo e a página do Letras antes de enviar.',
   limit_exceeded: 'Os dados do pedido excedem o limite. Reduza o título, o artista ou a página informada.',
 };
 const uncertainReply = new Set(['bridge_unavailable', 'bridge_timeout', 'invalid_response']);
@@ -37,9 +37,9 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
   let disposed = false, epoch = 0;
   let binding = null, refreshWindowId = null, dispatched = false;
   let retryableRequest = null;
-  let state = { status: 'idle', candidate: null, selected: false, title: '', artist: '', lyricsPage: '',
+  let state = { status: 'idle', candidate: null, selected: false, title: '', artist: '', fileName: '', lyricsPage: '',
     fetchLyrics: true, message: 'Abra um vídeo do YouTube ou uma música no Letras e clique em Atualizar vídeo.' };
-  const fields = () => ({ title: state.title, artist: state.artist, lyricsPage: state.lyricsPage, fetchLyrics: state.fetchLyrics });
+  const fields = () => ({ title: state.title, artist: state.artist, fileName: state.fileName, lyricsPage: state.lyricsPage, fetchLyrics: state.fetchLyrics });
   const canSend = () => {
     if (disposed || state.status !== 'ready' || !state.candidate || !state.selected) return false;
     try { buildYoutubeAudioRequest(state.candidate, fields(), previewId); return true; } catch { return false; }
@@ -133,7 +133,7 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
     binding = null;
     refreshWindowId = null;
     retryableRequest = null;
-    publish({ status: 'loading', candidate: null, selected: false, title: '', artist: '', lyricsPage: '', fetchLyrics: true,
+    publish({ status: 'loading', candidate: null, selected: false, title: '', artist: '', fileName: '', lyricsPage: '', fetchLyrics: true,
       message: 'Lendo o vídeo da aba atual…' });
     if (!live(token)) return false;
     try {
@@ -146,7 +146,7 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
       if (!live(token)) return false;
       binding = context;
       refreshWindowId = null;
-      publish({ status: 'ready', candidate, title: candidate.title, lyricsPage: candidate.lyricsPage ?? '',
+      publish({ status: 'ready', candidate, title: candidate.title, artist: candidate.artist ?? '', lyricsPage: candidate.lyricsPage ?? '',
         message: 'Selecione o vídeo e confira os dados antes de baixar.' });
       return live(token);
     } catch (error) {
@@ -167,7 +167,7 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
   function setFields(changes) {
     if (disposed || (state.status !== 'ready' && !canRetry()) || !changes || typeof changes !== 'object') return;
     const edited = {};
-    for (const key of ['title', 'artist', 'lyricsPage']) if (typeof changes[key] === 'string') edited[key] = changes[key];
+    for (const key of ['title', 'artist', 'fileName', 'lyricsPage']) if (typeof changes[key] === 'string') edited[key] = changes[key];
     if (typeof changes.fetchLyrics === 'boolean') edited.fetchLyrics = changes.fetchLyrics;
     if (canRetry()) {
       if (Object.keys(edited).some(key => edited[key] !== state[key])) invalidate();

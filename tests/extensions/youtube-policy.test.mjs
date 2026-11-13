@@ -82,3 +82,17 @@ test('lyrics page is optional and otherwise bound to exact Letras HTTPS pages', 
     assert.throws(() => validateYoutubeAudioRequest({ ...request(), items: [{ ...item(), lyricsPage }] }), undefined, lyricsPage);
   }
 });
+
+test('optional output name is independent of track metadata and omitted when blank', () => {
+  const candidate = { tabId: 7, videoId: 'aB_0123-xYz' };
+  const fields = { title: 'Number One', artist: 'Bleach', lyricsPage: '', fetchLyrics: false };
+  assert.deepEqual(buildYoutubeAudioRequest(candidate, { ...fields, fileName: '  Faixa 日本.MP3  ' }, requestId).items,
+    [{ videoId: candidate.videoId, ...fields, fileName: 'Faixa 日本.MP3' }]);
+  assert.deepEqual(buildYoutubeAudioRequest(candidate, { ...fields, fileName: '  ' }, requestId).items,
+    [{ videoId: candidate.videoId, ...fields }]);
+  for (const fileName of [null, '', ' padded', 'a\nb', 'x\u202ey', '日'.repeat(171)]) {
+    const raw = request();
+    raw.items[0].fileName = fileName;
+    assert.throws(() => validateYoutubeAudioRequest(raw));
+  }
+});

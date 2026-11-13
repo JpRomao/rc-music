@@ -13,7 +13,7 @@ function documentFixture({ url = pageUrl, scripts = [descriptor], frames = [], p
     scripts: scripts.map(textContent => ({ src: '', type: '', textContent })),
     getElementById: id => { assert.equal(id, 'player'); return player ? root : null; } };
 }
-const expected = { pageUrl, videoId: 'wW9TwZdWpjw', title: '＊〜アスタリスク〜 (Asterisk)' };
+const expected = { pageUrl, videoId: 'wW9TwZdWpjw', title: '＊〜アスタリスク〜 (Asterisk)', artist: 'Bleach' };
 test('Letras public player descriptor yields only its bounded source identity and title', () => {
   assert.deepEqual(collectLetrasYoutubeVideo(documentFixture()), expected);
 });
@@ -95,7 +95,7 @@ test('Number One is recognized when Letras loads its proxy iframe with the video
   const afterPlayback = numberOneFixture(['about:blank', letrasProxy()]);
   const context = { document: afterPlayback, URL, TextEncoder };
   assert.deepEqual(JSON.parse(JSON.stringify(vm.runInNewContext(collectorSource, context))),
-    { pageUrl: numberOnePage, videoId: numberOneVideo, title: 'Number One' });
+    { pageUrl: numberOnePage, videoId: numberOneVideo, title: 'Number One', artist: 'Bleach' });
 });
 test('Letras proxy requires its exact endpoint, one consistent video ID and the current page origin', () => {
   for (const src of [

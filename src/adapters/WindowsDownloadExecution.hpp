@@ -23,7 +23,7 @@ class WindowsDownloadTask {
     // Trusted resolver handoff, never selected by a field from a page. Legacy
     // tasks refuse this capability unless they implement the scoped session.
     [[nodiscard]] virtual bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability>, qint64,
-                                                    qint64) {
+                                                    qint64, const QString& = {}) {
         return false;
     }
     virtual void cancel() = 0;

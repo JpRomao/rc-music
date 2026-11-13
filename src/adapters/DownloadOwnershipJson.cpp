@@ -86,14 +86,17 @@ std::optional<DownloadFileIdentity> identity(const QJsonValue& value) {
         result.file_id[i] = static_cast<std::uint8_t>(decoded[static_cast<qsizetype>(i)]);
     return identityValid(result) ? std::optional{result} : std::nullopt;
 }
-std::optional<DownloadOwnershipRecord> record(const QJsonValue& value, const bool custom_directories) {
+std::optional<DownloadOwnershipRecord> record(const QJsonValue& value, const int version) {
     if (!value.isObject())
         return {};
     auto object = value.toObject();
     const auto directory = object.take(QStringLiteral("publicationDirectory"));
     if (!directory.isUndefined() &&
-        (!custom_directories || !directory.isString() || !validDownloadDirectory(directory.toString().toStdString()) ||
+        (version < 2 || !directory.isString() || !validDownloadDirectory(directory.toString().toStdString()) ||
          QString::fromStdString(directory.toString().toStdString()) != directory.toString()))
+        return {};
+    const auto leaf = object.take(QStringLiteral("publicationLeaf"));
+    if (!leaf.isUndefined() && (version < 3 || !leaf.isString() || !validDownloadPublicationLeaf(leaf.toString())))
         return {};
     if (!keys(object,
               {"jobId", "workspaceId", "stage", "stagingParent", "publishParent", "jobDirectory", "input", "output",
@@ -129,7 +132,8 @@ std::optional<DownloadOwnershipRecord> record(const QJsonValue& value, const boo
                                    .output_sha256 =
                                        object.value(QStringLiteral("outputSha256")).toString().toStdString(),
                                    .cleanup_complete = object.value(QStringLiteral("cleanupComplete")).toBool(),
-                                   .publication_directory = directory.toString().toStdString()};
+                                   .publication_directory = directory.toString().toStdString(),
+                                   .publication_leaf = leaf.toString().toStdString()};
     for (auto [name, destination] : {std::pair{"jobDirectory", &result.job_directory},
                                      std::pair{"input", &result.input}, std::pair{"output", &result.output}}) {
         const auto field = object.value(QString::fromLatin1(name));
@@ -143,7 +147,42 @@ std::optional<DownloadOwnershipRecord> record(const QJsonValue& value, const boo
     return validDownloadOwnershipRecord(result) ? std::optional{result} : std::nullopt;
 }
 } // namespace
+bool validDownloadPublicationLeaf(const QStringView leaf) noexcept {
+    constexpr QLatin1StringView extension{".mp3"};
+    if (leaf.size() <= extension.size() || leaf.size() > maximum_download_publication_leaf_units ||
+        !leaf.endsWith(extension) || !leaf.isValidUtf16())
+        return false;
+    const auto base = leaf.first(leaf.size() - extension.size());
+    if (base != base.trimmed() || base.startsWith(u'.') || base.endsWith(u'.'))
+        return false;
+    if (std::ranges::any_of(base, [](const QChar c) {
+            const auto unit = c.unicode();
+            return c.category() == QChar::Other_Control || (unit >= 0x2028 && unit <= 0x202e) ||
+                   (unit >= 0x2066 && unit <= 0x2069) || QLatin1StringView{"/\\:<>\"|?*"}.contains(c);
+        }))
+        return false;
+
+    const auto dot = base.indexOf(u'.');
+    const auto device = (dot < 0 ? base : base.first(dot)).trimmed();
+    for (const auto name : {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"})
+        if (device.compare(QLatin1StringView{name}, Qt::CaseInsensitive) == 0)
+            return false;
+    if (device.size() == 4 && (device.first(3).compare(QLatin1StringView{"COM"}, Qt::CaseInsensitive) == 0 ||
+                               device.first(3).compare(QLatin1StringView{"LPT"}, Qt::CaseInsensitive) == 0)) {
+        const auto unit = device.at(3).unicode();
+        return !((unit >= u'1' && unit <= u'9') || unit == 0x00b9 || unit == 0x00b2 || unit == 0x00b3);
+    }
+    return true;
+}
+
 bool validDownloadOwnershipRecord(const DownloadOwnershipRecord& value) noexcept {
+    if (!value.publication_leaf.empty()) {
+        if (value.publication_leaf.size() > static_cast<std::size_t>(maximum_download_publication_leaf_units) * 3)
+            return false;
+        const auto leaf = QString::fromStdString(value.publication_leaf);
+        if (!validDownloadPublicationLeaf(leaf) || leaf.toStdString() != value.publication_leaf)
+            return false;
+    }
     if (value.job_id.empty() || value.job_id.size() > 64 ||
         !std::ranges::all_of(value.job_id,
                              [](char c) {
@@ -192,7 +231,7 @@ bool mayReplaceDownloadOwnershipRecord(const DownloadOwnershipRecord& previous,
         previous.staging_parent != next.staging_parent || previous.publish_parent != next.publish_parent ||
         previous.maximum_workspace_bytes != next.maximum_workspace_bytes ||
         previous.publication_directory != next.publication_directory ||
-        (previous.cleanup_complete && !next.cleanup_complete))
+        previous.publication_leaf != next.publication_leaf || (previous.cleanup_complete && !next.cleanup_complete))
         return false;
     const auto before = static_cast<std::size_t>(previous.stage), after = static_cast<std::size_t>(next.stage);
     // A failed Published acknowledgement may leave a proved final after its
@@ -216,7 +255,7 @@ QByteArray DownloadOwnershipJson::encode(const DownloadOwnershipJournal& journal
     if (!validDownloadOwnershipJournal(journal))
         return {};
     QJsonArray records;
-    bool custom_directories = false;
+    int version = 1;
     for (const auto& value : journal.records) {
         QJsonObject record{{QStringLiteral("jobId"), text(value.job_id)},
                            {QStringLiteral("workspaceId"), text(value.workspace_id)},
@@ -236,12 +275,16 @@ QByteArray DownloadOwnershipJson::encode(const DownloadOwnershipJournal& journal
             if (directory.toStdString() != value.publication_directory)
                 return {};
             record.insert(QStringLiteral("publicationDirectory"), directory);
-            custom_directories = true;
+            version = std::max(version, 2);
+        }
+        if (!value.publication_leaf.empty()) {
+            record.insert(QStringLiteral("publicationLeaf"), QString::fromStdString(value.publication_leaf));
+            version = 3;
         }
         records.append(record);
     }
     const auto encoded =
-        QJsonDocument(QJsonObject{{QStringLiteral("schemaVersion"), custom_directories ? 2 : 1},
+        QJsonDocument(QJsonObject{{QStringLiteral("schemaVersion"), version},
                                   {QStringLiteral("owner"), QStringLiteral("rc-music-download-ownership")},
                                   {QStringLiteral("records"), records}})
             .toJson(QJsonDocument::Compact);
@@ -260,7 +303,7 @@ DownloadOwnershipJsonResult DownloadOwnershipJson::decode(const QByteArrayView b
         std::trunc(version.toDouble()) != version.toDouble() ||
         object.value(QStringLiteral("owner")) != QJsonValue(QStringLiteral("rc-music-download-ownership")))
         return {};
-    if (version.toDouble() > 2)
+    if (version.toDouble() > 3)
         return {.status = DownloadCheckpointLoadStatus::FutureVersion};
     if (!keys(object, {"schemaVersion", "owner", "records"}) || !object.value(QStringLiteral("records")).isArray())
         return {};
@@ -270,7 +313,7 @@ DownloadOwnershipJsonResult DownloadOwnershipJson::decode(const QByteArrayView b
     DownloadOwnershipJournal result;
     result.records.reserve(static_cast<std::size_t>(records.size()));
     for (const auto& value : records) {
-        const auto decoded = record(value, version.toInt() == 2);
+        const auto decoded = record(value, version.toInt());
         if (!decoded)
             return {};
         result.records.push_back(*decoded);

@@ -18,14 +18,15 @@ struct WindowsDownloadWorkspaceConfig final {
     QString publish_parent{};
     std::uint64_t max_workspace_bytes{512ULL * 1024 * 1024};
     QString custom_publish_parent{};
+    QString publication_name{};
 };
 
 // Checks the existing directories, write access and physical volume without
 // creating files. Both roots are independently rechecked at job creation.
 [[nodiscard]] bool validateWindowsDownloadDirectory(const QString& staging, const QString& publication);
 
-// Worker-thread object. Parents are existing trusted configuration; page data never
-// supplies paths or filenames. Only the fresh job child receives the private DACL.
+// Worker-thread object. Parents are existing trusted configuration. A suggested name
+// is reduced to a single local filename. Only the fresh job child receives the private DACL.
 // The two sinks share one disk budget. Returned partial paths are internal inputs
 // for the trusted converter/validator and must never be imported as finished media.
 class WindowsDownloadWorkspace final {

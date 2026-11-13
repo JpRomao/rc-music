@@ -474,13 +474,18 @@ std::string QtDownloadRequestIdentity::fingerprint(const DownloadRequest& reques
         if (encodeYoutubeAudioRequest(typed).isEmpty())
             return {};
     }
+    const bool named_request =
+        youtube_request && std::any_of(request.items.begin(), request.items.end(),
+                                       [](const auto& item) { return !item.youtube->file_name.empty(); });
     QCryptographicHash hash{QCryptographicHash::Sha256};
     constexpr char prefix[] = "RCMusic.DownloadRequest.v1";
     constexpr char youtube_prefix[] = "RCMusic.DownloadRequest.youtube.v1";
-    // sizeof includes the required domain separator NUL byte. Keep the original
-    // prefix/framing byte-identical for receipts without YouTube metadata.
-    hash.addData(youtube_request ? QByteArrayView{youtube_prefix, static_cast<qsizetype>(sizeof(youtube_prefix))}
-                                 : QByteArrayView{prefix, static_cast<qsizetype>(sizeof(prefix))});
+    constexpr char named_prefix[] = "RCMusic.DownloadRequest.youtube.filename.v1";
+    // Keep the existing fingerprint bytes for receipts without an override.
+    const auto domain = named_request     ? QByteArrayView{named_prefix, sizeof(named_prefix)}
+                        : youtube_request ? QByteArrayView{youtube_prefix, sizeof(youtube_prefix)}
+                                          : QByteArrayView{prefix, sizeof(prefix)};
+    hash.addData(domain);
     appendUnsigned(hash, static_cast<std::uint64_t>(request.items.size()));
     for (const auto& item : request.items) {
         const char kind = item.kind == DownloadMediaKind::Audio ? 0 : 1;
@@ -495,6 +500,8 @@ std::string QtDownloadRequestIdentity::fingerprint(const DownloadRequest& reques
             appendText(hash, youtube.lyrics_page);
             const char fetch_lyrics = youtube.fetch_lyrics ? 1 : 0;
             hash.addData(QByteArrayView{&fetch_lyrics, 1});
+            if (named_request)
+                appendText(hash, youtube.file_name);
         }
     }
     return hash.result().toHex().toStdString();

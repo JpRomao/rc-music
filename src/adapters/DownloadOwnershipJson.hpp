@@ -4,8 +4,12 @@
 
 #include <QByteArray>
 #include <QByteArrayView>
+#include <QStringView>
 
 namespace music_player::m0 {
+
+inline constexpr qsizetype maximum_download_publication_leaf_units = 180;
+[[nodiscard]] bool validDownloadPublicationLeaf(QStringView leaf) noexcept;
 
 struct DownloadOwnershipJsonResult final {
     DownloadCheckpointLoadStatus status{DownloadCheckpointLoadStatus::Invalid};

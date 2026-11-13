@@ -8,6 +8,9 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -656,6 +659,40 @@ class WindowsDownloadOwnershipRecoveryTests final : public QObject {
         QCOMPARE(QFile::exists(f.input), kind != 2);
         QCOMPARE(QFile::exists(f.job), kind != 2);
         QVERIFY(!QFile::exists(f.output));
+    }
+
+    void recoveryUsesRecordedUnicodeLeafAndRefusesAnUnrelatedReplacement() {
+        Fixture f;
+        QVERIFY(f.ready());
+        const auto legacy_path = f.final;
+        const auto leaf = QStringLiteral("曲名 - Artista (2).mp3");
+        f.final = f.publication + QLatin1Char('/') + leaf;
+        QVERIFY(f.publish());
+        auto root = QJsonDocument::fromJson(DownloadOwnershipJson::encode({{f.record}})).object();
+        auto records = root.value(QStringLiteral("records")).toArray();
+        auto row = records[0].toObject();
+        row.insert(QStringLiteral("publicationLeaf"), leaf);
+        records[0] = row;
+        root.insert(QStringLiteral("schemaVersion"), 3);
+        root.insert(QStringLiteral("records"), records);
+        const auto decoded = DownloadOwnershipJson::decode(QJsonDocument(root).toJson(QJsonDocument::Compact));
+        QCOMPARE(decoded.status, DownloadCheckpointLoadStatus::Loaded);
+        QVERIFY(decoded.journal);
+        const auto& named = decoded.journal->records.front();
+        {
+            auto pinned = WindowsDownloadOwnershipRecovery::pinFinal(f.config(), named);
+            QCOMPARE(pinned.assessment, DownloadOwnershipAssessment::OwnedFinalCandidate);
+            QVERIFY(pinned.candidate);
+            QCOMPARE(pinned.candidate->pathForValidation(), f.final);
+            QCOMPARE(pinned.candidate->revalidate(), DownloadOwnershipAssessment::OwnedFinalCandidate);
+            QVERIFY(!QFile::exists(legacy_path));
+        }
+        const auto moved = f.final + QStringLiteral(".moved");
+        QVERIFY(MoveFileExW(native(f.final).c_str(), native(moved).c_str(), 0));
+        QVERIFY(createFile(f.final, output_content, f.security));
+        QCOMPARE(WindowsDownloadOwnershipRecovery::assess(f.config(), named), DownloadOwnershipAssessment::Conflict);
+        QCOMPARE(readFile(f.final), QByteArray(output_content));
+        QVERIFY(QFile::exists(moved));
     }
 
     void finalPinKeepsFileTemporaryAndParentIdentitiesUntilItsLastOwnerReleases() {

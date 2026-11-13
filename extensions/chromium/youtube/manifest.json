@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RC Music — YouTube",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsJmJ6eCY4G5chs/I8sD1xnEmue2mffsMr7Ya5gymCGYNpufwaECbeRMh3cAz0xjy7VB0+m25bVWrWAll9xJdPqPahx7aJ0on4T2666fSrzrhGm2Rq5RxVUFcHAmV+GZF1W+1evt1TO3EuNT8WW9+74Ysph6cbo2nm7JEwurhsZ4uBb8vtEQyg1AvE/osIL6qUEW0SRwXabhVL1H911jDHM+tocePeX4BsFfoZMRTaAO94MlWFPniUskPmSQ0o80q+9HP9h5ovZidDfEkB2Ifq+sMFKPJOhJUAHPZhD7HmTFymwfJlQg6XOIQNYUOe6Xm1Vl7gdRfjl4W9XM08yu5tQIDAQAB",
   "description": "Selecione o vídeo atual para solicitar MP3 e letra ao RC Music. Componente YouTube separado e opcional.",
   "minimum_chrome_version": "106",

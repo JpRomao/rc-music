@@ -4,8 +4,8 @@ Este pacote MV3 é separado de `../main`. A extensão principal continua sem sup
 
 ## Fluxo do cliente
 
-1. Abra uma página HTTPS de vídeo no YouTube (`watch`, `shorts`, `embed` ou `youtu.be`) e abra esta extensão.
-2. Selecione explicitamente o vídeo atual. Confira título e artista; informe a página do Letras se a conhecer. A seleção usa somente o ID do vídeo e metadados editáveis, sem capturar a URL do stream, cookies ou o player.
+1. Abra uma página de música no Letras ou uma página HTTPS de vídeo no YouTube (`watch`, `shorts`, `embed` ou `youtu.be`) e abra esta extensão.
+2. Selecione explicitamente o vídeo atual. Confira título e artista. Para escolher outro nome para o MP3, preencha **Nome do arquivo (opcional)**. O padrão é Música - Artista.mp3. Informe a página do Letras se a conhecer. A seleção usa somente o ID do vídeo e metadados editáveis, sem capturar a URL do stream, cookies ou o player.
 3. **Baixar MP3 + letra** envia um pedido de áudio ao componente YouTube. Desmarcar a letra muda a ação para **Baixar MP3**. O servidor precisa resolver o áudio, converter/validar o MP3 e tratar Letras/LRCLIB; o cliente não baixa ou converte mídia.
 4. **Pedido aceito** é somente confirmação de admissão. Progresso e conclusão pertencem ao aplicativo. Falha/desconexão/timeout não provoca retry automático: confira a fila no player antes de reenviar.
 

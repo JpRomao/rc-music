@@ -28,7 +28,7 @@ struct State final {
     std::atomic_int invalid_destination_kind{};
     std::mutex preparation_mutex;
     std::condition_variable preparation_changed;
-    QString stream;
+    QString stream, publication_name;
 };
 struct ReleaseAcks final {
     std::shared_ptr<State> state;
@@ -79,11 +79,13 @@ class Destination final : public WindowsDownloadTask {
         ++state_->direct_starts;
         return true;
     }
-    bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> cap, qint64, qint64) override {
+    bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> cap, qint64, qint64,
+                              const QString& publication_name) override {
         if (!cap)
             return false;
         id_ = cap->jobId();
         state_->stream = cap->streamUrl();
+        state_->publication_name = publication_name;
         ++state_->destination_starts;
         if (state_->block_preparation) {
             std::unique_lock lock(state_->preparation_mutex);
@@ -185,6 +187,29 @@ class YoutubeDownloadExecutionTests final : public QObject {
         QCOMPARE(state->destination_starts.load(), 1);
         stop(*value);
     }
+    void youtubePublicationNameUsesOriginalMetadataOrTheCompleteOverride() {
+        const auto state = std::make_shared<State>();
+        auto value = makeWindowsMediaAndYoutubeExecution([state] { return std::make_unique<Process>(state); },
+                                                         [state] { return std::make_unique<Destination>(state); },
+                                                         [] { return 1'999'999'000; });
+        auto youtube = watch;
+        youtube.youtube = YoutubeAudioItem{"aB0-_Cd1EF2", youtube.title, "Artista 日本", "", false};
+        QVERIFY(value->start("default_name", youtube));
+        QTRY_COMPARE(value->poll("default_name").state, DownloadExecutionState::Published);
+        QCOMPARE(state->publication_name, QStringLiteral("Synthetic song - Artista 日本"));
+
+        youtube.youtube->file_name = "Minha música.MP3";
+        QVERIFY(value->start("custom_name", youtube));
+        QTRY_COMPARE(value->poll("custom_name").state, DownloadExecutionState::Published);
+        QCOMPARE(state->publication_name, QStringLiteral("Minha música.MP3"));
+
+        youtube.youtube->file_name.clear();
+        youtube.youtube->artist.clear();
+        QVERIFY(value->start("title_only", youtube));
+        QTRY_COMPARE(value->poll("title_only").state, DownloadExecutionState::Published);
+        QCOMPARE(state->publication_name, QStringLiteral("Synthetic song"));
+    }
+
     void theMixedExecutorDoesNotInferYoutubeAuthorityFromAUrlOrIncoherentContext() {
         auto state = std::make_shared<State>();
         auto value = makeWindowsMediaAndYoutubeExecution([state] { return std::make_unique<Process>(state); },

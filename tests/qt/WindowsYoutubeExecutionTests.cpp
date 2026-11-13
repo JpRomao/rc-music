@@ -103,8 +103,8 @@ class Consumer final : public WindowsDownloadTask {
         ++observations_->direct_starts;
         return true;
     }
-    bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> capability, qint64,
-                              qint64 epoch) override {
+    bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> capability, qint64, qint64 epoch,
+                              const QString&) override {
         observations_->observeThread();
         observations_->valid_capability = observations_->valid_capability && capability &&
                                           capability->videoId() == video_id && capability->expiresAtSeconds() > epoch;

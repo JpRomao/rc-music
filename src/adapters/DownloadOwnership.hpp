@@ -33,6 +33,9 @@ struct DownloadOwnershipRecord final {
     // A locally selected directory locator. Recovery must still match both
     // pinned parent identities and prove ownership of the exact artifact.
     std::string publication_directory{};
+    // The validated final filename chosen before any workspace is created.
+    // Empty preserves the GUID-derived name of legacy records.
+    std::string publication_leaf{};
     friend bool operator==(const DownloadOwnershipRecord&, const DownloadOwnershipRecord&) = default;
 };
 

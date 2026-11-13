@@ -53,6 +53,13 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
             return false;
         }
         try {
+            if (item.youtube) {
+                const auto& youtube = *item.youtube;
+                publication_name_ =
+                    QString::fromStdString(youtube.file_name.empty() ? youtube.title : youtube.file_name);
+                if (youtube.file_name.empty() && !youtube.artist.empty())
+                    publication_name_ += QStringLiteral(" - ") + QString::fromStdString(youtube.artist);
+            }
             process_ = source_factory_(); // Passive construction on the worker.
             if (!process_) {
                 fail(DownloadFailure::Unavailable);
@@ -127,7 +134,8 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
             }
             // A refused start still needs the destination's terminal ACK.
             try {
-                destination_start_refused_ = !destination_->startResolvedYoutube(resolution.audio, now_ms, utc);
+                destination_start_refused_ =
+                    !destination_->startResolvedYoutube(resolution.audio, now_ms, utc, publication_name_);
             } catch (...) {
                 stop_error_ = DownloadFailure::Unavailable;
             }
@@ -201,6 +209,7 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
     std::unique_ptr<WindowsDownloadTask> destination_;
     DownloadExecutionUpdate update_;
     std::filesystem::path retained_;
+    QString publication_name_;
     DownloadFailure stop_error_{DownloadFailure::None};
     bool started_{}, cancelled_{}, destination_stop_requested_{}, destination_start_refused_{};
 };

@@ -86,6 +86,27 @@ class YoutubeAudioCodecTests final : public QObject {
         QCOMPARE(decodeYoutubeAudioRequest(encodeYoutubeAudioRequest(decoded.request)).request, decoded.request);
         QCOMPARE(decodeNativeDownloadRequest(payload).error, DownloadSubmissionError::InvalidRequest);
     }
+    void optionalFileNameRoundTripsWithoutChangingExistingRequests() {
+        const auto legacy = bytes(request());
+        QCOMPARE(encodeYoutubeAudioRequest(decodeYoutubeAudioRequest(legacy).request), legacy);
+
+        auto value = item();
+        value.insert("fileName", QStringLiteral("Preferida 日本.MP3"));
+        const auto named = bytes(request({value}));
+        const auto decoded = decodeYoutubeAudioRequest(named);
+        QCOMPARE(decoded.error, DownloadSubmissionError::None);
+        QCOMPARE(encodeYoutubeAudioRequest(decoded.request), named);
+
+        value.insert("fileName", "");
+        QCOMPARE(decodeYoutubeAudioRequest(bytes(request({value}))).error, DownloadSubmissionError::InvalidRequest);
+        value.insert("fileName", QString(257, QChar{u'ç'}));
+        QCOMPARE(decodeYoutubeAudioRequest(bytes(request({value}))).error, DownloadSubmissionError::LimitExceeded);
+        for (const auto& invalid :
+             {QJsonValue{QJsonValue::Null}, QJsonValue{17}, QJsonValue{" leading"}, QJsonValue{"bad\nname"}}) {
+            value.insert("fileName", invalid);
+            QCOMPARE(decodeYoutubeAudioRequest(bytes(request({value}))).error, DownloadSubmissionError::InvalidRequest);
+        }
+    }
     void artistAndLyricsPageAreOptionalValuesButNeverMissingKeys() {
         auto value = item();
         value.insert("artist", "");
