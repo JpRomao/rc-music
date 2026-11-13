@@ -467,7 +467,8 @@ class WorkerAuditConsumer final : public WindowsDownloadTask {
         id_ = capability->jobId();
         // The real session minted this capability only after the broker's
         // terminal native/pipe ACK. Reuse the same audit as the direct smoke.
-        const auto validated = audit({YoutubeResolverState::Ready, DownloadFailure::None, capability}, resolver_version_);
+        const auto validated =
+            audit({YoutubeResolverState::Ready, DownloadFailure::None, capability}, resolver_version_);
         observations_->lease_released_at_handoff = observations_->lease_released_at_handoff && observations_->expired();
         {
             std::lock_guard lock(observations_->mutex);
