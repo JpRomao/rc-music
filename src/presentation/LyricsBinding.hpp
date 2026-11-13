@@ -59,6 +59,12 @@ class LyricsBinding final : public QObject {
     Q_PROPERTY(QVariantList onlineLyricsCandidates READ onlineLyricsCandidates NOTIFY onlineLyricsCandidatesChanged)
     Q_PROPERTY(int selectedOnlineLyricsCandidate READ selectedOnlineLyricsCandidate NOTIFY changed)
     Q_PROPERTY(QString currentLyricsRevision READ currentLyricsRevision NOTIFY changed)
+    Q_PROPERTY(bool canGenerateRomaji READ canGenerateRomaji NOTIFY changed)
+    Q_PROPERTY(QString romajiSourceRevision READ romajiSourceRevision NOTIFY changed)
+    Q_PROPERTY(QString romajiStatusText READ romajiStatusText NOTIFY changed)
+    Q_PROPERTY(bool lyricsCopyProtected READ lyricsCopyProtected NOTIFY changed)
+    Q_PROPERTY(QString lyricsAttribution READ lyricsAttribution NOTIFY changed)
+    Q_PROPERTY(bool lyricFindConfigured READ lyricFindConfigured CONSTANT)
   public:
     explicit LyricsBinding(QtLyricsService& service, QObject* parent = nullptr);
     LyricsBinding(QtLyricsService& service, std::shared_ptr<LyricsVariantsStore> variants_store,
@@ -69,6 +75,8 @@ class LyricsBinding final : public QObject {
     void setPosition(qint64 confirmed_position_ms);
     // Resolves queue occurrence IDs in trusted C++. QML receives only a form token.
     void setQueueLyricsSource(std::function<QString(const QString&)> source);
+    using JapaneseRomanizer = std::function<std::optional<std::vector<std::string>>(const std::vector<std::string>&)>;
+    void setJapaneseRomanizer(JapaneseRomanizer romanizer);
     // Trusted publication/consent owner only, never a QML/browser path. Uses
     // the same serialized writer as manual edits and never changes playback.
     [[nodiscard]] bool appendAcquiredLyrics(std::string ticket, QString target, LyricsVariants drafts,
@@ -102,6 +110,12 @@ class LyricsBinding final : public QObject {
     [[nodiscard]] QVariantList onlineLyricsCandidates() const;
     [[nodiscard]] int selectedOnlineLyricsCandidate() const;
     [[nodiscard]] QString currentLyricsRevision() const;
+    [[nodiscard]] bool canGenerateRomaji() const;
+    [[nodiscard]] QString romajiSourceRevision() const;
+    [[nodiscard]] QString romajiStatusText() const;
+    [[nodiscard]] bool lyricsCopyProtected() const;
+    [[nodiscard]] QString lyricsAttribution() const;
+    [[nodiscard]] bool lyricFindConfigured() const;
     Q_INVOKABLE bool search(const QString& title, const QString& artist);
     Q_INVOKABLE bool selectVariant(const QString& id);
     Q_INVOKABLE bool selectOnlineLyricsCandidate(int index);
@@ -114,6 +128,9 @@ class LyricsBinding final : public QObject {
     Q_INVOKABLE void cancelQueuedVariant(const QString& token);
     Q_INVOKABLE bool saveCurrentLyrics(const QString& name, const QString& language, const QString& script,
                                        const QString& kind, const QString& expected_revision);
+    Q_INVOKABLE QString generateRomaji();
+    Q_INVOKABLE bool saveRomaji(const QString& token, const QString& name, const QString& content);
+    Q_INVOKABLE void discardRomaji(const QString& token);
     Q_INVOKABLE bool removeVariant(const QString& id);
     Q_INVOKABLE bool retryVariantsSave();
     // After explicit UI consent, drops an unconfirmed candidate and reloads
@@ -123,14 +140,17 @@ class LyricsBinding final : public QObject {
   signals:
     void changed();
     void onlineLyricsCandidatesChanged();
+    void romajiDraftReady(const QString& token, const QString& content);
 
   private:
     struct VariantsState;
+    struct RomajiState;
     [[nodiscard]] const LyricsDocument& displayedDocument() const;
     void updateOnlineLyricsCandidates();
     std::unique_ptr<VariantsState> variants_;
+    std::unique_ptr<RomajiState> romaji_;
     QtLyricsService& service_;
-    QString path_, title_, artist_;
+    QString path_, title_, artist_, occurrence_;
     QVariantList online_candidates_;
     qint64 position_ms_{};
     quint64 online_candidate_context_{};

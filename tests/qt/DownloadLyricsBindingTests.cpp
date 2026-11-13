@@ -84,7 +84,7 @@ class Network final : public QNetworkAccessManager {
 
   protected:
     QNetworkReply* createRequest(const Operation operation, const QNetworkRequest& request, QIODevice*) override {
-        if (operation != GetOperation)
+        if (operation != GetOperation && operation != PostOperation)
             return nullptr;
         requests.push_back(request);
         auto* reply = new Reply(request, this);
@@ -197,6 +197,26 @@ struct Harness final {
 class DownloadLyricsBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void displaysLicensedPreviewAndRefusesToSaveProviderContent() {
+        Harness h;
+        h.service.configureLyricFind({"fixture-key", {}, "BR", true});
+        QVERIFY(h.binding.offerPublished(h.request()));
+        QCOMPARE(h.network.requests.size(), 1);
+        QCOMPARE(h.network.requests.back().url().host(), QStringLiteral("api.lyricfind.com"));
+        h.network.replies.back()->finish(200, R"({"response":{"code":101},"track":{
+          "viewable":true,"copyright":"Fixture Publisher","writer":"Fixture Writer","lyrics":"Fixture verse"}})");
+        QVERIFY(h.binding.lyricsCopyProtected());
+        QVERIFY(h.binding.lyricsAttribution().contains("Fixture Writer"));
+        QCOMPARE(h.binding.candidates().size(), 1);
+        QVERIFY(!h.binding.canSave());
+        QVERIFY(!h.binding.saveCandidate(0, "Original", {}, {}, "original"));
+        QCOMPARE(h.store->saves.load(), 0);
+        QVERIFY(h.binding.dismiss());
+        QVERIFY(!h.binding.lyricsCopyProtected());
+        QVERIFY(h.binding.lyricsAttribution().isEmpty());
+        QVERIFY(h.binding.candidates().isEmpty());
+    }
+
     void constructionIsPassiveAndPublicationAuthorityIsNotExposedToQml() {
         Harness h;
         QVERIFY(h.directory.isValid());

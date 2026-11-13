@@ -2,6 +2,7 @@
 
 #include "adapters/NativeDownloadPeerCheck.hpp"
 #include "adapters/NativeHostLaunch.hpp"
+#include "adapters/QtLyricsService.hpp"
 #include "m0/adapters/SingleWorkerDownloadCheckpointIo.hpp"
 #include "presentation/DownloadApplicationBinding.hpp"
 
@@ -40,6 +41,7 @@ struct WindowsPlayerDownloadsOptions final {
     // Trusted opt-in for a qualified embedded media composition.
     bool embedded_browser_ingress{false};
     bool configurable_download_directory{false};
+    LyricFindOptions lyricfind{};
 };
 
 // Optional Windows application-thread composition, never a QML-created object.

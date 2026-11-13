@@ -6,6 +6,10 @@
 
 **Decisão de escopo:** pedido do mantenedor para letras originais acima da barra de progresso, com suporte local e busca online opcional. O uso de LRCLIB e dos componentes Qt abaixo foi adotado na implementação; isso não aprova cobertura universal, licenças das letras ou distribuição pública.
 
+## Evolução da consulta
+
+O mantenedor aprovou o LyricFind como fonte opcional ao lado do LRCLIB. A integração usa o contrato Web Service e chaves de parceiro, em HTTPS para o endpoint fixo. A ordem das fontes é configurável. Um resultado LyricFind é somente para exibição, com créditos, atribuição e proteção de cópia. O catálogo local aceita persistência e geração de romaji para fontes que permitem esses usos. [Configuração e limites](../../lyrics-variants.md#fonte-opcional-lyricfind)
+
 ## Contexto
 
 O mantenedor pediu letras da música, sem tradução, posicionadas como legendas acima da barra de progresso. Ao escolher entre uma primeira versão apenas local e a inclusão da busca online, confirmou a segunda opção. O pedido acrescenta `FR-054` aos [requisitos](../../product/requirements.md#27-letras-das-músicas) e um refinamento de volume a `FR-011`.

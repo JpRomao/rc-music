@@ -1,0 +1,5 @@
+# Wheels published to PyPI. The wrapt pin selects the pure-Python wheel.
+pykakasi==2.3.0 --hash=sha256:26d21b090048ff45c6a4d8e962426b7951767216008ec30358e8a9d74af77f29
+jaconv==0.5.0 --hash=sha256:2914114fe761ca49fc7089e25e6ad4a400c26f262ffce84e13b176916b71610a
+Deprecated==3.0.1 --hash=sha256:eda314c115e8bc0fe52b90a6869e19240ac3cedb7449adfdba5981cf9ef693e1
+wrapt==2.5.2 --hash=sha256:61eb54e9540ea522c2c4752a57549a83d3c67e6704ed708403d28e067aaf90f0

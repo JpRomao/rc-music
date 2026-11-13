@@ -64,11 +64,13 @@ class Network final : public QNetworkAccessManager {
   public:
     QList<QPointer<Reply>> replies;
     QList<QNetworkRequest> requests;
+    QList<Operation> operations;
+    QList<QByteArray> bodies;
 
   protected:
-    QNetworkReply* createRequest(Operation operation, const QNetworkRequest& request, QIODevice*) override {
-        if (operation != GetOperation)
-            return nullptr;
+    QNetworkReply* createRequest(Operation operation, const QNetworkRequest& request, QIODevice* outgoing) override {
+        operations.push_back(operation);
+        bodies.push_back(outgoing ? outgoing->readAll() : QByteArray{});
         requests.push_back(request);
         auto* reply = new Reply(request, this);
         replies.push_back(reply);
@@ -92,6 +94,83 @@ void awaitLocal(Service& service) { QTRY_VERIFY_WITH_TIMEOUT(service.status() !=
 class QtLyricsServiceTests final : public QObject {
     Q_OBJECT
   private slots:
+    void configuredLyricFindFollowsAnLrclibMissAndReturnsLicensedSyncedLyrics() {
+        Network network;
+        Service service(&network);
+        service.configureLyricFind({"test-display", "test-lrc", "BR"});
+        service.setLookupTrack("C:/music/private.mp3", "Song: & Title", "Artist, 日本", "Album", 123'000);
+        QVERIFY(service.searchOnline());
+        QCOMPARE(network.requests.size(), 1);
+        QCOMPARE(network.requests.back().url().host(), QStringLiteral("lrclib.net"));
+        network.replies.back()->finish(404, "{}");
+        QCOMPARE(network.requests.size(), 2);
+        QCOMPARE(network.requests.back().url(), QUrl("https://api.lyricfind.com/lyric.do"));
+        QCOMPARE(network.operations.back(), QNetworkAccessManager::PostOperation);
+        QCOMPARE(network.requests.back().header(QNetworkRequest::ContentTypeHeader).toString(),
+                 QStringLiteral("application/x-www-form-urlencoded"));
+        const QUrlQuery body(QString::fromUtf8(network.bodies.back()));
+        QCOMPARE(body.queryItemValue("apikey", QUrl::FullyDecoded), QStringLiteral("test-display"));
+        QCOMPARE(body.queryItemValue("lrckey", QUrl::FullyDecoded), QStringLiteral("test-lrc"));
+        QCOMPARE(body.queryItemValue("format"), QStringLiteral("lrc"));
+        QCOMPARE(body.queryItemValue("territory"), QStringLiteral("BR"));
+        QCOMPARE(body.queryItemValue("trackid", QUrl::FullyDecoded),
+                 QStringLiteral("artistname:Artist; 日本,trackname:Song; & Title,albumname:Album"));
+        QVERIFY(!network.bodies.back().contains("private.mp3"));
+        network.replies.back()->finish(200, R"({"response":{"code":101},"track":{
+          "viewable":true,"copyright":"Fixture Publisher","writer":"Fixture Writer","lyrics":"[00:20.00]Fixture verse",
+          "lrc":[{"milliseconds":"1250","lrc_timestamp":"[00:01.25]","line":"[00:20.00]Fixture verse"}]}})");
+        QCOMPARE(service.status(), Service::Status::Ready);
+        QCOMPARE(service.onlineProvider(), Service::OnlineProvider::LyricFind);
+        QVERIFY(service.onlineAttribution().contains("Fixture Publisher"));
+        QVERIFY(service.onlineAttribution().contains("Fixture Writer"));
+        QCOMPARE(service.document().lines.size(), std::size_t{1});
+        QCOMPARE(service.document().lines.front().timestamp_ms, std::int64_t{1250});
+        QCOMPARE(service.document().lines.front().text, std::string{"[00:20.00]Fixture verse"});
+        service.cancel();
+        QVERIFY(service.onlineAttribution().isEmpty());
+        QVERIFY(service.onlineDocuments().empty());
+    }
+
+    void lyricFindLicenseDenialDoesNotExposeContentsOrStartFallback() {
+        Network network;
+        Service service(&network);
+        service.configureLyricFind({"test-display", {}, "BR", true});
+        service.setLookupTrack("C:/music/private.mp3", "Title", "Artist", {}, 0);
+        QVERIFY(service.searchOnline());
+        QCOMPARE(network.requests.back().url().host(), QStringLiteral("api.lyricfind.com"));
+        network.replies.back()->finish(200, R"({"response":{"code":204},"track":{
+            "viewable":true,"lyrics":"Protected verse","copyright":"Publisher","writer":"Writer"}})");
+        QCOMPARE(service.status(), Service::Status::Error);
+        QVERIFY(service.document().plain_text.empty());
+        QVERIFY(service.onlineAttribution().isEmpty());
+        QCOMPARE(network.requests.size(), 1);
+    }
+
+    void lyricFindReadsPrivateConfigurationAndDefersToLrclibOnMissingLyrics() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        QVERIFY(!Service::loadLyricFindOptions(temp.path()).display_key.size());
+        const auto config = temp.filePath("lyricfind.json");
+        QVERIFY(save(config, R"({"displayKey":"test-display","territory":"BR","preferLyricFind":true})"));
+        Network network;
+        Service service(&network);
+        service.configureLyricFind(Service::loadLyricFindOptions(temp.path()));
+        QVERIFY(service.lyricFindConfigured());
+        service.setLookupTrack("C:/music/private.mp3", "Title", "Artist", {}, 0);
+        QVERIFY(service.searchOnline());
+        QCOMPARE(network.requests.back().url().host(), QStringLiteral("api.lyricfind.com"));
+        QVERIFY(!network.bodies.back().contains("lrckey"));
+        network.replies.back()->finish(200, R"({"response":{"code":203}})");
+        QCOMPARE(network.requests.size(), 2);
+        QCOMPARE(network.requests.back().url().host(), QStringLiteral("lrclib.net"));
+        network.replies.back()->finish(200, payload({}, "LRCLIB fixture"));
+        QCOMPARE(service.status(), Service::Status::Ready);
+        QCOMPARE(service.onlineProvider(), Service::OnlineProvider::LRCLIB);
+        QVERIFY(service.onlineAttribution().isEmpty());
+        QVERIFY(save(config, R"({"displayKey":"test-display","displayKey":"duplicate","territory":"BR"})"));
+        QVERIFY(Service::loadLyricFindOptions(temp.path()).display_key.isEmpty());
+    }
+
     void lookupContextNeverStartsAReadOfTheSiblingLyrics() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());

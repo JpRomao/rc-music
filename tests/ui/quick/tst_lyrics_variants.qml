@@ -36,6 +36,10 @@ TestCase {
         property bool variantsCanRetrySave: false
         property bool variantsHasPendingChange: false
         property bool canSaveCurrentLyrics: true
+        property bool canGenerateRomaji: false
+        property string romajiSourceRevision: ""
+        property string romajiStatusText: ""
+        signal romajiDraftReady(string token, string content)
         property bool queueVariantAvailable: true
         property string queuedToken: ""
         property string queuedVariantStatusText: ""
@@ -91,6 +95,16 @@ TestCase {
         function saveCurrentLyrics(name, language, script, kind, revision) {
             return record("saveCurrent", [name, language, script, kind, selectedOnlineLyricsCandidate, revision]);
         }
+        function generateRomaji() {
+            record("generateRomaji", []);
+            return "romaji-token";
+        }
+        function saveRomaji(token, name, content) {
+            return record("saveRomaji", [token, name, content]);
+        }
+        function discardRomaji(token) {
+            record("discardRomaji", [token]);
+        }
         function removeVariant(id) {
             return record("remove", [id]);
         }
@@ -127,6 +141,9 @@ TestCase {
         backend.queuedToken = "";
         backend.queuedVariantStatusText = "";
         backend.canSaveCurrentLyrics = true;
+        backend.canGenerateRomaji = false;
+        backend.romajiSourceRevision = "";
+        backend.romajiStatusText = "";
         backend.selectedVariantId = "";
         backend.variants = [
             {
@@ -423,6 +440,30 @@ TestCase {
         const saved = lastCall("saveCurrent");
         compare(saved.args[0], "Original guardada");
         compare(saved.args[5], "local-1");
+    }
+    function test_reviewsGeneratedRomajiBeforeSavingIt() {
+        backend.canGenerateRomaji = true;
+        backend.romajiSourceRevision = "jp-1";
+        const playing = presenter.currentOccurrenceId;
+        openPanel();
+        const button = findChild(shell, "lyrics-variant-generate-romaji");
+        verify(button && button.enabled);
+        mouseClick(button);
+        compare(lastCall("generateRomaji").args.length, 0);
+        const form = findChild(shell, "lyrics-variant-form");
+        compare(form.visible, false);
+        backend.romajiDraftReady("romaji-token", "[00:01.000]Nihongo");
+        tryCompare(form, "visible", true);
+        const content = findChild(shell, "lyrics-variant-content-input");
+        compare(content.text, "[00:01.000]Nihongo");
+        compare(content.readOnly, false);
+        compare(findChild(shell, "lyrics-variant-source-input").text, "pykakasi");
+        verify(findChild(shell, "lyrics-variant-generated-input").checked);
+        content.text = "[00:01.000]Nihon-go";
+        mouseClick(findChild(shell, "lyrics-variant-submit"));
+        compare(lastCall("saveRomaji").args.join("|"), "romaji-token|Romaji|[00:01.000]Nihon-go");
+        compare(presenter.currentOccurrenceId, playing);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
     }
 
     function test_onlineCandidatesCanBeChosenAndSavedWithoutChangingPlayback() {

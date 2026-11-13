@@ -11,6 +11,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QThread>
 #include <QTimer>
 
 #include <algorithm>
@@ -714,6 +715,108 @@ class LyricsBindingTests final : public QObject {
         QFile original(temp.filePath("song.lrc"));
         QVERIFY(original.open(QIODevice::ReadOnly));
         QCOMPARE(original.readAll(), QByteArray{"[00:01.000]Local one\n[00:04.000]Local two\n[00:06.000]\n"});
+    }
+    void generatedRomajiIsEditableAndPreservesOriginalCuesAndProvenance() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto lrc = temp.filePath("song.lrc");
+        const auto original = QStringLiteral("[00:01.000]にほんご\n[00:01.000]テスト\n[00:04.000]\n").toUtf8();
+        save(lrc, original);
+        auto store = std::make_shared<MemoryVariantsStore>();
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        const auto owner_thread = QThread::currentThread();
+        std::atomic_bool converted_off_thread{};
+        binding.setJapaneseRomanizer(
+            [&](const std::vector<std::string>& lines) -> std::optional<std::vector<std::string>> {
+                if (lines != std::vector<std::string>{"にほんご", "テスト"})
+                    return std::nullopt;
+                converted_off_thread = QThread::currentThread() != owner_thread;
+                return std::vector<std::string>{"nihongo", "tesuto"};
+            });
+        const auto path = temp.filePath("song.mp3");
+        binding.setTrack(path, "Song", "Artist", {}, 9000);
+        QTRY_VERIFY(binding.canGenerateRomaji());
+        QSignalSpy draft(&binding, &LyricsBinding::romajiDraftReady);
+        const auto token = binding.generateRomaji();
+        QVERIFY(!token.isEmpty());
+        QTRY_COMPARE(draft.count(), 1);
+        QVERIFY(converted_off_thread);
+        QCOMPARE(draft.front()[0].toString(), token);
+        QCOMPARE(store->save_calls.load(), 0);
+        const auto generated = draft.front()[1].toString();
+        QCOMPARE(generated, "[00:01.000]nihongo\n[00:01.000]tesuto\n[00:04.000]\n");
+        QVERIFY(!binding.saveRomaji(token, "Romaji", "[00:02.000]nihongo\n[00:04.000]\n"));
+        auto edited = generated;
+        edited.replace("nihongo", "Nihongo");
+        QVERIFY(binding.saveRomaji(token, "Edited Romaji", edited));
+        QTRY_COMPARE(binding.variants().size(), 1);
+        QVERIFY(!binding.saveRomaji(token, "Duplicate", edited));
+        const auto saved = store->read(nativePath(path)).front();
+        QCOMPARE(saved.kind, LyricsVariantKind::Romanized);
+        QCOMPARE(saved.language, "ja");
+        QCOMPARE(saved.script, "Latn");
+        QCOMPARE(saved.source, "pykakasi");
+        QVERIFY(saved.generated);
+        QCOMPARE(saved.content, edited.toStdString());
+        QFile source(lrc);
+        QVERIFY(source.open(QIODevice::ReadOnly));
+        QCOMPARE(source.readAll(), original);
+    }
+    void generatedRomajiUsesTheCurrentJapaneseVariantAndDropsStaleWork() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        auto store = std::make_shared<MemoryVariantsStore>();
+        QtLyricsService service;
+        QSemaphore entered, release;
+        LyricsBinding binding(service, store);
+        binding.setJapaneseRomanizer(
+            [&](const std::vector<std::string>& lines) -> std::optional<std::vector<std::string>> {
+                entered.release();
+                if (!release.tryAcquire(1, 3000) || lines != std::vector<std::string>{"日本", "音楽"})
+                    return std::nullopt;
+                return std::vector<std::string>{"nihon", "ongaku"};
+            });
+        const auto path = temp.filePath("song.mp3");
+        binding.setTrack(path, "Song", "Artist", {}, 9000);
+        QTRY_VERIFY(binding.variantsReady());
+        QVERIFY(binding.addVariant("Original", "ja", "Jpan", "Manual", "original", "日本\n\n音楽", false));
+        QTRY_VERIFY(binding.canGenerateRomaji());
+        QSignalSpy draft(&binding, &LyricsBinding::romajiDraftReady);
+        const auto stale = binding.generateRomaji();
+        QVERIFY(!stale.isEmpty());
+        QTRY_COMPARE(entered.available(), 1);
+        QVERIFY(binding.selectVariant({}));
+        release.release();
+        const auto id = binding.variants().front().toMap().value("id").toString();
+        QVERIFY(binding.selectVariant(id));
+        QTRY_VERIFY(binding.canGenerateRomaji());
+        QCOMPARE(draft.count(), 0);
+        QVERIFY(!binding.saveRomaji(stale, "Stale", "nihon"));
+        const auto current = binding.generateRomaji();
+        QVERIFY(!current.isEmpty());
+        release.release();
+        QTRY_COMPARE(draft.count(), 1);
+        QCOMPARE(draft.front()[1].toString(), "nihon\n\nongaku");
+        QCOMPARE(store->save_calls.load(), 1);
+    }
+    void romajiReportsAnUnavailableComponentOnlyForJapaneseLyrics() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        save(temp.filePath("japanese.lrc"), QStringLiteral("ひらがな").toUtf8());
+        save(temp.filePath("chinese.lrc"), QStringLiteral("中文").toUtf8());
+        auto store = std::make_shared<MemoryVariantsStore>();
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        binding.setTrack(temp.filePath("japanese.mp3"), "Japanese", {}, {}, 9000);
+        QTRY_VERIFY(binding.canSaveCurrentLyrics());
+        QVERIFY(!binding.canGenerateRomaji());
+        QVERIFY(!binding.romajiStatusText().isEmpty());
+        QVERIFY(binding.generateRomaji().isEmpty());
+        binding.setTrack(temp.filePath("chinese.mp3"), "Chinese", {}, {}, 9000);
+        QTRY_VERIFY(binding.canSaveCurrentLyrics());
+        QVERIFY(binding.romajiSourceRevision().isEmpty());
+        QVERIFY(binding.romajiStatusText().isEmpty());
     }
     void anOnlineResultIsPersistedOnlyByAnExplicitSaveWithItsSourceAndCues() {
         QTemporaryDir temp;

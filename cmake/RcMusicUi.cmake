@@ -8,6 +8,7 @@ add_library(rc_music_lyrics STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DownloadLyricsLookup.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonLyricsVariantsStore.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonLyricsVariantsStore.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtLyricsRomanizer.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtLyricsService.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtLyricsService.cpp")
 target_include_directories(rc_music_lyrics PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")

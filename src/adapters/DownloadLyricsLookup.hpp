@@ -34,6 +34,8 @@ class DownloadLyricsLookup final : public QObject {
         QString final_mp3;
         std::vector<LyricsDocument> candidates;
         QString source{QStringLiteral("LRCLIB")};
+        QString attribution{};
+        bool copy_protected{};
     };
     explicit DownloadLyricsLookup(QtLyricsService& exclusive_service, QObject* parent = nullptr);
     ~DownloadLyricsLookup() override;
@@ -49,6 +51,7 @@ class DownloadLyricsLookup final : public QObject {
     [[nodiscard]] bool drained() const;
     [[nodiscard]] State state() const;
     [[nodiscard]] QString message() const;
+    [[nodiscard]] QString providerNotice() const;
     [[nodiscard]] const std::optional<Result>& result() const;
 
   signals:

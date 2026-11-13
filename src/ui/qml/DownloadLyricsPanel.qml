@@ -28,7 +28,7 @@ Dialog {
     readonly property bool discardTargetCurrent: actionsCurrent && discardTarget !== null && discardTarget.owner === requestOwner && discardTarget.requestToken === previewToken && discardTarget.token === pendingDiscardToken
     readonly property bool pasteAvailable: requestCurrent && requestOwner.canSavePasted === true
     readonly property bool hasLyricsPage: requestCurrent && requestOwner.hasLyricsPage === true
-    readonly property bool versionFieldsEditable: actionsCurrent && (pasteMode ? pasteAvailable : !requestOwner.busy)
+    readonly property bool versionFieldsEditable: actionsCurrent && (pasteMode ? pasteAvailable : !protectedLyrics && !requestOwner.busy)
     readonly property var versionKinds: ["original", "romanized", "translation"]
     readonly property string versionKind: versionKinds[kindField.currentIndex] ?? ""
     readonly property bool draftReady: nameField.text.trim().length > 0 && versionKind.length > 0 && pastedField.text.trim().length > 0
@@ -36,7 +36,8 @@ Dialog {
     readonly property bool metadataCurrent: requestCurrent && titleField.text.trim() === queryTitle && artistField.text.trim() === queryArtist && requestOwner.title.trim() === queryTitle && requestOwner.artist.trim() === queryArtist
     readonly property var candidateRows: requestCurrent ? requestOwner.candidates : []
     readonly property var selectedCandidate: candidateField.currentIndex >= 0 && candidateField.currentIndex < candidateRows.length ? candidateRows[candidateField.currentIndex] : null
-    readonly property Item afterPageLink: pasteMode ? pastedField : candidateField.enabled ? candidateField : previewField
+    readonly property bool protectedLyrics: requestCurrent && requestOwner.lyricsCopyProtected === true
+    readonly property Item afterPageLink: pasteMode ? pastedField : candidateField.enabled ? candidateField : protectedLyrics ? providerLink : previewField
 
     objectName: "download-lyrics-panel"
     parent: Overlay.overlay
@@ -414,7 +415,7 @@ Dialog {
                     visible: !root.pasteMode
                     enabled: visible && root.actionsCurrent && count > 0
                     Accessible.name: qsTr("Versão encontrada")
-                    KeyNavigation.tab: previewField
+                    KeyNavigation.tab: root.protectedLyrics ? providerLink : previewField
                     onCountChanged: {
                         if (count > 0 && currentIndex < 0)
                             currentIndex = 0;
@@ -423,11 +424,47 @@ Dialog {
                 LyricsText {
                     id: previewField
                     objectName: "download-lyrics-preview"
-                    visible: !root.pasteMode
-                    text: root.selectedCandidate !== null ? root.selectedCandidate.text : ""
+                    visible: !root.pasteMode && !root.protectedLyrics
+                    text: !root.protectedLyrics && root.selectedCandidate !== null ? root.selectedCandidate.text : ""
                     readOnly: true
                     Accessible.name: qsTr("Prévia da letra")
                     KeyNavigation.tab: nameField
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: !root.pasteMode && root.protectedLyrics
+                    Text {
+                        objectName: "download-lyrics-provider-credit"
+                        Layout.fillWidth: true
+                        text: root.protectedLyrics ? root.requestOwner.lyricsAttribution : ""
+                        textFormat: Text.PlainText
+                        wrapMode: Text.Wrap
+                        color: root.contract.textSecondaryColor
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: text
+                    }
+                    AccessibleTransportButton {
+                        id: providerLink
+                        objectName: "download-lyrics-provider-link"
+                        contract: root.contract
+                        text: qsTr("LyricFind")
+                        KeyNavigation.tab: dismissButton
+                        onClicked: {
+                            if (root.actionsCurrent && root.protectedLyrics)
+                                Qt.openUrlExternally("https://www.lyricfind.com/");
+                        }
+                    }
+                }
+                Text {
+                    objectName: "download-lyrics-protected-preview"
+                    Layout.fillWidth: true
+                    visible: !root.pasteMode && root.protectedLyrics
+                    text: visible && root.selectedCandidate !== null ? root.selectedCandidate.text : ""
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    color: root.contract.textPrimaryColor
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: text
                 }
                 FieldLabel {
                     text: qsTr("Letra em texto ou LRC")
@@ -457,16 +494,19 @@ Dialog {
                     KeyNavigation.tab: nameField
                 }
                 FieldLabel {
+                    visible: root.pasteMode || !root.protectedLyrics
                     text: qsTr("Nome da versão")
                 }
                 FormInput {
                     id: nameField
+                    visible: root.pasteMode || !root.protectedLyrics
                     objectName: "download-lyrics-version-name"
                     Accessible.name: qsTr("Nome da versão")
                     placeholderText: qsTr("Ex.: Japonês original ou Romaji")
                     KeyNavigation.tab: languageField
                 }
                 GridLayout {
+                    visible: root.pasteMode || !root.protectedLyrics
                     Layout.fillWidth: true
                     columns: 2
                     columnSpacing: root.contract.spacingUnit * 2
@@ -494,10 +534,12 @@ Dialog {
                     }
                 }
                 FieldLabel {
+                    visible: root.pasteMode || !root.protectedLyrics
                     text: qsTr("Forma da versão")
                 }
                 FormChoice {
                     id: kindField
+                    visible: root.pasteMode || !root.protectedLyrics
                     objectName: "download-lyrics-kind"
                     model: [qsTr("Original"), qsTr("Romanizada"), qsTr("Tradução")]
                     currentIndex: -1

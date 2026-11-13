@@ -12,6 +12,12 @@
 class QNetworkAccessManager;
 
 namespace music_player::m0 {
+struct LyricFindOptions final {
+    QByteArray display_key, lrc_key;
+    QString territory;
+    bool preferred{};
+};
+
 // Local sibling lyrics are read off the UI thread. Online requests are made
 // only by searchOnline and contain metadata, never audio or a local path.
 class QtLyricsService final : public QObject {
@@ -19,6 +25,7 @@ class QtLyricsService final : public QObject {
   public:
     enum class Status { Idle, LoadingLocal, Searching, Ready, NotFound, Instrumental, Error };
     enum class Source { None, Local, Online };
+    enum class OnlineProvider { LRCLIB, LyricFind };
     static constexpr qint64 maximum_local_bytes = 256 * 1024;
     static constexpr qint64 maximum_response_bytes = 1024 * 1024;
     explicit QtLyricsService(
@@ -26,8 +33,13 @@ class QtLyricsService final : public QObject {
         QByteArray client_identifier = QByteArray("RCMusic/0.1 (+https://github.com/JpRomao/rc-music)"),
         int request_timeout_ms = 10'000);
     ~QtLyricsService() override;
+    static LyricFindOptions loadLyricFindOptions(const QString& private_config_root);
+    void configureLyricFind(LyricFindOptions options);
+    [[nodiscard]] bool lyricFindConfigured() const noexcept;
+    [[nodiscard]] OnlineProvider onlineProvider() const noexcept;
+    [[nodiscard]] QString onlineAttribution() const;
     // Same-path metadata updates refresh search defaults. A different queue
-    // occurrence cancels an in-flight search while keeping the loaded lyrics.
+    // occurrence cancels an in-flight search and revokes licensed lyrics.
     void setTrack(QString path, QString title, QString artist, QString album, qint64 duration_ms,
                   const QString& occurrence_id = {});
     // Metadata-only context for a separately owned acquisition lookup. Revokes

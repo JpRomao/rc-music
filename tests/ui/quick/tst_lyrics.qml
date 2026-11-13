@@ -23,6 +23,9 @@ TestCase {
         property bool hasSyncedLyrics: true
         property bool busy: false
         property bool canSearch: true
+        property bool lyricsCopyProtected: false
+        property bool lyricFindConfigured: false
+        property string lyricsAttribution: ""
         property int requests: 0
         property string submittedTitle: ""
         property string submittedArtist: ""
@@ -44,6 +47,11 @@ TestCase {
     function init() {
         driver.resetLocalScenario();
         lyrics.requests = 0;
+        lyrics.hasSyncedLyrics = true;
+        lyrics.plainText = "";
+        lyrics.lyricsCopyProtected = false;
+        lyrics.lyricFindConfigured = false;
+        lyrics.lyricsAttribution = "";
         shell = createTemporaryObject(shellComponent, null);
         verify(shell);
         shell.requestActivate();
@@ -90,6 +98,25 @@ TestCase {
         compare(lyrics.requests, 1);
         compare(lyrics.submittedTitle, "Corrected title");
         compare(lyrics.submittedArtist, "Corrected artist");
+    }
+    function test_licensedLyricsUsePlainDisplayAndVisibleCredits() {
+        lyrics.hasSyncedLyrics = false;
+        lyrics.plainText = "<b>Licensed lyric</b>";
+        lyrics.lyricsAttribution = "<b>Writer</b> · Publisher";
+        lyrics.lyricsCopyProtected = true;
+        lyrics.lyricFindConfigured = true;
+        const selectable = findChild(shell, "lyrics-plain-text");
+        const protectedText = findChild(shell, "lyrics-protected-plain-text");
+        const credit = findChild(shell, "lyrics-provider-credit");
+        verify(protectedText.visible && credit.visible);
+        verify(!selectable.visible);
+        compare(selectable.text, "");
+        compare(protectedText.text, "<b>Licensed lyric</b>");
+        compare(protectedText.textFormat, Text.PlainText);
+        compare(credit.text, "<b>Writer</b> · Publisher");
+        compare(credit.textFormat, Text.PlainText);
+        mouseClick(findChild(shell, "lyrics-search"));
+        verify(findChild(shell, "lyrics-query-notice").text.includes("LyricFind"));
     }
     function test_lyricsKeepPlayingContentInsideTheMinimumWindow() {
         shell.width = 720;

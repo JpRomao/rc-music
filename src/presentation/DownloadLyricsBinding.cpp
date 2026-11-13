@@ -55,9 +55,6 @@ PublishedLyricsRequest owned(const PublishedLyricsRequest& request) {
             owned(request.artist), owned(request.lyrics_page), owned(request.album),
             request.duration_ms};
 }
-QString providerNotice() {
-    return DownloadLyricsBinding::tr("Consulta automática do Letras indisponível. Busca no LRCLIB.");
-}
 QString newToken() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 bool pending(const AcquiredLyricsSaveState state) {
     return state == AcquiredLyricsSaveState::Loading || state == AcquiredLyricsSaveState::Saving ||
@@ -111,7 +108,10 @@ struct DownloadLyricsBinding::Impl final {
     bool canSavePasted() const {
         return allowed() && request && !ownPending() && !writer.variantsBusy() && !writer.variantsHasPendingChange();
     }
-    bool canSave() const { return canSavePasted() && currentPreview(); }
+    bool canSave() const {
+        const auto* snapshot = currentPreview();
+        return canSavePasted() && snapshot && !snapshot->copy_protected;
+    }
     bool canRetry() const {
         return allowed() && request && !ownPending() && lookup.state() != DownloadLyricsLookup::State::Searching;
     }
@@ -206,11 +206,11 @@ struct DownloadLyricsBinding::Impl final {
         if (!notice.isEmpty())
             action = notice;
         if (!action.isEmpty())
-            return providerNotice() + QStringLiteral(" ") + action;
+            return lookup.providerNotice() + QStringLiteral(" ") + action;
         if (!request)
             return {};
         const auto lookup_message = lookup.message();
-        return lookup_message.isEmpty() ? providerNotice() : lookup_message;
+        return lookup_message.isEmpty() ? lookup.providerNotice() : lookup_message;
     }
 };
 
@@ -262,6 +262,14 @@ bool DownloadLyricsBinding::hasLyricsPage() const {
 }
 QString DownloadLyricsBinding::requestToken() const { return impl_->token; }
 QString DownloadLyricsBinding::statusText() const { return impl_->statusText(); }
+QString DownloadLyricsBinding::lyricsAttribution() const {
+    const auto* snapshot = impl_->currentPreview();
+    return snapshot && snapshot->copy_protected ? snapshot->attribution : QString{};
+}
+bool DownloadLyricsBinding::lyricsCopyProtected() const {
+    const auto* snapshot = impl_->currentPreview();
+    return snapshot && snapshot->copy_protected;
+}
 QVariantList DownloadLyricsBinding::candidates() const {
     QVariantList result;
     const auto* snapshot = impl_->currentPreview();

@@ -258,6 +258,8 @@ struct WindowsPlayerDownloads::Impl final : AsyncDownloadSubmission {
                                                           std::move(native.youtube_peer_check_factory)});
         }
 #endif
+        if (lyrics_service)
+            lyrics_service->configureLyricFind(std::move(options.lyricfind));
         view.setLyrics(lyrics_view.get());
         QObject::connect(&view, &DownloadApplicationBinding::stateChanged, &view, [this] { offerLyrics(); });
         QObject::connect(view.jobsModel(), &QAbstractItemModel::dataChanged, &view, [this] { offerLyrics(); });

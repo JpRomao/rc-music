@@ -28,6 +28,8 @@ class DownloadLyricsBinding final : public QObject {
     Q_PROPERTY(bool hasLyricsPage READ hasLyricsPage NOTIFY changed)
     Q_PROPERTY(QString requestToken READ requestToken NOTIFY changed)
     Q_PROPERTY(QString statusText READ statusText NOTIFY changed)
+    Q_PROPERTY(QString lyricsAttribution READ lyricsAttribution NOTIFY changed)
+    Q_PROPERTY(bool lyricsCopyProtected READ lyricsCopyProtected NOTIFY changed)
     Q_PROPERTY(QVariantList candidates READ candidates NOTIFY changed)
   public:
     DownloadLyricsBinding(DownloadLyricsLookup& lookup, LyricsBinding& writer, QObject* parent = nullptr);
@@ -46,6 +48,8 @@ class DownloadLyricsBinding final : public QObject {
     [[nodiscard]] bool hasLyricsPage() const;
     [[nodiscard]] QString requestToken() const;
     [[nodiscard]] QString statusText() const;
+    [[nodiscard]] QString lyricsAttribution() const;
+    [[nodiscard]] bool lyricsCopyProtected() const;
     [[nodiscard]] QVariantList candidates() const;
     Q_INVOKABLE bool openLyricsPage(const QString& expected_request_token);
     Q_INVOKABLE bool retry(const QString& title, const QString& artist);

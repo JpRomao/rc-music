@@ -21,10 +21,17 @@ Item {
     readonly property bool synchronizedLyrics: lyrics !== null && lyrics.hasSyncedLyrics
     readonly property bool plainLyrics: lyrics !== null && !lyrics.hasSyncedLyrics && lyrics.plainText.length > 0
     readonly property bool searchAvailable: enabled && lyrics !== null && !lyrics.busy && lyrics.canSearch
-    implicitHeight: 96
-    Layout.minimumHeight: 96
-    Layout.maximumHeight: 96
+    readonly property bool protectedLyrics: lyrics !== null && lyrics.lyricsCopyProtected === true
+    readonly property string lyricsAttribution: protectedLyrics ? lyrics.lyricsAttribution : ""
+    implicitHeight: protectedLyrics ? 96 + contract.controlTargetMinimum + contract.spacingUnit : 96
+    Layout.minimumHeight: implicitHeight
+    Layout.maximumHeight: implicitHeight
     signal queuedVariantFormClosed
+
+    function openLyricFind() {
+        if (root.enabled && root.protectedLyrics)
+            Qt.openUrlExternally("https://www.lyricfind.com/");
+    }
 
     function openQueuedVariant(occurrenceId, title) {
         if (queueVariantActionAvailable && !queryOpen)
@@ -144,7 +151,7 @@ Item {
             objectName: "lyrics-plain-scroll"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: root.plainLyrics
+            visible: root.plainLyrics && !root.protectedLyrics
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             ScrollBar.vertical: AccessibleScrollBar {
@@ -154,7 +161,7 @@ Item {
             TextArea {
                 objectName: "lyrics-plain-text"
                 width: plainArea.availableWidth
-                text: root.lyrics ? root.lyrics.plainText : ""
+                text: root.lyrics && !root.protectedLyrics ? root.lyrics.plainText : ""
                 textFormat: Text.PlainText
                 readOnly: true
                 selectByMouse: true
@@ -173,10 +180,64 @@ Item {
                 }
             }
         }
+        ScrollView {
+            id: protectedPlainArea
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: root.plainLyrics && root.protectedLyrics
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical: AccessibleScrollBar {
+                contract: root.contract
+            }
+            Text {
+                objectName: "lyrics-protected-plain-text"
+                width: protectedPlainArea.availableWidth
+                text: root.plainLyrics && root.protectedLyrics ? root.lyrics.plainText : ""
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                color: root.contract.textPrimaryColor
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
+            }
+        }
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: !root.synchronizedLyrics && !root.plainLyrics
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.protectedLyrics
+            ScrollView {
+                id: providerCreditArea
+                objectName: "lyrics-provider-credit-scroll"
+                Layout.fillWidth: true
+                Layout.preferredHeight: root.contract.controlTargetMinimum
+                Layout.maximumHeight: root.contract.controlTargetMinimum
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical: AccessibleScrollBar {
+                    contract: root.contract
+                }
+                Text {
+                    objectName: "lyrics-provider-credit"
+                    width: providerCreditArea.availableWidth
+                    text: root.lyricsAttribution
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    color: root.contract.textSecondaryColor
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: text
+                }
+            }
+            AccessibleTransportButton {
+                objectName: "lyrics-provider-link"
+                contract: root.contract
+                text: qsTr("LyricFind")
+                Layout.preferredHeight: root.contract.controlTargetMinimum
+                onClicked: root.openLyricFind()
+            }
         }
     }
 
@@ -235,7 +296,7 @@ Item {
             Text {
                 objectName: "lyrics-query-notice"
                 Layout.fillWidth: true
-                text: qsTr("Busca no LRCLIB: envia título, artista, álbum e duração.")
+                text: root.lyrics !== null && root.lyrics.lyricFindConfigured === true ? qsTr("Busca no LRCLIB e no LyricFind: envia os metadados da faixa aos provedores configurados.") : qsTr("Busca no LRCLIB: envia título, artista, álbum e duração.")
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.contract.textSecondaryColor

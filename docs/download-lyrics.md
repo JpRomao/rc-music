@@ -2,12 +2,12 @@
 
 **Estado:** fluxo opcional de consulta, revisão e gravação implementado e validado no recorte automatizado. Downloads de produção no app normal continuam OFF. Runtime YouTube autenticado, host instalado e provedor primário Letras permanecem pendentes.
 
-Este fluxo liga um MP3 com publicação reconhecida ao catálogo de [versões locais de letras](lyrics-variants.md). O pedido [YouTube em MP3 com letra](youtube-audio-and-lyrics.md) continua separado da extensão principal. A busca automática usa o LRCLIB.
+Este fluxo liga um MP3 com publicação reconhecida ao catálogo de [versões locais de letras](lyrics-variants.md). O pedido [YouTube em MP3 com letra](youtube-audio-and-lyrics.md) continua separado da extensão principal. A busca automática usa o LRCLIB e aceita o [LyricFind como fonte opcional](lyrics-variants.md#fonte-opcional-lyricfind).
 
 ## Fluxo de uso na composição opcional
 
 1. O pedido YouTube deve conter a opção de buscar letra. Depois de reconhecida a publicação do MP3, a composição oferece a consulta usando o contexto original daquele job. Não usa paths ou metadados reconstruídos de histórico recuperado.
-2. Título e artista disponíveis iniciam a busca no LRCLIB. Se faltarem, a revisão pede seu preenchimento; **Buscar letra** permite corrigir esses campos e tentar novamente. A abertura do app ou de um histórico não inicia uma consulta.
+2. Título e artista disponíveis iniciam a busca nos provedores configurados. Se faltarem, a revisão pede seu preenchimento. **Buscar letra** permite corrigir esses campos e tentar novamente.
 3. Em Downloads, **Revisar letras** abre o diálogo da aquisição apresentada. Escolha uma das versões encontradas e confira a prévia em texto simples. Conteúdos sincronizados e sem tempos distintos ficam disponíveis separadamente. Quando o pedido trouxer uma página do Letras, **Abrir no Letras.mus.br** envia esse endereço ao navegador padrão por ação explícita. **Colar letra** aceita texto simples ou LRC, inclusive quando a busca falha ou não encontra uma versão.
 4. Informe o nome e escolha **Original**, **Romanizada** ou **Tradução**. Idioma e escrita são opcionais. Para uma tradução, informe o idioma de destino se quiser distingui-la de outras.
 5. **Guardar como nova versão** grava uma letra no catálogo do MP3. Para guardar várias formas do Letras em conjunto, abra a página, selecione **Colar letra** e marque **Usar página do Letras como origem**. Use **Colar outra versão** para incluir mais textos e **Guardar versões** para gravar o conjunto. Cada texto conserva seu nome, forma e idioma. A gravação preserva as versões existentes e reaproveita conteúdo idêntico já guardado na mesma forma.
@@ -26,7 +26,7 @@ A conclusão explícita libera a reserva apenas do job daquela revisão. Se outr
 
 O teste do owner Windows confirmou o arquivamento na mesma sessão, preservou a versão salva no catálogo temporário e recuperou os mesmos IDs no reenvio. Outra regressão confirmou a revogação da confirmação de arquivamento quando uma segunda revisão foi concluída. Passaram o build Release, lint QML, **191 casos do núcleo**, **3/3 CTest** e **64 casos Qt Quick** dos dois painéis. Logs em `out/product/test-runs/finish-download-lyrics-review-20261111/`.
 
-`DownloadLyricsLookup` usa um `QtLyricsService` exclusivo, separado da letra da faixa em reprodução. `setLookupTrack` configura somente metadados: não abre o áudio nem lê um `.lrc` irmão. O mesmo serviço permanece entre consultas, preservando cooldown, limites e cancelamento; resultados antigos são revogados por geração. A página Letras não é consultada enquanto esse adapter estiver indisponível. A origem dos candidatos deste incremento é LRCLIB.
+`DownloadLyricsLookup` usa um `QtLyricsService` exclusivo, separado da letra da faixa em reprodução. `setLookupTrack` configura somente metadados. O mesmo serviço preserva cooldown, limites e cancelamento. A prévia LyricFind exibe a origem e os créditos do provedor, com salvamento e cópia desabilitados.
 
 `DownloadLyricsBinding` conserva a identidade do alvo e o `requestToken` da revisão. Ações antigas são revogadas quando a identidade muda. Para versões encontradas, o diálogo também confere os metadados usados na busca. O texto colado passa pelo mesmo parser LRC. A origem padrão é manual, e o endereço validado do pedido fica no catálogo somente após seleção explícita. Os tempos fornecidos são preservados.
 

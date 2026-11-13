@@ -1,6 +1,6 @@
 # Letras e versões por música
 
-**Estado:** recurso validado automaticamente no Windows. Os [setups de 2026-11-11](windows-installer.md#setups-atualizados-em-2026-11-11) incluem a escolha dos formatos online. Aceitação nativa e instalada pendentes.
+**Estado:** recurso validado automaticamente no Windows. Os [setups de 2026-11-11](windows-installer.md#setups-atualizados-em-2026-11-11) incluem a escolha dos formatos online. LyricFind e geração de romaji foram acrescentados após esses setups. Aceitação nativa e instalada pendentes.
 
 O [ADR-0016](architecture/decisions/0016-lyrics-variants.md) registra a evolução de FR-054. O catálogo guarda original, romanização e traduções fornecidas pelo usuário. No fluxo de downloads, é possível guardar juntas as versões coladas de uma página do Letras. A consulta automática ao Letras continua pendente de acesso compatível. [Letras do áudio baixado](download-lyrics.md)
 
@@ -14,13 +14,33 @@ Para acrescentar uma versão sem trocar o áudio em reprodução, abra o menu de
 
 O aviso acima da barra de progresso acompanha a gravação. Em caso de falha, **Revisar salvamento** abre as opções de recuperação. Uma gravação já iniciada continua vinculada ao arquivo escolhido, inclusive se a faixa sair da fila. A edição pela fila reaproveita o texto idêntico já guardado para a mesma forma, idioma e escrita.
 
-LRC conserva seus tempos quando aceito pelo parser; texto comum permanece sem sincronização. Não há geração automática de tempos, romanização ou tradução. Idioma, escrita e origem são informados pelo usuário; a indicação de conteúdo gerado permite identificar texto produzido externamente.
+LRC conserva seus tempos quando aceito pelo parser. Texto comum permanece sem sincronização. Idioma, escrita e origem identificam cada versão.
+
+### Gerar romaji
+
+Com o [componente local pykakasi preparado](../tools/lyrics-romanizer/README.md), abra uma letra japonesa, selecione **Versões → Gerar romaji** e revise o texto antes de salvar. O player conserva os tempos da versão sincronizada e guarda o romaji como versão separada, identificada como gerada pelo pykakasi. Para uma letra que usa somente kanji, salve primeiro uma versão com idioma `ja` para indicar que o texto é japonês. A leitura de alguns kanji pode precisar de correção. O conversor usa somente o texto e funciona offline.
 
 ### Resultados da busca no player
 
-Depois de confirmar **Buscar letra**, abra **Versões** e escolha **Arquivo / busca atual**. Se o LRCLIB trouxer conteúdos distintos, o seletor oferece **Sincronizada** e **Texto simples**. A sincronizada vem selecionada e a prévia acompanha a opção escolhida. Para guardar cada resultado, use **Salvar letra atual**, informe um nome e escolha a forma correspondente. A origem registrada é LRCLIB.
+Depois de confirmar **Buscar letra**, abra **Versões** e escolha **Arquivo / busca atual**. Se o LRCLIB trouxer conteúdos distintos, o seletor oferece **Sincronizada** e **Texto simples**. A sincronizada vem selecionada e a prévia acompanha a opção escolhida. Para guardar um resultado do LRCLIB, use **Salvar letra atual**, informe um nome e escolha a forma correspondente. A origem registrada é LRCLIB.
 
 Os rótulos descrevem o formato recebido. Idioma, escrita e forma são informados ao salvar.
+
+### Fonte opcional LyricFind
+
+Use as chaves de parceiro fornecidas para a sua integração. No Windows, coloque o arquivo `lyricfind.json` na pasta `%LOCALAPPDATA%\MusicPlayer\MusicPlayer` e reinicie o RC Music. Exemplo de estrutura com valores ilustrativos:
+
+```json
+{
+  "displayKey": "SUA_CHAVE_DISPLAY",
+  "territory": "BR",
+  "preferLyricFind": true
+}
+```
+
+O campo `lrcKey` recebe a chave de sincronização quando incluída no contrato. O RC Music tenta primeiro o LRCLIB por padrão. Use `preferLyricFind: true` para inverter a ordem. Quando a primeira fonte não encontra a faixa, o player consulta a segunda. A consulta ao LyricFind envia título, artista, álbum se disponível e o território configurado.
+
+O RC Music exibe os créditos e o link do LyricFind junto da letra. As letras obtidas por essa integração ficam disponíveis para leitura, conforme as condições de exibição do provedor. Use uma fonte com permissão de armazenamento para salvar versões ou gerar romaji. A API Web Service documenta a consulta de letras e LRC. As traduções do catálogo dependem do contrato e da interface que o parceiro fornecer. [Documentação da API](https://docs.lyricfind.com/) · [Contato do LyricFind](https://www.lyricfind.com/contact)
 
 A consulta preserva sinais de mais e sequências literais como `%2B` no título, no artista e no álbum.
 

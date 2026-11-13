@@ -92,6 +92,9 @@ endif()
 add_ui_test(rc_music_lyrics_variants_store_tests rc_music.lyrics.variants-store
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtJsonLyricsVariantsStoreTests.cpp" rc_music_lyrics)
 set_target_properties(rc_music_lyrics_variants_store_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_lyrics_romanizer_tests rc_music.lyrics.romanizer
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtLyricsRomanizerTests.cpp" rc_music_lyrics)
+set_target_properties(rc_music_lyrics_romanizer_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_playlists_store_tests rc_music.playlists.store
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtJsonPlaylistStoreTests.cpp" rc_music_playlists rc_music_media_data)
 set_target_properties(rc_music_playlists_store_tests PROPERTIES AUTOMOC ON)

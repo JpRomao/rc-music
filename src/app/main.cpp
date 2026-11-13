@@ -11,6 +11,7 @@
 #include "adapters/QtJsonLyricsVariantsStore.hpp"
 #include "adapters/QtJsonPlaylistStore.hpp"
 #include "adapters/QtLidarrService.hpp"
+#include "adapters/QtLyricsRomanizer.hpp"
 #include "adapters/QtLyricsService.hpp"
 #include "adapters/QtShellPlatform.hpp"
 #ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
@@ -465,8 +466,11 @@ int main(int argc, char* argv[]) {
 #if defined(Q_OS_WIN) || defined(M0_QT_COMBINED_AUDIO)
         lyrics_config_root = config_root;
 #endif
+        const auto lyricfind = music_player::m0::QtLyricsService::loadLyricFindOptions(lyrics_config_root);
+        lyrics_service.configureLyricFind(lyricfind);
         music_player::m0::LyricsBinding lyrics_binding(
             lyrics_service, std::make_shared<music_player::m0::QtJsonLyricsVariantsStore>(lyrics_config_root));
+        lyrics_binding.setJapaneseRomanizer(music_player::m0::makeQtLyricsRomanizer(lyrics_config_root));
         music_player::m0::QtLidarrService lidarr_service;
         music_player::m0::LidarrBinding lidarr_binding(lidarr_service);
 #ifdef M0_QT_COMBINED_AUDIO
@@ -637,6 +641,7 @@ int main(int argc, char* argv[]) {
         const auto compose_player_downloads = [&](music_player::m0::WindowsPlayerDownloadProfile profile) {
             auto checkpoint_factory = music_player::m0::makePlayerDownloadCheckpointFactory(profile, config_root);
             profile.options.lyrics_writer = &lyrics_binding;
+            profile.options.lyricfind = lyricfind;
             profile.options.configurable_download_directory = profile.prepare_storage;
             player_downloads = music_player::m0::WindowsPlayerDownloads::createConfigured(
                 presenter, downloads_initial_session, std::move(profile.execution), std::move(checkpoint_factory),

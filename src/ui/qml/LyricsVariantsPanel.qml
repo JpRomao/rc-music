@@ -16,6 +16,9 @@ Dialog {
     property var formOwner: null
     property string formTrack: ""
     property string formLyricsRevision: ""
+    property string romajiToken: ""
+    property string romajiRequestRevision: ""
+    property var romajiRequestOwner: null
     property string queuedToken: ""
     property string queuedTitle: ""
     property bool formRejected: false
@@ -35,6 +38,9 @@ Dialog {
     readonly property bool showOnlineCandidates: selectedId.length === 0 && onlineCandidates.length > 1
     readonly property string currentLyricsRevision: supported && typeof lyrics.currentLyricsRevision !== "undefined" ? lyrics.currentLyricsRevision : ""
     readonly property bool canSaveCurrent: canEdit && currentLyricsRevision.length > 0 && lyrics.canSaveCurrentLyrics
+    readonly property string romajiSourceRevision: supported && typeof lyrics.romajiSourceRevision === "string" ? lyrics.romajiSourceRevision : ""
+    readonly property string romajiStatusText: supported && typeof lyrics.romajiStatusText === "string" ? lyrics.romajiStatusText : ""
+    readonly property bool canGenerateRomaji: canEdit && romajiSourceRevision.length > 0 && lyrics.canGenerateRomaji === true
     readonly property var selectedVariant: variantForId(selectedId)
     readonly property var rows: variantRows()
     readonly property var versionKinds: [
@@ -52,9 +58,9 @@ Dialog {
         }
     ]
     readonly property bool childDialogOpen: formDialog.visible || confirmation.visible
-    readonly property bool textEntryMode: formMode === "add" || formMode === "queued"
+    readonly property bool textEntryMode: formMode === "add" || formMode === "queued" || formMode === "romaji"
     readonly property bool queuedFormAvailable: enabled && supported && typeof lyrics.queueVariantAvailable === "boolean" && lyrics.queueVariantAvailable
-    readonly property bool formCurrent: formDialog.visible && formOwner === lyrics && (formMode === "queued" ? enabled && queuedToken.length > 0 : formTrack === trackIdentity && canEdit && (formMode === "add" || (formMode === "current" && canSaveCurrent && formLyricsRevision === currentLyricsRevision)))
+    readonly property bool formCurrent: formDialog.visible && formOwner === lyrics && (formMode === "queued" ? enabled && queuedToken.length > 0 : formTrack === trackIdentity && canEdit && (formMode === "add" || (formMode === "current" && canSaveCurrent && formLyricsRevision === currentLyricsRevision) || (formMode === "romaji" && romajiToken.length > 0 && romajiRequestRevision === romajiSourceRevision)))
     readonly property bool confirmCurrent: confirmation.visible && confirmOwner === lyrics && confirmTrack === trackIdentity && (confirmMode === "reload" ? (canReload && lyrics.variantsHasPendingChange) : (canEdit && targetCurrent()))
     parent: Overlay.overlay
     anchors.centerIn: parent
@@ -78,6 +84,7 @@ Dialog {
             formDialog.close();
         if (confirmation)
             confirmation.close();
+        clearRomajiRequest();
     }
     onLyricsChanged: revokeDialogs()
     onTrackIdentityChanged: {
@@ -88,17 +95,47 @@ Dialog {
         if (formMode === "current" && formLyricsRevision !== currentLyricsRevision && formDialog && formDialog.visible)
             formDialog.close();
     }
+    onRomajiSourceRevisionChanged: {
+        if (romajiToken.length > 0 && romajiRequestRevision !== romajiSourceRevision) {
+            if (formMode === "romaji" && formDialog.visible)
+                formDialog.close();
+            clearRomajiRequest();
+        }
+    }
+    Connections {
+        target: root.lyrics
+        ignoreUnknownSignals: true
+        function onRomajiDraftReady(token, content) {
+            if (token !== root.romajiToken || root.romajiRequestOwner !== root.lyrics)
+                return;
+            if (!root.visible || !root.enabled || root.childDialogOpen || root.romajiRequestRevision !== root.romajiSourceRevision) {
+                root.clearRomajiRequest();
+                return;
+            }
+            root.startForm("romaji", content);
+        }
+    }
     onEnabledChanged: {
         if (!enabled)
             revokeDialogs();
     }
     function revokeDialogs() {
+        clearRomajiRequest();
         if (formDialog)
             formDialog.close();
         if (confirmation)
             confirmation.close();
         if (visible)
             close();
+    }
+    function clearRomajiRequest() {
+        const token = romajiToken;
+        const owner = romajiRequestOwner;
+        romajiToken = "";
+        romajiRequestRevision = "";
+        romajiRequestOwner = null;
+        if (token.length > 0 && owner && typeof owner.discardRomaji === "function")
+            owner.discardRomaji(token);
     }
     function variantRows() {
         const result = [
@@ -170,20 +207,35 @@ Dialog {
         queuedTitle = title;
         startForm("queued");
     }
-    function startForm(mode) {
+    function startForm(mode, draftText = "") {
         formMode = mode;
         formOwner = lyrics;
         formTrack = trackIdentity;
         formLyricsRevision = mode === "current" ? currentLyricsRevision : "";
         formRejected = false;
-        nameField.text = "";
-        languageField.text = "";
-        scriptField.text = "";
-        sourceField.text = "";
-        contentField.text = "";
-        kindField.currentIndex = 0;
-        generatedField.checked = false;
+        const romaji = mode === "romaji";
+        nameField.text = romaji ? qsTr("Romaji") : "";
+        languageField.text = romaji ? "ja" : "";
+        scriptField.text = romaji ? "Latn" : "";
+        sourceField.text = romaji ? "pykakasi" : "";
+        contentField.text = draftText;
+        kindField.currentIndex = romaji ? 1 : 0;
+        generatedField.checked = romaji;
         formDialog.open();
+    }
+    function requestRomaji() {
+        if (!canGenerateRomaji || childDialogOpen)
+            return;
+        const owner = lyrics;
+        const revision = romajiSourceRevision;
+        const token = owner.generateRomaji();
+        if (owner === lyrics && revision === romajiSourceRevision && visible) {
+            romajiToken = token;
+            romajiRequestRevision = revision;
+            romajiRequestOwner = owner;
+        } else if (token.length > 0) {
+            owner.discardRomaji(token);
+        }
     }
     function requestRemoval() {
         if (!canEdit || selectedVariant === null)
@@ -341,6 +393,25 @@ Dialog {
                 enabled: root.canSaveCurrent
                 onClicked: root.openForm("current")
             }
+            AccessibleTransportButton {
+                id: generateRomajiButton
+                objectName: "lyrics-variant-generate-romaji"
+                contract: root.contract
+                text: qsTr("Gerar romaji")
+                visible: root.romajiSourceRevision.length > 0
+                enabled: root.canGenerateRomaji
+                onClicked: root.requestRomaji()
+            }
+        }
+        Text {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: root.romajiStatusText
+            textFormat: Text.PlainText
+            color: root.contract.textSecondaryColor
+            wrapMode: Text.WordWrap
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
         }
         Text {
             Layout.fillWidth: true
@@ -553,6 +624,12 @@ Dialog {
                 if (owner && token.length > 0)
                     owner.cancelQueuedVariant(token);
                 root.queuedFormClosed(token.length === 0);
+            } else if (mode === "romaji") {
+                root.clearRomajiRequest();
+                if (root.visible && root.enabled) {
+                    const target = generateRomajiButton.enabled ? generateRomajiButton : closeButton;
+                    target.forceActiveFocus(Qt.TabFocusReason);
+                }
             } else if (root.visible && root.enabled) {
                 if (mode === "current")
                     saveCurrentButton.forceActiveFocus(Qt.TabFocusReason);
@@ -569,10 +646,10 @@ Dialog {
         contentItem: ColumnLayout {
             spacing: root.contract.spacingUnit * 2
             Accessible.role: Accessible.Dialog
-            Accessible.name: root.formMode === "current" ? qsTr("Salvar letra atual") : qsTr("Adicionar versão da letra")
+            Accessible.name: root.formMode === "romaji" ? qsTr("Revisar romaji") : root.formMode === "current" ? qsTr("Salvar letra atual") : qsTr("Adicionar versão da letra")
             Text {
                 Layout.fillWidth: true
-                text: root.formMode === "current" ? qsTr("Salvar letra atual") : qsTr("Adicionar versão da letra")
+                text: root.formMode === "romaji" ? qsTr("Revisar romaji") : root.formMode === "current" ? qsTr("Salvar letra atual") : qsTr("Adicionar versão da letra")
                 textFormat: Text.PlainText
                 color: root.contract.textPrimaryColor
                 font.bold: true
@@ -611,7 +688,7 @@ Dialog {
                         objectName: "lyrics-variant-name-input"
                         Accessible.name: qsTr("Nome da versão")
                         placeholderText: qsTr("Ex.: Japonês original ou Romaji")
-                        KeyNavigation.tab: languageField
+                        KeyNavigation.tab: root.formMode === "romaji" ? contentField : languageField
                     }
                     GridLayout {
                         Layout.fillWidth: true
@@ -629,6 +706,7 @@ Dialog {
                             maximumLength: 64
                             Accessible.name: qsTr("Idioma da letra")
                             placeholderText: qsTr("Ex.: ja")
+                            readOnly: root.formMode === "romaji"
                             KeyNavigation.tab: scriptField
                         }
                         VersionInput {
@@ -637,6 +715,7 @@ Dialog {
                             maximumLength: 64
                             Accessible.name: qsTr("Escrita da letra")
                             placeholderText: qsTr("Ex.: Jpan ou Latn")
+                            readOnly: root.formMode === "romaji"
                             KeyNavigation.tab: kindField
                         }
                     }
@@ -648,7 +727,7 @@ Dialog {
                         objectName: "lyrics-variant-kind-input"
                         Layout.fillWidth: true
                         implicitHeight: root.contract.controlTargetPreferred
-                        enabled: root.formCurrent
+                        enabled: root.formCurrent && root.formMode !== "romaji"
                         textRole: "label"
                         valueRole: "value"
                         model: root.versionKinds
@@ -676,12 +755,13 @@ Dialog {
                         objectName: "lyrics-variant-source-input"
                         visible: root.textEntryMode
                         maximumLength: 2048
+                        readOnly: root.formMode === "romaji"
                         Accessible.name: qsTr("Origem da letra")
                         KeyNavigation.tab: contentField
                     }
                     FieldLabel {
                         visible: root.textEntryMode
-                        text: qsTr("Cole a letra ou o conteúdo LRC. Tempos existentes são preservados; texto sem tempos não é sincronizado automaticamente.")
+                        text: root.formMode === "romaji" ? qsTr("Revise a romanização e mantenha os tempos da letra.") : qsTr("Cole a letra ou o conteúdo LRC. Tempos existentes são preservados; texto sem tempos não é sincronizado automaticamente.")
                     }
                     TextArea {
                         id: contentField
@@ -699,7 +779,7 @@ Dialog {
                         selectedTextColor: root.contract.accentTextColor
                         Accessible.role: Accessible.EditableText
                         Accessible.name: qsTr("Texto da letra ou LRC")
-                        KeyNavigation.tab: generatedField
+                        KeyNavigation.tab: root.formMode === "romaji" ? formSubmit : generatedField
                         background: Rectangle {
                             color: root.contract.surfaceColor
                             radius: root.contract.radiusSmall
@@ -712,7 +792,7 @@ Dialog {
                         objectName: "lyrics-variant-generated-input"
                         Layout.fillWidth: true
                         visible: root.textEntryMode
-                        enabled: root.formCurrent
+                        enabled: root.formCurrent && root.formMode !== "romaji"
                         text: qsTr("Texto gerado por ferramenta")
                         Accessible.name: text
                         KeyNavigation.tab: formSubmit
@@ -730,7 +810,7 @@ Dialog {
             Text {
                 Layout.fillWidth: true
                 visible: root.formRejected
-                text: root.formMode === "queued" ? qsTr("Confira o conteúdo e os limites. Se a faixa mudou na fila, abra o formulário novamente.") : qsTr("Não foi possível adicionar a versão. Confira o conteúdo e os limites informados.")
+                text: root.formMode === "romaji" ? qsTr("Confira o texto e mantenha os tempos da letra original.") : root.formMode === "queued" ? qsTr("Confira o conteúdo e os limites. Se a faixa mudou na fila, abra o formulário novamente.") : qsTr("Não foi possível adicionar a versão. Confira o conteúdo e os limites informados.")
                 textFormat: Text.PlainText
                 color: root.contract.textSecondaryColor
                 wrapMode: Text.WordWrap
@@ -767,6 +847,8 @@ Dialog {
                         let accepted;
                         if (mode === "current")
                             accepted = owner.saveCurrentLyrics(name, language, script, kind, root.formLyricsRevision);
+                        else if (mode === "romaji")
+                            accepted = owner.saveRomaji(root.romajiToken, name, contentField.text);
                         else if (mode === "queued")
                             accepted = owner.addQueuedVariant(token, name, language, script, sourceField.text.trim(), kind, contentField.text, generatedField.checked);
                         else
@@ -775,6 +857,8 @@ Dialog {
                             return;
                         if (accepted) {
                             root.queuedToken = "";
+                            if (mode === "romaji")
+                                root.romajiToken = "";
                             formDialog.accept();
                         } else {
                             root.formRejected = true;

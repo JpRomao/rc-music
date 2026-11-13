@@ -24,6 +24,8 @@ TestCase {
             property bool canRetrySave: false
             property bool canDismiss: true
             property bool hasLyricsPage: false
+            property bool lyricsCopyProtected: false
+            property string lyricsAttribution: ""
             property string pendingDiscardToken: ""
             property string title: "Original 日本語"
             property string artist: "Synthetic artist"
@@ -178,6 +180,22 @@ TestCase {
     function prepareVersion(kindIndex) {
         field("version-name").text = "Versão revisada";
         field("kind").currentIndex = kindIndex;
+    }
+    function test_licensedPreviewDoesNotExposeSelectableText() {
+        backend.lyricsAttribution = "<b>Writer</b> · Publisher";
+        backend.lyricsCopyProtected = true;
+        backend.canSave = false;
+        const regular = field("preview");
+        const protectedPreview = field("protected-preview");
+        const credit = field("provider-credit");
+        verify(!regular.visible && protectedPreview.visible && credit.visible);
+        compare(regular.text, "");
+        compare(protectedPreview.text, backend.candidates[0].text);
+        compare(protectedPreview.textFormat, Text.PlainText);
+        compare(credit.text, backend.lyricsAttribution);
+        prepareVersion(0);
+        shell.panel.saveVersion();
+        compare(backend.saveCalls, 0);
     }
     function test_letrasVersionsAreSubmittedTogether() {
         backend.hasLyricsPage = true;

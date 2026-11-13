@@ -26,6 +26,8 @@ Para buscar online, clique em **Buscar letra**, confira ou corrija título e art
 
 Se a busca trouxer conteúdos distintos, em **Versões → Arquivo / busca atual** escolha **Sincronizada** ou **Texto simples** e confira a prévia. A sincronizada é a opção inicial. Use **Salvar letra atual** para guardar a opção escolhida com um nome e a forma correspondente. Se mudar a opção, a busca ou a faixa com o formulário aberto, abra-o de novo para conferir a escolha.
 
+**Gerar romaji**, em **Versões**, cria um rascunho editável a partir da letra japonesa selecionada e conserva os tempos existentes. Com chaves de parceiro, o **LyricFind** pode complementar a busca do LRCLIB. [Preparar o romaji](lyrics-variants.md#gerar-romaji) · [Configurar o LyricFind](lyrics-variants.md#fonte-opcional-lyricfind)
+
 Na barra de volume, a porcentagem atual de **0 a 100%** aparece ao passar o mouse ou durante o arraste, inclusive ao levar o ponteiro para fora do slider enquanto o botão estiver pressionado.
 
 ## Pesquisar e solicitar álbuns no Lidarr

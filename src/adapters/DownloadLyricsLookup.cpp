@@ -42,9 +42,6 @@ PublishedLyricsRequest retained(const PublishedLyricsRequest& request) {
             request.duration_ms};
 }
 
-QString providerNotice() {
-    return DownloadLyricsLookup::tr("Consulta automática do Letras indisponível. Busca no LRCLIB.");
-}
 } // namespace
 
 bool DownloadLyricsLookup::validPublication(const PublishedLyricsRequest& request) {
@@ -102,23 +99,33 @@ struct DownloadLyricsLookup::Impl final {
         if (!active_online || !current || stopping || preparing)
             return;
         const auto expected = generation;
-        message = providerNotice();
+        message = owner.providerNotice();
         switch (service.status()) {
         case QtLyricsService::Status::Searching:
             state = State::Searching;
             break;
-        case QtLyricsService::Status::Ready:
+        case QtLyricsService::Status::Ready: {
             if (service.source() != QtLyricsService::Source::Online || service.onlineDocuments().empty()) {
                 active_online = false;
                 state = State::Error;
                 message += QStringLiteral(" ") + DownloadLyricsLookup::tr("O serviço retornou uma letra inválida.");
                 break;
             }
-            result = Result{generation, current->job_id, owned(current->final_mp3), service.onlineDocuments(),
-                            QStringLiteral("LRCLIB")};
+            const bool lyricfind = service.onlineProvider() == QtLyricsService::OnlineProvider::LyricFind;
+            const auto source = lyricfind ? QStringLiteral("LyricFind") : QStringLiteral("LRCLIB");
+            result = Result{generation,
+                            current->job_id,
+                            owned(current->final_mp3),
+                            service.onlineDocuments(),
+                            source,
+                            service.onlineAttribution(),
+                            lyricfind};
+            if (lyricfind)
+                message = DownloadLyricsLookup::tr("Letra do LyricFind disponível para visualização.");
             state = State::Ready;
             active_online = false;
             break;
+        }
         case QtLyricsService::Status::NotFound:
             state = State::NotFound;
             active_online = false;
@@ -161,7 +168,7 @@ struct DownloadLyricsLookup::Impl final {
                                current->duration_ms);
         if (!matches(expected))
             return false;
-        message = providerNotice();
+        message = owner.providerNotice();
         if (current->title.trimmed().isEmpty() || current->artist.trimmed().isEmpty()) {
             state = State::NeedsMetadata;
             message += QStringLiteral(" ") + DownloadLyricsLookup::tr("Informe título e artista para buscar a letra.");
@@ -185,7 +192,7 @@ struct DownloadLyricsLookup::Impl final {
         if (!started && active_online) {
             active_online = false;
             state = State::Error;
-            message = providerNotice() + QStringLiteral(" ") +
+            message = owner.providerNotice() + QStringLiteral(" ") +
                       DownloadLyricsLookup::tr("Não foi possível iniciar a busca da letra.");
             notify(expected);
         }
@@ -247,5 +254,10 @@ void DownloadLyricsLookup::beginShutdown() {
 bool DownloadLyricsLookup::drained() const { return impl_->service.drained(); }
 DownloadLyricsLookup::State DownloadLyricsLookup::state() const { return impl_->state; }
 QString DownloadLyricsLookup::message() const { return impl_->message; }
+QString DownloadLyricsLookup::providerNotice() const {
+    return impl_->service.lyricFindConfigured()
+               ? tr("Consulta automática do Letras indisponível. Busca no LRCLIB e no LyricFind.")
+               : tr("Consulta automática do Letras indisponível. Busca no LRCLIB.");
+}
 const std::optional<DownloadLyricsLookup::Result>& DownloadLyricsLookup::result() const { return impl_->result; }
 } // namespace music_player::m0
