@@ -14,6 +14,11 @@ Dialog {
     property string previewToken: ""
     property string queryTitle: ""
     property string queryArtist: ""
+    property bool recordingMode: false
+    property string recordingQueryTitle: ""
+    property string recordingQueryArtist: ""
+    property string selectedRecordingId: ""
+    property int selectedRecordingFormat: -1
     property bool initializing: false
     property bool pasteMode: false
     property bool pasteFromLetras: false
@@ -28,16 +33,24 @@ Dialog {
     readonly property bool discardTargetCurrent: actionsCurrent && discardTarget !== null && discardTarget.owner === requestOwner && discardTarget.requestToken === previewToken && discardTarget.token === pendingDiscardToken
     readonly property bool pasteAvailable: requestCurrent && requestOwner.canSavePasted === true
     readonly property bool hasLyricsPage: requestCurrent && requestOwner.hasLyricsPage === true
-    readonly property bool versionFieldsEditable: actionsCurrent && (pasteMode ? pasteAvailable : !protectedLyrics && !requestOwner.busy)
+    readonly property bool versionFieldsEditable: actionsCurrent && (pasteMode ? pasteAvailable : (!protectedLyrics || recordingMode) && !requestOwner.busy)
     readonly property var versionKinds: ["original", "romanized", "translation"]
     readonly property string versionKind: versionKinds[kindField.currentIndex] ?? ""
     readonly property bool draftReady: nameField.text.trim().length > 0 && versionKind.length > 0 && pastedField.text.trim().length > 0
     readonly property bool draftEmpty: !pastedField.text.trim() && !nameField.text.trim() && !languageField.text.trim() && !scriptField.text.trim() && !versionKind
     readonly property bool metadataCurrent: requestCurrent && titleField.text.trim() === queryTitle && artistField.text.trim() === queryArtist && requestOwner.title.trim() === queryTitle && requestOwner.artist.trim() === queryArtist
+    readonly property bool recordingSearchSupported: requestCurrent && typeof requestOwner.searchRecordings === "function"
+    readonly property bool recordingMetadataCurrent: recordingMode && requestCurrent && titleField.text.trim() === recordingQueryTitle && artistField.text.trim() === recordingQueryArtist
+    readonly property bool recordingBusy: recordingSearchSupported && requestOwner.recordingSearchBusy
+    readonly property string recordingResultToken: recordingMetadataCurrent ? requestOwner.recordingResultToken : ""
+    readonly property var recordingRows: recordingResultToken.length > 0 ? requestOwner.recordings : []
+    readonly property var selectedRecording: recordingRows.find(candidate => candidate.id === selectedRecordingId) ?? null
+    readonly property bool recordingSelectionReady: recordingMetadataCurrent && selectedRecording !== null && selectedRecordingFormat >= 0 && selectedRecordingFormat < selectedRecording.formats.length
+    readonly property bool recordingSaveReady: pasteAvailable && recordingSelectionReady
     readonly property var candidateRows: requestCurrent ? requestOwner.candidates : []
     readonly property var selectedCandidate: candidateField.currentIndex >= 0 && candidateField.currentIndex < candidateRows.length ? candidateRows[candidateField.currentIndex] : null
     readonly property bool protectedLyrics: requestCurrent && requestOwner.lyricsCopyProtected === true
-    readonly property Item afterPageLink: pasteMode ? pastedField : candidateField.enabled ? candidateField : protectedLyrics ? providerLink : previewField
+    readonly property Item afterPageLink: pasteMode ? pastedField : recordingButton.enabled ? recordingButton : candidateField.enabled ? candidateField : protectedLyrics ? providerLink : previewField
 
     objectName: "download-lyrics-panel"
     parent: Overlay.overlay
@@ -74,6 +87,7 @@ Dialog {
         draftOwner = requestOwner;
         draftToken = previewToken;
         candidateField.currentIndex = candidateRows.length > 0 ? 0 : -1;
+        recordingMode = false;
         initializing = false;
     }
     function search() {
@@ -83,10 +97,42 @@ Dialog {
         const token = previewToken;
         const title = titleField.text.trim();
         const artist = artistField.text.trim();
+        closeRecordingSearch();
         if (owner.retry(title, artist) !== true || !actionsCurrent || requestOwner !== owner || previewToken !== token)
             return;
         queryTitle = title;
         queryArtist = artist;
+    }
+    function searchRecordings() {
+        if (!recordingButton.enabled)
+            return;
+        const owner = requestOwner;
+        const token = previewToken;
+        recordingQueryTitle = titleField.text.trim();
+        recordingQueryArtist = artistField.text.trim();
+        selectedRecordingId = "";
+        selectedRecordingFormat = -1;
+        recordingMode = true;
+        owner.searchRecordings(token, recordingQueryTitle, recordingQueryArtist);
+    }
+    function closeRecordingSearch() {
+        if (!recordingMode)
+            return;
+        recordingMode = false;
+        selectedRecordingId = "";
+        selectedRecordingFormat = -1;
+        if (recordingSearchSupported)
+            requestOwner.cancelRecordingSearch(previewToken);
+    }
+    function recordingLabel(candidate) {
+        const parts = [candidate.title, candidate.artist, candidate.album].filter(value => value.length > 0);
+        if (candidate.durationMs > 0) {
+            const seconds = Math.round(candidate.durationMs / 1000);
+            parts.push("%1:%2".arg(Math.floor(seconds / 60)).arg(("0" + (seconds % 60)).slice(-2)));
+        }
+        if (candidate.instrumental)
+            parts.push(qsTr("Instrumental"));
+        return parts.join(" · ");
     }
     function togglePaste() {
         if (!actionsCurrent || !pasteButton.enabled)
@@ -140,7 +186,9 @@ Dialog {
                 }
                 pasteFromLetras = false;
             }
-        } else if (metadataCurrent && selectedCandidate !== null) {
+        } else if (recordingSaveReady) {
+            requestOwner.saveRecordingCandidate(previewToken, recordingResultToken, selectedRecordingId, selectedRecordingFormat, version.name, version.language, version.script, version.kind);
+        } else if (!recordingMode && metadataCurrent && selectedCandidate !== null) {
             requestOwner.saveCandidate(selectedCandidate.index, version.name, version.language, version.script, version.kind);
         }
     }
@@ -191,7 +239,14 @@ Dialog {
         }
     }
     onAboutToShow: capturePreview()
-    onAboutToHide: discardConfirmation.close()
+    onAboutToHide: {
+        closeRecordingSearch();
+        discardConfirmation.close();
+    }
+    onRecordingResultTokenChanged: {
+        selectedRecordingId = "";
+        selectedRecordingFormat = -1;
+    }
     onOpened: {
         if (!requestCurrent) {
             revokePreview();
@@ -404,15 +459,74 @@ Dialog {
                     }
                 }
                 FieldLabel {
+                    visible: !root.pasteMode && root.recordingSearchSupported
+                    text: root.recordingSearchSupported && root.requestOwner.album ? qsTr("A busca no LRCLIB envia título, artista e álbum (%1).").arg(root.requestOwner.album) : qsTr("A busca no LRCLIB envia título e artista, quando informado.")
+                }
+                RowLayout {
+                    visible: !root.pasteMode && root.recordingSearchSupported
+                    Layout.fillWidth: true
+                    AccessibleTransportButton {
+                        id: recordingButton
+                        objectName: "download-lyrics-search-recordings"
+                        contract: root.contract
+                        text: qsTr("Ver outras correspondências")
+                        enabled: visible && root.actionsCurrent && root.requestOwner.canRetry && titleField.text.trim().length > 0
+                        KeyNavigation.tab: closeRecordingButton.enabled ? closeRecordingButton : recordingField.enabled ? recordingField : candidateField
+                        onClicked: root.searchRecordings()
+                    }
+                    AccessibleTransportButton {
+                        id: closeRecordingButton
+                        objectName: "download-lyrics-close-recording-search"
+                        contract: root.contract
+                        text: root.recordingBusy ? qsTr("Cancelar busca") : qsTr("Voltar à busca direta")
+                        visible: root.recordingMode
+                        enabled: visible && root.actionsCurrent
+                        KeyNavigation.tab: recordingField.enabled ? recordingField : titleField
+                        onClicked: root.closeRecordingSearch()
+                    }
+                }
+                FormChoice {
+                    id: recordingField
+                    objectName: "download-lyrics-recordings"
+                    model: [qsTr("Escolha a gravação")].concat(root.recordingRows.map(candidate => root.recordingLabel(candidate)))
+                    currentIndex: root.recordingRows.findIndex(candidate => candidate.id === root.selectedRecordingId) + 1
+                    displayText: root.selectedRecording === null ? qsTr("Escolha a gravação") : root.recordingLabel(root.selectedRecording)
+                    visible: !root.pasteMode && root.recordingMode && root.recordingRows.length > 0
+                    enabled: visible && root.actionsCurrent && !root.recordingBusy
+                    Accessible.name: qsTr("Gravação encontrada")
+                    KeyNavigation.tab: recordingFormatField.enabled ? recordingFormatField : closeRecordingButton
+                    onActivated: index => {
+                        if (root.actionsCurrent && index >= 0 && index <= root.recordingRows.length) {
+                            root.selectedRecordingId = index > 0 ? root.recordingRows[index - 1].id : "";
+                            root.selectedRecordingFormat = -1;
+                        }
+                    }
+                }
+                FormChoice {
+                    id: recordingFormatField
+                    objectName: "download-lyrics-recording-formats"
+                    model: [qsTr("Escolha o formato")].concat(root.selectedRecording !== null ? root.selectedRecording.formats.map(format => format.label) : [])
+                    currentIndex: root.selectedRecordingFormat + 1
+                    displayText: root.selectedRecordingFormat < 0 ? qsTr("Escolha o formato") : currentText
+                    visible: !root.pasteMode && root.recordingMode && count > 1
+                    enabled: visible && root.actionsCurrent
+                    Accessible.name: qsTr("Formato da letra")
+                    KeyNavigation.tab: previewField
+                    onActivated: index => {
+                        if (root.actionsCurrent && index >= 0 && index < count)
+                            root.selectedRecordingFormat = index - 1;
+                    }
+                }
+                FieldLabel {
                     text: qsTr("Versão encontrada")
-                    visible: !root.pasteMode
+                    visible: !root.pasteMode && !root.recordingMode
                 }
                 FormChoice {
                     id: candidateField
                     objectName: "download-lyrics-candidates"
                     model: root.candidateRows
                     textRole: "label"
-                    visible: !root.pasteMode
+                    visible: !root.pasteMode && !root.recordingMode
                     enabled: visible && root.actionsCurrent && count > 0
                     Accessible.name: qsTr("Versão encontrada")
                     KeyNavigation.tab: root.protectedLyrics ? providerLink : previewField
@@ -424,15 +538,15 @@ Dialog {
                 LyricsText {
                     id: previewField
                     objectName: "download-lyrics-preview"
-                    visible: !root.pasteMode && !root.protectedLyrics
-                    text: !root.protectedLyrics && root.selectedCandidate !== null ? root.selectedCandidate.text : ""
+                    visible: !root.pasteMode && (root.recordingMode ? root.selectedRecordingFormat >= 0 : !root.protectedLyrics)
+                    text: root.recordingMode ? (root.recordingSelectionReady ? root.requestOwner.previewRecordingCandidate(root.previewToken, root.recordingResultToken, root.selectedRecordingId, root.selectedRecordingFormat) : "") : (!root.protectedLyrics && root.selectedCandidate !== null ? root.selectedCandidate.text : "")
                     readOnly: true
                     Accessible.name: qsTr("Prévia da letra")
                     KeyNavigation.tab: nameField
                 }
                 RowLayout {
                     Layout.fillWidth: true
-                    visible: !root.pasteMode && root.protectedLyrics
+                    visible: !root.pasteMode && !root.recordingMode && root.protectedLyrics
                     Text {
                         objectName: "download-lyrics-provider-credit"
                         Layout.fillWidth: true
@@ -458,7 +572,7 @@ Dialog {
                 Text {
                     objectName: "download-lyrics-protected-preview"
                     Layout.fillWidth: true
-                    visible: !root.pasteMode && root.protectedLyrics
+                    visible: !root.pasteMode && !root.recordingMode && root.protectedLyrics
                     text: visible && root.selectedCandidate !== null ? root.selectedCandidate.text : ""
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
@@ -494,19 +608,19 @@ Dialog {
                     KeyNavigation.tab: nameField
                 }
                 FieldLabel {
-                    visible: root.pasteMode || !root.protectedLyrics
+                    visible: root.pasteMode || root.recordingMode || !root.protectedLyrics
                     text: qsTr("Nome da versão")
                 }
                 FormInput {
                     id: nameField
-                    visible: root.pasteMode || !root.protectedLyrics
+                    visible: root.pasteMode || root.recordingMode || !root.protectedLyrics
                     objectName: "download-lyrics-version-name"
                     Accessible.name: qsTr("Nome da versão")
                     placeholderText: qsTr("Ex.: Japonês original ou Romaji")
                     KeyNavigation.tab: languageField
                 }
                 GridLayout {
-                    visible: root.pasteMode || !root.protectedLyrics
+                    visible: root.pasteMode || root.recordingMode || !root.protectedLyrics
                     Layout.fillWidth: true
                     columns: 2
                     columnSpacing: root.contract.spacingUnit * 2
@@ -534,12 +648,12 @@ Dialog {
                     }
                 }
                 FieldLabel {
-                    visible: root.pasteMode || !root.protectedLyrics
+                    visible: root.pasteMode || root.recordingMode || !root.protectedLyrics
                     text: qsTr("Forma da versão")
                 }
                 FormChoice {
                     id: kindField
-                    visible: root.pasteMode || !root.protectedLyrics
+                    visible: root.pasteMode || root.recordingMode || !root.protectedLyrics
                     objectName: "download-lyrics-kind"
                     model: [qsTr("Original"), qsTr("Romanizada"), qsTr("Tradução")]
                     currentIndex: -1
@@ -648,7 +762,7 @@ Dialog {
                 controlId: "download-lyrics-save"
                 contract: root.contract
                 text: root.pasteMode && root.stagedVersions.length > 0 ? qsTr("Guardar versões") : qsTr("Guardar como nova versão")
-                enabled: root.versionFieldsEditable && (root.pasteMode ? root.draftReady || (root.stagedVersions.length > 0 && root.draftEmpty) : root.versionKind.length > 0 && nameField.text.trim().length > 0 && root.metadataCurrent && root.requestOwner.canSave && root.selectedCandidate !== null)
+                enabled: root.versionFieldsEditable && (root.pasteMode ? root.draftReady || (root.stagedVersions.length > 0 && root.draftEmpty) : root.versionKind.length > 0 && nameField.text.trim().length > 0 && (root.recordingMode ? root.recordingSaveReady : root.metadataCurrent && root.requestOwner.canSave && root.selectedCandidate !== null))
                 KeyNavigation.tab: retrySaveButton.enabled ? retrySaveButton : discardButton.enabled ? discardButton : dismissButton
                 onClicked: root.saveVersion()
             }

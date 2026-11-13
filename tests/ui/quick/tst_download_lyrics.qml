@@ -25,7 +25,11 @@ TestCase {
             property bool canDismiss: true
             property bool hasLyricsPage: false
             property bool lyricsCopyProtected: false
+            property bool recordingSearchBusy: false
             property string lyricsAttribution: ""
+            property string album: ""
+            property string recordingResultToken: ""
+            property var recordings: []
             property string pendingDiscardToken: ""
             property string title: "Original 日本語"
             property string artist: "Synthetic artist"
@@ -46,6 +50,9 @@ TestCase {
                 }
             ]
             property int retryCalls: 0
+            property int recordingSearchCalls: 0
+            property int recordingSaveCalls: 0
+            property int recordingCancelCalls: 0
             property int saveCalls: 0
             property int pasteCalls: 0
             property int batchCalls: 0
@@ -64,6 +71,8 @@ TestCase {
             property string submittedToken: ""
             property string submittedDiscardToken: ""
             property string submittedContent: ""
+            property string submittedRecordingId: ""
+            property string submittedRecordingResult: ""
             property bool submittedLyricsPageSource: false
             property bool retryAccepted: true
             property bool pasteAccepted: true
@@ -78,6 +87,29 @@ TestCase {
                     fake.changed();
                 }
                 return fake.retryAccepted;
+            }
+            function searchRecordings(token, title, artist) {
+                ++fake.recordingSearchCalls;
+                fake.submittedToken = token;
+                fake.submittedTitle = title;
+                fake.submittedArtist = artist;
+                return true;
+            }
+            function cancelRecordingSearch() {
+                ++fake.recordingCancelCalls;
+                fake.recordingResultToken = "";
+                fake.recordings = [];
+            }
+            function previewRecordingCandidate(requestToken, resultToken, id, format) {
+                return "<b>Text " + id + " / " + format + "</b>";
+            }
+            function saveRecordingCandidate(requestToken, resultToken, id, format) {
+                ++fake.recordingSaveCalls;
+                fake.submittedToken = requestToken;
+                fake.submittedRecordingResult = resultToken;
+                fake.submittedRecordingId = id;
+                fake.submittedIndex = format;
+                return true;
             }
             function saveCandidate(index, name, language, script, kind) {
                 fake.saveCalls++;
@@ -307,6 +339,69 @@ TestCase {
         compare(backend.submittedTitle, "Corrected title");
         compare(backend.submittedArtist, "Corrected artist");
         compare(backend.saveCalls, 0);
+    }
+    function test_lrcLibSearchRequiresExplicitRecordingAndFormatBeforeSave() {
+        const button = field("search-recordings");
+        const recordings = field("recordings");
+        const formats = field("recording-formats");
+        const save = field("save");
+        field("artist").text = "";
+        compare(backend.recordingSearchCalls, 0);
+        press(button);
+        compare(backend.recordingSearchCalls, 1);
+        compare(backend.submittedToken, "request-a");
+        compare(backend.submittedArtist, "");
+        backend.recordings = [
+            {
+                id: "51",
+                title: "Same title",
+                artist: "Other artist",
+                album: "Other album",
+                durationMs: 123000,
+                instrumental: true,
+                formats: []
+            },
+            {
+                id: "52",
+                title: "Same title",
+                artist: "<b>Wanted Artist</b>",
+                album: "Album",
+                durationMs: 120000,
+                instrumental: false,
+                formats: [
+                    {
+                        label: "LRC"
+                    },
+                    {
+                        label: "Texto"
+                    }
+                ]
+            }
+        ];
+        backend.recordingResultToken = "result-a";
+        prepareVersion(0);
+        compare(recordings.currentIndex, 0);
+        compare(recordings.displayText, "Escolha a gravação");
+        verify(!save.enabled);
+        verify(recordings.textAt(2).includes("<b>Wanted Artist</b>"));
+        recordings.activated(2);
+        compare(formats.currentIndex, 0);
+        compare(formats.displayText, "Escolha o formato");
+        verify(!save.enabled);
+        formats.activated(2);
+        compare(field("preview").text, "<b>Text 52 / 1</b>");
+        compare(field("preview").textFormat, TextEdit.PlainText);
+        verify(save.enabled);
+        shell.panel.saveVersion();
+        compare(backend.recordingSaveCalls, 1);
+        compare(backend.submittedRecordingResult, "result-a");
+        compare(backend.submittedRecordingId, "52");
+        compare(backend.submittedIndex, 1);
+        compare(backend.saveCalls, 0);
+        field("title").text = "Different query";
+        verify(!save.enabled);
+        press(field("close-recording-search"));
+        compare(backend.recordingCancelCalls, 1);
     }
     function test_saveRequiresNameAndAnExplicitFormChoice() {
         const save = field("save");

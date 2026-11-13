@@ -25,12 +25,16 @@ class DownloadLyricsBinding final : public QObject {
     Q_PROPERTY(bool canDismiss READ canDismiss NOTIFY changed)
     Q_PROPERTY(QString title READ title NOTIFY changed)
     Q_PROPERTY(QString artist READ artist NOTIFY changed)
+    Q_PROPERTY(QString album READ album NOTIFY changed)
     Q_PROPERTY(bool hasLyricsPage READ hasLyricsPage NOTIFY changed)
     Q_PROPERTY(QString requestToken READ requestToken NOTIFY changed)
     Q_PROPERTY(QString statusText READ statusText NOTIFY changed)
     Q_PROPERTY(QString lyricsAttribution READ lyricsAttribution NOTIFY changed)
     Q_PROPERTY(bool lyricsCopyProtected READ lyricsCopyProtected NOTIFY changed)
     Q_PROPERTY(QVariantList candidates READ candidates NOTIFY changed)
+    Q_PROPERTY(QVariantList recordings READ recordings NOTIFY changed)
+    Q_PROPERTY(QString recordingResultToken READ recordingResultToken NOTIFY changed)
+    Q_PROPERTY(bool recordingSearchBusy READ recordingSearchBusy NOTIFY changed)
   public:
     DownloadLyricsBinding(DownloadLyricsLookup& lookup, LyricsBinding& writer, QObject* parent = nullptr);
     ~DownloadLyricsBinding() override;
@@ -45,14 +49,27 @@ class DownloadLyricsBinding final : public QObject {
     [[nodiscard]] bool canDismiss() const;
     [[nodiscard]] QString title() const;
     [[nodiscard]] QString artist() const;
+    [[nodiscard]] QString album() const;
     [[nodiscard]] bool hasLyricsPage() const;
     [[nodiscard]] QString requestToken() const;
     [[nodiscard]] QString statusText() const;
     [[nodiscard]] QString lyricsAttribution() const;
     [[nodiscard]] bool lyricsCopyProtected() const;
     [[nodiscard]] QVariantList candidates() const;
+    [[nodiscard]] QVariantList recordings() const;
+    [[nodiscard]] QString recordingResultToken() const;
+    [[nodiscard]] bool recordingSearchBusy() const;
     Q_INVOKABLE bool openLyricsPage(const QString& expected_request_token);
     Q_INVOKABLE bool retry(const QString& title, const QString& artist);
+    Q_INVOKABLE bool searchRecordings(const QString& expected_request_token, const QString& title,
+                                      const QString& artist);
+    Q_INVOKABLE void cancelRecordingSearch(const QString& expected_request_token);
+    Q_INVOKABLE QString previewRecordingCandidate(const QString& expected_request_token,
+                                                  const QString& expected_result_token, const QString& id,
+                                                  int format) const;
+    Q_INVOKABLE bool saveRecordingCandidate(const QString& expected_request_token, const QString& expected_result_token,
+                                            const QString& id, int format, const QString& name, const QString& language,
+                                            const QString& script, const QString& kind);
     Q_INVOKABLE bool saveCandidate(int index, const QString& name, const QString& language, const QString& script,
                                    const QString& kind);
     Q_INVOKABLE bool savePasted(const QString& expected_request_token, const QString& content, const QString& name,

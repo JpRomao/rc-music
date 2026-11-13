@@ -7,6 +7,7 @@
 #include <QUuid>
 #include <QVariantMap>
 
+#include <algorithm>
 #include <optional>
 #include <utility>
 
@@ -62,6 +63,30 @@ bool pending(const AcquiredLyricsSaveState state) {
            state == AcquiredLyricsSaveState::SaveFailed || state == AcquiredLyricsSaveState::BlockedByFutureVersion ||
            state == AcquiredLyricsSaveState::Invalid;
 }
+QString recordingNotice(const LyricsSearchError error, const bool found) {
+    switch (error) {
+    case LyricsSearchError::None:
+        return found ? DownloadLyricsBinding::tr("Escolha uma gravação do LRCLIB.")
+                     : DownloadLyricsBinding::tr("Nenhuma gravação encontrada no LRCLIB.");
+    case LyricsSearchError::InvalidQuery:
+        return DownloadLyricsBinding::tr("Confira o título, o artista e o álbum da busca.");
+    case LyricsSearchError::Unavailable:
+        return DownloadLyricsBinding::tr("A busca de letras está indisponível agora.");
+    case LyricsSearchError::RateLimited:
+        return DownloadLyricsBinding::tr("Aguarde antes de buscar novamente no LRCLIB.");
+    case LyricsSearchError::Timeout:
+        return DownloadLyricsBinding::tr("A busca no LRCLIB excedeu o tempo limite.");
+    case LyricsSearchError::Network:
+        return DownloadLyricsBinding::tr("Não foi possível conectar ao LRCLIB.");
+    case LyricsSearchError::AccessDenied:
+        return DownloadLyricsBinding::tr("O LRCLIB não permitiu a consulta.");
+    case LyricsSearchError::InvalidResponse:
+        return DownloadLyricsBinding::tr("O LRCLIB enviou uma resposta inválida.");
+    case LyricsSearchError::ResponseTooLarge:
+        return DownloadLyricsBinding::tr("A resposta do LRCLIB excedeu os limites. Tente uma busca mais específica.");
+    }
+    return {};
+}
 } // namespace
 
 struct DownloadLyricsBinding::Impl final {
@@ -70,9 +95,12 @@ struct DownloadLyricsBinding::Impl final {
     LyricsBinding& writer;
     std::optional<PublishedLyricsRequest> request;
     std::optional<DownloadLyricsLookup::Result> preview;
+    std::vector<LyricsSearchCandidate> recordings;
+    QString recording_token, recording_notice;
+    quint64 recording_revision{};
     QString token, notice, save_target;
     std::string save_ticket;
-    bool writing_call{}, preparing{}, stopping{};
+    bool writing_call{}, recording_busy{}, preparing{}, stopping{};
 
     Impl(DownloadLyricsBinding& view, DownloadLyricsLookup& source, LyricsBinding& destination)
         : owner(view), lookup(source), writer(destination) {
@@ -90,7 +118,7 @@ struct DownloadLyricsBinding::Impl final {
         return own(snapshot) && pending(snapshot.state);
     }
     bool busy() const {
-        if (writing_call || (request && lookup.state() == DownloadLyricsLookup::State::Searching))
+        if (writing_call || recording_busy || (request && lookup.state() == DownloadLyricsLookup::State::Searching))
             return true;
         const auto snapshot = writer.acquiredLyricsSave();
         return own(snapshot) && (snapshot.state == AcquiredLyricsSaveState::Loading ||
@@ -113,7 +141,26 @@ struct DownloadLyricsBinding::Impl final {
         return canSavePasted() && snapshot && !snapshot->copy_protected;
     }
     bool canRetry() const {
-        return allowed() && request && !ownPending() && lookup.state() != DownloadLyricsLookup::State::Searching;
+        return allowed() && request && !ownPending() && !recording_busy &&
+               lookup.state() != DownloadLyricsLookup::State::Searching;
+    }
+    void clearRecordings() {
+        ++recording_revision;
+        recording_busy = false;
+        recordings.clear();
+        recording_token.clear();
+        recording_notice.clear();
+    }
+    const LyricsDocument* recordingFormat(const QString& request_token, const QString& result_token, const QString& id,
+                                          const int format) const {
+        if (!allowed() || !request || token != request_token || recording_token.isEmpty() ||
+            recording_token != result_token || format < 0 || id.size() > 19)
+            return nullptr;
+        const auto found = std::ranges::find_if(
+            recordings, [&id](const auto& candidate) { return QString::number(candidate.id) == id; });
+        if (found == recordings.end() || static_cast<std::size_t>(format) >= found->formats.size())
+            return nullptr;
+        return &found->formats[static_cast<std::size_t>(format)];
     }
     bool canRetrySave() const {
         const auto snapshot = writer.acquiredLyricsSave();
@@ -209,6 +256,8 @@ struct DownloadLyricsBinding::Impl final {
             return lookup.providerNotice() + QStringLiteral(" ") + action;
         if (!request)
             return {};
+        if (!recording_notice.isEmpty())
+            return recording_notice;
         const auto lookup_message = lookup.message();
         return lookup_message.isEmpty() ? lookup.providerNotice() : lookup_message;
     }
@@ -257,6 +306,7 @@ QString DownloadLyricsBinding::pendingDiscardToken() const { return impl_->pendi
 bool DownloadLyricsBinding::canDismiss() const { return impl_->canDismiss(); }
 QString DownloadLyricsBinding::title() const { return impl_->request ? impl_->request->title : QString{}; }
 QString DownloadLyricsBinding::artist() const { return impl_->request ? impl_->request->artist : QString{}; }
+QString DownloadLyricsBinding::album() const { return impl_->request ? impl_->request->album : QString{}; }
 bool DownloadLyricsBinding::hasLyricsPage() const {
     return impl_->allowed() && impl_->request && !impl_->request->lyrics_page.isEmpty();
 }
@@ -286,6 +336,28 @@ QVariantList DownloadLyricsBinding::candidates() const {
     }
     return result;
 }
+QVariantList DownloadLyricsBinding::recordings() const {
+    QVariantList result;
+    const auto& value = *impl_;
+    if (!value.allowed())
+        return result;
+    for (const auto& candidate : value.recordings) {
+        QVariantList formats;
+        for (const auto& document : candidate.formats)
+            formats.push_back(
+                QVariantMap{{"label", document.lines.empty() ? tr("Texto simples") : tr("Sincronizada")}});
+        result.push_back(QVariantMap{{"id", QString::number(candidate.id)},
+                                     {"title", candidate.recording.title},
+                                     {"artist", candidate.recording.artist},
+                                     {"album", candidate.recording.album},
+                                     {"durationMs", candidate.recording.duration_ms},
+                                     {"instrumental", candidate.instrumental},
+                                     {"formats", std::move(formats)}});
+    }
+    return result;
+}
+QString DownloadLyricsBinding::recordingResultToken() const { return impl_->recording_token; }
+bool DownloadLyricsBinding::recordingSearchBusy() const { return impl_->recording_busy; }
 bool DownloadLyricsBinding::openLyricsPage(const QString& expected_request_token) {
     auto& value = *impl_;
     if (!hasLyricsPage() || expected_request_token != value.token)
@@ -310,6 +382,7 @@ bool DownloadLyricsBinding::retry(const QString& title, const QString& artist) {
     const auto expected_token = value.token;
     value.request = captured;
     value.preview.reset();
+    value.clearRecordings();
     value.notice.clear();
     // The retained trusted target also permits an explicit retry after exit was
     // cancelled. It never asks the audio service to acquire the file again.
@@ -320,6 +393,62 @@ bool DownloadLyricsBinding::retry(const QString& title, const QString& artist) {
     return value.allowed() && value.request && value.token == expected_token &&
            (value.lookup.state() == DownloadLyricsLookup::State::Searching ||
             value.lookup.state() == DownloadLyricsLookup::State::Ready);
+}
+bool DownloadLyricsBinding::searchRecordings(const QString& expected_request_token, const QString& title,
+                                             const QString& artist) {
+    auto& value = *impl_;
+    if (!value.canRetry() || expected_request_token != value.token || !bounded(title, 512) || !bounded(artist, 512))
+        return false;
+    const auto captured_title = owned(title);
+    const auto captured_artist = owned(artist);
+    value.clearRecordings();
+    value.recording_busy = true;
+    value.recording_notice = tr("Buscando gravações no LRCLIB…");
+    const auto expected = value.recording_revision;
+    const QPointer<DownloadLyricsBinding> guard(this);
+    emit changed();
+    if (!guard || value.recording_revision != expected || !value.allowed())
+        return false;
+    const auto completed = [guard, expected](LyricsSearchResult result) {
+        if (!guard || guard->impl_->recording_revision != expected || !guard->impl_->allowed())
+            return;
+        auto& state = *guard->impl_;
+        state.recording_busy = false;
+        state.recordings = std::move(result.candidates);
+        state.recording_notice = recordingNotice(result.error, !state.recordings.empty());
+        if (!state.recordings.empty())
+            state.recording_token = newToken();
+        emit guard->changed();
+    };
+    return value.lookup.searchRecordings(captured_title, captured_artist, completed);
+}
+void DownloadLyricsBinding::cancelRecordingSearch(const QString& expected_request_token) {
+    auto& value = *impl_;
+    if (expected_request_token != value.token || (!value.recording_busy && value.recording_notice.isEmpty()))
+        return;
+    value.clearRecordings();
+    value.lookup.cancelRecordingSearch();
+    emit changed();
+}
+QString DownloadLyricsBinding::previewRecordingCandidate(const QString& expected_request_token,
+                                                         const QString& expected_result_token, const QString& id,
+                                                         const int format) const {
+    const auto* document = impl_->recordingFormat(expected_request_token, expected_result_token, id, format);
+    return document ? QString::fromStdString(document->plain_text) : QString{};
+}
+bool DownloadLyricsBinding::saveRecordingCandidate(const QString& expected_request_token,
+                                                   const QString& expected_result_token, const QString& id,
+                                                   const int format, const QString& name, const QString& language,
+                                                   const QString& script, const QString& kind) {
+    auto& value = *impl_;
+    if (!value.canSavePasted())
+        return false;
+    const auto* document = value.recordingFormat(expected_request_token, expected_result_token, id, format);
+    if (!document)
+        return false;
+    auto content = lyricsDocumentAsLrc(*document);
+    return content ? value.saveVersion(std::move(*content), "LRCLIB", name, language, script, kind)
+                   : value.invalidSave();
 }
 bool DownloadLyricsBinding::saveCandidate(const int index, const QString& name, const QString& language,
                                           const QString& script, const QString& kind) {
@@ -400,6 +529,7 @@ bool DownloadLyricsBinding::dismiss() {
     const QPointer<DownloadLyricsBinding> guard(this);
     value.request.reset();
     value.preview.reset();
+    value.clearRecordings();
     value.token.clear();
     value.notice.clear();
     value.save_ticket.clear();
@@ -417,6 +547,7 @@ bool DownloadLyricsBinding::dismiss() {
 bool DownloadLyricsBinding::prepareExit() {
     impl_->preparing = true;
     impl_->preview.reset();
+    impl_->clearRecordings();
     return impl_->lookup.prepareExit();
 }
 void DownloadLyricsBinding::resume() {
@@ -432,6 +563,7 @@ void DownloadLyricsBinding::beginShutdown() {
     impl_->stopping = true;
     impl_->preparing = true;
     impl_->preview.reset();
+    impl_->clearRecordings();
     impl_->lookup.beginShutdown();
 }
 bool DownloadLyricsBinding::drained() const { return impl_->lookup.drained(); }

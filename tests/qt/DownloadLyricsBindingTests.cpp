@@ -4,6 +4,7 @@
 #include "presentation/LyricsBinding.hpp"
 
 #include <QDesktopServices>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaMethod>
@@ -16,6 +17,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QUrlQuery>
 #include <QUuid>
 #include <QVariantMap>
 
@@ -57,6 +59,7 @@ class Reply final : public QNetworkReply {
     void finish(const int status, QByteArray body) {
         bytes_ = std::move(body);
         setAttribute(QNetworkRequest::HttpStatusCodeAttribute, status);
+        setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         setFinished(true);
         emit readyRead();
         emit finished();
@@ -197,6 +200,71 @@ struct Harness final {
 class DownloadLyricsBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void findsAndSavesAnExplicitRecordingFormatForThePublishedTrack() {
+        Harness h;
+        QVERIFY(h.ready());
+        QVERIFY(h.binding.canSave());
+        const auto request_token = h.binding.requestToken();
+        const auto search = [&h](const QString& token) {
+            bool accepted{};
+            const auto called = QMetaObject::invokeMethod(
+                &h.binding, "searchRecordings", Qt::DirectConnection, Q_RETURN_ARG(bool, accepted),
+                Q_ARG(QString, token), Q_ARG(QString, QStringLiteral("Corrected title")), Q_ARG(QString, QString{}));
+            return called && accepted;
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(h.service.canSearch(), 1500);
+        QVERIFY(!search("stale"));
+        QCOMPARE(h.network.requests.size(), 1);
+        QVERIFY(search(request_token));
+        QVERIFY(h.binding.property("recordingSearchBusy").toBool());
+        QCOMPARE(h.network.requests.size(), 2);
+        const auto endpoint = h.network.requests.back().url();
+        QCOMPARE(endpoint.path(), "/api/search");
+        const QUrlQuery query(endpoint);
+        QCOMPARE(query.queryItemValue("track_name"), "Corrected title");
+        QVERIFY(!query.hasQueryItem("artist_name"));
+        QVERIFY(!endpoint.toString().contains("downloaded"));
+        h.network.replies.back()->finish(200, R"([
+            {"id":51,"trackName":"Corrected title","artistName":"Other Artist","albumName":"Album",
+             "duration":199,"instrumental":true,"syncedLyrics":null,"plainLyrics":null},
+            {"id":52,"trackName":"Corrected title","artistName":"Wanted Artist","albumName":"Album",
+             "duration":120,"instrumental":false,"syncedLyrics":"[00:01.00]Synced verse","plainLyrics":"Plain verse"}
+        ])");
+        QVERIFY(!h.binding.property("recordingSearchBusy").toBool());
+        const auto rows = h.binding.property("recordings").toList();
+        QCOMPARE(rows.size(), 2);
+        QCOMPARE(rows.front().toMap().value("formats").toList().size(), 0);
+        const auto second = rows[1].toMap();
+        QCOMPARE(second.value("title"), "Corrected title");
+        QCOMPARE(second.value("artist"), "Wanted Artist");
+        QCOMPARE(second.value("album"), "Album");
+        QCOMPARE(second.value("durationMs"), 120'000);
+        QCOMPARE(second.value("formats").toList().size(), 2);
+        const auto result_token = h.binding.property("recordingResultToken").toString();
+        QVERIFY(!result_token.isEmpty());
+        const auto save = [&](const QString& token, const QString& id, int format) {
+            bool accepted{};
+            const auto called = QMetaObject::invokeMethod(
+                &h.binding, "saveRecordingCandidate", Qt::DirectConnection, Q_RETURN_ARG(bool, accepted),
+                Q_ARG(QString, request_token), Q_ARG(QString, token), Q_ARG(QString, id), Q_ARG(int, format),
+                Q_ARG(QString, QStringLiteral("Reviewed")), Q_ARG(QString, QString{}), Q_ARG(QString, QString{}),
+                Q_ARG(QString, QStringLiteral("original")));
+            return called && accepted;
+        };
+        QVERIFY(!save("stale", "52", 1));
+        QVERIFY(!save(result_token, "51", 0));
+        QCOMPARE(h.store->saves.load(), 0);
+        QVERIFY(save(result_token, "52", 1));
+        QTRY_COMPARE_WITH_TIMEOUT(h.store->saves.load(), 1, 2500);
+        QTRY_VERIFY_WITH_TIMEOUT(!h.binding.busy(), 2500);
+        const auto stored = h.store->read(h.request().final_mp3);
+        QCOMPARE(stored.size(), std::size_t{1});
+        QCOMPARE(stored.front().source, "LRCLIB");
+        QCOMPARE(stored.front().content, "Plain verse");
+        QCOMPARE(h.network.requests.size(), 2);
+        QVERIFY(h.playback_network.requests.isEmpty());
+    }
+
     void displaysLicensedPreviewAndRefusesToSaveProviderContent() {
         Harness h;
         h.service.configureLyricFind({"fixture-key", {}, "BR", true});

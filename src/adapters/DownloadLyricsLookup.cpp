@@ -1,5 +1,4 @@
 #include "DownloadLyricsLookup.hpp"
-#include "QtLyricsService.hpp"
 
 #include <QDir>
 #include <QFileInfo>
@@ -226,6 +225,19 @@ bool DownloadLyricsLookup::retry(QString title, QString artist) {
     next.artist = std::move(artist);
     return value.request(next) && value.search_started;
 }
+bool DownloadLyricsLookup::searchRecordings(const QString& title, const QString& artist,
+                                            QtLyricsService::SearchCompletion completion) {
+    auto& value = *impl_;
+    if (!completion)
+        return false;
+    if (value.preparing || value.stopping || !value.current || value.active_online) {
+        completion({LyricsSearchError::Unavailable, {}});
+        return false;
+    }
+    return value.service.search({title, artist, value.current->album, value.current->duration_ms},
+                                std::move(completion));
+}
+void DownloadLyricsLookup::cancelRecordingSearch() { impl_->service.cancelSearch(); }
 void DownloadLyricsLookup::clear() { impl_->clear(); }
 bool DownloadLyricsLookup::prepareExit() {
     if (!impl_->preparing) {

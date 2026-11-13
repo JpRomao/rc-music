@@ -1,10 +1,16 @@
 # Plano de melhorias das letras
 
-**Estado:** proposto para execução no Windows · **Data:** 2026-11-13 · **Base:** `1f16201`
+**Estado:** em execução no Windows · **Data:** 2026-11-13 · **Base do plano:** `1f16201`
 
 O mantenedor confirmou que os downloads funcionam. A próxima entrega é ler, encontrar, escolher e gerenciar letras no RC Music, para arquivos locais e MP3 baixados. O verso continua acima da barra de progresso. O plano estende [FR-054](product/requirements.md#27-letras-das-músicas) e M3.9 e reaproveita o catálogo, o relógio do player e o salvamento já implementados. Vale para Lite e Completa.
 
-## Diagnóstico
+## Progresso
+
+- A busca por gravações foi priorizada. O player oferece consulta, prévia, escolha do formato e uso ou salvamento explícito. A revisão de um MP3 já publicado oferece **Ver outras correspondências**.
+- O leitor expandido acompanha a reprodução, aceita navegação por verso e guarda o tamanho do texto. O catálogo permite importar `.lrc` no player e adicionar, editar ou excluir versões no player e na fila.
+- A pesquisa online para uma faixa da fila que não está tocando, a duração real e o álbum na pesquisa inicial de um MP3 publicado, o gerenciamento de `.lrc` irmão, limites compartilhados entre consumidores, a comparação entre formas e o aceite instalado permanecem nas próximas etapas.
+
+## Diagnóstico inicial
 
 - A faixa de letras tem altura fixa e mostra só o verso atual, com limite de duas linhas visuais. Texto sem tempos usa uma área pequena com rolagem. O binding já calcula verso anterior, atual e seguinte pela posição confirmada. [Painel](../src/ui/qml/LyricsPanel.qml) · [Binding](../src/presentation/LyricsBinding.cpp)
 - **Buscar letra**, **Versões** e **Revisar letras** abrem caminhos diferentes. A busca do player desmarca a versão salva ao iniciar. O estado de espera cita LRCLIB mesmo quando o provedor pode ser LyricFind. O catálogo já permite adicionar e remover versões da música atual e adicionar pela fila. Falta editar uma versão salva e gerenciá-la diretamente pela fila. As opções de busca retornadas são formatos de uma mesma resposta. Falta escolher entre gravações candidatas. [Fluxo de versões](lyrics-variants.md) · [Serviço](../src/adapters/QtLyricsService.cpp)
@@ -74,6 +80,6 @@ Oferecer **Revisar letra** e **Agora não** sem interromper a reprodução. A se
 
 ## Implementação e validação
 
-- Entregar primeiro leitura compacta/expandida e preservação da seleção, depois o fluxo unificado com edição e remoção de versões, a busca por candidatos e a integração pós-download. Usar mudanças pequenas e testáveis. Reaproveitar `LyricsBinding`, `DownloadLyricsLookup`, `DownloadLyricsBinding` e `QtLyricsService`, com uma apresentação compartilhada e contextos independentes por faixa ou MP3 publicado. Introduzir novos campos persistentes só quando houver uso definido. Atualizar FR-054, ADRs e manual junto da mudança que alterar o contrato.
+- Começar pela busca e escolha de candidatos no LRCLIB. Evoluir leitura, edição, fila e revisão de downloads em incrementos testáveis. Reaproveitar `LyricsBinding`, `DownloadLyricsLookup`, `DownloadLyricsBinding` e `QtLyricsService`, com contextos independentes por faixa ou MP3 publicado. Atualizar FR-054, ADRs e manual junto das mudanças de contrato.
 - Em cada etapa de comportamento, registrar Red → Green → Refactor com fixtures de texto e rede simulada. Selecionar os alvos `rc_music.lyrics.service`, `rc_music.lyrics.binding`, `rc_music.lyrics.variants-store`, `rc_music.lyrics.romanizer`, `rc_music.lyrics.download-lookup`, `rc_music.lyrics.download-binding`, `rc_music.ui.quick` e `rc_music.ui.player-downloads` conforme a mudança. A UI já tem `tst_lyrics.qml`, `tst_lyrics_variants.qml` e `tst_download_lyrics.qml`. Verificar formato dos arquivos alterados, `all_qmllint` e o build Release na entrega integrada. [Comandos Windows](development-commands.md) · [Alvos de teste](../tests/ui/CMakeLists.txt)
 - No aceite final Windows, conferir por mouse, teclado e NVDA uma faixa com LRC local, uma gravação ambígua na busca, uma letra sem tempos, uma versão japonesa com romaji, um MP3 baixado cuja revisão já foi encerrada e uma música adicionada manualmente. Nestas duas últimas, editar e remover versões e conferir o catálogo após reiniciar. Usar **Silhouette** e **Number One** como exemplos manuais quando as fontes estiverem acessíveis, sem depender da internet nos testes automatizados. A integração real com LyricFind depende de uma configuração de parceiro. Registrar testes automatizados, ensaios online e aceitação instalada separadamente. O objetivo é fechar as jornadas de letras, sem repetir benchmarks ou reabrir a investigação de downloads.

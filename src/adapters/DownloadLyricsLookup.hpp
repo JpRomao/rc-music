@@ -1,6 +1,6 @@
 #pragma once
 
-#include "m0/domain/Lyrics.hpp"
+#include "QtLyricsService.hpp"
 
 #include <QObject>
 #include <QString>
@@ -11,8 +11,6 @@
 #include <vector>
 
 namespace music_player::m0 {
-class QtLyricsService;
-
 // Trusted C++ composition supplies the already-published exact target. Neither
 // a browser message nor QML may turn a path into publication authority.
 struct PublishedLyricsRequest final {
@@ -44,6 +42,9 @@ class DownloadLyricsLookup final : public QObject {
     // revocation or closed/invalid ingress returns false. No implicit retry.
     [[nodiscard]] bool request(const PublishedLyricsRequest& request);
     [[nodiscard]] bool retry(QString title, QString artist);
+    [[nodiscard]] bool searchRecordings(const QString& title, const QString& artist,
+                                        QtLyricsService::SearchCompletion completion);
+    void cancelRecordingSearch();
     void clear();
     [[nodiscard]] bool prepareExit();
     void resume();
