@@ -339,6 +339,9 @@ def _header(files, include_youtube, features=None):
     if features is not None:
         lines.extend(["    profile.execution.provision_media_profile = " + str(features["provision_media_profile"]).lower() + ";",
                       "    profile.options.embedded_browser_ingress = " + str(features["embedded_browser_ingress"]).lower() + ";"])
+        if "forward_youtube_user_agent" in features:
+            forward_user_agent = str(features["forward_youtube_user_agent"]).lower()
+            lines.append("    profile.execution.job.network.forward_youtube_user_agent = " + forward_user_agent + ";")
     if include_youtube:
         lines.extend(["    profile.execution.youtube.emplace();", "    profile.execution.youtube->runtime.artifacts = {"])
         for row in files:
@@ -365,10 +368,13 @@ def _plan(config, *, allow_existing_output=False):
     features = None
     if "features" in config:
         feature_names = ("provision_media_profile", "embedded_browser_ingress")
-        _closed(config["features"], feature_names)
-        if any(type(config["features"][name]) is not bool for name in feature_names):
+        requested_features = config["features"]
+        if type(requested_features) is dict and "forward_youtube_user_agent" in requested_features:
+            feature_names += ("forward_youtube_user_agent",)
+        _closed(requested_features, feature_names)
+        if any(type(requested_features[name]) is not bool for name in feature_names):
             raise ValueError("feature values must be booleans")
-        features = {name: config["features"][name] for name in feature_names}
+        features = {name: requested_features[name] for name in feature_names}
     output = _plain(_local(config["output_directory"]))
     parent = _local(str(ROOT / "out/product"))
     if not _within(output, parent) or _key(output) == _key(parent):

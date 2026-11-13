@@ -202,10 +202,18 @@ function Get-RcMusicDownloadComponentPlan {
             (Get-ComponentString ($root.GetProperty('state'))) -cne 'candidate') {
             throw 'Unsupported component receipt schema, purpose or state'
         }
-        $features = [ordered]@{ provision_media_profile = $false; embedded_browser_ingress = $false }
+        $features = [ordered]@{
+            provision_media_profile = $false; embedded_browser_ingress = $false; forward_youtube_user_agent = $false
+        }
         if ($hasFeatures) {
-            Assert-ComponentObject $featureObject @('provision_media_profile', 'embedded_browser_ingress')
-            foreach ($name in @($features.Keys)) {
+            $featureNames = @('provision_media_profile', 'embedded_browser_ingress')
+            $forwardUserAgent = [Text.Json.JsonElement]::new()
+            if ($featureObject.ValueKind -eq [Text.Json.JsonValueKind]::Object -and
+                $featureObject.TryGetProperty('forward_youtube_user_agent', [ref]$forwardUserAgent)) {
+                $featureNames += 'forward_youtube_user_agent'
+            }
+            Assert-ComponentObject $featureObject $featureNames
+            foreach ($name in $featureNames) {
                 $value = $featureObject.GetProperty($name)
                 if ($value.ValueKind -notin @([Text.Json.JsonValueKind]::True, [Text.Json.JsonValueKind]::False)) {
                     throw 'Component compile-time features must be Boolean'

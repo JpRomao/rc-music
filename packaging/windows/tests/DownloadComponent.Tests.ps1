@@ -147,6 +147,7 @@ try {
         Assert-Equal $plan.metadata.activation_marker.content "RCMusicDownloadTools-v1`n"
         Assert-True ($plan.features.provision_media_profile -is [bool] -and -not $plan.features.provision_media_profile) 'Legacy profile provisioning default changed'
         Assert-True ($plan.features.embedded_browser_ingress -is [bool] -and -not $plan.features.embedded_browser_ingress) 'Legacy embedded ingress default changed'
+        Assert-Equal $plan.features.forward_youtube_user_agent $false
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.Root 'payload/download-tools/installed-v1'))) 'Reader created an activation marker'
         Assert-Equal (Snapshot $f.Root) $before 'Component inspection changed its inputs'
     }
@@ -169,6 +170,21 @@ try {
             Assert-Equal (Snapshot $f.Root) $before 'Feature inspection changed its inputs'
         }
     }
+    Test-Case 'optional YouTube User-Agent selection preserves an explicit Boolean' {
+        foreach ($forward in @($false, $true)) {
+            $f = New-Fixture -Youtube
+            $f.Data['features'] = [ordered]@{
+                provision_media_profile = $false
+                embedded_browser_ingress = $false
+                forward_youtube_user_agent = $forward
+            }
+            Save-Receipt $f
+            $plan = Get-Plan $f
+            Assert-True ($plan.features.forward_youtube_user_agent -is [bool]) 'YouTube User-Agent option lost its Boolean type'
+            Assert-Equal $plan.features.forward_youtube_user_agent $forward
+            Assert-Equal $plan.header_sha256 $f.Data.header.sha256
+        }
+    }
     Test-Case 'optional compile-time features reject missing unknown and non-Boolean fields' {
         foreach ($change in @(
             { param($d) $d['features'] = $null },
@@ -182,7 +198,8 @@ try {
             { param($d) $d['features'] = [ordered]@{ provision_media_profile = 'true'; embedded_browser_ingress = $false } },
             { param($d) $d['features'] = [ordered]@{ provision_media_profile = 1; embedded_browser_ingress = $false } },
             { param($d) $d['features'] = [ordered]@{ provision_media_profile = $true; embedded_browser_ingress = $null } },
-            { param($d) $d['features'] = [ordered]@{ provision_media_profile = $true; embedded_browser_ingress = 0 } }
+            { param($d) $d['features'] = [ordered]@{ provision_media_profile = $true; embedded_browser_ingress = 0 } },
+            { param($d) $d['features'] = [ordered]@{ provision_media_profile = $false; embedded_browser_ingress = $false; forward_youtube_user_agent = 'true' } }
         )) { Reject-ChangedReceipt $change }
     }
     Test-Case 'duplicate optional feature objects and nested option names are rejected' {

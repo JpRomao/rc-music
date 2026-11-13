@@ -162,6 +162,7 @@ class BuildProfileTests(unittest.TestCase):
         self.assertNotIn("features", candidate["config"])
         self.assertNotIn("provision_media_profile", header)
         self.assertNotIn("embedded_browser_ingress", header)
+        self.assertNotIn("forward_youtube_user_agent", header)
         self.assertNotIn(str(REPOSITORY), header)
         self.assertNotIn(str(REPOSITORY).replace("\\", "/"), header)
         self.assertNotIn("payload/", header)
@@ -209,7 +210,7 @@ class BuildProfileTests(unittest.TestCase):
         invalid = [None, False, [], "enabled", {},
                    {"provision_media_profile": True}, {"embedded_browser_ingress": False},
                    {"provision_media_profile": False, "embedded_browser_ingress": False, "extra": False}]
-        for name in ("provision_media_profile", "embedded_browser_ingress"):
+        for name in ("provision_media_profile", "embedded_browser_ingress", "forward_youtube_user_agent"):
             for value in (0, 1, None, "true", [], {}):
                 features = {"provision_media_profile": False, "embedded_browser_ingress": False}
                 features[name] = value
@@ -219,6 +220,25 @@ class BuildProfileTests(unittest.TestCase):
                 config = copy.deepcopy(self.config)
                 config["features"] = features
                 self.rejected(config)
+
+    def test_youtube_user_agent_opt_in_is_pinned_in_header_and_receipt(self):
+        self.add_youtube()
+        features = {"provision_media_profile": False, "embedded_browser_ingress": False}
+        self.config["features"] = features
+        self.assertNotIn("forward_youtube_user_agent", self.module.plan(self.config)["header_text"])
+        for forward in (False, True):
+            with self.subTest(forward=forward):
+                output = self.root / f"youtube-forward-{forward}"
+                self.config["output_directory"] = str(output)
+                features["forward_youtube_user_agent"] = forward
+                candidate = self.module.plan(self.config)
+                self.module.materialize(candidate)
+                header = output / "PlayerDownloadPackageProfile.hpp"
+                receipt = json.loads((output / "download-profile-receipt.json").read_text(encoding="utf-8"))
+                self.assertIn(f"profile.execution.job.network.forward_youtube_user_agent = {str(forward).lower()};",
+                              header.read_text(encoding="utf-8"))
+                self.assertEqual(receipt["features"], features)
+                self.assertEqual(receipt["header"]["sha256"], digest(header))
 
     def test_feature_canonical_config_is_ordered_independent_and_preserves_explicit_false(self):
         config = copy.deepcopy(self.config)

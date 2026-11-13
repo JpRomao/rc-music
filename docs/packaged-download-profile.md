@@ -15,7 +15,7 @@ O arquivo JSON de entrada exige os cinco primeiros campos abaixo e aceita o obje
 | `network` | Lista com exatamente nove registros `{role, path, bytes, sha256}`, um por papel da tabela abaixo. A ordem de entrada é normalizada. |
 | `media` | Registro `{path, bytes, sha256}` do `RCMusicMediaWorker.exe`. |
 | `youtube` | `null`, ou objeto `{receipt_path, receipt_sha256}` com caminho absoluto e pin explícito do recibo de produção YouTube. |
-| `features` | Opcional. Objeto fechado com os booleanos `provision_media_profile` e `embedded_browser_ingress`. |
+| `features` | Opcional. Objeto fechado com os booleanos `provision_media_profile` e `embedded_browser_ingress`, além do booleano opcional `forward_youtube_user_agent`. |
 
 Os caminhos das fontes precisam ser absolutos em drive local do Windows. `bytes` é um inteiro positivo de até 128 MiB por arquivo; `sha256` tem 64 dígitos hexadecimais minúsculos e deve corresponder aos bytes observados. Campos extras, tipos incompatíveis, papéis ausentes ou duplicados são recusados.
 
@@ -46,7 +46,9 @@ Uma composição revisada pode definir `features` assim:
 
 `provision_media_profile` configura o [perfil AppContainer por trabalho](download-conversion.md#perfil-appcontainer-por-trabalho). `embedded_browser_ingress` configura o [envio pelo navegador integrado](embedded-browser.md#envio-para-a-fila-de-downloads) da Completa. A execução usa as mesmas opções C++ dos componentes existentes. A janela interna continua pertencendo à composição da Completa.
 
-Quando `features` está presente, os dois campos são obrigatórios e aceitam somente `true` ou `false`. O header recebe as duas atribuições e o recibo registra as escolhas, inclusive `false` explícito. Omitir o objeto conserva o formato anterior do header e do recibo, com os defaults C++ desligados. Alterar as opções ou o header de um plano já calculado exige gerar outro plano antes da materialização.
+Quando `features` está presente, os dois campos do exemplo são obrigatórios. O campo opcional `forward_youtube_user_agent` habilita o envio do User-Agent validado pelo resolvedor nas transferências autorizadas do YouTube. O padrão é `false`. A opção usa o limite e a validação de cabeçalhos do fluxo existente e não lê cookies do navegador.
+
+Cada campo aceita somente `true` ou `false`. O header recebe as atribuições presentes e o recibo registra as escolhas, inclusive `false` explícito. Omitir o objeto conserva o formato anterior do header e do recibo, com os defaults C++ desligados. Alterar as opções ou o header de um plano já calculado exige gerar outro plano antes da materialização.
 
 O leitor de componentes usado pela montagem Windows valida o objeto opcional e devolve as opções normalizadas no plano. Os hashes do recibo e do header continuam vinculando a identidade do componente. O JSON é uma entrada de build; a configuração que chega ao player vem do C++ compilado. Qualificação física do isolamento e aceitação do navegador permanecem requisitos próprios antes do uso em produção.
 
