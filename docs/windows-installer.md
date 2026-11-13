@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-O setup privado mais recente da edição Completa experimental inclui LyricFind, geração de romaji e a escolha da pasta de downloads. [Setup de a114f20](#setup-completa-experimental-de-a114f20)
+O setup privado mais recente da edição Completa experimental inclui a extensão YouTube 0.1.4, a detecção do vídeo de Number One no Letras e nomes de MP3 definidos por música e artista. [Setup de 4e879e1](#setup-completa-experimental-de-4e879e1)
 
 Os setups privados Lite e Completa experimental de `f8a593b` foram compilados em 2026-11-11, com associações e sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes. [Setups de f8a593b](#setups-de-f8a593b)
 
@@ -14,6 +14,12 @@ A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) documenta 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
 
 A [entrega Completa experimental de `51cd067`](local-delivery-complete-51cd067-20261104.md) registra o setup de **38.139.221 bytes**, SHA-256 `9a59e347ae8564669780e3a03be1d289019d3f3d370f1d19fbaa8e22910657e9`, com manifesto/receipt e notices conferidos. O setup não inclui/instala Evergreen, não foi executado e mantém integração externa e downloads OFF.
+
+## Setup Completa experimental de 4e879e1
+
+Em 2026-11-13, o setup Release x64 foi gerado em `out/product/setup-letras-filenames-20261113/CompleteExperimental/RCMusic-Setup.exe` da worktree `brave-letras`. Tem 92.817.676 bytes e SHA-256 `092adb2a82a42eaeba1bd710e7236e8653c8f7eb1745061e3c6c37ab69589ff7`. Inclui a extensão YouTube 0.1.4 e o player e os hosts compatíveis com o nome opcional do MP3. Para usar o campo, atualize o RC Music e a extensão do Brave.
+
+O smoke isolado passou nos 17 cenários de áudio. A inspeção estática conferiu os 738 membros do instalador e releu o SHA-256 de 92 arquivos embutidos. O recibo está ao lado do setup. O setup é local e sem assinatura. A atualização instalada e o envio dessa faixa pelo Brave seguem sem teste.
 
 ## Setup Completa experimental de a114f20
 
