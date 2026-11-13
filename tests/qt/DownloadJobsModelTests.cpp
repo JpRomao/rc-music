@@ -121,7 +121,7 @@ class DownloadJobsModelTests final : public QObject {
         QVERIFY(!text.contains("histórico sem fase"));
         QCOMPARE(execution.starts, 0);
     }
-    void informationOmitsAdversarialTitlesAndCompletedPathsWithoutLosingState() {
+    void informationOmitsFreeFormTitlesAndCompletedPathsWithoutLosingState() {
         const QStringList titles{QStringLiteral("Music\nAuthorization: Bearer TITLE_CANARY"),
                                  QStringLiteral("access_token=TITLE_CANARY"),
                                  QStringLiteral("refresh_token=TITLE_CANARY"),
@@ -130,7 +130,9 @@ class DownloadJobsModelTests final : public QObject {
                                  QStringLiteral("AccessToken=TITLE_CANARY"),
                                  QStringLiteral("https://private.invalid/TITLE_CANARY?token=private"),
                                  QStringLiteral("C:/private/TITLE_CANARY.mp3"),
-                                 QStringLiteral("Music\u202eTITLE_CANARY")};
+                                 QStringLiteral("Music\u202eTITLE_CANARY"),
+                                 QStringLiteral("X-Auth: TITLE_CANARY"),
+                                 QStringLiteral("JWT eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.TITLE_CANARY")};
         for (const auto& title : titles) {
             Execution execution;
             Importer importer;
@@ -146,7 +148,8 @@ class DownloadJobsModelTests final : public QObject {
             const auto text = model.downloadInformation(QStringLiteral("private-1"));
             QVERIFY(text.contains("completed"));
             QVERIFY(text.contains("publishing"));
-            QVERIFY(text.contains("título omitido"));
+            QCOMPARE(value(model, DownloadJobsModel::TitleRole).toString(), title);
+            QVERIFY(!text.contains("Título:"));
             QVERIFY(!text.contains("TITLE_CANARY"));
             QVERIFY(!text.contains(QString::fromStdWString(finalPath().wstring())));
             QVERIFY(!text.contains("C:"));
@@ -181,7 +184,8 @@ class DownloadJobsModelTests final : public QObject {
         const auto role = model.roleNames().key("downloadInformation", -1);
         const auto information = value(model, role).toString();
         QVERIFY2(information.contains("information-1"), "Each history row needs whitelisted selectable information");
-        QVERIFY(information.contains("<b>Literal music title</b>"));
+        QCOMPARE(value(model, DownloadJobsModel::TitleRole).toString(), QStringLiteral("<b>Literal music title</b>"));
+        QVERIFY(!information.contains("Literal music title"));
         QVERIFY(information.contains("failed"));
         QVERIFY(information.contains("no-audio"));
         QVERIFY(information.contains("converting"));

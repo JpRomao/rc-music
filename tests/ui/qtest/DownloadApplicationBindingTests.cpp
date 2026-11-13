@@ -503,21 +503,21 @@ class DownloadApplicationBindingTests final : public QObject {
         QVERIFY(!h.binding.retryDownload(QStringLiteral("fresh-1")));
         QCOMPARE(h.execution.starts, 1);
     }
-    void informationCopyOmitsCompoundCredentialTitles_data() {
+    void informationCopyOmitsAllExternalTitles_data() {
         QTest::addColumn<QString>("title");
-        QTest::addColumn<bool>("sensitive");
         QTest::addColumn<bool>("restored");
         for (const bool restored : {false, true}) {
             const auto prefix = restored ? QByteArray{"restored-"} : QByteArray{"live-"};
-            QTest::newRow((prefix + "normal").constData()) << QStringLiteral("Normal piano song") << false << restored;
+            QTest::newRow((prefix + "normal").constData()) << QStringLiteral("Normal piano song") << restored;
+            QTest::newRow((prefix + "unknown-header").constData())
+                << QStringLiteral("X-Auth: COPY_TITLE_CANARY") << restored;
             for (const auto* key : {"access_token", "refresh_token", "api_key", "client_secret", "AccessToken"})
                 QTest::newRow((prefix + key).constData())
-                    << QString::fromLatin1(key) + QStringLiteral("=COPY_TITLE_CANARY") << true << restored;
+                    << QString::fromLatin1(key) + QStringLiteral("=COPY_TITLE_CANARY") << restored;
         }
     }
-    void informationCopyOmitsCompoundCredentialTitles() {
+    void informationCopyOmitsAllExternalTitles() {
         QFETCH(QString, title);
-        QFETCH(bool, sensitive);
         QFETCH(bool, restored);
         Harness h;
         const auto id = restored ? QStringLiteral("old-1") : QStringLiteral("fresh-1");
@@ -553,9 +553,8 @@ class DownloadApplicationBindingTests final : public QObject {
         QVERIFY(information.contains("9007199254740993"));
         QVERIFY(information.contains("no-audio"));
         QVERIFY(!information.contains("COPY_TITLE_CANARY"));
-        QCOMPARE(information.contains("título omitido"), sensitive);
-        if (!sensitive)
-            QVERIFY(information.contains(title));
+        QVERIFY(!information.contains("Título:"));
+        QVERIFY(!information.contains(title));
         QVERIFY(h.copied_information.isEmpty());
         QVERIFY(h.binding.copyDownloadInformation(id));
         QCOMPARE(h.copied_information, information);

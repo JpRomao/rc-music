@@ -439,15 +439,19 @@ TEST_CASE("Download retry failed uncertain or mismatched checkpoint never execut
 
 TEST_CASE("Download retry refuses stale historical ambiguous and closing targets without effects",
           "[download][download-retry]") {
-    SECTION("Restored failed history has no retained source or invented progress phase") {
+    SECTION("Restored failed history preserves recovery guidance without a retained source") {
+        const auto error =
+            GENERATE(DownloadFailure::NoAudio, DownloadFailure::Publication, DownloadFailure::InvalidResult);
         auto checkpoint = recoveredAdmission();
         checkpoint.jobs[0].state = DownloadJobState::Failed;
-        checkpoint.jobs[0].error = DownloadFailure::NoAudio;
+        checkpoint.jobs[0].error = error;
         AdmissionHarness h;
         REQUIRE(h.controller.start());
         h.io.loaded({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
         h.controller.tick(0);
-        REQUIRE(h.controller.downloadRetryStatus("old-1") == DownloadRetryStatus::SourceUnavailable);
+        REQUIRE(h.controller.downloadRetryStatus("old-1") == (error == DownloadFailure::NoAudio
+                                                                  ? DownloadRetryStatus::SourceUnavailable
+                                                                  : DownloadRetryStatus::RecoveryRequired));
         REQUIRE_FALSE(h.service.retrySource("old-1"));
         REQUIRE_FALSE(h.service.progressPhase("old-1"));
         REQUIRE(h.controller.retryDownload("old-1", admissionInput(2).request_id).state !=

@@ -1,6 +1,5 @@
 #include "DownloadJobsModel.hpp"
 
-#include <QRegularExpression>
 #include <QScopedValueRollback>
 #include <QStringList>
 
@@ -184,21 +183,6 @@ QString failureCode(const DownloadFailure error) {
         return QStringLiteral("invalid-result");
     }
     return QStringLiteral("invalid-result");
-}
-
-QString informationTitle(const std::string& title) {
-    const auto text = QString::fromStdString(title);
-    // Titles remain plain text, but cannot smuggle endpoints, local paths,
-    // credential-looking values or additional labelled lines into a report.
-    static const QRegularExpression sensitive{
-        QStringLiteral(
-            R"((://|www\.|(?<!<)[/\\]|\b(authorization|bearer|cookie|password|token|secret)\b|)"
-            R"(\b[\w-]*(token|secret|password|cookie|authorization|api[_-]?key|access[_-]?key|signature|credential)[\w-]*\s*[:=]))"),
-        QRegularExpression::CaseInsensitiveOption};
-    if (text.isEmpty() || text.size() > 800 || sensitive.match(text).hasMatch() ||
-        std::ranges::any_of(text, [](const QChar ch) { return !ch.isPrint(); }))
-        return DownloadJobsModel::tr("[título omitido por privacidade]");
-    return text;
 }
 
 bool sameSnapshot(const DownloadJobSnapshot& left, const DownloadJobSnapshot& right) {
@@ -522,7 +506,6 @@ QString DownloadJobsModel::downloadInformation(const QString& job_id) const {
             recovery.push_back(tr("liberar validação"));
     }
     return QStringList{
-        tr("Título: %1").arg(informationTitle(job.title)),
         tr("ID: %1").arg(job_id),
         tr("Estado: %1").arg(stateName(job.state)),
         tr("Falha: %1").arg(failureCode(job.error)),

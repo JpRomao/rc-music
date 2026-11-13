@@ -1132,13 +1132,13 @@ DownloadRetryStatus DownloadService::downloadRetryStatus(const std::string_view 
         return DownloadRetryStatus::RecoveryRequired;
     if (job->view.state != DownloadJobState::Failed || !job->view.completed_mp3.empty())
         return DownloadRetryStatus::NotFailed;
-    const auto& receipt = state.receipts[job->receipt_index];
-    if (receipt.recovered || job->item_index >= receipt.request.items.size())
-        return DownloadRetryStatus::SourceUnavailable;
     if (job->retry_requires_recovery || job->phase == DownloadPhase::Publishing ||
         job->view.error == DownloadFailure::Publication || job->view.error == DownloadFailure::InvalidResult ||
         job->view.error == DownloadFailure::Import)
         return DownloadRetryStatus::RecoveryRequired;
+    const auto& receipt = state.receipts[job->receipt_index];
+    if (receipt.recovered || job->item_index >= receipt.request.items.size())
+        return DownloadRetryStatus::SourceUnavailable;
     if (state.jobs.size() >= state.limits.max_jobs || state.receipts.size() >= state.limits.max_requests ||
         36 + retainedItemBytes(receipt.request.items[job->item_index]) >
             state.limits.max_retained_request_bytes - state.retained_request_bytes)
