@@ -1,5 +1,6 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
-import QtQuick.Controls
 import QtTest
 import MusicPlayer.M0
 
@@ -26,14 +27,42 @@ TestCase {
         property bool lyricsCopyProtected: false
         property bool lyricFindConfigured: false
         property string lyricsAttribution: ""
+        property string album: "Disc"
+        property int durationMs: 246000
+        property bool recordingSearchBusy: false
+        property string recordingSearchStatus: ""
+        property string recordingSearchRevision: "query-1"
+        property var recordingCandidates: []
+        property bool canSaveRecording: false
         property int requests: 0
+        property int uses: 0
+        property int cancels: 0
         property string submittedTitle: ""
         property string submittedArtist: ""
-        function search(title, artist) {
+        property string submittedAlbum: ""
+        property int submittedDuration: 0
+        function searchRecordings(title, artist, album, duration) {
             requests++;
             submittedTitle = title;
             submittedArtist = artist;
+            submittedAlbum = album;
+            submittedDuration = duration;
             return true;
+        }
+        function previewRecording(index, format, revision) {
+            return revision === recordingSearchRevision && index === 1 && format === 0 ? "<b>Other recording</b>" : "";
+        }
+        function useRecording(index, format, revision) {
+            if (previewRecording(index, format, revision) === "")
+                return false;
+            uses++;
+            currentLine = "New verse";
+            return true;
+        }
+        function cancelRecordingSearch() {
+            cancels++;
+            recordingCandidates = [];
+            recordingSearchBusy = false;
         }
     }
     Component {
@@ -47,6 +76,12 @@ TestCase {
     function init() {
         driver.resetLocalScenario();
         lyrics.requests = 0;
+        lyrics.uses = 0;
+        lyrics.cancels = 0;
+        lyrics.recordingSearchBusy = false;
+        lyrics.recordingSearchStatus = "";
+        lyrics.recordingCandidates = [];
+        lyrics.currentLine = "<b>Original verse</b>";
         lyrics.hasSyncedLyrics = true;
         lyrics.plainText = "";
         lyrics.lyricsCopyProtected = false;
@@ -88,16 +123,82 @@ TestCase {
         compare(lyrics.requests, 0);
         const title = findChild(shell, "lyrics-query-title");
         const artist = findChild(shell, "lyrics-query-artist");
-        verify(title && artist);
+        const album = findChild(shell, "lyrics-query-album");
+        const duration = findChild(shell, "lyrics-query-duration");
+        verify(title && artist && album && duration);
         compare(title.text, "Original song");
         title.text = "Corrected title";
-        artist.text = "Corrected artist";
+        artist.text = "";
+        album.text = "Corrected album";
+        duration.text = "123";
+        compare(lyrics.requests, 0);
         const submit = findChild(shell, "lyrics-query-submit");
         verify(submit);
         mouseClick(submit);
         compare(lyrics.requests, 1);
         compare(lyrics.submittedTitle, "Corrected title");
-        compare(lyrics.submittedArtist, "Corrected artist");
+        compare(lyrics.submittedArtist, "");
+        compare(lyrics.submittedAlbum, "Corrected album");
+        compare(lyrics.submittedDuration, 123000);
+    }
+    function test_previewAndExplicitChoiceKeepSameTitleRecordingsSeparate() {
+        mouseClick(findChild(shell, "lyrics-search"));
+        mouseClick(findChild(shell, "lyrics-query-submit"));
+        lyrics.recordingCandidates = [
+            {
+                id: "1",
+                title: "Same title",
+                artist: "First artist",
+                durationMs: 246000,
+                album: "",
+                formats: [
+                    {
+                        label: "Texto"
+                    }
+                ]
+            },
+            {
+                id: "2",
+                title: "Same title",
+                artist: "Other artist",
+                durationMs: 120000,
+                album: "",
+                formats: [
+                    {
+                        label: "Texto"
+                    }
+                ]
+            }
+        ];
+        const recordings = findChild(shell, "lyrics-recording-choice");
+        const choice = findChild(shell, "lyrics-recording-use");
+        verify(recordings && choice);
+        compare(recordings.count, 3);
+        verify(recordings.textAt(1).includes("First artist"));
+        verify(recordings.textAt(2).includes("Other artist"));
+        compare(recordings.currentIndex, 0);
+        compare(choice.enabled, false);
+        recordings.activated(2);
+        const preview = findChild(shell, "lyrics-recording-preview");
+        compare(preview.textFormat, Text.PlainText);
+        compare(preview.text, "<b>Other recording</b>");
+        compare(lyrics.currentLine, "<b>Original verse</b>");
+        compare(lyrics.uses, 0);
+        mouseClick(choice);
+        compare(lyrics.uses, 1);
+        compare(lyrics.currentLine, "New verse");
+        compare(lyrics.requests, 1);
+    }
+    function test_cancelDuringSearchDiscardsResultsAndReturnsFocus() {
+        const button = findChild(shell, "lyrics-search");
+        mouseClick(button);
+        mouseClick(findChild(shell, "lyrics-query-submit"));
+        lyrics.recordingSearchBusy = true;
+        keyClick(Qt.Key_Escape);
+        tryCompare(findChild(shell, "lyrics-panel"), "queryOpen", false);
+        compare(lyrics.cancels, 1);
+        compare(lyrics.currentLine, "<b>Original verse</b>");
+        tryCompare(button, "activeFocus", true);
     }
     function test_licensedLyricsUsePlainDisplayAndVisibleCredits() {
         lyrics.hasSyncedLyrics = false;
@@ -116,7 +217,7 @@ TestCase {
         compare(credit.text, "<b>Writer</b> · Publisher");
         compare(credit.textFormat, Text.PlainText);
         mouseClick(findChild(shell, "lyrics-search"));
-        verify(findChild(shell, "lyrics-query-notice").text.includes("LyricFind"));
+        verify(findChild(shell, "lyrics-query-notice").text.includes("LRCLIB"));
     }
     function test_lyricsKeepPlayingContentInsideTheMinimumWindow() {
         shell.width = 720;

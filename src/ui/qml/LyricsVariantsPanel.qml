@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs as NativeDialogs
 import QtQuick.Layouts
 import MusicPlayer.M0
 
@@ -16,31 +17,43 @@ Dialog {
     property var formOwner: null
     property string formTrack: ""
     property string formLyricsRevision: ""
+    property string editToken: ""
+    property string editId: ""
+    property bool lrcPickerArmed: false
+    property int lrcImportSerial: 0
+    property string lrcImportToken: ""
+    property string lrcImportPreviousContent: ""
+    property bool lrcImportRejected: false
     property string romajiToken: ""
     property string romajiRequestRevision: ""
     property var romajiRequestOwner: null
     property string queuedToken: ""
     property string queuedTitle: ""
+    property string managerToken: ""
+    property string managerTitle: ""
+    property string managerSelection: ""
+    readonly property bool managingQueue: managerToken.length > 0
+    readonly property var storedVariants: supported ? (managingQueue ? lyrics.queuedManagerVariants : lyrics.variants) : []
     property bool formRejected: false
     property string confirmMode: ""
     property var confirmOwner: null
     property string confirmTrack: ""
     property var confirmTarget: null
     readonly property bool supported: lyrics !== null && typeof lyrics.variants !== "undefined"
-    readonly property bool busy: supported && lyrics.variantsBusy
-    readonly property bool canEdit: visible && enabled && supported && lyrics.variantsCanEdit && !busy
-    readonly property bool canSelect: visible && enabled && supported && lyrics.variantsReady && !busy && !lyrics.variantsHasPendingChange
+    readonly property bool busy: supported && (managingQueue ? lyrics.queuedManagerBusy : lyrics.variantsBusy)
+    readonly property bool canEdit: visible && enabled && supported && (managingQueue ? lyrics.queuedManagerCanEdit : lyrics.variantsCanEdit) && !busy
+    readonly property bool canSelect: visible && enabled && supported && (managingQueue || lyrics.variantsReady) && !busy && !lyrics.variantsHasPendingChange
     readonly property bool canReload: visible && enabled && supported && !busy
-    readonly property bool noTrackToReload: trackIdentity.length === 0
-    readonly property string selectedId: supported ? lyrics.selectedVariantId : ""
+    readonly property bool noTrackToReload: !managingQueue && trackIdentity.length === 0
+    readonly property string selectedId: supported ? (managingQueue ? managerSelection : lyrics.selectedVariantId) : ""
     readonly property var onlineCandidates: supported && typeof lyrics.onlineLyricsCandidates !== "undefined" ? lyrics.onlineLyricsCandidates : []
     readonly property int selectedOnlineCandidate: supported && typeof lyrics.selectedOnlineLyricsCandidate !== "undefined" ? lyrics.selectedOnlineLyricsCandidate : -1
-    readonly property bool showOnlineCandidates: selectedId.length === 0 && onlineCandidates.length > 1
+    readonly property bool showOnlineCandidates: !managingQueue && selectedId.length === 0 && onlineCandidates.length > 1
     readonly property string currentLyricsRevision: supported && typeof lyrics.currentLyricsRevision !== "undefined" ? lyrics.currentLyricsRevision : ""
-    readonly property bool canSaveCurrent: canEdit && currentLyricsRevision.length > 0 && lyrics.canSaveCurrentLyrics
+    readonly property bool canSaveCurrent: !managingQueue && canEdit && currentLyricsRevision.length > 0 && lyrics.canSaveCurrentLyrics
     readonly property string romajiSourceRevision: supported && typeof lyrics.romajiSourceRevision === "string" ? lyrics.romajiSourceRevision : ""
     readonly property string romajiStatusText: supported && typeof lyrics.romajiStatusText === "string" ? lyrics.romajiStatusText : ""
-    readonly property bool canGenerateRomaji: canEdit && romajiSourceRevision.length > 0 && lyrics.canGenerateRomaji === true
+    readonly property bool canGenerateRomaji: !managingQueue && canEdit && romajiSourceRevision.length > 0 && lyrics.canGenerateRomaji === true
     readonly property var selectedVariant: variantForId(selectedId)
     readonly property var rows: variantRows()
     readonly property var versionKinds: [
@@ -58,10 +71,14 @@ Dialog {
         }
     ]
     readonly property bool childDialogOpen: formDialog.visible || confirmation.visible
-    readonly property bool textEntryMode: formMode === "add" || formMode === "queued" || formMode === "romaji"
+    readonly property bool textEntryMode: formMode === "add" || formMode === "queued" || formMode === "romaji" || formMode === "edit"
+    readonly property bool editing: formMode === "edit"
+    readonly property bool canEditSelected: canEdit && selectedVariant !== null && typeof lyrics.prepareVariantEdit === "function"
+    readonly property bool lrcImportAvailable: !managingQueue && formMode === "add" && formOwner !== null && typeof formOwner.importVariantLrc === "function"
     readonly property bool queuedFormAvailable: enabled && supported && typeof lyrics.queueVariantAvailable === "boolean" && lyrics.queueVariantAvailable
-    readonly property bool formCurrent: formDialog.visible && formOwner === lyrics && (formMode === "queued" ? enabled && queuedToken.length > 0 : formTrack === trackIdentity && canEdit && (formMode === "add" || (formMode === "current" && canSaveCurrent && formLyricsRevision === currentLyricsRevision) || (formMode === "romaji" && romajiToken.length > 0 && romajiRequestRevision === romajiSourceRevision)))
-    readonly property bool confirmCurrent: confirmation.visible && confirmOwner === lyrics && confirmTrack === trackIdentity && (confirmMode === "reload" ? (canReload && lyrics.variantsHasPendingChange) : (canEdit && targetCurrent()))
+    readonly property string actionTrack: managingQueue ? managerToken : trackIdentity
+    readonly property bool formCurrent: formDialog.visible && formOwner === lyrics && (formMode === "queued" ? enabled && queuedToken.length > 0 : formTrack === actionTrack && canEdit && (formMode === "add" || (formMode === "current" && canSaveCurrent && formLyricsRevision === currentLyricsRevision) || (formMode === "romaji" && romajiToken.length > 0 && romajiRequestRevision === romajiSourceRevision) || (editing && editToken.length > 0 && selectedId === editId)))
+    readonly property bool confirmCurrent: confirmation.visible && confirmOwner === lyrics && confirmTrack === actionTrack && (confirmMode === "reload" ? (canReload && lyrics.variantsHasPendingChange) : (canEdit && targetCurrent()))
     parent: Overlay.overlay
     anchors.centerIn: parent
     width: Math.min(660, parent ? parent.width - contract.spacingUnit * 8 : 660)
@@ -85,15 +102,31 @@ Dialog {
         if (confirmation)
             confirmation.close();
         clearRomajiRequest();
+        if (managingQueue) {
+            const token = managerToken;
+            managerToken = "";
+            managerSelection = "";
+            if (lyrics && typeof lyrics.closeQueuedManager === "function")
+                lyrics.closeQueuedManager(token);
+            queuedFormClosed(false);
+        }
     }
     onLyricsChanged: revokeDialogs()
     onTrackIdentityChanged: {
-        if (formMode !== "queued")
+        if (formMode !== "queued" && !managingQueue)
             revokeDialogs();
     }
     onCurrentLyricsRevisionChanged: {
         if (formMode === "current" && formLyricsRevision !== currentLyricsRevision && formDialog && formDialog.visible)
             formDialog.close();
+    }
+    onSelectedIdChanged: {
+        if (editing && editId !== selectedId && formDialog.visible)
+            formDialog.close();
+    }
+    onFormCurrentChanged: {
+        if (!formCurrent)
+            cancelLrcImport();
     }
     onRomajiSourceRevisionChanged: {
         if (romajiToken.length > 0 && romajiRequestRevision !== romajiSourceRevision) {
@@ -113,6 +146,9 @@ Dialog {
                 return;
             }
             root.startForm("romaji", content);
+        }
+        function onImportedVariantLrc(token, name, content) {
+            root.completeLrcImport(token, name, content);
         }
     }
     onEnabledChanged: {
@@ -138,6 +174,8 @@ Dialog {
             owner.discardRomaji(token);
     }
     function variantRows() {
+        if (managingQueue)
+            return storedVariants;
         const result = [
             {
                 id: "",
@@ -150,7 +188,7 @@ Dialog {
             }
         ];
         if (supported) {
-            const stored = lyrics.variants;
+            const stored = storedVariants;
             for (let index = 0; index < stored.length; ++index)
                 result.push(stored[index]);
         }
@@ -159,7 +197,7 @@ Dialog {
     function variantForId(id) {
         if (!supported || id.length === 0)
             return null;
-        const stored = lyrics.variants;
+        const stored = storedVariants;
         for (let index = 0; index < stored.length; ++index) {
             if (stored[index].id === id)
                 return stored[index];
@@ -207,21 +245,133 @@ Dialog {
         queuedTitle = title;
         startForm("queued");
     }
-    function startForm(mode, draftText = "") {
+    function openQueuedManager(occurrenceId, title) {
+        if (!queuedFormAvailable || visible || childDialogOpen || typeof lyrics.openQueuedManager !== "function")
+            return;
+        const token = lyrics.openQueuedManager(occurrenceId);
+        if (!token.length)
+            return;
+        managerToken = token;
+        managerTitle = title;
+        managerSelection = "";
+        open();
+    }
+    function startForm(mode, draftText = "", draft = null) {
         formMode = mode;
         formOwner = lyrics;
-        formTrack = trackIdentity;
+        formTrack = actionTrack;
         formLyricsRevision = mode === "current" ? currentLyricsRevision : "";
         formRejected = false;
+        lrcImportRejected = false;
         const romaji = mode === "romaji";
-        nameField.text = romaji ? qsTr("Romaji") : "";
-        languageField.text = romaji ? "ja" : "";
-        scriptField.text = romaji ? "Latn" : "";
-        sourceField.text = romaji ? "pykakasi" : "";
-        contentField.text = draftText;
-        kindField.currentIndex = romaji ? 1 : 0;
-        generatedField.checked = romaji;
+        nameField.text = draft ? draft.name : (romaji ? qsTr("Romaji") : "");
+        languageField.text = draft ? draft.language : (romaji ? "ja" : "");
+        scriptField.text = draft ? draft.script : (romaji ? "Latn" : "");
+        sourceField.text = draft ? draft.source : (romaji ? "pykakasi" : "");
+        contentField.text = draft ? draft.content : draftText;
+        kindField.currentIndex = draft ? Math.max(0, versionKinds.findIndex(choice => choice.value === draft.kind)) : (romaji ? 1 : 0);
+        generatedField.checked = draft ? draft.generated : romaji;
+        timingField.checked = false;
         formDialog.open();
+    }
+    function chooseLrcFile() {
+        if (!lrcImportAvailable || !formCurrent || lrcPickerArmed || lrcImportToken.length > 0)
+            return;
+        formRejected = false;
+        lrcImportRejected = false;
+        lrcPickerArmed = true;
+        lrcPicker.open();
+    }
+    function cancelLrcImport() {
+        lrcPickerArmed = false;
+        lrcImportToken = "";
+        lrcImportPreviousContent = "";
+        if (lrcPicker && lrcPicker.visible)
+            lrcPicker.close();
+    }
+    function restoreLrcPickerFocus() {
+        Qt.callLater(function () {
+            if (root.formCurrent && !root.lrcPickerArmed && importLrcButton.enabled)
+                importLrcButton.forceActiveFocus(Qt.TabFocusReason);
+        });
+    }
+    function startLrcImport(file) {
+        if (!lrcPickerArmed || !lrcImportAvailable || !formCurrent)
+            return;
+        lrcPickerArmed = false;
+        const token = String(++lrcImportSerial);
+        lrcImportPreviousContent = contentField.text;
+        lrcImportToken = token;
+        if (!formOwner.importVariantLrc(file, formTrack, token))
+            completeLrcImport(token, "", "");
+    }
+    function completeLrcImport(token, name, content) {
+        if (!formCurrent || !lrcImportAvailable || lrcImportToken !== token || token.length === 0)
+            return;
+        const unchanged = contentField.text === lrcImportPreviousContent;
+        lrcImportToken = "";
+        lrcImportPreviousContent = "";
+        if (content.length === 0 || !unchanged) {
+            formRejected = true;
+            lrcImportRejected = true;
+        } else {
+            contentField.text = content;
+            if (nameField.text.trim().length === 0)
+                nameField.text = name;
+        }
+        restoreLrcPickerFocus();
+    }
+    function requestEdit() {
+        if (!canEditSelected || childDialogOpen)
+            return;
+        const owner = lyrics;
+        const track = actionTrack;
+        const id = selectedId;
+        const draft = managingQueue ? owner.prepareQueuedVariantEdit(managerToken, id) : owner.prepareVariantEdit(id);
+        if (!draft || typeof draft.token !== "string" || draft.token.length === 0)
+            return;
+        if (owner !== lyrics || track !== actionTrack || id !== selectedId || !canEditSelected || childDialogOpen) {
+            owner.cancelVariantEdit(draft.token);
+            return;
+        }
+        editId = id;
+        editToken = draft.token;
+        startForm("edit", "", draft);
+    }
+    function submitForm(asNew) {
+        if (!formSubmit.enabled || !formCurrent)
+            return;
+        const owner = formOwner;
+        const mode = formMode;
+        const name = nameField.text.trim();
+        const language = languageField.text.trim();
+        const script = scriptField.text.trim();
+        const kind = kindField.currentValue;
+        let accepted;
+        if (mode === "edit")
+            accepted = owner.saveVariantEdit(editToken, name, language, script, kind, contentField.text, asNew, timingField.checked);
+        else if (mode === "current")
+            accepted = owner.saveCurrentLyrics(name, language, script, kind, formLyricsRevision);
+        else if (mode === "romaji")
+            accepted = owner.saveRomaji(romajiToken, name, contentField.text);
+        else if (mode === "queued")
+            accepted = owner.addQueuedVariant(queuedToken, name, language, script, sourceField.text.trim(), kind, contentField.text, generatedField.checked);
+        else if (managingQueue)
+            accepted = owner.addQueuedManagerVariant(managerToken, name, language, script, sourceField.text.trim(), kind, contentField.text, generatedField.checked);
+        else
+            accepted = owner.addVariant(name, language, script, sourceField.text.trim(), kind, contentField.text, generatedField.checked);
+        if (!formDialog.visible || owner !== formOwner || mode !== formMode)
+            return;
+        if (accepted) {
+            queuedToken = "";
+            editToken = "";
+            if (mode === "romaji")
+                romajiToken = "";
+            formDialog.accept();
+        } else {
+            formRejected = true;
+            lrcImportRejected = false;
+        }
     }
     function requestRomaji() {
         if (!canGenerateRomaji || childDialogOpen)
@@ -242,10 +392,11 @@ Dialog {
             return;
         confirmMode = "remove";
         confirmOwner = lyrics;
-        confirmTrack = trackIdentity;
+        confirmTrack = actionTrack;
         confirmTarget = {
             id: selectedVariant.id,
-            name: selectedVariant.name
+            name: selectedVariant.name,
+            title: managingQueue ? managerTitle : lyrics.title ?? ""
         };
         confirmation.open();
     }
@@ -253,12 +404,15 @@ Dialog {
         if (!canReload)
             return;
         if (!lyrics.variantsHasPendingChange) {
-            lyrics.reloadVariants();
+            if (managingQueue)
+                lyrics.reloadQueuedManager(managerToken);
+            else
+                lyrics.reloadVariants();
             return;
         }
         confirmMode = "reload";
         confirmOwner = lyrics;
-        confirmTrack = trackIdentity;
+        confirmTrack = actionTrack;
         confirmTarget = null;
         confirmation.open();
     }
@@ -303,7 +457,7 @@ Dialog {
         Accessible.name: qsTr("Versões da letra")
         Text {
             Layout.fillWidth: true
-            text: qsTr("Versões da letra")
+            text: root.managingQueue ? qsTr("Versões da letra · %1").arg(root.managerTitle) : qsTr("Versões da letra")
             textFormat: Text.PlainText
             color: root.contract.textPrimaryColor
             font.bold: true
@@ -313,7 +467,7 @@ Dialog {
         Text {
             objectName: "lyrics-variants-status"
             Layout.fillWidth: true
-            text: root.queuedFeedbackText.length > 0 ? root.queuedFeedbackText : (root.supported ? root.lyrics.variantsStatusText : "")
+            text: root.managingQueue ? root.lyrics.queuedManagerStatus : root.queuedFeedbackText.length > 0 ? root.queuedFeedbackText : (root.supported ? root.lyrics.variantsStatusText : "")
             textFormat: Text.PlainText
             color: root.contract.textSecondaryColor
             wrapMode: Text.WordWrap
@@ -465,7 +619,10 @@ Dialog {
                     return;
                 moveCursor(index, true);
                 forceActiveFocus(reason);
-                root.lyrics.selectVariant(variantId);
+                if (root.managingQueue)
+                    root.managerSelection = variantId;
+                else
+                    root.lyrics.selectVariant(variantId);
             }
 
             onModelChanged: restoreCursor(cursorId)
@@ -554,6 +711,15 @@ Dialog {
         RowLayout {
             Layout.fillWidth: true
             AccessibleTransportButton {
+                id: editButton
+                objectName: "lyrics-variant-edit"
+                contract: root.contract
+                text: qsTr("Editar versão")
+                visible: root.supported && typeof root.lyrics.prepareVariantEdit === "function"
+                enabled: root.canEditSelected
+                onClicked: root.requestEdit()
+            }
+            AccessibleTransportButton {
                 objectName: "lyrics-variant-remove"
                 contract: root.contract
                 text: qsTr("Excluir versão")
@@ -573,7 +739,7 @@ Dialog {
         }
         RowLayout {
             Layout.fillWidth: true
-            visible: root.supported && (!root.lyrics.variantsReady || root.lyrics.variantsHasPendingChange)
+            visible: root.supported && (root.managingQueue ? !root.canEdit : !root.lyrics.variantsReady || root.lyrics.variantsHasPendingChange)
             AccessibleTransportButton {
                 objectName: "lyrics-variant-retry"
                 contract: root.contract
@@ -610,20 +776,31 @@ Dialog {
         popupType: Popup.Item
         closePolicy: Popup.CloseOnEscape
         onOpened: nameField.forceActiveFocus(Qt.TabFocusReason)
+        onAboutToHide: root.cancelLrcImport()
         onClosed: {
             const mode = root.formMode;
             const owner = root.formOwner;
             const token = root.queuedToken;
+            const edited = root.editToken;
             root.formMode = "";
             root.formOwner = null;
             root.formTrack = "";
             root.formLyricsRevision = "";
+            root.editToken = "";
+            root.editId = "";
             root.queuedToken = "";
             root.queuedTitle = "";
             if (mode === "queued") {
                 if (owner && token.length > 0)
                     owner.cancelQueuedVariant(token);
                 root.queuedFormClosed(token.length === 0);
+            } else if (mode === "edit") {
+                if (owner && edited.length > 0)
+                    owner.cancelVariantEdit(edited);
+                if (root.visible && root.enabled) {
+                    const target = editButton.enabled ? editButton : closeButton;
+                    target.forceActiveFocus(Qt.TabFocusReason);
+                }
             } else if (mode === "romaji") {
                 root.clearRomajiRequest();
                 if (root.visible && root.enabled) {
@@ -646,15 +823,29 @@ Dialog {
         contentItem: ColumnLayout {
             spacing: root.contract.spacingUnit * 2
             Accessible.role: Accessible.Dialog
-            Accessible.name: root.formMode === "romaji" ? qsTr("Revisar romaji") : root.formMode === "current" ? qsTr("Salvar letra atual") : qsTr("Adicionar versão da letra")
-            Text {
+            Accessible.name: formHeading.text
+            RowLayout {
                 Layout.fillWidth: true
-                text: root.formMode === "romaji" ? qsTr("Revisar romaji") : root.formMode === "current" ? qsTr("Salvar letra atual") : qsTr("Adicionar versão da letra")
-                textFormat: Text.PlainText
-                color: root.contract.textPrimaryColor
-                font.bold: true
-                font.pixelSize: 20
-                Accessible.ignored: true
+                Text {
+                    id: formHeading
+                    Layout.fillWidth: true
+                    text: root.editing ? qsTr("Editar versão da letra") : root.formMode === "romaji" ? qsTr("Revisar romaji") : root.formMode === "current" ? qsTr("Salvar letra atual") : qsTr("Adicionar versão da letra")
+                    textFormat: Text.PlainText
+                    color: root.contract.textPrimaryColor
+                    font.bold: true
+                    font.pixelSize: 20
+                    wrapMode: Text.Wrap
+                    Accessible.ignored: true
+                }
+                AccessibleTransportButton {
+                    id: importLrcButton
+                    objectName: "lyrics-variant-import-lrc"
+                    contract: root.contract
+                    text: root.lrcImportToken.length > 0 ? qsTr("Lendo LRC…") : qsTr("Importar .lrc")
+                    visible: root.lrcImportAvailable
+                    enabled: visible && root.formCurrent && !root.lrcPickerArmed && root.lrcImportToken.length === 0
+                    onClicked: root.chooseLrcFile()
+                }
             }
             Text {
                 objectName: "lyrics-variant-queued-target"
@@ -755,13 +946,13 @@ Dialog {
                         objectName: "lyrics-variant-source-input"
                         visible: root.textEntryMode
                         maximumLength: 2048
-                        readOnly: root.formMode === "romaji"
+                        readOnly: root.formMode === "romaji" || root.editing
                         Accessible.name: qsTr("Origem da letra")
                         KeyNavigation.tab: contentField
                     }
                     FieldLabel {
                         visible: root.textEntryMode
-                        text: root.formMode === "romaji" ? qsTr("Revise a romanização e mantenha os tempos da letra.") : qsTr("Cole a letra ou o conteúdo LRC. Tempos existentes são preservados; texto sem tempos não é sincronizado automaticamente.")
+                        text: root.editing ? qsTr("Edite a letra. Os tempos ficam protegidos até você permitir alterações.") : root.formMode === "romaji" ? qsTr("Revise a romanização e mantenha os tempos da letra.") : qsTr("Cole a letra ou o conteúdo LRC. Tempos existentes são preservados; texto sem tempos não é sincronizado automaticamente.")
                     }
                     TextArea {
                         id: contentField
@@ -779,7 +970,7 @@ Dialog {
                         selectedTextColor: root.contract.accentTextColor
                         Accessible.role: Accessible.EditableText
                         Accessible.name: qsTr("Texto da letra ou LRC")
-                        KeyNavigation.tab: root.formMode === "romaji" ? formSubmit : generatedField
+                        KeyNavigation.tab: root.editing ? timingField : (root.formMode === "romaji" ? formSubmit : generatedField)
                         background: Rectangle {
                             color: root.contract.surfaceColor
                             radius: root.contract.radiusSmall
@@ -792,7 +983,7 @@ Dialog {
                         objectName: "lyrics-variant-generated-input"
                         Layout.fillWidth: true
                         visible: root.textEntryMode
-                        enabled: root.formCurrent && root.formMode !== "romaji"
+                        enabled: root.formCurrent && root.formMode !== "romaji" && !root.editing
                         text: qsTr("Texto gerado por ferramenta")
                         Accessible.name: text
                         KeyNavigation.tab: formSubmit
@@ -805,12 +996,29 @@ Dialog {
                             wrapMode: Text.WordWrap
                         }
                     }
+                    CheckBox {
+                        id: timingField
+                        objectName: "lyrics-variant-timing-input"
+                        Layout.fillWidth: true
+                        visible: root.editing
+                        enabled: root.formCurrent
+                        text: qsTr("Permitir alterar os tempos do LRC")
+                        Accessible.name: text
+                        KeyNavigation.tab: formSubmit
+                        contentItem: Text {
+                            text: timingField.text
+                            textFormat: Text.PlainText
+                            color: root.contract.textPrimaryColor
+                            leftPadding: timingField.indicator.width + timingField.spacing
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
                 }
             }
             Text {
                 Layout.fillWidth: true
                 visible: root.formRejected
-                text: root.formMode === "romaji" ? qsTr("Confira o texto e mantenha os tempos da letra original.") : root.formMode === "queued" ? qsTr("Confira o conteúdo e os limites. Se a faixa mudou na fila, abra o formulário novamente.") : qsTr("Não foi possível adicionar a versão. Confira o conteúdo e os limites informados.")
+                text: root.lrcImportRejected ? qsTr("Não foi possível preencher a versão com o arquivo LRC. Confira o arquivo ou cole a letra.") : root.editing ? qsTr("Confira o texto, os tempos ou reabra a versão se ela mudou.") : root.formMode === "romaji" ? qsTr("Confira o texto e mantenha os tempos da letra original.") : root.formMode === "queued" ? qsTr("Confira o conteúdo e os limites. Se a faixa mudou na fila, abra o formulário novamente.") : qsTr("Não foi possível adicionar a versão. Confira o conteúdo e os limites informados.")
                 textFormat: Text.PlainText
                 color: root.contract.textSecondaryColor
                 wrapMode: Text.WordWrap
@@ -827,45 +1035,40 @@ Dialog {
                     text: qsTr("Cancelar")
                     onClicked: formDialog.reject()
                 }
+                AccessibleTransportButton {
+                    objectName: "lyrics-variant-save-copy"
+                    contract: root.contract
+                    text: qsTr("Salvar como nova versão")
+                    visible: root.editing
+                    enabled: visible && formSubmit.enabled
+                    onClicked: if (enabled)
+                        root.submitForm(true)
+                }
                 AccessibleActionButton {
                     id: formSubmit
                     controlId: "lyrics-variant-submit"
                     contract: root.contract
-                    text: qsTr("Salvar")
-                    enabled: root.formCurrent && (root.formMode !== "queued" || root.queuedFormAvailable) && nameField.text.trim().length > 0 && (root.formMode === "current" || contentField.text.trim().length > 0)
+                    text: root.editing ? qsTr("Salvar alterações") : qsTr("Salvar")
+                    enabled: root.formCurrent && !root.lrcPickerArmed && root.lrcImportToken.length === 0 && (root.formMode !== "queued" || root.queuedFormAvailable) && nameField.text.trim().length > 0 && (root.formMode === "current" || contentField.text.trim().length > 0)
                     KeyNavigation.tab: nameField
-                    onClicked: {
-                        if (!enabled || !root.formCurrent)
-                            return;
-                        const owner = root.formOwner;
-                        const mode = root.formMode;
-                        const token = root.queuedToken;
-                        const name = nameField.text.trim();
-                        const language = languageField.text.trim();
-                        const script = scriptField.text.trim();
-                        const kind = kindField.currentValue;
-                        let accepted;
-                        if (mode === "current")
-                            accepted = owner.saveCurrentLyrics(name, language, script, kind, root.formLyricsRevision);
-                        else if (mode === "romaji")
-                            accepted = owner.saveRomaji(root.romajiToken, name, contentField.text);
-                        else if (mode === "queued")
-                            accepted = owner.addQueuedVariant(token, name, language, script, sourceField.text.trim(), kind, contentField.text, generatedField.checked);
-                        else
-                            accepted = owner.addVariant(name, language, script, sourceField.text.trim(), kind, contentField.text, generatedField.checked);
-                        if (!formDialog.visible)
-                            return;
-                        if (accepted) {
-                            root.queuedToken = "";
-                            if (mode === "romaji")
-                                root.romajiToken = "";
-                            formDialog.accept();
-                        } else {
-                            root.formRejected = true;
-                        }
-                    }
+                    onClicked: root.submitForm(false)
                 }
             }
+        }
+    }
+    NativeDialogs.FileDialog {
+        id: lrcPicker
+        objectName: "lyrics-variant-lrc-picker"
+        title: qsTr("Selecionar arquivo de letra LRC")
+        modality: Qt.WindowModal
+        parentWindow: root.parent ? root.parent.Window.window : null
+        popupType: Popup.Item
+        fileMode: NativeDialogs.FileDialog.OpenFile
+        nameFilters: [qsTr("Letras sincronizadas (*.lrc)")]
+        onAccepted: root.startLrcImport(selectedFile)
+        onRejected: {
+            root.lrcPickerArmed = false;
+            root.restoreLrcPickerFocus();
         }
     }
     Dialog {
@@ -897,7 +1100,13 @@ Dialog {
             Text {
                 objectName: "lyrics-variant-confirm-text"
                 Layout.fillWidth: true
-                text: root.confirmMode === "reload" ? (root.noTrackToReload ? qsTr("Abandonar a tentativa em memória? Não há faixa selecionada para recarregar. Uma gravação sem confirmação pode já ter sido efetivada; abandonar a tentativa não desfaz os arquivos gravados.") : qsTr("Abandonar a tentativa em memória e recarregar do disco? Uma gravação sem confirmação pode já ter sido efetivada; recarregar não promete desfazê-la.")) : qsTr("Excluir a versão “%1”? O áudio e as outras versões serão preservados.").arg(root.confirmTarget !== null ? root.confirmTarget.name : "")
+                text: {
+                    if (root.confirmMode === "reload")
+                        return root.noTrackToReload ? qsTr("Abandonar a tentativa em memória? Não há faixa selecionada para recarregar. Uma gravação sem confirmação pode já ter sido efetivada; abandonar a tentativa não desfaz os arquivos gravados.") : qsTr("Abandonar a tentativa em memória e recarregar do disco? Uma gravação sem confirmação pode já ter sido efetivada; recarregar não promete desfazê-la.");
+                    if (root.confirmTarget === null)
+                        return "";
+                    return root.confirmTarget.title.length > 0 ? qsTr("Excluir a versão “%1” de “%2”? O áudio e as outras versões serão preservados.").arg(root.confirmTarget.name).arg(root.confirmTarget.title) : qsTr("Excluir a versão “%1”? O áudio e as outras versões serão preservados.").arg(root.confirmTarget.name);
+                }
                 textFormat: Text.PlainText
                 color: root.contract.textPrimaryColor
                 wrapMode: Text.WordWrap
@@ -923,7 +1132,11 @@ Dialog {
                         if (!enabled || !root.confirmCurrent)
                             return;
                         const owner = root.confirmOwner;
-                        const accepted = root.confirmMode === "reload" ? owner.reloadVariants() : owner.removeVariant(root.confirmTarget.id);
+                        let accepted;
+                        if (root.confirmMode === "reload")
+                            accepted = root.managingQueue ? owner.reloadQueuedManager(root.managerToken) : owner.reloadVariants();
+                        else
+                            accepted = root.managingQueue ? owner.removeQueuedVariant(root.managerToken, root.confirmTarget.id) : owner.removeVariant(root.confirmTarget.id);
                         if (accepted)
                             confirmation.accept();
                     }

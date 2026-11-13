@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QString>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -18,8 +19,37 @@ struct LyricFindOptions final {
     bool preferred{};
 };
 
+struct LyricsQuery final {
+    QString title, artist, album;
+    qint64 duration_ms{};
+};
+
+struct LyricsSearchCandidate final {
+    qint64 id{};
+    LyricsQuery recording;
+    bool instrumental{};
+    std::vector<LyricsDocument> formats;
+};
+
+enum class LyricsSearchError {
+    None,
+    InvalidQuery,
+    Unavailable,
+    RateLimited,
+    Timeout,
+    Network,
+    AccessDenied,
+    InvalidResponse,
+    ResponseTooLarge
+};
+
+struct LyricsSearchResult final {
+    LyricsSearchError error{};
+    std::vector<LyricsSearchCandidate> candidates;
+};
+
 // Local sibling lyrics are read off the UI thread. Online requests are made
-// only by searchOnline and contain metadata, never audio or a local path.
+// explicitly and contain metadata, never audio or a local path.
 class QtLyricsService final : public QObject {
     Q_OBJECT
   public:
@@ -34,6 +64,7 @@ class QtLyricsService final : public QObject {
         int request_timeout_ms = 10'000);
     ~QtLyricsService() override;
     static LyricFindOptions loadLyricFindOptions(const QString& private_config_root);
+    [[nodiscard]] static std::optional<LyricsDocument> readLrcFile(const QString& path);
     void configureLyricFind(LyricFindOptions options);
     [[nodiscard]] bool lyricFindConfigured() const noexcept;
     [[nodiscard]] OnlineProvider onlineProvider() const noexcept;
@@ -46,6 +77,11 @@ class QtLyricsService final : public QObject {
     // earlier results without reading an audio file or its sibling .lrc.
     void setLookupTrack(QString path, QString title, QString artist, QString album, qint64 duration_ms);
     [[nodiscard]] bool searchOnline(QString title_override = {}, QString artist_override = {});
+    // Explicit LRCLIB recording search. A pending search leaves the displayed
+    // lyric intact. Cancelling or changing the track drops its completion.
+    using SearchCompletion = std::function<void(LyricsSearchResult)>;
+    [[nodiscard]] bool search(const LyricsQuery& query, SearchCompletion completion);
+    void cancelSearch();
     void cancel();
     // Irreversible exit preparation. Does not join file I/O on the UI thread.
     void beginShutdown();

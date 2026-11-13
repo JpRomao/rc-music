@@ -1,6 +1,7 @@
 #include "adapters/QtLyricsService.hpp"
 
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
@@ -14,6 +15,9 @@
 #include <algorithm>
 #include <cstring>
 
+using music_player::m0::LyricsQuery;
+using music_player::m0::LyricsSearchError;
+using music_player::m0::LyricsSearchResult;
 using music_player::m0::QtLyricsService;
 using Service = QtLyricsService;
 namespace {
@@ -81,6 +85,17 @@ QByteArray payload(const QString& synced, const QString& plain = {}, const bool 
     return QJsonDocument(QJsonObject{{"syncedLyrics", synced}, {"plainLyrics", plain}, {"instrumental", instrumental}})
         .toJson(QJsonDocument::Compact);
 }
+QJsonObject recording(qint64 id, QString title, QString artist, QString album, double seconds, QString synced = {},
+                      QString plain = {}, bool instrumental = false) {
+    return {{"id", id},
+            {"trackName", title},
+            {"artistName", artist},
+            {"albumName", album},
+            {"duration", seconds},
+            {"instrumental", instrumental},
+            {"syncedLyrics", synced},
+            {"plainLyrics", plain}};
+}
 void setTrack(Service& service, const QString& path = "C:/music/source.mp3") {
     service.setTrack(path, "Song & name", "Artist 日本", "Album", 123'000);
 }
@@ -94,6 +109,189 @@ void awaitLocal(Service& service) { QTRY_VERIFY_WITH_TIMEOUT(service.status() !=
 class QtLyricsServiceTests final : public QObject {
     Q_OBJECT
   private slots:
+    void recordingSearchRanksAndDeduplicatesWithoutReplacingLocalLyrics() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        QVERIFY(save(temp.filePath("private.lrc"), "[00:01.00]Current lyric"));
+        Network network;
+        Service service(&network);
+        setTrack(service, temp.filePath("private.mp3"));
+        awaitLocal(service);
+        QVERIFY(network.requests.isEmpty());
+        std::optional<LyricsSearchResult> result;
+        QVERIFY(service.search({"曲 & Song+", "ARTIST", "Album", 123'000},
+                               [&](LyricsSearchResult received) { result = std::move(received); }));
+        QVERIFY(!result);
+        QCOMPARE(network.requests.size(), 1);
+        const auto& request = network.requests.back();
+        QCOMPARE(request.url().scheme(), "https");
+        QCOMPARE(request.url().host(), "lrclib.net");
+        QCOMPARE(request.url().path(), "/api/search");
+        QCOMPARE(network.operations.back(), QNetworkAccessManager::GetOperation);
+        QVERIFY(!request.rawHeader("User-Agent").isEmpty());
+        QCOMPARE(request.attribute(QNetworkRequest::RedirectPolicyAttribute).toInt(),
+                 int(QNetworkRequest::ManualRedirectPolicy));
+        const QUrlQuery query(request.url());
+        QCOMPARE(query.queryItemValue("track_name", QUrl::FullyDecoded), "曲 & Song+");
+        QCOMPARE(query.queryItemValue("artist_name", QUrl::FullyDecoded), "ARTIST");
+        QCOMPARE(query.queryItemValue("album_name", QUrl::FullyDecoded), "Album");
+        QVERIFY(!query.hasQueryItem("duration"));
+        QVERIFY(!request.url().toString().contains("private"));
+        QCOMPARE(service.document().lines.front().text, "Current lyric");
+        auto unknown = recording(6, "曲 & Song+", "Artist", "Album", 0, {}, "Unknown duration");
+        unknown.remove("duration");
+        const QJsonArray matches{recording(2, "曲 & Song+", "Other artist", "Album", 123, {}, "Wrong artist"),
+                                 recording(3, "曲 & Song+", "Artist", "Album", 90, {}, "TV size"),
+                                 recording(1, "曲 & Song+", "Artist", "Album", 123.375, "[00:01.25]日本語", "Nihongo"),
+                                 recording(4, "曲 & Song+", "Artist", "Other album", 123, {}, "Other recording"),
+                                 recording(5, "曲 & Song+ (live)", "Artist", "Album", 123, {}, {}, true),
+                                 unknown,
+                                 recording(1, "Duplicate", "Other Artist", "Album", 123, {}, "Duplicate")};
+        network.replies.back()->finish(200, QJsonDocument(matches).toJson(QJsonDocument::Compact));
+        QVERIFY(result);
+        QCOMPARE(result->error, LyricsSearchError::None);
+        const auto& all = result->candidates;
+        QCOMPARE(all.size(), std::size_t{6});
+        QCOMPARE(all[0].id, 1);
+        QCOMPARE(all[0].recording.title, "曲 & Song+");
+        QCOMPARE(all[0].recording.duration_ms, 123'375);
+        QCOMPARE(all[0].formats.size(), std::size_t{2});
+        QCOMPARE(all[0].formats[0].lines.front().timestamp_ms, 1250);
+        QCOMPARE(all[0].formats[1].plain_text, "Nihongo");
+        QCOMPARE(all[1].id, 3);
+        QCOMPARE(all[2].id, 6);
+        QCOMPARE(all[2].recording.duration_ms, 0);
+        QCOMPARE(all[3].id, 4);
+        QCOMPARE(all[4].id, 2);
+        QCOMPARE(all[5].id, 5);
+        QVERIFY(all[5].instrumental);
+        QVERIFY(all[5].formats.empty());
+        QCOMPARE(service.source(), Service::Source::Local);
+        QCOMPARE(service.document().lines.front().text, "Current lyric");
+        QVERIFY(service.onlineDocuments().empty());
+    }
+
+    void titleOnlySearchReturnsAnEmptyResultWithoutFallback() {
+        Network network;
+        Service service(&network);
+        service.configureLyricFind({"test-display", {}, "BR", true});
+        setTrack(service);
+        std::optional<LyricsSearchResult> result;
+        QVERIFY(service.search({"曲+ A/B?"}, [&](LyricsSearchResult received) { result = std::move(received); }));
+        const auto& request = network.requests.back();
+        QCOMPARE(request.url().host(), "lrclib.net");
+        const QUrlQuery query(request.url());
+        QCOMPARE(query.queryItemValue("track_name", QUrl::FullyDecoded), "曲+ A/B?");
+        QVERIFY(!query.hasQueryItem("artist_name"));
+        QVERIFY(!query.hasQueryItem("album_name"));
+        network.replies.back()->finish(200, "[]");
+        QVERIFY(result);
+        QCOMPARE(result->error, LyricsSearchError::None);
+        QVERIFY(result->candidates.empty());
+        QCOMPARE(network.requests.size(), 1);
+    }
+
+    void candidateRequestRejectsInvalidResponses_data() {
+        QTest::addColumn<int>("status");
+        QTest::addColumn<QByteArray>("body");
+        QTest::addColumn<int>("expected");
+        const auto invalid = int(LyricsSearchError::InvalidResponse);
+        QTest::newRow("invalid UTF8") << 200 << QByteArray{"[\xff]"} << invalid;
+        QTest::newRow("invalid array") << 200 << QByteArray{"{}"} << invalid;
+        QTest::newRow("duplicate field") << 200 << QByteArray{R"([{"id":1,"id":2}])"} << invalid;
+        auto malformed = recording(2, "Song", "Artist", "Album", 123, {}, "Verse");
+        malformed["duration"] = "123";
+        QTest::newRow("wrong duration type")
+            << 200 << QJsonDocument(QJsonArray{malformed}).toJson(QJsonDocument::Compact) << invalid;
+        QJsonArray too_many;
+        for (auto id = 1; id <= 21; ++id)
+            too_many.append(recording(id, "Song", "Artist", "Album", 123, {}, "Verse"));
+        QTest::newRow("too many recordings") << 200 << QJsonDocument(too_many).toJson(QJsonDocument::Compact)
+                                             << int(LyricsSearchError::ResponseTooLarge);
+        QTest::newRow("oversize") << 200 << QByteArray(Service::maximum_response_bytes + 1, 'x')
+                                  << int(LyricsSearchError::ResponseTooLarge);
+        QTest::newRow("access denied") << 403 << QByteArray{"untrusted provider text"}
+                                       << int(LyricsSearchError::AccessDenied);
+        QTest::newRow("redirect") << 302 << QByteArray{"[]"} << int(LyricsSearchError::Network);
+    }
+
+    void candidateRequestRejectsInvalidResponses() {
+        QFETCH(int, status);
+        QFETCH(QByteArray, body);
+        QFETCH(int, expected);
+        Network network;
+        Service service(&network);
+        setTrack(service);
+        std::optional<LyricsSearchResult> result;
+        QVERIFY(service.search({"Song", "Artist"}, [&](LyricsSearchResult received) { result = std::move(received); }));
+        network.replies.back()->finish(status, body);
+        QVERIFY(result);
+        QCOMPARE(result->error, static_cast<LyricsSearchError>(expected));
+        QVERIFY(result->candidates.empty());
+        QCOMPARE(network.requests.size(), 1);
+    }
+
+    void recordingSearchAndDirectLookupShareTheRateLimitAcrossTracks() {
+        Network network;
+        Service service(&network);
+        setTrack(service);
+        std::optional<LyricsSearchResult> result;
+        const auto completed = [&](LyricsSearchResult received) { result = std::move(received); };
+        QVERIFY(service.search({"Song"}, completed));
+        QVERIFY(!service.searchOnline());
+        network.replies.back()->finish(429, "not JSON", "1");
+        QVERIFY(result);
+        QCOMPARE(result->error, LyricsSearchError::RateLimited);
+        setTrack(service, "C:/music/other.mp3");
+        QVERIFY(!service.search({"Other"}, completed));
+        QCOMPARE(result->error, LyricsSearchError::RateLimited);
+        QVERIFY(!service.searchOnline());
+        QCOMPARE(network.requests.size(), 1);
+        QTRY_VERIFY_WITH_TIMEOUT(service.canSearch(), 2000);
+        QVERIFY(service.searchOnline());
+        QVERIFY(!service.search({"Third"}, completed));
+        QCOMPARE(network.requests.size(), 2);
+    }
+
+    void candidateSearchCancellationAndTrackChangeDropCompletions() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto path = temp.filePath("song.mp3");
+        QVERIFY(save(temp.filePath("song.lrc"), "[00:01.00]Local"));
+        Network network;
+        Service service(&network);
+        service.setTrack(path, "Song", "Artist", {}, 0, "first");
+        awaitLocal(service);
+        std::size_t calls{};
+        const auto completed = [&](LyricsSearchResult) { ++calls; };
+        QVERIFY(service.search({"Song"}, completed));
+        auto reply = network.replies.back();
+        service.cancelSearch();
+        QVERIFY(reply.isNull() || reply->aborted);
+        QCOMPARE(calls, std::size_t{0});
+        QCOMPARE(service.document().lines.front().text, "Local");
+        QTRY_VERIFY_WITH_TIMEOUT(service.canSearch(), 1500);
+        QVERIFY(service.search({"Song"}, completed));
+        reply = network.replies.back();
+        service.setTrack(path, "Song", "Artist", {}, 0, "second");
+        QVERIFY(reply.isNull() || reply->aborted);
+        QCOMPARE(calls, std::size_t{0});
+        QCOMPARE(service.document().lines.front().text, "Local");
+    }
+
+    void recordingSearchTimesOutWithoutChangingTheLookupContext() {
+        Network network;
+        Service service(&network, nullptr, "RCMusic/test", 20);
+        service.setLookupTrack("C:/music/song.mp3", "Song", "Artist", {}, 0);
+        std::optional<LyricsSearchResult> result;
+        QVERIFY(service.search({"Song"}, [&](LyricsSearchResult received) { result = std::move(received); }));
+        const auto reply = network.replies.back();
+        QTRY_VERIFY_WITH_TIMEOUT(result.has_value(), 1000);
+        QCOMPARE(result->error, LyricsSearchError::Timeout);
+        QCOMPARE(service.status(), Service::Status::Idle);
+        QVERIFY(reply.isNull() || reply->aborted);
+    }
+
     void configuredLyricFindFollowsAnLrclibMissAndReturnsLicensedSyncedLyrics() {
         Network network;
         Service service(&network);

@@ -53,6 +53,7 @@ function(rc_music_add_ui target support qml_output)
             TransportText.qml
             TransportSlider.qml
             LyricsPanel.qml
+            LyricsReader.qml
             LyricsVariantsPanel.qml
             LidarrPanel.qml
             PlaylistsPanel.qml

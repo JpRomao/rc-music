@@ -3698,6 +3698,13 @@ bool PlayerPresenter::setDownloadDirectory(std::string directory) {
     preferenceDidChange();
     return true;
 }
+int PlayerPresenter::lyricsTextSize() const noexcept { return preferences().lyrics_text_size; }
+bool PlayerPresenter::setLyricsTextSize(const int size) {
+    if (exiting_ || !controller_.setLyricsTextSize(size))
+        return false;
+    preferenceDidChange();
+    return true;
+}
 bool PlayerPresenter::setQueueEndPreference(const QueueEndPreference behavior) {
     if (exiting_)
         return false;

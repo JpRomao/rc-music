@@ -101,6 +101,7 @@ struct Preferences final {
     bool repeat_queue_enabled{false};
     bool shuffle_queue_enabled{false};
     std::string download_directory{};
+    int lyrics_text_size{18};
 
     [[nodiscard]] bool operator==(const Preferences&) const noexcept = default;
 };

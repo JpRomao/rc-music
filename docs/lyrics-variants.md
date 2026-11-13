@@ -6,15 +6,19 @@ O [ADR-0016](architecture/decisions/0016-lyrics-variants.md) registra a evoluç�
 
 ## Usar as versões
 
-Abra **Versões** junto à letra. Adicione texto ou LRC com nome, idioma, escrita e origem, ou salve a letra atualmente carregada. Escolha a versão que será exibida acima da barra de progresso; **Arquivo / busca atual** volta à letra do `.lrc` irmão ou da consulta desta sessão. Uma música pode ter somente uma forma; não é necessário preencher original e romanizada.
+Abra **Versões** junto à letra. Adicione texto, use **Importar .lrc** para carregar um rascunho de um arquivo local ou salve a letra atualmente carregada. Escolha a versão que será exibida acima da barra de progresso. **Arquivo / busca atual** volta à letra do `.lrc` irmão ou da consulta desta sessão.
 
-Adicionar outra versão depois mantém as anteriores. Excluir remove somente o texto escolhido, após confirmação, e conserva áudio, fila, playlists e `.lrc` irmão. O salvamento é explícito; abrir o player ou buscar uma letra não cria cache persistente automaticamente.
+Selecione uma versão salva e clique em **Editar**. É possível alterar nome, texto, idioma, escrita e forma, e salvar na mesma versão ou como nova. Para alterar o tempo de um verso, marque **Permitir alterar tempos**. Excluir pede confirmação da versão e da faixa. O áudio, as playlists e o `.lrc` irmão são preservados.
 
-Para acrescentar uma versão sem trocar o áudio em reprodução, abra o menu de uma faixa disponível na **Fila** e escolha **Adicionar versão da letra**. Confira o nome da faixa no formulário, cole o texto ou LRC e clique em **Salvar**. O formulário mantém o alvo se a reprodução avançar. Se o item for removido ou realocado antes de salvar, abra o formulário novamente para escolher o destino.
+Para adicionar, editar ou remover versões sem trocar o que está tocando, abra o menu de uma faixa disponível na **Fila** e escolha **Gerenciar letras**. O painel identifica a faixa e conserva o alvo quando a reprodução avança. Se a faixa sair da fila ou mudar de arquivo antes de salvar, reabra o painel para escolher o destino.
 
-O aviso acima da barra de progresso acompanha a gravação. Em caso de falha, **Revisar salvamento** abre as opções de recuperação. Uma gravação já iniciada continua vinculada ao arquivo escolhido, inclusive se a faixa sair da fila. A edição pela fila reaproveita o texto idêntico já guardado para a mesma forma, idioma e escrita.
+O aviso acima da barra de progresso acompanha a gravação. Em caso de falha, **Revisar salvamento** abre as opções de recuperação. Uma gravação já iniciada continua vinculada ao arquivo escolhido, inclusive se a faixa sair da fila.
 
 LRC conserva seus tempos quando aceito pelo parser. Texto comum permanece sem sincronização. Idioma, escrita e origem identificam cada versão.
+
+### Ler enquanto ouve
+
+**Abrir letra** mostra a letra completa. O leitor sincronizado acompanha o verso confirmado pelo player. Use **Voltar ao verso atual** para retomar o acompanhamento depois de rolar ou navegar manualmente. Quando a faixa aceita busca por posição, clique no verso ou pressione Enter com o verso selecionado. **A−** e **A+** ajustam o tamanho e guardam a preferência para a próxima sessão.
 
 ### Gerar romaji
 
@@ -22,9 +26,9 @@ Com o [componente local pykakasi preparado](../tools/lyrics-romanizer/README.md)
 
 ### Resultados da busca no player
 
-Depois de confirmar **Buscar letra**, abra **Versões** e escolha **Arquivo / busca atual**. Se o LRCLIB trouxer conteúdos distintos, o seletor oferece **Sincronizada** e **Texto simples**. A sincronizada vem selecionada e a prévia acompanha a opção escolhida. Para guardar um resultado do LRCLIB, use **Salvar letra atual**, informe um nome e escolha a forma correspondente. A origem registrada é LRCLIB.
+Abra **Buscar letra**, confira título, artista e álbum e clique em **Buscar**. É possível buscar só pelo título. O RC Music envia esses campos ao LRCLIB e usa a duração somente para ordenar e sinalizar gravações diferentes. Abrir o formulário e editar os campos são ações locais.
 
-Os rótulos descrevem o formato recebido. Idioma, escrita e forma são informados ao salvar.
+Escolha a gravação pelo título, artista, álbum e duração disponíveis. Quando aparecer mais de um formato, escolha **Sincronizada** ou **Texto simples** para ler a prévia. **Usar nesta sessão** muda a exibição e **Salvar versão** grava a letra com o nome informado e origem LRCLIB. O catálogo registra o resultado como original e permite acrescentar idioma e escrita ao gerenciar a versão. Fechar a busca, cancelar ou receber um erro conserva a letra que estava em uso. Um resultado instrumental exige confirmação própria.
 
 ### Fonte opcional LyricFind
 
@@ -38,7 +42,7 @@ Use as chaves de parceiro fornecidas para a sua integração. No Windows, coloqu
 }
 ```
 
-O campo `lrcKey` recebe a chave de sincronização quando incluída no contrato. O RC Music tenta primeiro o LRCLIB por padrão. Use `preferLyricFind: true` para inverter a ordem. Quando a primeira fonte não encontra a faixa, o player consulta a segunda. A consulta ao LyricFind envia título, artista, álbum se disponível e o território configurado.
+O campo `lrcKey` recebe a chave de sincronização quando incluída no contrato. Com o LyricFind configurado, o diálogo oferece **Consulta por metadados exatos**. Nessa ação, o RC Music tenta primeiro o LRCLIB por padrão. Use `preferLyricFind: true` para inverter a ordem. Quando a primeira fonte não encontra a faixa, o player consulta a segunda. A consulta ao LyricFind envia título, artista, álbum se disponível e o território configurado.
 
 O RC Music exibe os créditos e o link do LyricFind junto da letra. As letras obtidas por essa integração ficam disponíveis para leitura, conforme as condições de exibição do provedor. Use uma fonte com permissão de armazenamento para salvar versões ou gerar romaji. A API Web Service documenta a consulta de letras e LRC. As traduções do catálogo dependem do contrato e da interface que o parceiro fornecer. [Documentação da API](https://docs.lyricfind.com/) · [Contato do LyricFind](https://www.lyricfind.com/contact)
 

@@ -250,6 +250,12 @@ void PlayerController::applyBackendSnapshot(PlaybackSnapshot snapshot) {
 void PlayerController::setTheme(const ThemeMode theme) { preferences_.theme = theme; }
 
 void PlayerController::setMotionMode(const MotionMode motion) { preferences_.motion = motion; }
+bool PlayerController::setLyricsTextSize(const int size) {
+    if (size < 14 || size > 30 || size == preferences_.lyrics_text_size)
+        return false;
+    preferences_.lyrics_text_size = size;
+    return true;
+}
 
 bool PlayerController::setSkipBackwardSeconds(const int seconds) {
     if (seconds < 1 || seconds > 300) {

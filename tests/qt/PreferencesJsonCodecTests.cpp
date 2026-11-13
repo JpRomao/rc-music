@@ -87,7 +87,8 @@ namespace {
             {u"queueEndBehavior"_s, queueEndBehaviorName(preferences.queue_end_behavior)},
             {u"windowPlacement"_s, windowPlacementValue(preferences.window_placement)},
             {u"repeatQueueEnabled"_s, preferences.repeat_queue_enabled},
-            {u"shuffleQueueEnabled"_s, preferences.shuffle_queue_enabled}};
+            {u"shuffleQueueEnabled"_s, preferences.shuffle_queue_enabled},
+            {u"lyricsTextSize"_s, preferences.lyrics_text_size}};
 }
 
 void comparePreferences(const Preferences& actual, const Preferences& expected) {
@@ -104,6 +105,7 @@ void comparePreferences(const Preferences& actual, const Preferences& expected) 
     QVERIFY(actual.window_placement == expected.window_placement);
     QCOMPARE(actual.repeat_queue_enabled, expected.repeat_queue_enabled);
     QCOMPARE(actual.shuffle_queue_enabled, expected.shuffle_queue_enabled);
+    QCOMPARE(actual.lyrics_text_size, expected.lyrics_text_size);
 }
 
 [[nodiscard]] QByteArray jsonWithVolumeToken(const QByteArrayView token) {
@@ -223,7 +225,8 @@ class PreferencesJsonCodecTests final : public QObject {
                            .queue_end_behavior = QueueEndBehavior::StopClearSelection,
                            .window_placement = WindowPlacement{-1'920, 40, 960, 640},
                            .repeat_queue_enabled = true,
-                           .shuffle_queue_enabled = true};
+                           .shuffle_queue_enabled = true,
+                           .lyrics_text_size = 24};
         QTest::newRow("numeric boundaries") << Preferences{
             .theme = ThemeMode::Light,
             .motion = MotionMode::System,
@@ -251,7 +254,7 @@ class PreferencesJsonCodecTests final : public QObject {
         QCOMPARE(parse_error.error, QJsonParseError::NoError);
         QVERIFY(document.isObject());
         const QJsonObject object = document.object();
-        QCOMPARE(object.size(), 14);
+        QCOMPARE(object.size(), 15);
         QSet<QString> actual_keys;
         for (auto iterator = object.constBegin(); iterator != object.constEnd(); ++iterator)
             actual_keys.insert(iterator.key());
@@ -270,6 +273,7 @@ class PreferencesJsonCodecTests final : public QObject {
             u"windowPlacement"_s,
             u"repeatQueueEnabled"_s,
             u"shuffleQueueEnabled"_s,
+            u"lyricsTextSize"_s,
         };
         QCOMPARE(actual_keys, expected_keys);
         QCOMPARE(object.value(u"schemaVersion"_s), QJsonValue{2});

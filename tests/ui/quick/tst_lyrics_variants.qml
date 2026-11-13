@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import QtTest
 import MusicPlayer.M0
 
@@ -43,7 +42,16 @@ TestCase {
         property bool queueVariantAvailable: true
         property string queuedToken: ""
         property string queuedVariantStatusText: ""
+        property bool queuedManagerBusy: false
+        property bool queuedManagerCanEdit: true
+        property string queuedManagerStatus: "Versões da faixa na fila"
+        property var queuedManagerVariants: []
+        property var openQueuedManager: null
+        property var closeQueuedManager: null
+        property var prepareQueuedVariantEdit: null
+        property var removeQueuedVariant: null
         property var calls: []
+        signal importedVariantLrc(string token, string name, string content)
         function record(action, args) {
             calls = calls.concat([
                 {
@@ -108,6 +116,24 @@ TestCase {
         function removeVariant(id) {
             return record("remove", [id]);
         }
+        function prepareVariantEdit(id) {
+            record("prepareEdit", [id]);
+            const variant = variants.find(row => row.id === id);
+            return variant ? Object.assign({}, variant, {
+                token: "edit-" + id,
+                content: "[00:01.00]Saved verse",
+                synchronized: true
+            }) : {};
+        }
+        function saveVariantEdit(token, name, language, script, kind, content, asNew, editTiming) {
+            return record("saveEdit", [token, name, language, script, kind, content, asNew, editTiming]);
+        }
+        function cancelVariantEdit(token) {
+            record("cancelEdit", [token]);
+        }
+        function importVariantLrc(file, track, token) {
+            return record("importLrc", [file.toString(), track, token]);
+        }
         function retryVariantsSave() {
             return record("retry", []);
         }
@@ -125,6 +151,10 @@ TestCase {
     }
     function init() {
         driver.resetLocalScenario();
+        backend.openQueuedManager = null;
+        backend.closeQueuedManager = null;
+        backend.prepareQueuedVariantEdit = null;
+        backend.removeQueuedVariant = null;
         backend.currentLine = "<b>Service verse</b>";
         backend.hasSyncedLyrics = true;
         backend.plainText = "";
@@ -328,6 +358,67 @@ TestCase {
         compare(call.args.join("|"), "Romanizada 日本|ja|Latn|Local source|romanized|[00:01.000]<b>Romaji</b>|true");
         compare(backend.variants.length, 2); // UI cannot publish an unacknowledged save.
     }
+    function test_importLrcPopulatesDraftAndWaitsForExplicitSave() {
+        openAddForm();
+        const input = findChild(shell, "lyrics-variant-content-input");
+        const picker = findChild(shell, "lyrics-variant-lrc-picker");
+        const choose = findChild(shell, "lyrics-variant-import-lrc");
+        verify(picker && choose && choose.enabled);
+        choose.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        tryCompare(picker, "visible", true);
+        picker.reject();
+        tryCompare(picker, "visible", false);
+        compare(backend.calls.length, 0);
+        tryCompare(choose, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        tryCompare(picker, "visible", true);
+        const file = Qt.resolvedUrl("data/variant-import.lrc");
+        selectLrcFixture(picker);
+        tryCompare(picker, "visible", false);
+        const request = lastCall("importLrc");
+        compare(request.args[0], file.toString());
+        compare(request.args[1], findChild(shell, "lyrics-panel").trackIdentity);
+        verify(request.args[2].length > 0);
+        const save = findChild(shell, "lyrics-variant-submit");
+        verify(!save.enabled);
+        const lrc = "[00:01.000]日本語";
+        backend.importedVariantLrc(request.args[2], "Imported lyrics", lrc);
+        compare(input.text, lrc);
+        compare(findChild(shell, "lyrics-variant-name-input").text, "Imported lyrics");
+        compare(backend.calls.length, 1);
+        verify(save.enabled);
+        mouseClick(save);
+        compare(lastCall("add").args[5], lrc);
+    }
+    function test_importLrcIgnoresResultForClosedForm() {
+        openAddForm();
+        const picker = findChild(shell, "lyrics-variant-lrc-picker");
+        const choose = findChild(shell, "lyrics-variant-import-lrc");
+        choose.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        tryCompare(picker, "visible", true);
+        selectLrcFixture(picker);
+        tryCompare(picker, "visible", false);
+        const request = lastCall("importLrc");
+        findChild(shell, "lyrics-variant-form").close();
+        tryCompare(findChild(shell, "lyrics-variant-form"), "visible", false);
+        mouseClick(findChild(shell, "lyrics-variant-add"));
+        tryCompare(findChild(shell, "lyrics-variant-form"), "visible", true);
+        backend.importedVariantLrc(request.args[2], "Stale", "[00:01.000]Stale");
+        compare(findChild(shell, "lyrics-variant-content-input").text, "");
+        compare(backend.calls.length, 1);
+    }
+    function selectLrcFixture(picker) {
+        picker.currentFolder = Qt.resolvedUrl("data");
+        const fileList = findChild(shell, "fileDialogListView");
+        verify(fileList);
+        tryCompare(fileList, "count", 1);
+        tryVerify(() => fileList.itemAtIndex(0) && fileList.itemAtIndex(0).width > 0);
+        mouseClick(fileList.itemAtIndex(0));
+        compare(picker.selectedFile.toString(), Qt.resolvedUrl("data/variant-import.lrc").toString());
+        picker.accept();
+    }
     function test_translationHasItsOwnLabelAndSubmitsItsKind() {
         const versions = backend.variants.slice();
         versions.push({
@@ -413,6 +504,58 @@ TestCase {
         backend.variantsHasPendingChange = false;
         compare(findChild(shell, "lyrics-panel").visible, true);
         compare(status.text, "Versão da letra salva.");
+    }
+
+    function test_queueManagerEditsAndRemovesExactRowWithoutSelectingItInThePlayer() {
+        backend.openQueuedManager = occurrence => {
+            backend.record("openManager", [occurrence]);
+            return "queue-manager";
+        };
+        backend.closeQueuedManager = token => backend.record("closeManager", [token]);
+        backend.prepareQueuedVariantEdit = (token, id) => {
+            backend.record("prepareManagerEdit", [token, id]);
+            return Object.assign({}, backend.queuedManagerVariants[0], {
+                token: "queue-edit",
+                content: "Queue lyrics",
+                synchronized: false
+            });
+        };
+        backend.removeQueuedVariant = (token, id) => backend.record("removeManager", [token, id]);
+        backend.queuedManagerVariants = [
+            {
+                id: "queued-1",
+                name: "Queued variant",
+                language: "",
+                script: "",
+                source: "Letras",
+                kind: "original",
+                generated: false
+            }
+        ];
+        const menu = openQueueVariantMenu();
+        menu.action.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        const panel = findChild(shell, "lyrics-variants-panel");
+        tryCompare(panel, "visible", true);
+        compare(lastCall("openManager").args[0], menu.target);
+        const playing = presenter.currentOccurrenceId;
+        tryVerify(() => rowAt(0) !== null);
+        rowAt(0).Accessible.pressAction();
+        tryCompare(findChild(shell, "lyrics-variant-edit"), "enabled", true);
+        mouseClick(findChild(shell, "lyrics-variant-edit"));
+        tryCompare(findChild(shell, "lyrics-variant-form"), "visible", true);
+        compare(lastCall("prepareManagerEdit").args.join("|"), "queue-manager|queued-1");
+        mouseClick(findChild(shell, "lyrics-variant-submit"));
+        tryCompare(findChild(shell, "lyrics-variant-form"), "visible", false);
+        compare(lastCall("saveEdit").args[0], "queue-edit");
+        mouseClick(findChild(shell, "lyrics-variant-remove"));
+        verify(findChild(shell, "lyrics-variant-confirm-text").text.includes(menu.title));
+        mouseClick(findChild(shell, "lyrics-variant-confirm-submit"));
+        compare(lastCall("removeManager").args.join("|"), "queue-manager|queued-1");
+        compare(backend.selectedVariantId, "");
+        compare(presenter.currentOccurrenceId, playing);
+        panel.close();
+        tryCompare(panel, "visible", false);
     }
     function test_queueVariantEscapeCancelsOnlyThePreparedTargetAndRestoresFocus() {
         const menu = openQueueVariantMenu();
@@ -559,6 +702,55 @@ TestCase {
         compare(findChild(shell, "lyrics-variant-confirm").contentItem.Accessible.role, Accessible.Dialog);
         mouseClick(confirm);
         compare(lastCall("remove").args[0], "1");
+    }
+    function test_editSavedVersionUsesCapturedTokenAndPreservesTimesByDefault() {
+        backend.selectedVariantId = "1";
+        openPanel();
+        const edit = findChild(shell, "lyrics-variant-edit");
+        verify(edit && edit.enabled);
+        mouseClick(edit);
+        const form = findChild(shell, "lyrics-variant-form");
+        tryCompare(form, "visible", true);
+        compare(lastCall("prepareEdit").args[0], "1");
+        const name = findChild(shell, "lyrics-variant-name-input");
+        const source = findChild(shell, "lyrics-variant-source-input");
+        const content = findChild(shell, "lyrics-variant-content-input");
+        const timing = findChild(shell, "lyrics-variant-timing-input");
+        verify(name && source && content && timing);
+        compare(name.text, "<b>日本語 Original</b>");
+        compare(content.text, "[00:01.00]Saved verse");
+        verify(source.readOnly);
+        verify(timing.visible && !timing.checked);
+        name.text = "Revised";
+        content.text = "[00:01.00]Revised verse";
+        mouseClick(findChild(shell, "lyrics-variant-submit"));
+        compare(lastCall("saveEdit").args, ["edit-1", "Revised", "ja", "Jpan", "original", "[00:01.00]Revised verse", false, false]);
+        tryCompare(form, "visible", false);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+    }
+    function test_editSavedVersionCanCreateCopyAndCancelWhenTargetChanges() {
+        backend.selectedVariantId = "1";
+        openPanel();
+        const edit = findChild(shell, "lyrics-variant-edit");
+        mouseClick(edit);
+        const form = findChild(shell, "lyrics-variant-form");
+        tryCompare(form, "visible", true);
+        const timing = findChild(shell, "lyrics-variant-timing-input");
+        timing.checked = true;
+        const content = findChild(shell, "lyrics-variant-content-input");
+        content.text = "[00:02.00]Saved verse";
+        mouseClick(findChild(shell, "lyrics-variant-save-copy"));
+        compare(lastCall("saveEdit").args.slice(5), ["[00:02.00]Saved verse", true, true]);
+        tryCompare(form, "visible", false);
+
+        mouseClick(edit);
+        tryCompare(form, "visible", true);
+        backend.selectedVariantId = "9007199254740993";
+        tryCompare(form, "visible", false);
+        compare(lastCall("cancelEdit").args[0], "edit-1");
+        const calls = backend.calls.length;
+        findChild(shell, "lyrics-variant-submit").Accessible.pressAction();
+        compare(backend.calls.length, calls);
     }
     function test_changedSelectionCannotRedirectAConfirmedRemoval() {
         backend.selectedVariantId = "1";
@@ -717,7 +909,11 @@ TestCase {
         keyClick(Qt.Key_Return);
         compare(lastCall("select").args[0], lastId);
         keyClick(Qt.Key_Tab);
+        tryCompare(findChild(shell, "lyrics-variant-edit"), "activeFocus", true);
+        keyClick(Qt.Key_Tab);
         tryCompare(findChild(shell, "lyrics-variant-remove"), "activeFocus", true);
+        keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        tryCompare(findChild(shell, "lyrics-variant-edit"), "activeFocus", true);
         keyClick(Qt.Key_Tab, Qt.ShiftModifier);
         tryCompare(list, "activeFocus", true);
         keyClick(Qt.Key_Home);

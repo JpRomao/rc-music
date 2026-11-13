@@ -36,6 +36,7 @@ class PlayerController final {
 
     void setTheme(ThemeMode theme);
     void setMotionMode(MotionMode motion);
+    [[nodiscard]] bool setLyricsTextSize(int size);
     [[nodiscard]] bool setSkipBackwardSeconds(int seconds);
     [[nodiscard]] bool setSkipForwardSeconds(int seconds);
     [[nodiscard]] bool setVolume(double volume);

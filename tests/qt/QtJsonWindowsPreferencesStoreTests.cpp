@@ -26,7 +26,8 @@ namespace {
                        .restore_last_session = false,
                        .start_minimized = true,
                        .queue_end_behavior = QueueEndBehavior::StopClearSelection,
-                       .window_placement = WindowPlacement{-1'920, 40, 960, 640}};
+                       .window_placement = WindowPlacement{-1'920, 40, 960, 640},
+                       .lyrics_text_size = 24};
 }
 
 [[nodiscard]] QByteArray readAll(const QString& path) {
@@ -101,6 +102,7 @@ void QtJsonWindowsPreferencesStoreTests::loadsVersionOneWithoutRewritingIt() {
 
     Preferences expected = nonDefaultPreferences();
     expected.window_placement = std::nullopt;
+    expected.lyrics_text_size = 18;
     QCOMPARE(result.status, PreferencesLoadStatus::Loaded);
     QCOMPARE(result.preferences, expected);
     QCOMPARE(readAll(preferencesPath(root)), version_one);

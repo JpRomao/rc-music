@@ -182,6 +182,7 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(int skipForwardSeconds READ skipForwardSeconds NOTIFY preferencesChanged)
     Q_PROPERTY(ThemePreference themePreference READ themePreference NOTIFY preferencesChanged)
     Q_PROPERTY(MotionPreference motionPreference READ motionPreference NOTIFY preferencesChanged)
+    Q_PROPERTY(int lyricsTextSize READ lyricsTextSize NOTIFY preferencesChanged)
     Q_PROPERTY(ClosePreference closePreference READ closePreference NOTIFY preferencesChanged)
     Q_PROPERTY(QueueEndPreference queueEndPreference READ queueEndPreference NOTIFY preferencesChanged)
     Q_PROPERTY(bool restoreLastSession READ restoreLastSession NOTIFY preferencesChanged)
@@ -447,6 +448,8 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool toggleMute();
     Q_INVOKABLE bool setThemePreference(ThemePreference theme);
     Q_INVOKABLE bool setMotionPreference(MotionPreference motion);
+    [[nodiscard]] int lyricsTextSize() const noexcept;
+    Q_INVOKABLE bool setLyricsTextSize(int size);
     Q_INVOKABLE bool setSkipBackwardSeconds(int seconds);
     Q_INVOKABLE bool setSkipForwardSeconds(int seconds);
     Q_INVOKABLE bool setClosePreference(ClosePreference behavior);

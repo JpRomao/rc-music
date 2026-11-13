@@ -491,7 +491,12 @@ ApplicationWindow {
             contract: window.uiContract
             lyrics: window.lyrics
             trackIdentity: window.presenter.currentOccurrenceId
+            readerCanSeek: window.presenter.seekable
+            readerBottomInset: transport.height + window.uiContract.spacingUnit * 2
+            readerTextSize: window.presenter.lyricsTextSize
             enabled: !window.presenter.exiting
+            onReaderSeekRequested: timeMs => transport.commitImmediateSeek(timeMs)
+            onReaderTextSizeRequested: size => window.presenter.setLyricsTextSize(size)
             onQueuedVariantFormClosed: Qt.callLater(function () {
                 if (queuePanel.visible && window.active && window.windowShortcutsEnabled)
                     queuePanel.listView.forceActiveFocus(Qt.TabFocusReason);

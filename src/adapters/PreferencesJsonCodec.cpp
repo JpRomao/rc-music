@@ -146,7 +146,8 @@ struct WindowPlacementDecodeResult final {
 
 [[nodiscard]] bool validPreferences(const Preferences& preferences) {
     const auto& directory = preferences.download_directory;
-    return !encodeTheme(preferences.theme).isEmpty() && !encodeMotion(preferences.motion).isEmpty() &&
+    return preferences.lyrics_text_size >= 14 && preferences.lyrics_text_size <= 30 &&
+           !encodeTheme(preferences.theme).isEmpty() && !encodeMotion(preferences.motion).isEmpty() &&
            std::isfinite(preferences.volume) && preferences.volume >= 0.0 && preferences.volume <= 1.0 &&
            preferences.skip_backward_seconds >= 1 && preferences.skip_backward_seconds <= 300 &&
            preferences.skip_forward_seconds >= 1 && preferences.skip_forward_seconds <= 300 &&
@@ -181,6 +182,7 @@ QByteArray PreferencesJsonCodec::encode(const Preferences& preferences) {
     object.insert(QStringLiteral("shuffleQueueEnabled"), preferences.shuffle_queue_enabled);
     if (!preferences.download_directory.empty())
         object.insert(QStringLiteral("downloadDirectory"), QString::fromStdString(preferences.download_directory));
+    object.insert(QStringLiteral("lyricsTextSize"), preferences.lyrics_text_size);
     return QJsonDocument{object}.toJson(QJsonDocument::Compact);
 }
 
@@ -224,13 +226,16 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
     const QJsonValue shuffle_queue = object.value(QStringLiteral("shuffleQueueEnabled"));
     const auto directory_value = object.value(QStringLiteral("downloadDirectory"));
     auto directory = directory_value.toString().toStdString();
+    const auto size_value = object.value(QStringLiteral("lyricsTextSize"));
+    const auto lyrics_text_size =
+        size_value.isUndefined() ? std::optional<int>{18} : decodeBoundedInteger(size_value, 14, 30);
 
     if (!theme.has_value() || !motion.has_value() || !volume_value.isDouble() || !std::isfinite(volume) ||
         volume < 0.0 || volume > 1.0 || !muted_value.isBool() || !skip_backward.has_value() ||
         !skip_forward.has_value() || !close_behavior.has_value() || !restore_last_session_value.isBool() ||
         !start_minimized_value.isBool() || !queue_end_behavior.has_value() || !window_placement.valid ||
         (!repeat_queue.isUndefined() && !repeat_queue.isBool()) ||
-        (!shuffle_queue.isUndefined() && !shuffle_queue.isBool()) ||
+        (!shuffle_queue.isUndefined() && !shuffle_queue.isBool()) || !lyrics_text_size ||
         (!directory_value.isUndefined() && (!directory_value.isString() || !validDownloadDirectory(directory) ||
                                             QString::fromStdString(directory) != directory_value.toString()))) {
         return {};
@@ -250,7 +255,8 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
                                        .window_placement = window_placement.placement,
                                        .repeat_queue_enabled = repeat_queue.toBool(false),
                                        .shuffle_queue_enabled = shuffle_queue.toBool(false),
-                                       .download_directory = std::move(directory)}};
+                                       .download_directory = std::move(directory),
+                                       .lyrics_text_size = *lyrics_text_size}};
 }
 
 } // namespace music_player::m0

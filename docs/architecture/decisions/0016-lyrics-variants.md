@@ -38,6 +38,8 @@ O catálogo aceita **Tradução** como forma de texto fornecida pelo usuário, c
 
 Para um MP3 publicado com página Letras validada, a revisão aceita várias formas coladas em uma única operação do writer. A URL da revisão é a origem de cada versão. A consulta primária depende de acesso compatível, como descrito no ADR-0017.
 
+Versões salvas podem ser editadas no player ou no gerenciamento de uma faixa da fila. O editor captura a versão e o alvo antes de confirmar. A gravação na mesma versão preserva ID e origem. **Salvar como nova versão** atribui outro ID. Alterar os tempos exige consentimento no formulário e validação do LRC. O seletor de arquivo `.lrc` fornece um rascunho sem escrita; a confirmação usa o mesmo writer. O gerenciamento pela fila conserva a exibição da faixa em reprodução e confere o catálogo da faixa escolhida antes de gravar.
+
 ## Alternativas e consequências
 
 - Um único `.lrc` não atende às várias representações e pode exigir escrita em pasta de mídia sem permissão. Os documentos de configuração evitam modificar a biblioteca pessoal.

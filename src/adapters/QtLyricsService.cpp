@@ -13,6 +13,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPointer>
+#include <QSet>
 #include <QStringDecoder>
 #include <QTimer>
 #include <QUrlQuery>
@@ -30,9 +31,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <limits>
 #include <map>
 #include <optional>
+#include <tuple>
 #include <utility>
 
 namespace music_player::m0 {
@@ -40,6 +43,7 @@ namespace {
 using Status = QtLyricsService::Status;
 using Source = QtLyricsService::Source;
 using Provider = QtLyricsService::OnlineProvider;
+using SearchError = LyricsSearchError;
 QString owned(const QString& value) { return QString(value.constData(), value.size()); }
 QByteArray owned(const QByteArray& value) { return QByteArray(value.constData(), value.size()); }
 bool content(const LyricsDocument& document) { return !document.lines.empty() || !document.plain_text.empty(); }
@@ -48,14 +52,12 @@ struct LocalResult final {
     Status status{Status::NotFound};
     LyricsDocument document;
 };
-LocalResult readLocal(const quint64 generation, const QString& audio_path) {
+LocalResult readLrc(const quint64 generation, const QString& path) {
     LocalResult result{generation, Status::NotFound, {}};
-    const QFileInfo audio(audio_path);
-    if (audio_path.size() > 8192 || !audio.isAbsolute() || audio_path.startsWith("//") ||
-        audio_path.startsWith("\\\\") || audio.completeBaseName().isEmpty())
+    const QFileInfo information(path);
+    if (path.size() > 8192 || path.contains(QChar{0}) || !information.isAbsolute() || path.startsWith("//") ||
+        path.startsWith("\\\\") || information.suffix().compare(QStringLiteral("lrc"), Qt::CaseInsensitive) != 0)
         return result;
-    const auto sidecar = audio.dir().filePath(audio.completeBaseName() + QStringLiteral(".lrc"));
-    const QFileInfo information(sidecar);
     if (!information.exists())
         return result;
     if (!information.isFile() || information.isSymLink() || information.size() < 0 ||
@@ -64,14 +66,14 @@ LocalResult readLocal(const quint64 generation, const QString& audio_path) {
         return result;
     }
 #ifdef Q_OS_WIN
-    const auto attributes = GetFileAttributesW(reinterpret_cast<const wchar_t*>(sidecar.utf16()));
+    const auto attributes = GetFileAttributesW(reinterpret_cast<const wchar_t*>(path.utf16()));
     if (attributes == INVALID_FILE_ATTRIBUTES ||
         (attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_OFFLINE))) {
         result.status = Status::Error;
         return result;
     }
 #endif
-    QFile file(sidecar);
+    QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Unbuffered)) {
         result.status = Status::Error;
         return result;
@@ -89,6 +91,13 @@ LocalResult readLocal(const quint64 generation, const QString& audio_path) {
     result.document = std::move(parsed.document);
     result.status = content(result.document) ? Status::Ready : Status::NotFound;
     return result;
+}
+LocalResult readLocal(const quint64 generation, const QString& audio_path) {
+    const QFileInfo audio(audio_path);
+    if (audio_path.size() > 8192 || !audio.isAbsolute() || audio_path.startsWith("//") ||
+        audio_path.startsWith("\\\\") || audio.completeBaseName().isEmpty())
+        return {generation, Status::NotFound, {}};
+    return readLrc(generation, audio.dir().filePath(audio.completeBaseName() + QStringLiteral(".lrc")));
 }
 bool validMetadata(const QString& value) {
     if (value.isEmpty() || value.size() > 512)
@@ -112,23 +121,22 @@ bool validLyricFind(const LyricFindOptions& options) {
            std::all_of(options.territory.begin(), options.territory.end(),
                        [](QChar c) { return c >= u'A' && c <= u'Z'; });
 }
-struct SearchMetadata final {
-    QString title, artist, album;
-    qint64 duration_ms{};
-};
-QUrl lrclibUrl(const SearchMetadata& metadata) {
-    QUrl endpoint(QStringLiteral("https://lrclib.net/api/get"));
+QUrl lrclibUrl(const LyricsQuery& metadata, const bool recording_search) {
+    QUrl endpoint(recording_search ? QStringLiteral("https://lrclib.net/api/search")
+                                   : QStringLiteral("https://lrclib.net/api/get"));
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("track_name"), QString::fromLatin1(QUrl::toPercentEncoding(metadata.title)));
-    query.addQueryItem(QStringLiteral("artist_name"), QString::fromLatin1(QUrl::toPercentEncoding(metadata.artist)));
+    if (!metadata.artist.isEmpty())
+        query.addQueryItem(QStringLiteral("artist_name"),
+                           QString::fromLatin1(QUrl::toPercentEncoding(metadata.artist)));
     if (!metadata.album.isEmpty())
         query.addQueryItem(QStringLiteral("album_name"), QString::fromLatin1(QUrl::toPercentEncoding(metadata.album)));
-    if (metadata.duration_ms >= 1000 && metadata.duration_ms <= 3'600'000)
+    if (!recording_search && metadata.duration_ms >= 1000 && metadata.duration_ms <= 3'600'000)
         query.addQueryItem(QStringLiteral("duration"), QString::number(metadata.duration_ms / 1000));
     endpoint.setQuery(query);
     return endpoint;
 }
-QByteArray lyricFindBody(const LyricFindOptions& options, const SearchMetadata& metadata) {
+QByteArray lyricFindBody(const LyricFindOptions& options, const LyricsQuery& metadata) {
     auto escapeTrackId = [](QString value) { return value.replace(u':', u';').replace(u',', u';'); };
     auto track_id =
         QStringLiteral("artistname:%1,trackname:%2").arg(escapeTrackId(metadata.artist), escapeTrackId(metadata.title));
@@ -255,6 +263,74 @@ OnlineResult parseLrclib(const QJsonObject& object) {
     return availableLyrics(parsed.error == LyricsParseError::None ? std::move(parsed.document) : LyricsDocument{},
                            *plain);
 }
+std::optional<QString> recordingMetadata(const QJsonValue& value, const bool required) {
+    if (!required && (value.isUndefined() || value.isNull()))
+        return QString{};
+    if (!value.isString())
+        return std::nullopt;
+    const auto text = value.toString();
+    if ((!required && text.isEmpty()) || (validMetadata(text) && !text.trimmed().isEmpty()))
+        return text;
+    return std::nullopt;
+}
+std::optional<LyricsSearchCandidate> parseRecording(const QJsonObject& object) {
+    const auto id_value = object.value(QStringLiteral("id"));
+    const auto id = id_value.toInteger(-1);
+    auto title = recordingMetadata(object.value(QStringLiteral("trackName")), true);
+    auto artist = recordingMetadata(object.value(QStringLiteral("artistName")), false);
+    auto album = recordingMetadata(object.value(QStringLiteral("albumName")), false);
+    const auto duration = object.value(QStringLiteral("duration"));
+    const auto seconds = duration.isUndefined() || duration.isNull() ? 0.0 : duration.toDouble(-1.0);
+    if (!id_value.isDouble() || id <= 0 || !title || !artist || !album || !std::isfinite(seconds) || seconds < 0.0 ||
+        seconds > static_cast<double>(lyrics_max_timestamp_ms) / 1000.0)
+        return std::nullopt;
+    auto result = parseLrclib(object);
+    if (result.status == Status::Error)
+        return std::nullopt;
+    return LyricsSearchCandidate{
+        id,
+        {std::move(*title), std::move(*artist), std::move(*album), static_cast<qint64>(std::llround(seconds * 1000.0))},
+        result.status == Status::Instrumental,
+        std::move(result.candidates)};
+}
+QString comparisonText(const QString& value) {
+    return value.normalized(QString::NormalizationForm_KC).toCaseFolded().simplified();
+}
+LyricsSearchResult parseRecordings(const QJsonArray& records, const LyricsQuery& query) {
+    constexpr auto maximum_recordings = 20;
+    if (records.size() > maximum_recordings)
+        return {SearchError::ResponseTooLarge, {}};
+    LyricsSearchResult result;
+    QSet<qint64> seen;
+    for (const auto& row : records) {
+        if (!row.isObject())
+            return {SearchError::InvalidResponse, {}};
+        auto candidate = parseRecording(row.toObject());
+        if (!candidate)
+            return {SearchError::InvalidResponse, {}};
+        if (!candidate->instrumental && candidate->formats.empty())
+            continue;
+        if (!seen.contains(candidate->id)) {
+            seen.insert(candidate->id);
+            result.candidates.push_back(std::move(*candidate));
+        }
+    }
+    const auto title = comparisonText(query.title);
+    const auto artist = comparisonText(query.artist);
+    const auto album = comparisonText(query.album);
+    const auto rank = [&](const LyricsSearchCandidate& candidate) {
+        const auto& recording = candidate.recording;
+        const auto distance = query.duration_ms <= 0       ? qint64{0}
+                              : recording.duration_ms <= 0 ? std::numeric_limits<qint64>::max()
+                                                           : std::abs(query.duration_ms - recording.duration_ms);
+        return std::tuple{comparisonText(recording.title) != title,
+                          !artist.isEmpty() && comparisonText(recording.artist) != artist,
+                          !album.isEmpty() && comparisonText(recording.album) != album, distance};
+    };
+    std::stable_sort(result.candidates.begin(), result.candidates.end(),
+                     [&](const auto& left, const auto& right) { return rank(left) < rank(right); });
+    return result;
+}
 OnlineResult parseLyricFind(const QJsonObject& object, const bool synced_requested) {
     const auto code = object.value(QStringLiteral("response")).toObject().value(QStringLiteral("code")).toInt(-1);
     if (code == 202 || code == 203 || code == 207)
@@ -297,7 +373,8 @@ struct QtLyricsService::Impl final {
     QByteArray client, response;
     QString path, title, artist, album, message, occurrence_id, attribution;
     LyricFindOptions lyricfind;
-    SearchMetadata search_metadata;
+    LyricsQuery search_metadata;
+    SearchCompletion recording_completion;
     qint64 duration_ms{};
     quint64 generation{};
     bool stopping{}, local_running{}, cooldown_forever{}, lookup_only{}, fallback_started{};
@@ -320,12 +397,8 @@ struct QtLyricsService::Impl final {
                 emit owner.changed();
         });
         QObject::connect(&timeout, &QTimer::timeout, &owner, [this] {
-            if (status == Status::Searching) {
-                cancelReply();
-                status = Status::Error;
-                message = QStringLiteral("A busca da letra excedeu o tempo limite.");
-                emit owner.changed();
-            }
+            if (recording_completion || status == Status::Searching)
+                networkFailure(QStringLiteral("A busca da letra excedeu o tempo limite."), SearchError::Timeout);
         });
         QObject::connect(&watcher, &QFutureWatcher<LocalResult>::finished, &owner, [this] {
             auto result = watcher.future().takeResult();
@@ -368,6 +441,7 @@ struct QtLyricsService::Impl final {
     void revoke() {
         ++generation;
         pending_local.reset();
+        recording_completion = {};
         online_documents.clear();
         if (displayed_provider == Provider::LyricFind) {
             document = {};
@@ -392,9 +466,22 @@ struct QtLyricsService::Impl final {
         }));
     }
     bool matches(const quint64 expected_generation, const QNetworkReply* expected_reply) const {
-        return !stopping && generation == expected_generation && reply == expected_reply && status == Status::Searching;
+        return !stopping && generation == expected_generation && reply == expected_reply &&
+               (recording_completion || status == Status::Searching);
     }
-    void networkFailure(QString text) {
+    void completeSearch(LyricsSearchResult result) {
+        auto completion = std::exchange(recording_completion, {});
+        cancelReply();
+        QPointer<QtLyricsService> alive(&owner);
+        completion(std::move(result));
+        if (alive)
+            emit alive->changed();
+    }
+    void networkFailure(QString text, const SearchError error = SearchError::Network) {
+        if (recording_completion) {
+            completeSearch({error, {}});
+            return;
+        }
         cancelReply();
         status = Status::Error;
         message = std::move(text);
@@ -439,7 +526,9 @@ struct QtLyricsService::Impl final {
         const auto remaining = maximum_response_bytes - response.size();
         const auto chunk = reply->read(remaining + 1);
         if (chunk.size() > remaining || reply->bytesAvailable() > 0) {
-            networkFailure(QStringLiteral("A resposta de letras excedeu o limite permitido."));
+            if (!handleRateLimit(reply))
+                networkFailure(QStringLiteral("A resposta de letras excedeu o limite permitido."),
+                               SearchError::ResponseTooLarge);
             return false;
         }
         response.append(chunk);
@@ -450,8 +539,8 @@ struct QtLyricsService::Impl final {
             return false;
         active_provider = provider;
         const bool lyricfind_request = provider == Provider::LyricFind;
-        const auto endpoint =
-            lyricfind_request ? QUrl(QStringLiteral("https://api.lyricfind.com/lyric.do")) : lrclibUrl(search_metadata);
+        const auto endpoint = lyricfind_request ? QUrl(QStringLiteral("https://api.lyricfind.com/lyric.do"))
+                                                : lrclibUrl(search_metadata, bool(recording_completion));
         QNetworkRequest request(endpoint);
         request.setRawHeader("User-Agent", client);
         request.setRawHeader("Accept", "application/json");
@@ -479,7 +568,7 @@ struct QtLyricsService::Impl final {
             return false;
         }
         if (!next) {
-            networkFailure(QStringLiteral("O serviço de letras está indisponível."));
+            networkFailure(QStringLiteral("O serviço de letras está indisponível."), SearchError::Unavailable);
             return false;
         }
         reply = next;
@@ -521,15 +610,35 @@ struct QtLyricsService::Impl final {
         attribution = std::move(result.attribution);
         emit owner.changed();
     }
+    bool handleRateLimit(const QNetworkReply* request) {
+        const auto http_status = request->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (http_status != 429 && !(recording_completion && http_status == 503 && request->hasRawHeader("Retry-After")))
+            return false;
+        rateLimit(request->rawHeader("Retry-After"));
+        networkFailure(QStringLiteral("O serviço limitou as consultas. Aguarde antes de buscar novamente."),
+                       SearchError::RateLimited);
+        return true;
+    }
+    void finishRecordings(const int http_status, const QNetworkReply& finished) {
+        if (http_status == 404)
+            return completeSearch({});
+        if (http_status == 401 || http_status == 403)
+            return completeSearch({SearchError::AccessDenied, {}});
+        if (http_status != 200 || finished.error() != QNetworkReply::NoError)
+            return completeSearch({SearchError::Network, {}});
+        const auto media_type = finished.rawHeader("Content-Type").split(';').front().trimmed().toLower();
+        if (media_type != "application/json" || !detail::strictJsonPreflight(response))
+            return completeSearch({SearchError::InvalidResponse, {}});
+        auto json = QJsonDocument::fromJson(response);
+        completeSearch(json.isArray() ? parseRecordings(json.array(), search_metadata)
+                                      : LyricsSearchResult{SearchError::InvalidResponse, {}});
+    }
     void finish(const quint64 expected_generation, QNetworkReply* expected_reply) {
-        if (!matches(expected_generation, expected_reply) || !consume())
+        if (!matches(expected_generation, expected_reply) || handleRateLimit(expected_reply) || !consume())
             return;
         const auto http_status = expected_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        if (http_status == 429) {
-            rateLimit(expected_reply->rawHeader("Retry-After"));
-            networkFailure(QStringLiteral("O serviço limitou as consultas. Aguarde antes de buscar novamente."));
-            return;
-        }
+        if (recording_completion)
+            return finishRecordings(http_status, *expected_reply);
         if (http_status == 404) {
             applyResult({Status::NotFound}, expected_generation);
             return;
@@ -561,6 +670,12 @@ QtLyricsService::QtLyricsService(QNetworkAccessManager* borrowed_network, QObjec
     : QObject(parent),
       impl_(std::make_unique<Impl>(*this, borrowed_network, std::move(client_identifier), request_timeout_ms)) {}
 QtLyricsService::~QtLyricsService() = default;
+std::optional<LyricsDocument> QtLyricsService::readLrcFile(const QString& path) {
+    auto result = readLrc(0, path);
+    if (result.status != Status::Ready)
+        return std::nullopt;
+    return std::move(result.document);
+}
 LyricFindOptions QtLyricsService::loadLyricFindOptions(const QString& private_config_root) {
     constexpr qint64 maximum_config_bytes = 4096;
     if (private_config_root.size() > 8192 || !QDir::isAbsolutePath(private_config_root) ||
@@ -629,12 +744,17 @@ void QtLyricsService::setTrack(QString path, QString title, QString artist, QStr
     if (same_path) {
         const bool revoke_online = occurrence_changed && (value.status == Status::Searching ||
                                                           value.displayed_provider == Provider::LyricFind);
+        const bool revoke_search = occurrence_changed && bool(value.recording_completion);
         if (revoke_online) {
             value.revoke();
             value.status = content(value.document) ? Status::Ready : Status::NotFound;
             value.message.clear();
         }
-        if (changed_metadata || revoke_online)
+        if (revoke_search && !revoke_online) {
+            value.recording_completion = {};
+            value.cancelReply();
+        }
+        if (changed_metadata || revoke_online || revoke_search)
             emit this->changed();
         return;
     }
@@ -670,7 +790,8 @@ void QtLyricsService::setLookupTrack(QString path, QString title, QString artist
 bool QtLyricsService::searchOnline(QString title_override, QString artist_override) {
     auto& value = *impl_;
     if (value.stopping || value.path.isEmpty() || !value.network || !validClient(value.client) ||
-        value.status == Status::Searching || value.cooldown.isActive() || value.cooldown_forever)
+        value.status == Status::Searching || value.recording_completion || value.cooldown.isActive() ||
+        value.cooldown_forever)
         return false;
     const auto title = title_override.trimmed().isEmpty() ? value.title.trimmed() : title_override.trimmed();
     const auto artist = artist_override.trimmed().isEmpty() ? value.artist.trimmed() : artist_override.trimmed();
@@ -693,6 +814,43 @@ bool QtLyricsService::searchOnline(QString title_override, QString artist_overri
     const auto preferred =
         lyricFindConfigured() && value.lyricfind.preferred ? OnlineProvider::LyricFind : OnlineProvider::LRCLIB;
     return value.startRequest(preferred, generation);
+}
+bool QtLyricsService::search(const LyricsQuery& query, SearchCompletion completion) {
+    if (!completion)
+        return false;
+    auto& value = *impl_;
+    const auto fail = [&](const SearchError error) {
+        completion({error, {}});
+        return false;
+    };
+    if (value.stopping || value.path.isEmpty() || !value.network || !validClient(value.client) ||
+        value.status == Status::Searching || value.recording_completion)
+        return fail(SearchError::Unavailable);
+    if (value.cooldown.isActive() || value.cooldown_forever)
+        return fail(SearchError::RateLimited);
+    const auto title = query.title.trimmed();
+    const auto artist = query.artist.trimmed();
+    const auto album = query.album.trimmed();
+    if (!validMetadata(title) || (!artist.isEmpty() && !validMetadata(artist)) ||
+        (!album.isEmpty() && !validMetadata(album)))
+        return fail(SearchError::InvalidQuery);
+    value.search_metadata = {owned(title), owned(artist), owned(album),
+                             std::clamp<qint64>(query.duration_ms, 0, lyrics_max_timestamp_ms)};
+    value.recording_completion = std::move(completion);
+    value.cooldown.start(500);
+    const auto generation = value.generation;
+    emit changed();
+    if (!value.matches(generation, nullptr))
+        return false;
+    return value.startRequest(Provider::LRCLIB, generation);
+}
+void QtLyricsService::cancelSearch() {
+    auto& value = *impl_;
+    if (!value.recording_completion)
+        return;
+    value.recording_completion = {};
+    value.cancelReply();
+    emit changed();
 }
 void QtLyricsService::cancel() {
     auto& value = *impl_;
@@ -722,9 +880,10 @@ quint64 QtLyricsService::contextRevision() const noexcept { return impl_->genera
 QString QtLyricsService::message() const { return impl_->message; }
 bool QtLyricsService::canSearch() const noexcept {
     return !impl_->stopping && !impl_->path.isEmpty() && impl_->network && validClient(impl_->client) &&
-           impl_->status != Status::Searching && !impl_->cooldown.isActive() && !impl_->cooldown_forever;
+           impl_->status != Status::Searching && !impl_->recording_completion && !impl_->cooldown.isActive() &&
+           !impl_->cooldown_forever;
 }
 bool QtLyricsService::busy() const noexcept {
-    return impl_->status == Status::LoadingLocal || impl_->status == Status::Searching;
+    return impl_->status == Status::LoadingLocal || impl_->status == Status::Searching || impl_->recording_completion;
 }
 } // namespace music_player::m0

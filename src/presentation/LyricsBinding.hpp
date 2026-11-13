@@ -4,10 +4,12 @@
 
 #include <QObject>
 #include <QString>
+#include <QUrl>
 #include <QVariantList>
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace music_player::m0 {
 enum class AcquiredLyricsSaveState {
@@ -31,20 +33,30 @@ struct AcquiredLyricsSaveSnapshot final {
 class QtLyricsService;
 class LyricsVariantsStore;
 struct LyricsDocument;
+struct LyricsSearchCandidate;
 // Application-thread projection. Playback remains authoritative for position;
 // lyrics do not load/play audio or change the queue and expose no file paths.
 class LyricsBinding final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString title READ title NOTIFY changed)
     Q_PROPERTY(QString artist READ artist NOTIFY changed)
+    Q_PROPERTY(QString album READ album NOTIFY changed)
+    Q_PROPERTY(qint64 durationMs READ durationMs NOTIFY changed)
     Q_PROPERTY(QString statusText READ statusText NOTIFY changed)
     Q_PROPERTY(QString currentLine READ currentLine NOTIFY changed)
     Q_PROPERTY(QString previousLine READ previousLine NOTIFY changed)
     Q_PROPERTY(QString nextLine READ nextLine NOTIFY changed)
+    Q_PROPERTY(QVariantList readerVerses READ readerVerses NOTIFY readerDocumentChanged)
+    Q_PROPERTY(int activeReaderVerse READ activeReaderVerse NOTIFY changed)
     Q_PROPERTY(QString plainText READ plainText NOTIFY changed)
     Q_PROPERTY(bool hasSyncedLyrics READ hasSyncedLyrics NOTIFY changed)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool canSearch READ canSearch NOTIFY changed)
+    Q_PROPERTY(bool recordingSearchBusy READ recordingSearchBusy NOTIFY recordingSearchChanged)
+    Q_PROPERTY(QString recordingSearchStatus READ recordingSearchStatus NOTIFY recordingSearchChanged)
+    Q_PROPERTY(QString recordingSearchRevision READ recordingSearchRevision NOTIFY recordingSearchChanged)
+    Q_PROPERTY(QVariantList recordingCandidates READ recordingCandidates NOTIFY recordingSearchChanged)
+    Q_PROPERTY(bool canSaveRecording READ canSaveRecording NOTIFY changed)
     Q_PROPERTY(QVariantList variants READ variants NOTIFY changed)
     Q_PROPERTY(QString selectedVariantId READ selectedVariantId NOTIFY changed)
     Q_PROPERTY(bool variantsBusy READ variantsBusy NOTIFY changed)
@@ -55,6 +67,10 @@ class LyricsBinding final : public QObject {
     Q_PROPERTY(bool variantsHasPendingChange READ variantsHasPendingChange NOTIFY changed)
     Q_PROPERTY(bool queueVariantAvailable READ queueVariantAvailable NOTIFY changed)
     Q_PROPERTY(QString queuedVariantStatusText READ queuedVariantStatusText NOTIFY changed)
+    Q_PROPERTY(QVariantList queuedManagerVariants READ queuedManagerVariants NOTIFY changed)
+    Q_PROPERTY(bool queuedManagerBusy READ queuedManagerBusy NOTIFY changed)
+    Q_PROPERTY(bool queuedManagerCanEdit READ queuedManagerCanEdit NOTIFY changed)
+    Q_PROPERTY(QString queuedManagerStatus READ queuedManagerStatus NOTIFY changed)
     Q_PROPERTY(bool canSaveCurrentLyrics READ canSaveCurrentLyrics NOTIFY changed)
     Q_PROPERTY(QVariantList onlineLyricsCandidates READ onlineLyricsCandidates NOTIFY onlineLyricsCandidatesChanged)
     Q_PROPERTY(int selectedOnlineLyricsCandidate READ selectedOnlineLyricsCandidate NOTIFY changed)
@@ -88,14 +104,23 @@ class LyricsBinding final : public QObject {
     [[nodiscard]] bool stopped() const;
     [[nodiscard]] QString title() const;
     [[nodiscard]] QString artist() const;
+    [[nodiscard]] QString album() const;
+    [[nodiscard]] qint64 durationMs() const;
     [[nodiscard]] QString statusText() const;
     [[nodiscard]] QString currentLine() const;
     [[nodiscard]] QString previousLine() const;
     [[nodiscard]] QString nextLine() const;
+    [[nodiscard]] QVariantList readerVerses() const;
+    [[nodiscard]] int activeReaderVerse() const;
     [[nodiscard]] QString plainText() const;
     [[nodiscard]] bool hasSyncedLyrics() const;
     [[nodiscard]] bool busy() const;
     [[nodiscard]] bool canSearch() const;
+    [[nodiscard]] bool recordingSearchBusy() const;
+    [[nodiscard]] QString recordingSearchStatus() const;
+    [[nodiscard]] QString recordingSearchRevision() const;
+    [[nodiscard]] QVariantList recordingCandidates() const;
+    [[nodiscard]] bool canSaveRecording() const;
     [[nodiscard]] QVariantList variants() const;
     [[nodiscard]] QString selectedVariantId() const;
     [[nodiscard]] bool variantsBusy() const;
@@ -106,6 +131,10 @@ class LyricsBinding final : public QObject {
     [[nodiscard]] bool variantsHasPendingChange() const;
     [[nodiscard]] bool queueVariantAvailable() const;
     [[nodiscard]] QString queuedVariantStatusText() const;
+    [[nodiscard]] QVariantList queuedManagerVariants() const;
+    [[nodiscard]] bool queuedManagerBusy() const;
+    [[nodiscard]] bool queuedManagerCanEdit() const;
+    [[nodiscard]] QString queuedManagerStatus() const;
     [[nodiscard]] bool canSaveCurrentLyrics() const;
     [[nodiscard]] QVariantList onlineLyricsCandidates() const;
     [[nodiscard]] int selectedOnlineLyricsCandidate() const;
@@ -117,6 +146,12 @@ class LyricsBinding final : public QObject {
     [[nodiscard]] QString lyricsAttribution() const;
     [[nodiscard]] bool lyricFindConfigured() const;
     Q_INVOKABLE bool search(const QString& title, const QString& artist);
+    Q_INVOKABLE bool searchRecordings(const QString& title, const QString& artist, const QString& album,
+                                      qint64 duration_ms);
+    Q_INVOKABLE void cancelRecordingSearch();
+    Q_INVOKABLE QString previewRecording(int index, int format, const QString& revision) const;
+    Q_INVOKABLE bool useRecording(int index, int format, const QString& revision);
+    Q_INVOKABLE bool saveRecording(int index, int format, const QString& name, const QString& revision);
     Q_INVOKABLE bool selectVariant(const QString& id);
     Q_INVOKABLE bool selectOnlineLyricsCandidate(int index);
     Q_INVOKABLE bool addVariant(const QString& name, const QString& language, const QString& script,
@@ -126,12 +161,26 @@ class LyricsBinding final : public QObject {
                                       const QString& script, const QString& source, const QString& kind,
                                       const QString& content, bool generated);
     Q_INVOKABLE void cancelQueuedVariant(const QString& token);
+    Q_INVOKABLE QString openQueuedManager(const QString& occurrence_id);
+    Q_INVOKABLE void closeQueuedManager(const QString& token);
+    Q_INVOKABLE bool reloadQueuedManager(const QString& token);
+    Q_INVOKABLE QVariantMap prepareQueuedVariantEdit(const QString& token, const QString& id);
+    Q_INVOKABLE bool removeQueuedVariant(const QString& token, const QString& id);
+    Q_INVOKABLE bool addQueuedManagerVariant(const QString& token, const QString& name, const QString& language,
+                                             const QString& script, const QString& source, const QString& kind,
+                                             const QString& content, bool generated);
     Q_INVOKABLE bool saveCurrentLyrics(const QString& name, const QString& language, const QString& script,
                                        const QString& kind, const QString& expected_revision);
     Q_INVOKABLE QString generateRomaji();
     Q_INVOKABLE bool saveRomaji(const QString& token, const QString& name, const QString& content);
     Q_INVOKABLE void discardRomaji(const QString& token);
     Q_INVOKABLE bool removeVariant(const QString& id);
+    Q_INVOKABLE QVariantMap prepareVariantEdit(const QString& id);
+    Q_INVOKABLE bool saveVariantEdit(const QString& token, const QString& name, const QString& language,
+                                     const QString& script, const QString& kind, const QString& content, bool as_new,
+                                     bool edit_timing);
+    Q_INVOKABLE void cancelVariantEdit(const QString& token);
+    Q_INVOKABLE bool importVariantLrc(const QUrl& selected_file, const QString& expected_track, const QString& token);
     Q_INVOKABLE bool retryVariantsSave();
     // After explicit UI consent, drops an unconfirmed candidate and reloads
     // actual disk state. With no current track it only abandons memory, without
@@ -139,22 +188,34 @@ class LyricsBinding final : public QObject {
     Q_INVOKABLE bool reloadVariants();
   signals:
     void changed();
+    void recordingSearchChanged();
+    void readerDocumentChanged();
     void onlineLyricsCandidatesChanged();
     void romajiDraftReady(const QString& token, const QString& content);
+    void importedVariantLrc(const QString& token, const QString& name, const QString& content);
 
   private:
     struct VariantsState;
     struct RomajiState;
+    struct RecordingSearchState;
     [[nodiscard]] const LyricsDocument& displayedDocument() const;
+    [[nodiscard]] const LyricsSearchCandidate* recordingCandidate(int index, const QString& revision) const;
+    [[nodiscard]] const LyricsDocument* recordingFormat(int index, int format, const QString& revision) const;
     void updateOnlineLyricsCandidates();
+    void updateReaderDocument();
+    void finishDirectSearch();
     std::unique_ptr<VariantsState> variants_;
     std::unique_ptr<RomajiState> romaji_;
+    std::unique_ptr<RecordingSearchState> recording_search_;
     QtLyricsService& service_;
-    QString path_, title_, artist_, occurrence_;
+    QString path_, title_, artist_, album_, occurrence_;
     QVariantList online_candidates_;
-    qint64 position_ms_{};
+    QVariantList reader_verses_;
+    qint64 position_ms_{}, duration_ms_{};
     quint64 online_candidate_context_{};
     quint64 selection_revision_{};
+    quint64 direct_search_context_{};
+    std::optional<quint64> direct_search_selection_;
     int online_candidate_{};
     bool shutting_down_{};
     bool exit_preparing_{};

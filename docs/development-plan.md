@@ -477,7 +477,7 @@ O recorte de seleção principal assíncrona de M2.1/M3.1 substitui o seletor es
 | M3.8 | Revisão UX, desempenho de 1.000 itens e convergência visual | UX-001–010, NFR-PERF-004, NFR-PERF-006 | `CHK-UI`, `CHK-A11Y`, `CHK-PERF`, `CHK-TRACE`, `CHK-CLOSE` | jornadas 1–4, 8–9 e decisão visual registradas |
 | M3.9 | Letras acima do progresso: LRC local/LRCLIB explícito, versões locais original/romanizada com inclusão posterior, pausa/seek, fallback de texto e volume percentual | FR-054, FR-011 | `CHK-TDD`, `CHK-FAST`, `CHK-UI`, `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | recorte automatizado implementado; Saved/restart/erros/identidade/tempos; aceitação nativa/pacote pendente |
 
-Em M3.9, uma busca explícita no LRCLIB oferece prévia e salvamento separados para o conteúdo sincronizado e o texto quando diferem. A escolha inicial é a sincronizada. O formulário exige nome e forma e só aceita o resultado para o qual foi aberto. A versão salva selecionada determina a letra exibida. [Letras e versões](lyrics-variants.md#resultados-da-busca-no-player)
+Em M3.9, **Buscar letra** no player oferece gravações do LRCLIB e, após a escolha da gravação, prévia de cada formato disponível. Usar na sessão ou salvar são ações explícitas. A busca conserva a letra em uso e a troca de ocorrência revoga a prévia. [Letras e versões](lyrics-variants.md#resultados-da-busca-no-player)
 
 A troca de ocorrência revoga uma consulta de letra pendente, inclusive entre duas ocorrências da mesma música. O arquivo `.lrc` e o catálogo continuam associados ao caminho do áudio. [Regressão e checks](lyrics-variants.md#resultados-da-busca-no-player)
 
