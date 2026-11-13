@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-O setup privado mais recente da edição Completa experimental inclui o resolvedor yt-dlp 2026.10.26 e a extensão YouTube que detectou *Asterisk* no Letras. [Setup de 2db433f](#setup-completa-experimental-de-2db433f)
+O setup privado mais recente da edição Completa experimental inclui LyricFind, geração de romaji e a escolha da pasta de downloads. [Setup de a114f20](#setup-completa-experimental-de-a114f20)
 
 Os setups privados Lite e Completa experimental de `f8a593b` foram compilados em 2026-11-11, com associações e sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes. [Setups de f8a593b](#setups-de-f8a593b)
 
@@ -14,6 +14,12 @@ A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) documenta 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
 
 A [entrega Completa experimental de `51cd067`](local-delivery-complete-51cd067-20261104.md) registra o setup de **38.139.221 bytes**, SHA-256 `9a59e347ae8564669780e3a03be1d289019d3f3d370f1d19fbaa8e22910657e9`, com manifesto/receipt e notices conferidos. O setup não inclui/instala Evergreen, não foi executado e mantém integração externa e downloads OFF.
+
+## Setup Completa experimental de a114f20
+
+Em 2026-11-13, o setup Release x64 de `a114f20` foi gerado em `out/product/setup-a114f20-20261113/CompleteExperimental/RCMusic-Setup.exe`, na worktree `brave-letras`. Ele tem 92.809.774 bytes e SHA-256 `2afd9c87f956e5ef8b28e9e97a6a82fa2b41fe093a687c74fba989346056367f`. Mantém os opcionais de downloads e das duas extensões do Brave. O [LyricFind](lyrics-variants.md#fonte-opcional-lyricfind) depende de chave de parceiro. Para [gerar romaji](lyrics-variants.md#gerar-romaji), prepare o pykakasi separadamente no perfil do usuário.
+
+O smoke isolado passou nos 17 cenários de áudio. A inspeção estática conferiu o inventário completo, as sete associações, as cinco combinações de opcionais e 92 hashes de arquivos embutidos, incluindo o player novo. O recibo está ao lado do setup; o relatório está em `out/product/setup-a114f20-20261113/CompleteExperimental-static-verification.json`. O setup é local, sem assinatura, e não foi executado.
 
 ## Setup Completa experimental de 2db433f
 

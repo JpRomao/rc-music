@@ -1,6 +1,6 @@
 # Letras e versões por música
 
-**Estado:** recurso validado automaticamente no Windows. Os [setups de 2026-11-11](windows-installer.md#setups-atualizados-em-2026-11-11) incluem a escolha dos formatos online. LyricFind e geração de romaji foram acrescentados após esses setups. Aceitação nativa e instalada pendentes.
+**Estado:** recurso validado automaticamente no Windows. O [setup Completa experimental de 2026-11-13](windows-installer.md#setup-completa-experimental-de-a114f20) inclui LyricFind e geração de romaji, que exigem as preparações abaixo. Aceitação nativa e instalada pendentes.
 
 O [ADR-0016](architecture/decisions/0016-lyrics-variants.md) registra a evolução de FR-054. O catálogo guarda original, romanização e traduções fornecidas pelo usuário. No fluxo de downloads, é possível guardar juntas as versões coladas de uma página do Letras. A consulta automática ao Letras continua pendente de acesso compatível. [Letras do áudio baixado](download-lyrics.md)
 
