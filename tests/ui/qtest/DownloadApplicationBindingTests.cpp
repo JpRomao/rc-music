@@ -1777,6 +1777,24 @@ class DownloadApplicationBindingTests final : public QObject {
         QVERIFY(!h.binding.warningText().contains(QStringLiteral("never-display")));
         QCOMPARE(h.binding.jobsModel()->rowCount(), 1);
     }
+    void restrictedDownloadReportsRefusedAccessWithoutAssumingTheMediaIsPrivate() {
+        Harness h;
+        QVERIFY(h.ready());
+        QCOMPARE(h.controller.begin(input()).state, DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 1);
+
+        h.execution.update.state = DownloadExecutionState::Failed;
+        h.execution.update.error = DownloadFailure::Restricted;
+        h.binding.poll();
+
+        QCOMPARE(h.reviewValue(DownloadJobsModel::StateRole).toString(), QStringLiteral("failed"));
+        QCOMPARE(h.reviewValue(DownloadJobsModel::ErrorTextRole).toString(),
+                 QStringLiteral("Acesso à mídia recusado pela fonte ou pelas verificações de segurança do RC Music. "
+                                "Selecione outra mídia autorizada."));
+        QCOMPARE(h.importer.calls, 0);
+    }
     void beforeShutdownClosesIngressBeforeCancellationAndExecutionShutdown() {
         Harness h;
         QVERIFY(h.ready());

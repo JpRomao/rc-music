@@ -92,7 +92,8 @@ QString errorText(const DownloadFailure failure) {
         return DownloadJobsModel::tr("O endereço expirou. Atualize a página e selecione a mídia novamente.");
     case DownloadFailure::Restricted:
         return DownloadJobsModel::tr(
-            "Conteúdo privado ou protegido não é compatível. Selecione outra mídia autorizada.");
+            "Acesso à mídia recusado pela fonte ou pelas verificações de segurança do RC Music. "
+            "Selecione outra mídia autorizada.");
     case DownloadFailure::UnsupportedMedia:
         return DownloadJobsModel::tr("Formato não compatível. Selecione outro áudio ou vídeo.");
     case DownloadFailure::NoAudio:
