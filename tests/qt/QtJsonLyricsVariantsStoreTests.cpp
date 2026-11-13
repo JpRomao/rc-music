@@ -160,6 +160,43 @@ class QtJsonLyricsVariantsStoreTests final : public QObject {
         QVERIFY(store.load(native(b)).variants.empty());
         QVERIFY(store.load(native(a)).variants == one);
     }
+    void schemaTwoLoadsAndRoundTripsTranslationsAlongsideExistingForms() {
+        QTemporaryDir temp;
+        const auto track = temp.filePath("song.mp3"), primary = slot(temp, track);
+        QtJsonLyricsVariantsStore store(temp.path());
+        const auto existing = fixture();
+        QCOMPARE(store.save(native(track), existing), LyricsVariantsSaveStatus::Saved);
+        auto root = QJsonDocument::fromJson(read(primary)).object();
+        QCOMPARE(root.value("schemaVersion").toInt(), 1);
+        auto versions = root.value("variants").toArray();
+        versions.push_back(QJsonObject{{"id", "7"},
+                                       {"name", "Tradução"},
+                                       {"language", "pt"},
+                                       {"script", "Latn"},
+                                       {"source", "Letras"},
+                                       {"content", "Linha traduzida\nOutra linha"},
+                                       {"kind", "translation"},
+                                       {"generated", false}});
+        root.insert("schemaVersion", 2);
+        root.insert("variants", versions);
+        write(primary, QJsonDocument(root).toJson(QJsonDocument::Compact));
+
+        const auto restored = store.load(native(track));
+        QCOMPARE(restored.status, LyricsVariantsLoadStatus::Loaded);
+        QCOMPARE(restored.variants.size(), std::size_t{3});
+        QVERIFY(restored.variants.front() == existing.front());
+        QVERIFY(restored.variants[1] == existing[1]);
+        QCOMPARE(restored.variants.back().language, std::string{"pt"});
+        QCOMPARE(restored.variants.back().content, std::string{"Linha traduzida\nOutra linha"});
+        QVERIFY(!restored.variants.back().generated);
+
+        QCOMPARE(store.save(native(track), restored.variants), LyricsVariantsSaveStatus::Saved);
+        const auto rewritten = QJsonDocument::fromJson(read(primary)).object();
+        QCOMPARE(rewritten.value("schemaVersion").toInt(), 2);
+        QCOMPARE(rewritten.value("variants").toArray().last().toObject().value("kind").toString(), "translation");
+        QtJsonLyricsVariantsStore restarted(temp.path());
+        QVERIFY(restarted.load(native(track)).variants == restored.variants);
+    }
     void healthyBackupRecoversCorruptionWithoutRepairingTheFiles() {
         QTemporaryDir temp;
         const auto track = temp.filePath("song.mp3"), primary = slot(temp, track);
@@ -190,7 +227,7 @@ class QtJsonLyricsVariantsStoreTests final : public QObject {
         const auto track = temp.filePath("song.mp3"), primary = slot(temp, track);
         QtJsonLyricsVariantsStore store(temp.path());
         QCOMPARE(store.save(native(track), fixture()), LyricsVariantsSaveStatus::Saved);
-        const QByteArray future = "{\"schemaVersion\":2,\"opaque\":{\"next\":[1,2,3]}}";
+        const QByteArray future = "{\"schemaVersion\":3,\"opaque\":{\"next\":[1,2,3]}}";
         write(primary + (backup ? ".bak" : ""), future);
         const auto before = read(primary), before_backup = read(primary + ".bak");
         QCOMPARE(store.load(native(track)).status, LyricsVariantsLoadStatus::FutureVersion);
@@ -219,10 +256,14 @@ class QtJsonLyricsVariantsStoreTests final : public QObject {
         auto invalid_id = valid_variant;
         invalid_id.replace("\"id\":\"1\"", "\"id\":\"01\"");
         QTest::newRow("invalid ID") << ("{\"schemaVersion\":1,\"sourcePath\":TRACK,\"variants\":[" + invalid_id + "]}");
+        auto translation = valid_variant;
+        translation.replace("\"kind\":\"original\"", "\"kind\":\"translation\"");
+        QTest::newRow("translation in version one")
+            << ("{\"schemaVersion\":1,\"sourcePath\":TRACK,\"variants\":[" + translation + "]}");
         auto unknown_kind = valid_variant;
-        unknown_kind.replace("\"kind\":\"original\"", "\"kind\":\"translation\"");
-        QTest::newRow("unknown kind") << ("{\"schemaVersion\":1,\"sourcePath\":TRACK,\"variants\":[" + unknown_kind +
-                                          "]}");
+        unknown_kind.replace("\"kind\":\"original\"", "\"kind\":\"unsupported\"");
+        QTest::newRow("unknown kind in version two")
+            << ("{\"schemaVersion\":2,\"sourcePath\":TRACK,\"variants\":[" + unknown_kind + "]}");
     }
     void malformedUnknownOrWrongIdentityDocumentsAreNotOverwritten() {
         QFETCH(QByteArray, bytes);

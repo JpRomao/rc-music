@@ -21,6 +21,25 @@ std::string padded(const std::int64_t value, const std::size_t width) {
     return result;
 }
 } // namespace
+std::string_view lyricsVariantKindName(const LyricsVariantKind kind) {
+    switch (kind) {
+    case LyricsVariantKind::Original:
+        return "original";
+    case LyricsVariantKind::Romanized:
+        return "romanized";
+    case LyricsVariantKind::Translation:
+        return "translation";
+    }
+    return {};
+}
+std::optional<LyricsVariantKind> lyricsVariantKindFromName(const std::string_view name) {
+    for (const auto kind :
+         {LyricsVariantKind::Original, LyricsVariantKind::Romanized, LyricsVariantKind::Translation}) {
+        if (name == lyricsVariantKindName(kind))
+            return kind;
+    }
+    return {};
+}
 bool isValidLyricsVariants(const LyricsVariants& variants) {
     if (variants.size() > maximum_lyrics_variants)
         return false;
@@ -32,8 +51,7 @@ bool isValidLyricsVariants(const LyricsVariants& variants) {
             !metadata(variant.language, maximum_lyrics_variant_tag_bytes, true) ||
             !metadata(variant.script, maximum_lyrics_variant_tag_bytes, true) ||
             !metadata(variant.source, maximum_lyrics_variant_source_bytes, true) ||
-            (variant.kind != LyricsVariantKind::Original && variant.kind != LyricsVariantKind::Romanized) ||
-            variant.content.size() > lyrics_max_input_bytes ||
+            lyricsVariantKindName(variant.kind).empty() || variant.content.size() > lyrics_max_input_bytes ||
             variant.content.size() > maximum_lyrics_variants_content_bytes - bytes)
             return false;
         const auto parsed = parseLrc(variant.content);

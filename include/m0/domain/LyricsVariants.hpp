@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace music_player::m0 {
@@ -15,7 +16,9 @@ inline constexpr std::size_t maximum_lyrics_variant_tag_bytes = 64;
 inline constexpr std::size_t maximum_lyrics_variant_source_bytes = 2048;
 inline constexpr std::size_t maximum_lyrics_variants_content_bytes = 4 * 1024 * 1024;
 
-enum class LyricsVariantKind { Original, Romanized };
+enum class LyricsVariantKind { Original, Romanized, Translation };
+[[nodiscard]] std::string_view lyricsVariantKindName(LyricsVariantKind kind);
+[[nodiscard]] std::optional<LyricsVariantKind> lyricsVariantKindFromName(std::string_view name);
 struct LyricsVariant final {
     std::uint64_t id{};
     std::string name{}, language{}, script{}, source{}, content{};

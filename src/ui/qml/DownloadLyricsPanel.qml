@@ -17,6 +17,9 @@ Dialog {
     property bool initializing: false
     property bool pasteMode: false
     property bool pasteFromLetras: false
+    property var stagedVersions: []
+    property var draftOwner: null
+    property string draftToken: ""
     property var discardTarget: null
     property bool discardRevoked: false
     readonly property bool requestCurrent: requestOwner !== null && requestOwner === backend && previewToken.length > 0 && requestOwner.hasRequest && requestOwner.requestToken === previewToken
@@ -26,6 +29,10 @@ Dialog {
     readonly property bool pasteAvailable: requestCurrent && requestOwner.canSavePasted === true
     readonly property bool hasLyricsPage: requestCurrent && requestOwner.hasLyricsPage === true
     readonly property bool versionFieldsEditable: actionsCurrent && (pasteMode ? pasteAvailable : !requestOwner.busy)
+    readonly property var versionKinds: ["original", "romanized", "translation"]
+    readonly property string versionKind: versionKinds[kindField.currentIndex] ?? ""
+    readonly property bool draftReady: nameField.text.trim().length > 0 && versionKind.length > 0 && pastedField.text.trim().length > 0
+    readonly property bool draftEmpty: !pastedField.text.trim() && !nameField.text.trim() && !languageField.text.trim() && !scriptField.text.trim() && !versionKind
     readonly property bool metadataCurrent: requestCurrent && titleField.text.trim() === queryTitle && artistField.text.trim() === queryArtist && requestOwner.title.trim() === queryTitle && requestOwner.artist.trim() === queryArtist
     readonly property var candidateRows: requestCurrent ? requestOwner.candidates : []
     readonly property var selectedCandidate: candidateField.currentIndex >= 0 && candidateField.currentIndex < candidateRows.length ? candidateRows[candidateField.currentIndex] : null
@@ -52,17 +59,19 @@ Dialog {
         initializing = true;
         requestOwner = backend;
         previewToken = backend !== null && backend.hasRequest ? backend.requestToken : "";
+        const restoreDraft = draftOwner === requestOwner && draftToken === previewToken && stagedVersions.length > 0;
         queryTitle = backend !== null ? backend.title.trim() : "";
         queryArtist = backend !== null ? backend.artist.trim() : "";
         titleField.text = backend !== null ? backend.title : "";
         artistField.text = backend !== null ? backend.artist : "";
-        nameField.text = "";
-        languageField.text = "";
-        scriptField.text = "";
-        pasteMode = false;
-        pasteFromLetras = false;
-        pastedField.text = "";
-        kindField.currentIndex = -1;
+        if (!restoreDraft) {
+            resetPastedForm();
+            pasteMode = false;
+            pasteFromLetras = false;
+            stagedVersions = [];
+        }
+        draftOwner = requestOwner;
+        draftToken = previewToken;
         candidateField.currentIndex = candidateRows.length > 0 ? 0 : -1;
         initializing = false;
     }
@@ -92,22 +101,46 @@ Dialog {
                 target.forceActiveFocus(Qt.TabFocusReason);
         });
     }
+    function pastedVersion() {
+        return {
+            content: pastedField.text,
+            name: nameField.text.trim(),
+            language: languageField.text.trim(),
+            script: scriptField.text.trim(),
+            kind: versionKind
+        };
+    }
+    function stageVersion() {
+        if (!stageButton.enabled || !actionsCurrent)
+            return;
+        stagedVersions = stagedVersions.concat([pastedVersion()]);
+        resetPastedForm();
+        pastedField.forceActiveFocus(Qt.TabFocusReason);
+    }
+    function resetPastedForm() {
+        pastedField.clear();
+        nameField.clear();
+        languageField.clear();
+        scriptField.clear();
+        kindField.currentIndex = -1;
+    }
     function saveVersion() {
         if (!saveButton.enabled || !actionsCurrent)
             return;
-        const kind = kindField.currentIndex === 0 ? "original" : kindField.currentIndex === 1 ? "romanized" : "";
-        if (kind.length === 0)
-            return;
-        const name = nameField.text.trim();
-        const language = languageField.text.trim();
-        const script = scriptField.text.trim();
+        const version = pastedVersion();
         if (pasteMode) {
             const owner = requestOwner;
             const token = previewToken;
-            if (pasteAvailable && owner.savePasted(token, pastedField.text, name, language, script, kind, hasLyricsPage && pasteFromLetras) && requestOwner === owner && previewToken === token)
+            const accepted = stagedVersions.length > 0 ? owner.saveLetrasVersions(token, draftReady ? stagedVersions.concat([version]) : stagedVersions) : owner.savePasted(token, version.content, version.name, version.language, version.script, version.kind, hasLyricsPage && pasteFromLetras);
+            if (accepted && requestOwner === owner && previewToken === token) {
+                if (stagedVersions.length > 0) {
+                    stagedVersions = [];
+                    resetPastedForm();
+                }
                 pasteFromLetras = false;
+            }
         } else if (metadataCurrent && selectedCandidate !== null) {
-            requestOwner.saveCandidate(selectedCandidate.index, name, language, script, kind);
+            requestOwner.saveCandidate(selectedCandidate.index, version.name, version.language, version.script, version.kind);
         }
     }
     function openDiscardConfirmation() {
@@ -163,14 +196,20 @@ Dialog {
             revokePreview();
             return;
         }
-        titleField.forceActiveFocus(Qt.TabFocusReason);
+        const field = pasteMode ? pastedField : titleField;
+        field.forceActiveFocus(Qt.TabFocusReason);
     }
     onClosed: {
         requestOwner = null;
         previewToken = "";
-        pasteMode = false;
-        pasteFromLetras = false;
-        pastedField.text = "";
+        if (stagedVersions.length === 0 || draftOwner !== backend || backend === null || !backend.hasRequest || draftToken !== backend.requestToken) {
+            draftOwner = null;
+            draftToken = "";
+            stagedVersions = [];
+            pasteMode = false;
+            pasteFromLetras = false;
+            resetPastedForm();
+        }
         const target = restoreFocusItem;
         Qt.callLater(function () {
             if (target && target.visible && target.enabled)
@@ -345,7 +384,7 @@ Dialog {
                         contract: root.contract
                         text: root.pasteMode ? qsTr("Voltar à busca") : qsTr("Colar letra")
                         visible: root.pasteMode || root.pasteAvailable
-                        enabled: visible && root.actionsCurrent
+                        enabled: visible && root.actionsCurrent && root.stagedVersions.length === 0
                         KeyNavigation.tab: pageButton.enabled ? pageButton : root.afterPageLink
                         onClicked: root.togglePaste()
                     }
@@ -413,7 +452,7 @@ Dialog {
                     text: qsTr("Usar página do Letras como origem")
                     value: root.pasteFromLetras
                     visible: root.pasteMode && root.hasLyricsPage
-                    enabled: visible && root.versionFieldsEditable
+                    enabled: visible && root.versionFieldsEditable && root.stagedVersions.length === 0
                     onValueEdited: checked => root.pasteFromLetras = checked
                     KeyNavigation.tab: nameField
                 }
@@ -455,17 +494,54 @@ Dialog {
                     }
                 }
                 FieldLabel {
-                    text: qsTr("Forma da versão: escolha Original ou Romanizada.")
+                    text: qsTr("Forma da versão")
                 }
                 FormChoice {
                     id: kindField
                     objectName: "download-lyrics-kind"
-                    model: [qsTr("Original"), qsTr("Romanizada")]
+                    model: [qsTr("Original"), qsTr("Romanizada"), qsTr("Tradução")]
                     currentIndex: -1
                     displayText: currentIndex < 0 ? qsTr("Escolha a forma") : currentText
                     enabled: root.versionFieldsEditable
                     Accessible.name: qsTr("Forma da versão")
-                    KeyNavigation.tab: saveButton
+                    KeyNavigation.tab: stageButton.enabled ? stageButton : undoStageButton.enabled ? undoStageButton : saveButton
+                }
+                FieldLabel {
+                    visible: root.pasteMode && root.stagedVersions.length > 0
+                    text: qsTr("A guardar: %1").arg(root.stagedVersions.map(version => version.name).join(", "))
+                }
+                RowLayout {
+                    visible: root.pasteMode && root.hasLyricsPage && root.pasteFromLetras
+                    Layout.fillWidth: true
+                    spacing: root.contract.spacingUnit * 2
+                    AccessibleTransportButton {
+                        id: stageButton
+                        objectName: "download-lyrics-stage-version"
+                        contract: root.contract
+                        text: qsTr("Colar outra versão")
+                        enabled: visible && root.versionFieldsEditable && root.draftReady && root.stagedVersions.length < 15
+                        KeyNavigation.tab: undoStageButton.enabled ? undoStageButton : saveButton
+                        onClicked: root.stageVersion()
+                    }
+                    AccessibleTransportButton {
+                        id: undoStageButton
+                        objectName: "download-lyrics-undo-staged-version"
+                        contract: root.contract
+                        text: qsTr("Editar a última adicionada")
+                        visible: root.stagedVersions.length > 0
+                        enabled: visible && root.versionFieldsEditable && root.draftEmpty
+                        KeyNavigation.tab: saveButton
+                        onClicked: {
+                            const last = root.stagedVersions[root.stagedVersions.length - 1];
+                            root.stagedVersions = root.stagedVersions.slice(0, -1);
+                            pastedField.text = last.content;
+                            nameField.text = last.name;
+                            languageField.text = last.language;
+                            scriptField.text = last.script;
+                            kindField.currentIndex = root.versionKinds.indexOf(last.kind);
+                            pastedField.forceActiveFocus(Qt.TabFocusReason);
+                        }
+                    }
                 }
             }
         }
@@ -503,7 +579,7 @@ Dialog {
                 objectName: "download-lyrics-dismiss"
                 contract: root.contract
                 text: qsTr("Concluir revisão")
-                enabled: root.actionsCurrent && root.requestOwner.canDismiss
+                enabled: root.actionsCurrent && root.requestOwner.canDismiss && root.stagedVersions.length === 0
                 KeyNavigation.tab: closeButton
                 onClicked: {
                     if (enabled && root.actionsCurrent)
@@ -529,8 +605,8 @@ Dialog {
                 id: saveButton
                 controlId: "download-lyrics-save"
                 contract: root.contract
-                text: qsTr("Guardar como nova versão")
-                enabled: root.versionFieldsEditable && nameField.text.trim().length > 0 && (kindField.currentIndex === 0 || kindField.currentIndex === 1) && (root.pasteMode ? pastedField.text.trim().length > 0 : root.metadataCurrent && root.requestOwner.canSave && root.selectedCandidate !== null)
+                text: root.pasteMode && root.stagedVersions.length > 0 ? qsTr("Guardar versões") : qsTr("Guardar como nova versão")
+                enabled: root.versionFieldsEditable && (root.pasteMode ? root.draftReady || (root.stagedVersions.length > 0 && root.draftEmpty) : root.versionKind.length > 0 && nameField.text.trim().length > 0 && root.metadataCurrent && root.requestOwner.canSave && root.selectedCandidate !== null)
                 KeyNavigation.tab: retrySaveButton.enabled ? retrySaveButton : discardButton.enabled ? discardButton : dismissButton
                 onClicked: root.saveVersion()
             }

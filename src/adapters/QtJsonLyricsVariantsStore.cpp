@@ -20,6 +20,8 @@
 namespace music_player::m0 {
 namespace {
 enum class FileStatus { Missing, Valid, Invalid, FutureVersion, Unavailable };
+constexpr int initial_schema_version = 1;
+constexpr int translation_schema_version = 2;
 struct InspectedFile final {
     FileStatus status{FileStatus::Missing};
     QByteArray bytes{};
@@ -89,19 +91,20 @@ QByteArray encode(const QString& track, const LyricsVariants& variants) {
     if (!isValidLyricsVariants(variants))
         return {};
     QJsonArray array;
+    auto version = initial_schema_version;
     for (const auto& variant : variants) {
+        if (variant.kind == LyricsVariantKind::Translation)
+            version = translation_schema_version;
         array.push_back(QJsonObject{{QStringLiteral("id"), QString::number(variant.id)},
                                     {QStringLiteral("name"), QString::fromUtf8(variant.name)},
                                     {QStringLiteral("language"), QString::fromUtf8(variant.language)},
                                     {QStringLiteral("script"), QString::fromUtf8(variant.script)},
                                     {QStringLiteral("source"), QString::fromUtf8(variant.source)},
                                     {QStringLiteral("content"), QString::fromUtf8(variant.content)},
-                                    {QStringLiteral("kind"), variant.kind == LyricsVariantKind::Original
-                                                                 ? QStringLiteral("original")
-                                                                 : QStringLiteral("romanized")},
+                                    {QStringLiteral("kind"), QString::fromUtf8(lyricsVariantKindName(variant.kind))},
                                     {QStringLiteral("generated"), variant.generated}});
     }
-    const auto bytes = QJsonDocument(QJsonObject{{QStringLiteral("schemaVersion"), 1},
+    const auto bytes = QJsonDocument(QJsonObject{{QStringLiteral("schemaVersion"), version},
                                                  {QStringLiteral("sourcePath"), track},
                                                  {QStringLiteral("variants"), array}})
                            .toJson(QJsonDocument::Compact);
@@ -118,8 +121,9 @@ InspectedFile decode(QByteArray bytes, const QString& track) {
         std::trunc(version.toDouble()) != version.toDouble())
         return {.status = FileStatus::Invalid};
     // A future schema is opaque; it never grants overwrite authority.
-    if (version.toDouble() > 1)
+    if (version.toDouble() > translation_schema_version)
         return {.status = FileStatus::FutureVersion};
+    const bool supports_translations = version.toInt() == translation_schema_version;
     if (!detail::strictJsonPreflight(bytes) || root.size() != 3 ||
         !root.value(QStringLiteral("sourcePath")).isString() ||
         root.value(QStringLiteral("sourcePath")).toString() != track ||
@@ -140,16 +144,13 @@ InspectedFile decode(QByteArray bytes, const QString& track) {
         const auto script = string(object.value(QStringLiteral("script")));
         const auto source = string(object.value(QStringLiteral("source")));
         const auto content = string(object.value(QStringLiteral("content")));
-        const auto kind = object.value(QStringLiteral("kind"));
+        const auto kind_name = string(object.value(QStringLiteral("kind")));
+        const auto kind = kind_name ? lyricsVariantKindFromName(*kind_name) : std::nullopt;
         const auto generated = object.value(QStringLiteral("generated"));
-        if (object.size() != 8 || !id || !name || !language || !script || !source || !content || !kind.isString() ||
-            (kind.toString() != QLatin1String("original") && kind.toString() != QLatin1String("romanized")) ||
-            !generated.isBool())
+        if (object.size() != 8 || !id || !name || !language || !script || !source || !content || !kind ||
+            (!supports_translations && *kind == LyricsVariantKind::Translation) || !generated.isBool())
             return {.status = FileStatus::Invalid};
-        variants.push_back(
-            {*id, *name, *language, *script, *source, *content,
-             kind.toString() == QLatin1String("original") ? LyricsVariantKind::Original : LyricsVariantKind::Romanized,
-             generated.toBool()});
+        variants.push_back({*id, *name, *language, *script, *source, *content, *kind, generated.toBool()});
     }
     if (!isValidLyricsVariants(variants))
         return {.status = FileStatus::Invalid};

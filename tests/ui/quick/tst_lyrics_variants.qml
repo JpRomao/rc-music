@@ -311,6 +311,32 @@ TestCase {
         compare(call.args.join("|"), "Romanizada 日本|ja|Latn|Local source|romanized|[00:01.000]<b>Romaji</b>|true");
         compare(backend.variants.length, 2); // UI cannot publish an unacknowledged save.
     }
+    function test_translationHasItsOwnLabelAndSubmitsItsKind() {
+        const versions = backend.variants.slice();
+        versions.push({
+            id: "9",
+            name: "Português",
+            language: "pt",
+            script: "Latn",
+            source: "Letras",
+            kind: "translation",
+            generated: false
+        });
+        backend.variants = versions;
+        const panel = openPanel();
+        verify(rowAt(3).Accessible.name.includes("Tradução · pt · Latn · Letras"));
+        panel.close();
+        tryCompare(panel, "visible", false);
+
+        openAddForm();
+        findChild(shell, "lyrics-variant-name-input").text = "Versão traduzida";
+        findChild(shell, "lyrics-variant-content-input").text = "Uma linha de teste";
+        const kindField = findChild(shell, "lyrics-variant-kind-input");
+        kindField.currentIndex = 2;
+        compare(kindField.currentText, "Tradução");
+        mouseClick(findChild(shell, "lyrics-variant-submit"));
+        compare(lastCall("add").args[4], "translation");
+    }
     function test_queueVariantKeepsItsTargetWhilePlaybackAdvances() {
         const menu = openQueueVariantMenu();
         const form = activateQueuedVariantAction(menu);

@@ -46,6 +46,8 @@ TestCase {
             property int retryCalls: 0
             property int saveCalls: 0
             property int pasteCalls: 0
+            property int batchCalls: 0
+            property var submittedVersions: []
             property int retrySaveCalls: 0
             property int discardCalls: 0
             property int dismissCalls: 0
@@ -93,6 +95,12 @@ TestCase {
                 fake.submittedScript = script;
                 fake.submittedKind = kind;
                 fake.submittedLyricsPageSource = lyricsPageSource === true;
+                return fake.pasteAccepted;
+            }
+            function saveLetrasVersions(token, versions) {
+                ++fake.batchCalls;
+                fake.submittedToken = token;
+                fake.submittedVersions = versions;
                 return fake.pasteAccepted;
             }
             function openLyricsPage(token) {
@@ -170,6 +178,35 @@ TestCase {
     function prepareVersion(kindIndex) {
         field("version-name").text = "Versão revisada";
         field("kind").currentIndex = kindIndex;
+    }
+    function test_letrasVersionsAreSubmittedTogether() {
+        backend.hasLyricsPage = true;
+        shell.panel.togglePaste();
+        shell.panel.pasteFromLetras = true;
+        const content = field("pasted-content");
+        content.text = "Original";
+        prepareVersion(0);
+        const add = field("stage-version");
+        verify(add.enabled);
+        add.clicked();
+        compare(content.text, "");
+        compare(backend.batchCalls, 0);
+        verify(!field("dismiss").enabled);
+        shell.panel.close();
+        tryCompare(shell.panel, "opened", false);
+        shell.panel.open();
+        tryCompare(shell.panel, "opened", true);
+        compare(shell.panel.stagedVersions.length, 1);
+        content.text = "Tradução";
+        prepareVersion(2);
+        field("language").text = "pt";
+        shell.panel.saveVersion();
+        compare(backend.batchCalls, 1);
+        compare(backend.submittedToken, "request-a");
+        compare(backend.submittedVersions.length, 2);
+        compare(backend.submittedVersions[0].kind, "original");
+        compare(backend.submittedVersions[1].kind, "translation");
+        compare(backend.submittedVersions[1].language, "pt");
     }
     function test_linkAndAttributionRequireExplicitActions() {
         const link = field("open-letras-page");
@@ -256,7 +293,7 @@ TestCase {
     function test_saveRequiresNameAndAnExplicitFormChoice() {
         const save = field("save");
         const kind = field("kind");
-        compare(kind.count, 2);
+        compare(kind.count, 3);
         compare(kind.currentIndex, -1);
         compare(kind.textAt(0), "Original");
         compare(kind.textAt(1), "Romanizada");

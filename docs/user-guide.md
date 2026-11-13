@@ -12,7 +12,7 @@ No painel, **↑**, **↓**, **Home** e **End** movem o foco nas listas. **Enter
 
 ## Letras das músicas
 
-Use **Versões** para guardar várias formas da letra da música atual. **Adicionar versão** permite colar texto ou LRC com nome, idioma, escrita e origem; escolha Original ou Romanizada e informe se foi gerada por uma ferramenta. Não é necessário ter as duas formas. **Salvar letra atual** guarda a letra do arquivo/busca atual; se uma versão salva estiver selecionada, volte primeiro a **Arquivo / busca atual**. O app não consulta serviços nem salva letras online automaticamente ao abrir esse painel.
+Use **Versões** para guardar várias formas da letra da música atual. Em **Adicionar versão**, cole texto ou LRC e escolha **Original**, **Romanizada** ou **Tradução**. Você também pode informar idioma, escrita e origem. **Salvar letra atual** guarda a letra do arquivo ou da busca. Se uma versão salva estiver selecionada, volte primeiro a **Arquivo / busca atual**.
 
 Na lista de versões, use **↑/↓** para mover o cursor e **Home/End** para ir ao início ou ao fim. **Enter** ou **Espaço** aplicam a versão em foco à letra exibida, preservando a reprodução.
 
@@ -20,11 +20,11 @@ Para editar a letra de outra música sem interromper a atual, abra o menu da fai
 
 Escolha uma versão para exibi-la acima do progresso. LRC mantém seus tempos; texto comum fica sem sincronização. Excluir pede confirmação e remove somente aquela versão, preservando o áudio e as outras letras. As versões sobrevivem ao reinício e são associadas ao caminho exato do arquivo; mover/renomear a música não transfere a associação automaticamente. Em falha, tente salvar novamente ou recarregue do disco mediante confirmação; se a fila já não tiver faixa atual, a ação **Abandonar alteração** descarta apenas o candidato em memória, sem desfazer uma gravação anterior. Veja [limites e recuperação](lyrics-variants.md).
 
-A letra aparece **acima da barra de progresso**, no idioma original. O player carrega automaticamente um arquivo `.lrc` UTF-8 na mesma pasta e com o mesmo nome base do áudio: `música.mp3` e `música.lrc`. Os versos acompanham a posição confirmada, incluindo pausa e saltos; arrastar o progresso ainda mostra uma prévia até o ajuste ser confirmado. Texto sem tempos aparece em uma área rolável. Nesta primeira matriz, arquivos UNC, links e offset diferente de zero não são aceitos.
+A versão selecionada aparece **acima da barra de progresso**. O player carrega automaticamente um arquivo `.lrc` UTF-8 na mesma pasta e com o mesmo nome base do áudio: `música.mp3` e `música.lrc`. Os versos acompanham a posição confirmada, incluindo pausa e saltos; arrastar o progresso ainda mostra uma prévia até o ajuste ser confirmado. Texto sem tempos aparece em uma área rolável. Nesta primeira matriz, arquivos UNC, links e offset diferente de zero não são aceitos.
 
 Para buscar online, clique em **Buscar letra**, confira ou corrija título e artista e confirme **Buscar**. Abrir o diálogo não consulta a rede. A consulta ao LRCLIB envia os campos mostrados, além de álbum/duração quando válidos; não envia áudio nem o caminho local. Trocar de faixa fecha o diálogo e descarta respostas antigas. A disponibilidade e os tempos dependem da versão encontrada; uma falha ou letra ausente não interrompe o áudio. O resultado online fica em memória nesta sessão, sem gravar na música ou criar `.lrc` automaticamente.
 
-Se a busca trouxer conteúdos distintos, em **Versões → Arquivo / busca atual** escolha **Sincronizada** ou **Texto simples** e confira a prévia. A sincronizada é a opção inicial. Use **Salvar letra atual** para guardar a opção escolhida com um nome e a forma **Original** ou **Romanizada**. Se mudar a opção, a busca ou a faixa com o formulário aberto, abra-o de novo para conferir a escolha.
+Se a busca trouxer conteúdos distintos, em **Versões → Arquivo / busca atual** escolha **Sincronizada** ou **Texto simples** e confira a prévia. A sincronizada é a opção inicial. Use **Salvar letra atual** para guardar a opção escolhida com um nome e a forma correspondente. Se mudar a opção, a busca ou a faixa com o formulário aberto, abra-o de novo para conferir a escolha.
 
 Na barra de volume, a porcentagem atual de **0 a 100%** aparece ao passar o mouse ou durante o arraste, inclusive ao levar o ponteiro para fora do slider enquanto o botão estiver pressionado.
 
@@ -122,7 +122,9 @@ Quando a lista de tarefas tem foco, o contorno identifica o cartão sob o cursor
 
 Quando o componente de downloads está ativo, abra **Downloads** no player para acompanhar pedidos, progresso e histórico. Use **Cancelar** em um pedido que ainda permite cancelamento e **Tentar importar novamente** se o MP3 já estiver pronto e a importação para a fila falhar. As opções de repetir o carregamento ou o salvamento aparecem conforme o erro.
 
-Em **Revisar letras**, confirme **Descartar tentativa** se a versão for recusada por dados inválidos ou pelo limite do catálogo. Você pode continuar a revisão com o áudio e as letras guardadas preservados. Use **Fechar** para voltar ao diálogo depois na mesma sessão ou **Concluir revisão** para liberar o pedido para arquivamento. Para acrescentar outra letra depois de concluir ou reiniciar, abra o mesmo MP3 e use **Versões**.
+Em **Revisar letras**, use **Abrir no Letras.mus.br** para acessar a página associada. Copie cada versão que quiser guardar. No player, escolha **Colar letra**, marque **Usar página do Letras como origem** e use **Colar outra versão** para reunir original, romanização e traduções. Clique em **Guardar versões** para salvar o conjunto. [Fluxo de revisão](download-lyrics.md)
+
+Se uma gravação for recusada, confirme **Descartar tentativa** para continuar a revisão. Use **Fechar** para voltar ao diálogo na mesma sessão ou **Concluir revisão** para liberar o pedido para arquivamento. Para acrescentar outra letra depois, abra o mesmo MP3 e use **Versões**.
 
 Em um item interrompido, use **Verificar arquivos**. Se aparecer **Encerrar recuperação…**, o painel informa se há temporários reconhecidos ou se os arquivos esperados estão ausentes. Confirme para encerrar o item. Se o app fechou depois de registrar a limpeza, faça a mesma verificação para concluir o encerramento ao reabrir. A ação preserva a fila e qualquer MP3 final. Quando todos os itens do pedido estiverem encerrados, use **Arquivar pedidos encerrados** para liberar espaço no histórico ativo.
 

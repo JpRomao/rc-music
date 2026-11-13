@@ -19,6 +19,37 @@ bool bounded(const QString& value, const qsizetype maximum) {
     const auto bytes = value.toUtf8();
     return bytes.size() <= maximum && QString::fromUtf8(bytes) == value;
 }
+std::optional<std::string> pastedContent(const QString& content) {
+    if (!bounded(content, static_cast<qsizetype>(lyrics_max_input_bytes)))
+        return std::nullopt;
+    auto pasted = content.toUtf8().toStdString();
+    const auto parsed = parseLrc(pasted);
+    if (parsed.error != LyricsParseError::None ||
+        parsed.document.plain_text.find_first_not_of(" \t\r\n") == std::string::npos ||
+        !lyricsDocumentAsLrc(parsed.document))
+        return std::nullopt;
+    return pasted;
+}
+std::optional<LyricsVariant> versionDraft(std::string content, std::string source, const QString& name,
+                                          const QString& language, const QString& script, const QString& kind) {
+    if (!bounded(name, maximum_lyrics_variant_name_bytes) || !bounded(language, maximum_lyrics_variant_tag_bytes) ||
+        !bounded(script, maximum_lyrics_variant_tag_bytes) || kind.size() > 11)
+        return std::nullopt;
+    const auto variant_kind = lyricsVariantKindFromName(kind.toLatin1().toStdString());
+    if (!variant_kind)
+        return std::nullopt;
+    LyricsVariant draft{1,
+                        name.trimmed().toUtf8().toStdString(),
+                        language.trimmed().toUtf8().toStdString(),
+                        script.trimmed().toUtf8().toStdString(),
+                        std::move(source),
+                        std::move(content),
+                        *variant_kind,
+                        false};
+    if (!isValidLyricsVariants({draft}))
+        return std::nullopt;
+    return draft;
+}
 PublishedLyricsRequest owned(const PublishedLyricsRequest& request) {
     return {request.job_id,        owned(request.final_mp3),   owned(request.title),
             owned(request.artist), owned(request.lyrics_page), owned(request.album),
@@ -110,21 +141,18 @@ struct DownloadLyricsBinding::Impl final {
         emit owner.changed();
         return false;
     }
+    bool invalidBatchVersion(const qsizetype index) {
+        notice =
+            DownloadLyricsBinding::tr("Confira o texto, o nome e a forma da versão %1 do conjunto.").arg(index + 1);
+        emit owner.changed();
+        return false;
+    }
     bool saveVersion(std::string content, std::string source, const QString& name, const QString& language,
                      const QString& script, const QString& kind) {
-        if (!bounded(name, maximum_lyrics_variant_name_bytes) || !bounded(language, maximum_lyrics_variant_tag_bytes) ||
-            !bounded(script, maximum_lyrics_variant_tag_bytes) || (kind != "original" && kind != "romanized"))
-            return invalidSave();
-        LyricsVariant draft{1,
-                            name.trimmed().toUtf8().toStdString(),
-                            language.trimmed().toUtf8().toStdString(),
-                            script.trimmed().toUtf8().toStdString(),
-                            std::move(source),
-                            std::move(content),
-                            kind == "original" ? LyricsVariantKind::Original : LyricsVariantKind::Romanized,
-                            false};
-        if (!isValidLyricsVariants({draft}))
-            return invalidSave();
+        auto draft = versionDraft(std::move(content), std::move(source), name, language, script, kind);
+        return draft ? saveVersions({std::move(*draft)}) : invalidSave();
+    }
+    bool saveVersions(LyricsVariants drafts) {
         const auto expected_token = token;
         const auto ticket = newToken().toStdString();
         const auto target = owned(request->final_mp3);
@@ -133,7 +161,7 @@ struct DownloadLyricsBinding::Impl final {
         notice.clear();
         // Reserve before the shared writer emits changes from inside this call.
         writing_call = true;
-        const bool accepted = writer.appendAcquiredLyrics(ticket, target, {std::move(draft)}, true);
+        const bool accepted = writer.appendAcquiredLyrics(ticket, target, std::move(drafts), true);
         writing_call = false;
         if (!accepted && !ownPending()) {
             save_ticket.clear();
@@ -150,13 +178,13 @@ struct DownloadLyricsBinding::Impl final {
             switch (snapshot.state) {
             case AcquiredLyricsSaveState::Loading:
             case AcquiredLyricsSaveState::Saving:
-                action = DownloadLyricsBinding::tr("Guardando a versão da letra…");
+                action = DownloadLyricsBinding::tr("Guardando letras…");
                 break;
             case AcquiredLyricsSaveState::Saved:
-                action = DownloadLyricsBinding::tr("Versão da letra guardada.");
+                action = DownloadLyricsBinding::tr("Letras guardadas.");
                 break;
             case AcquiredLyricsSaveState::Unchanged:
-                action = DownloadLyricsBinding::tr("Esta versão já estava guardada.");
+                action = DownloadLyricsBinding::tr("O conteúdo já estava guardado.");
                 break;
             case AcquiredLyricsSaveState::LoadFailed:
             case AcquiredLyricsSaveState::SaveFailed:
@@ -307,20 +335,35 @@ bool DownloadLyricsBinding::savePasted(const QString& expected_request_token, co
         return false;
     if (from_lyrics_page && !hasLyricsPage())
         return false;
-    if (content.size() > static_cast<qsizetype>(lyrics_max_input_bytes))
-        return value.invalidSave();
-    const auto bytes = content.toUtf8();
-    if (bytes.size() > static_cast<qsizetype>(lyrics_max_input_bytes) || QString::fromUtf8(bytes) != content)
-        return value.invalidSave();
-    auto pasted = bytes.toStdString();
-    const auto parsed = parseLrc(pasted);
-    if (parsed.error != LyricsParseError::None ||
-        parsed.document.plain_text.find_first_not_of(" \t\r\n") == std::string::npos ||
-        !lyricsDocumentAsLrc(parsed.document))
+    auto pasted = pastedContent(content);
+    if (!pasted)
         return value.invalidSave();
     // Keep the user's source text. The shared writer compares canonical lyrics for duplicates.
     auto source = from_lyrics_page ? value.request->lyrics_page.toUtf8().toStdString() : std::string{"manual"};
-    return value.saveVersion(std::move(pasted), std::move(source), name, language, script, kind);
+    return value.saveVersion(std::move(*pasted), std::move(source), name, language, script, kind);
+}
+bool DownloadLyricsBinding::saveLetrasVersions(const QString& expected_request_token, const QVariantList& versions) {
+    auto& value = *impl_;
+    if (!value.canSavePasted() || expected_request_token != value.token || !hasLyricsPage())
+        return false;
+    if (versions.empty() || static_cast<std::size_t>(versions.size()) > maximum_lyrics_variants)
+        return value.invalidSave();
+    const auto source = value.request->lyrics_page.toUtf8().toStdString();
+    LyricsVariants drafts;
+    drafts.reserve(static_cast<std::size_t>(versions.size()));
+    for (qsizetype index = 0; index < versions.size(); ++index) {
+        const auto fields = versions[index].toMap();
+        auto content = pastedContent(fields.value("content").toString());
+        if (!content)
+            return value.invalidBatchVersion(index);
+        auto draft = versionDraft(std::move(*content), source, fields.value("name").toString(),
+                                  fields.value("language").toString(), fields.value("script").toString(),
+                                  fields.value("kind").toString());
+        if (!draft)
+            return value.invalidBatchVersion(index);
+        drafts.push_back(std::move(*draft));
+    }
+    return value.saveVersions(std::move(drafts));
 }
 bool DownloadLyricsBinding::retrySave() {
     auto& value = *impl_;

@@ -624,6 +624,23 @@ class LyricsBindingTests final : public QObject {
         QCOMPARE(binding.currentLine(), QStringLiteral("Local verse"));
         QVERIFY(binding.canSearch());
     }
+    void addsAndSelectsATranslationWithItsLanguageAndLiteralText() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        QtLyricsService service;
+        auto store = std::make_shared<MemoryVariantsStore>();
+        LyricsBinding binding(service, store);
+        binding.setTrack(directory.filePath("song.mp3"), "Song", "Artist", {}, 9000);
+        QTRY_VERIFY(binding.variantsReady());
+
+        QVERIFY(binding.addVariant("Tradução", "pt", "Latn", "Letras", "translation", "Linha traduzida", false));
+        QTRY_COMPARE(binding.variants().size(), 1);
+        const auto row = binding.variants().front().toMap();
+        QCOMPARE(row.value("kind").toString(), "translation");
+        QCOMPARE(row.value("language").toString(), "pt");
+        QVERIFY(binding.selectVariant(row.value("id").toString()));
+        QCOMPARE(binding.plainText(), "Linha traduzida");
+    }
     void importsOriginalAndRomanizedOnlyAfterSavedAndKeepsTheirOwnTiming() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());
@@ -875,7 +892,7 @@ class LyricsBindingTests final : public QObject {
         QTRY_COMPARE(binding.variants().size(), 1);
         QCOMPARE(binding.variants().front().toMap().value("id").toString(), second);
         QVERIFY(binding.selectedVariantId() != first);
-        QVERIFY(!binding.addVariant("New", "ja", "Latn", "Manual", "translation", "Not enabled", false));
+        QVERIFY(!binding.addVariant("New", "ja", "Latn", "Manual", "unsupported", "Not enabled", false));
         QCOMPARE(store->save_calls.load(), 3);
     }
     void deletingTheHighestIdDoesNotReuseItForAnotherVersionInTheSameSession() {

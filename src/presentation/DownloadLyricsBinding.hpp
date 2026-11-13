@@ -54,6 +54,7 @@ class DownloadLyricsBinding final : public QObject {
     Q_INVOKABLE bool savePasted(const QString& expected_request_token, const QString& content, const QString& name,
                                 const QString& language, const QString& script, const QString& kind,
                                 bool from_lyrics_page = false);
+    Q_INVOKABLE bool saveLetrasVersions(const QString& expected_request_token, const QVariantList& versions);
     Q_INVOKABLE bool retrySave();
     Q_INVOKABLE bool discardPendingSave(const QString& expected_request_token, const QString& expected_discard_token);
     Q_INVOKABLE bool dismiss();

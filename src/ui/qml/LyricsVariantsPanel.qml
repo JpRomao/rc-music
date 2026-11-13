@@ -37,6 +37,20 @@ Dialog {
     readonly property bool canSaveCurrent: canEdit && currentLyricsRevision.length > 0 && lyrics.canSaveCurrentLyrics
     readonly property var selectedVariant: variantForId(selectedId)
     readonly property var rows: variantRows()
+    readonly property var versionKinds: [
+        {
+            label: qsTr("Original"),
+            value: "original"
+        },
+        {
+            label: qsTr("Romanizada"),
+            value: "romanized"
+        },
+        {
+            label: qsTr("Tradução"),
+            value: "translation"
+        }
+    ]
     readonly property bool childDialogOpen: formDialog.visible || confirmation.visible
     readonly property bool textEntryMode: formMode === "add" || formMode === "queued"
     readonly property bool queuedFormAvailable: enabled && supported && typeof lyrics.queueVariantAvailable === "boolean" && lyrics.queueVariantAvailable
@@ -123,8 +137,9 @@ Dialog {
     }
     function rowDetails(row) {
         const pieces = [];
-        if (row.kind.length > 0)
-            pieces.push(row.kind === "romanized" ? qsTr("Romanizada") : qsTr("Original"));
+        const kind = versionKinds.find(choice => choice.value === row.kind);
+        if (kind)
+            pieces.push(kind.label);
         if (row.language.length > 0)
             pieces.push(row.language);
         if (row.script.length > 0)
@@ -634,7 +649,9 @@ Dialog {
                         Layout.fillWidth: true
                         implicitHeight: root.contract.controlTargetPreferred
                         enabled: root.formCurrent
-                        model: [qsTr("Original"), qsTr("Romanizada")]
+                        textRole: "label"
+                        valueRole: "value"
+                        model: root.versionKinds
                         Accessible.name: qsTr("Tipo de versão")
                         KeyNavigation.tab: root.textEntryMode ? sourceField : formSubmit
                         contentItem: Text {
@@ -746,7 +763,7 @@ Dialog {
                         const name = nameField.text.trim();
                         const language = languageField.text.trim();
                         const script = scriptField.text.trim();
-                        const kind = kindField.currentIndex === 1 ? "romanized" : "original";
+                        const kind = kindField.currentValue;
                         let accepted;
                         if (mode === "current")
                             accepted = owner.saveCurrentLyrics(name, language, script, kind, root.formLyricsRevision);

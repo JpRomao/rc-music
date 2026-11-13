@@ -473,6 +473,57 @@ class DownloadLyricsBindingTests final : public QObject {
         QCOMPARE(browser.urls.size(), 1);
         QCOMPARE(h.store->saves.load(), 1);
     }
+    void letrasVersionsAreSavedTogetherForThePublishedTrack() {
+        Harness h;
+        const auto request = h.request();
+        QVERIFY(h.binding.offerPublished(request));
+        h.network.replies.back()->finish(404, "{}");
+        const auto token = h.binding.requestToken();
+        const QVariantList versions{QVariantMap{{"content", "Original text"},
+                                                {"name", "Original"},
+                                                {"language", "ja"},
+                                                {"script", "Jpan"},
+                                                {"kind", "original"}},
+                                    QVariantMap{{"content", "Romanized text"},
+                                                {"name", "Romaji"},
+                                                {"language", "ja"},
+                                                {"script", "Latn"},
+                                                {"kind", "romanized"}},
+                                    QVariantMap{{"content", "Translated text"},
+                                                {"name", "Português"},
+                                                {"language", "pt"},
+                                                {"script", "Latn"},
+                                                {"kind", "translation"}}};
+        const auto save = [&](const QString& expected, const QVariantList& batch) {
+            bool accepted{};
+            return QMetaObject::invokeMethod(&h.binding, "saveLetrasVersions", Qt::DirectConnection,
+                                             Q_RETURN_ARG(bool, accepted), Q_ARG(QString, expected),
+                                             Q_ARG(QVariantList, batch)) &&
+                   accepted;
+        };
+        QVERIFY(!save("stale", versions));
+        auto invalid = versions;
+        auto wrong = invalid.last().toMap();
+        wrong["content"] = "[00:99.00]Invalid timestamp";
+        invalid.last() = wrong;
+        QVERIFY(!save(token, invalid));
+        QVERIFY(h.binding.statusText().contains("3"));
+        QCOMPARE(h.store->saves.load(), 0);
+
+        QVERIFY(save(token, versions));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Saved);
+        const auto saved = h.store->read(request.final_mp3);
+        QCOMPARE(saved.size(), std::size_t{3});
+        for (const auto& item : saved)
+            QCOMPARE(item.source, request.lyrics_page.toStdString());
+        QCOMPARE(saved[2].language, std::string{"pt"});
+        QCOMPARE(saved[2].content, std::string{"Translated text"});
+        QCOMPARE(h.store->saves.load(), 1);
+        QVERIFY(save(token, versions));
+        QTRY_COMPARE(h.writer.acquiredLyricsSave().state, AcquiredLyricsSaveState::Unchanged);
+        QCOMPARE(h.store->saves.load(), 1);
+        QCOMPARE(h.network.requests.size(), 1);
+    }
     void pastedSaveRejectsStaleInvalidAndReentrantActionsAndRetriesOnlyTheSameDraft() {
         Harness h;
         auto request = h.request();

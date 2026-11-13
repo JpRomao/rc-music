@@ -2,7 +2,7 @@
 
 **Estado:** recurso validado automaticamente no Windows. Os [setups de 2026-11-11](windows-installer.md#setups-atualizados-em-2026-11-11) incluem a escolha dos formatos online. Aceitação nativa e instalada pendentes.
 
-O [ADR-0016](architecture/decisions/0016-lyrics-variants.md) registra a evolução de FR-054: guardar várias formas de uma letra e adicionar outras depois, sem duplicar áudio. Original e romanizada conservam o idioma; tradução e geração por LLM continuam como ideias futuras. Não há integração de download com Letras.mus.br nesta entrega.
+O [ADR-0016](architecture/decisions/0016-lyrics-variants.md) registra a evolução de FR-054. O catálogo guarda original, romanização e traduções fornecidas pelo usuário. No fluxo de downloads, é possível guardar juntas as versões coladas de uma página do Letras. A consulta automática ao Letras continua pendente de acesso compatível. [Letras do áudio baixado](download-lyrics.md)
 
 ## Usar as versões
 
@@ -18,7 +18,7 @@ LRC conserva seus tempos quando aceito pelo parser; texto comum permanece sem si
 
 ### Resultados da busca no player
 
-Depois de confirmar **Buscar letra**, abra **Versões** e escolha **Arquivo / busca atual**. Se o LRCLIB trouxer conteúdos distintos, o seletor oferece **Sincronizada** e **Texto simples**. A sincronizada vem selecionada e a prévia acompanha a opção escolhida. Para guardar cada resultado, use **Salvar letra atual**, informe um nome e escolha **Original** ou **Romanizada**. A origem registrada é LRCLIB.
+Depois de confirmar **Buscar letra**, abra **Versões** e escolha **Arquivo / busca atual**. Se o LRCLIB trouxer conteúdos distintos, o seletor oferece **Sincronizada** e **Texto simples**. A sincronizada vem selecionada e a prévia acompanha a opção escolhida. Para guardar cada resultado, use **Salvar letra atual**, informe um nome e escolha a forma correspondente. A origem registrada é LRCLIB.
 
 Os rótulos descrevem o formato recebido. Idioma, escrita e forma são informados ao salvar.
 

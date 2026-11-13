@@ -32,6 +32,12 @@ Falha de gravação conserva candidato e ticket exatos para retry sem repetir me
 
 Schema 1, identidade por path exato, limites, backup e lock cooperativo permanecem. A serialização pertence a este actor compartilhado; não é CAS, merge transacional entre processos ou promessa de rollback após confirmação ambígua. Preparação/cancelamento de saída e abandono explícito continuam obedecendo aos contratos da decisão original. Evidência disponível: merge puro **21 casos/253 assertions** e writer **24 casos Qt**; fechamento integrado e Quick constam do [registro](../../download-lyrics.md#evidência-deste-incremento). Runtime/host YouTube, acesso Letras e distribuição permanecem gates do ADR-0017, sem alterar o estado aceito desta persistência local.
 
+## Evolução de 2026-11-13
+
+O catálogo aceita **Tradução** como forma de texto fornecida pelo usuário, com idioma de destino opcional. A gravação usa schema 2 quando há uma tradução. Versões anteriores do RC Music tratam esse documento como futuro e bloqueiam a sobrescrita. Catálogos apenas com original e romanização continuam no schema 1.
+
+Para um MP3 publicado com página Letras validada, a revisão aceita várias formas coladas em uma única operação do writer. A URL da revisão é a origem de cada versão. A consulta primária depende de acesso compatível, como descrito no ADR-0017.
+
 ## Alternativas e consequências
 
 - Um único `.lrc` não atende às várias representações e pode exigir escrita em pasta de mídia sem permissão. Os documentos de configuração evitam modificar a biblioteca pessoal.

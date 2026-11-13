@@ -87,20 +87,15 @@ std::optional<LyricsVariant> makeVariant(const std::uint64_t id, const QString& 
         language.size() > static_cast<qsizetype>(maximum_lyrics_variant_tag_bytes) ||
         script.size() > static_cast<qsizetype>(maximum_lyrics_variant_tag_bytes) ||
         source.size() > static_cast<qsizetype>(maximum_lyrics_variant_source_bytes) ||
-        content.size() > static_cast<qsizetype>(lyrics_max_input_bytes) || (kind != "original" && kind != "romanized"))
+        content.size() > static_cast<qsizetype>(lyrics_max_input_bytes) ||
+        kind.size() > static_cast<qsizetype>(maximum_lyrics_variant_tag_bytes))
         return {};
+    const auto variant_kind = lyricsVariantKindFromName(kind.toLatin1().toStdString());
     const auto label = utf8(name, true), lang = utf8(language, true), alphabet = utf8(script, true),
                origin = utf8(source, true), body = utf8(content, false);
-    if (!label || !lang || !alphabet || !origin || !body)
+    if (!label || !lang || !alphabet || !origin || !body || !variant_kind)
         return {};
-    return LyricsVariant{id,
-                         *label,
-                         *lang,
-                         *alphabet,
-                         *origin,
-                         *body,
-                         kind == "original" ? LyricsVariantKind::Original : LyricsVariantKind::Romanized,
-                         generated};
+    return LyricsVariant{id, *label, *lang, *alphabet, *origin, *body, *variant_kind, generated};
 }
 } // namespace
 struct LyricsBinding::VariantsState final {
@@ -502,7 +497,7 @@ QVariantList LyricsBinding::variants() const {
                                      {"language", text(item.language)},
                                      {"script", text(item.script)},
                                      {"source", text(item.source)},
-                                     {"kind", item.kind == LyricsVariantKind::Original ? "original" : "romanized"},
+                                     {"kind", QString::fromUtf8(lyricsVariantKindName(item.kind))},
                                      {"generated", item.generated}});
     return result;
 }
