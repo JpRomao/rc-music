@@ -34,6 +34,10 @@ A [prova temporária aprovada](superpowers/specs/2026-11-12-youtube-user-agent-p
 
 O fechamento local desse incremento passou **9/9 CTest, 364 casos Qt**, sem falhas/skips/warnings, incluindo socket, protocolo, worker real de teste, supervisor e consumidores de preparo/execução. Há comparação integral do HTTP sintético e golden independente de bytes v1. O worker diretamente ligado é um seam explícito de testes; esse resultado não prova o bootstrap autenticado instalado, AppContainer ou a mídia pública. Formato dos 17 C++ e documentos/rastreabilidade passaram; nenhuma suíte global Node/CTest foi executada nesse recorte.
 
+O candidato privado recompilou app/host/bootstrap/payload reais e autenticou seus 652 arquivos; somente quatro outputs substituem bytes do baseline. O marker foi copiado da instalação validada, não fabricado, e os novos pins ficam no perfil privado sem reescrever os originais. A revisão independente não encontrou Critical/Important/Minor e aprovou somente uma tentativa controlada nesta máquina. App/host dependem do CRT já existente em System32; isso não qualifica pacote standalone ou máquina limpa.
+
+**Estado operacional:** a tentativa UA não ocorreu. A automação não confirmou saída graciosa do original e o helper de foco persistente recusou a ação por sessão encerrada; a solicitação manual de Ctrl+Q expirou. O candidato nunca foi iniciado e sua raiz de dados continua ausente. Conferência final encontrou os oito defaults próprios exatamente no snapshot, sem escrita no Registro, e o mesmo original em execução com os 17 itens, posição e recibos de importação preservados. Não houve novo job, booleano de inclusão, status HTTP ou MP3 neste probe. A hipótese UA permanece não testada; a restauração após mutação real também não foi exercitada. Evidência sanitizada: `blocked-before-start.json` no workspace privado deste plano.
+
 ## Build e checks locais
 
 Na sessão MSVC descrita em [core-build](core-build.md#build-windows), configure a [biblioteca de navegador](browser-extension.md#biblioteca-nativa-windows) com Qt/Catch2 já disponíveis e acrescente:
