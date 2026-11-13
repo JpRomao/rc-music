@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-Os setups privados mais recentes incluem a pesquisa de álbuns e faixas cadastrados no Lidarr, o reenvio de pedidos incertos pelas extensões, as correções de recuperação e o resolvedor opcional com Node.js 24.22.3 LTS. [Setups privados de dbf9e19](#setups-privados-de-dbf9e19)
+O setup privado mais recente da edição Completa experimental inclui o resolvedor yt-dlp 2026.10.26 e a extensão YouTube que detectou *Asterisk* no Letras. [Setup de 2db433f](#setup-completa-experimental-de-2db433f)
 
 Os setups privados Lite e Completa experimental de `f8a593b` foram compilados em 2026-11-11, com associações e sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes. [Setups de f8a593b](#setups-de-f8a593b)
 
@@ -14,6 +14,12 @@ A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) documenta 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
 
 A [entrega Completa experimental de `51cd067`](local-delivery-complete-51cd067-20261104.md) registra o setup de **38.139.221 bytes**, SHA-256 `9a59e347ae8564669780e3a03be1d289019d3f3d370f1d19fbaa8e22910657e9`, com manifesto/receipt e notices conferidos. O setup não inclui/instala Evergreen, não foi executado e mantém integração externa e downloads OFF.
+
+## Setup Completa experimental de 2db433f
+
+Em 2026-11-13, a edição Completa experimental foi compilada em Release x64 e empacotada em `out/product/setup-asterisk-20261113/CompleteExperimental/RCMusic-Setup.exe`, na worktree `brave-letras`. O arquivo tem 91.699.241 bytes e SHA-256 `ff3d61f07e5e17717f861290d2aaa00850fd55463013819fa9c7eca1a59a3124`. O pacote inclui yt-dlp 2026.10.26, Node.js 24.22.3, EJS 0.8.0 e as duas extensões como opções separadas. O perfil empacotado habilita explicitamente o User-Agent limitado do resolvedor usado no [teste de Asterisk](youtube-audio-and-lyrics.md#atualização-do-yt-dlp-20261026). Os hosts usam as identidades e os endpoints normais do RC Music.
+
+O lint QML e os 17 cenários de áudio passaram, com 19 casos Qt e zero skips. A inspeção estática conferiu as cinco combinações de componentes, as sete associações e os hashes de 92 arquivos do instalador, incluindo o resolvedor, os hosts e as extensões. O recibo está ao lado do setup e a inspeção em `out/product/setup-asterisk-20261113/CompleteExperimental-static-verification.json`. O arquivo é local e sem assinatura. A instalação, a atualização e o fluxo Brave com o pacote instalado seguem sem execução.
 
 ## Setups privados de dbf9e19
 
