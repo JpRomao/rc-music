@@ -148,7 +148,8 @@ if(TARGET rc_music_downloads)
 endif()
 if(TARGET rc_music_browser_integration AND TARGET rc_music_downloads)
     add_ui_test(rc_music_ui_download_binding_tests rc_music.ui.download-binding
-        qtest/DownloadApplicationBindingTests.cpp rc_music_test_ui rc_music_browser_integration rc_music_downloads)
+        qtest/DownloadApplicationBindingTests.cpp rc_music_test_ui rc_music_test_uiplugin
+        rc_music_browser_integration rc_music_downloads Qt6::Qml Qt6::Quick)
     target_compile_definitions(rc_music_ui_download_binding_tests PRIVATE
         M0_TEST_FIXTURE_FILE="${ui_fixtures}/fixture.v1.json"
         M0_TEST_QUEUE_FILE="${ui_fixtures}/queue.v1.json")

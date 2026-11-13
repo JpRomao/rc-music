@@ -6,13 +6,16 @@
 #include "m0/ports/DownloadRecoveryValidation.hpp"
 #include "presentation/PlayerPresenter.hpp"
 
+#include <QClipboard>
 #include <QDesktopServices>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFutureWatcher>
+#include <QGuiApplication>
 #include <QPointer>
 #include <QThread>
 #include <QTimer>
+#include <QUuid>
 #include <QtConcurrent/QtConcurrentRun>
 
 #include <algorithm>
@@ -991,6 +994,11 @@ void DownloadApplicationBinding::beginShutdown() {
             impl_->operating = false;
         return;
     }
+    // Ingress closure must return before model/consent notifications. Withdraw
+    // retry even during a nested projection callback, not only on the next poll.
+    impl_->model.setDownloadRetryStatuses({});
+    if (!guard)
+        return;
     invalidateDiscardConsent();
     if (!guard)
         return;
@@ -1238,6 +1246,46 @@ bool DownloadApplicationBinding::renewNamespace() {
 bool DownloadApplicationBinding::retryAdmission() {
     return performControl([this] { return !impl_->closing && impl_->controller.retryAdmission(); });
 }
+bool DownloadApplicationBinding::retryDownload(const QString& job_id) {
+    if (job_id.isEmpty() || job_id.size() > 64)
+        return false;
+    return performControl([this, &job_id] {
+        if (impl_->closing || impl_->poll_failed || impl_->recoveryBusy() || impl_->archive_consent ||
+            impl_->discard_consent || impl_->import_consent)
+            return false;
+        const QPointer<DownloadApplicationBinding> guard{this};
+        const auto result = impl_->controller.retryDownload(
+            job_id.toStdString(), QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString());
+        if (!guard)
+            return false;
+        impl_->model.refresh();
+        return result.state == DownloadAdmissionState::Pending;
+    });
+}
+QString DownloadApplicationBinding::downloadInformation(const QString& job_id) const {
+    if (QThread::currentThread() != thread())
+        return {};
+    return impl_->model.downloadInformation(job_id);
+}
+bool DownloadApplicationBinding::copyDownloadInformation(const QString& job_id) {
+    return performControl([this, &job_id] {
+        const auto information = downloadInformation(job_id);
+        if (information.isEmpty())
+            return false;
+        const auto copy = impl_->options.copy_information;
+        try {
+            if (copy)
+                return copy(information);
+            auto* const clipboard = QGuiApplication::clipboard();
+            if (!clipboard)
+                return false;
+            clipboard->setText(information, QClipboard::Clipboard);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    });
+}
 bool DownloadApplicationBinding::archiveActionsAllowed() const {
     return impl_->gate_attached && !impl_->closing && !impl_->poll_failed && !impl_->review_operation &&
            !impl_->validation_operation && !impl_->discard_consent && !impl_->import_consent;
@@ -1310,6 +1358,17 @@ bool DownloadApplicationBinding::closeAfterFinalSaveFailure() {
 
 void DownloadApplicationBinding::refreshProjection() {
     const QPointer<DownloadApplicationBinding> guard{this};
+    QHash<QString, DownloadRetryStatus> retry_statuses;
+    const bool retry_available = impl_->gate_attached && !impl_->closing && !impl_->poll_failed &&
+                                 !impl_->recoveryBusy() && !impl_->archive_consent && !impl_->discard_consent &&
+                                 !impl_->import_consent;
+    for (const auto& job : impl_->download_service.snapshot())
+        retry_statuses.insert(QString::fromStdString(job.job_id),
+                              retry_available ? impl_->controller.downloadRetryStatus(job.job_id)
+                                              : DownloadRetryStatus::Unavailable);
+    impl_->model.setDownloadRetryStatuses(std::move(retry_statuses));
+    if (!guard)
+        return;
     if (impl_->closing && !impl_->before_shutdown_completed) {
         // A failed ingress closure freezes the controller and consent model.
         // Publish only the blocked-exit notice; never query recovery ports or

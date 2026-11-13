@@ -5,11 +5,16 @@
 #include "presentation/DownloadApplicationBinding.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #include "presentation/PlayerPresenterTestAccess.hpp"
+#include "presentation/ShellUiContract.hpp"
 
 #include <QAbstractItemModel>
 #include <QDesktopServices>
 #include <QPersistentModelIndex>
 #include <QPointer>
+#include <QQmlComponent>
+#include <QQmlEngine>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -52,8 +57,9 @@ class Platform final : public PlatformIntegration {
 };
 class Execution final : public DownloadExecution {
   public:
-    bool start(const std::string& id, const DownloadItem&) override {
+    bool start(const std::string& id, const DownloadItem& item) override {
         ++starts;
+        items.push_back(item);
         update = {.job_id = id};
         return true;
     }
@@ -74,6 +80,7 @@ class Execution final : public DownloadExecution {
         return shutdowns != 0 && physical_stopped;
     }
     int starts{0};
+    std::vector<DownloadItem> items{};
     int cancellations{0};
     int shutdowns{0};
     bool physical_stopped{false};
@@ -129,6 +136,8 @@ class Io final : public DownloadCheckpointIo {
     }
     DownloadCheckpointIoCommand startSave(const std::uint64_t id, const DownloadCheckpoint& snapshot) override {
         saves.push_back({id, snapshot});
+        if (on_save)
+            on_save();
         return DownloadCheckpointIoCommand::Accepted;
     }
     std::optional<DownloadCheckpointIoResult> poll(std::uint64_t) override {
@@ -151,6 +160,7 @@ class Io final : public DownloadCheckpointIo {
     std::vector<std::pair<std::uint64_t, DownloadCheckpoint>> saves{};
     std::optional<DownloadCheckpointIoResult> completion{};
     std::function<void()> on_poll{};
+    std::function<void()> on_save{};
     int polls{0};
     int shutdowns{0};
     bool physical_stopped{false};
@@ -308,6 +318,10 @@ struct Harness final {
     bool throw_clock{false};
     int before_shutdown_calls{0};
     std::function<void()> on_before_shutdown{};
+    QString copied_information;
+    bool copy_accepted{true};
+    bool copy_throws{false};
+    std::function<void()> on_copy{};
     DownloadApplicationBinding binding;
     explicit Harness(SessionLoadResult session = {}, bool with_review = false, bool with_validation = false,
                      DownloadServiceLimits limits = {})
@@ -334,7 +348,16 @@ struct Harness final {
                        },
                    .automatic_polling = false,
                    .recovery_review = with_review ? &review : nullptr,
-                   .recovery_validation = with_validation ? &validation : nullptr}) {}
+                   .recovery_validation = with_validation ? &validation : nullptr,
+                   .copy_information =
+                       [&](const QString& text) {
+                           copied_information = text;
+                           if (on_copy)
+                               on_copy();
+                           if (copy_throws)
+                               throw std::runtime_error{"private synthetic copy failure: COPY_CANARY"};
+                           return copy_accepted;
+                       }}) {}
     bool ready() {
         if (!binding.start() || io.loads.size() != 1)
             return false;
@@ -377,6 +400,365 @@ struct Harness final {
 class DownloadApplicationBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void initTestCase() { Q_INIT_RESOURCE(m0_qt_shell_assets); }
+    void realQmlRetryAndInformationUseTheDurableBindingAndIsolatedCopySink() {
+        Harness h;
+        QVERIFY(h.ready());
+        QCOMPARE(h.controller.begin(input()).state, DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        h.execution.update = {.job_id = "fresh-1",
+                              .state = DownloadExecutionState::Failed,
+                              .phase = DownloadPhase::Converting,
+                              .completed_units = 9007199254740993ULL,
+                              .total_units = 18446744073709551615ULL,
+                              .error = DownloadFailure::NoAudio};
+        h.binding.poll();
+        const auto original_failure = h.service.snapshot().front();
+        ShellUiContract contract{nullptr};
+        QQmlEngine engine;
+        QQmlComponent component{&engine};
+        component.loadFromModule(QStringLiteral("MusicPlayer.M0"), QStringLiteral("Main"));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        std::unique_ptr<QObject> root{
+            component.createWithInitialProperties({{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
+                                                   {QStringLiteral("presenter"), QVariant::fromValue(&h.presenter)},
+                                                   {QStringLiteral("downloads"), QVariant::fromValue(&h.binding)}})};
+        QVERIFY2(root != nullptr, qPrintable(component.errorString()));
+        auto* window = qobject_cast<QQuickWindow*>(root.get());
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        auto* opener = root->findChild<QQuickItem*>(QStringLiteral("downloads"));
+        QVERIFY(opener);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                          opener->mapToScene(QPointF{opener->width() / 2, opener->height() / 2}).toPoint());
+        auto* panel = root->findChild<QObject*>(QStringLiteral("downloads-panel"));
+        QVERIFY(panel);
+        QTRY_VERIFY(panel->property("opened").toBool());
+        const auto find_control = [&](const QString& name) {
+            const auto visit = [&](const auto& self, QQuickItem* parent) -> QQuickItem* {
+                if (parent->objectName() == name)
+                    return parent;
+                for (auto* child : parent->childItems())
+                    if (auto* found = self(self, child))
+                        return found;
+                return nullptr;
+            };
+            return visit(visit, window->contentItem());
+        };
+        QQuickItem* information = nullptr;
+        QTRY_VERIFY((information = find_control(QStringLiteral("download-information"))) && information->isEnabled());
+        information->forceActiveFocus(Qt::TabFocusReason);
+        QTest::keyClick(window, Qt::Key_Return);
+        auto* information_dialog = root->findChild<QObject*>(QStringLiteral("download-information-dialog"));
+        QVERIFY(information_dialog);
+        QTRY_VERIFY(information_dialog->property("opened").toBool());
+        auto* details = find_control(QStringLiteral("download-information-text"));
+        QVERIFY(details);
+        QCOMPARE(details->property("text").toString(), h.binding.downloadInformation(QStringLiteral("fresh-1")));
+        auto* copy = find_control(QStringLiteral("download-copy-information"));
+        QVERIFY(copy);
+        copy->forceActiveFocus(Qt::TabFocusReason);
+        QTest::keyClick(window, Qt::Key_Return);
+        QCOMPARE(h.copied_information, details->property("text").toString());
+        QVERIFY(!h.copied_information.contains("never-display"));
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTRY_VERIFY(!information_dialog->property("visible").toBool());
+        auto* retry = find_control(QStringLiteral("download-retry"));
+        QVERIFY(retry && retry->isEnabled());
+        retry->forceActiveFocus(Qt::TabFocusReason);
+        QTest::keyClick(window, Qt::Key_Return);
+        QCOMPARE(h.io.saves.size(), std::size_t{2});
+        QCOMPARE(h.controller.state(), DownloadAdmissionControllerState::AdmissionPending);
+        QCOMPARE(h.execution.starts, 1);
+        QCOMPARE(h.service.snapshot().size(), std::size_t{2});
+        QVERIFY(QMetaObject::invokeMethod(retry, "clicked"));
+        h.binding.poll();
+        QCOMPARE(h.io.saves.size(), std::size_t{2});
+        QCOMPARE(h.execution.starts, 1);
+        h.io.saved();
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 2);
+        QCOMPARE(h.execution.items.back(), input().items.front());
+        QCOMPARE(h.service.snapshot().front(), original_failure);
+    }
+    void retryProjectionWithdrawsWhenItsNotificationRequestsExit() {
+        Harness h;
+        QVERIFY(h.ready());
+        QCOMPARE(h.controller.begin(input()).state, DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        bool exit_requested = false;
+        connect(h.binding.jobsModel(), &QAbstractItemModel::dataChanged, &h.binding, [&] {
+            if (!exit_requested && h.reviewValue(DownloadJobsModel::CanRetryDownloadRole).toBool()) {
+                exit_requested = true;
+                QVERIFY(h.presenter.requestExit());
+            }
+        });
+        h.execution.update = {
+            .job_id = "fresh-1", .state = DownloadExecutionState::Failed, .error = DownloadFailure::Network};
+        h.binding.poll();
+        QVERIFY(exit_requested);
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanRetryDownloadRole).toBool());
+        QVERIFY(!h.binding.retryDownload(QStringLiteral("fresh-1")));
+        QCOMPARE(h.execution.starts, 1);
+    }
+    void informationCopyOmitsCompoundCredentialTitles_data() {
+        QTest::addColumn<QString>("title");
+        QTest::addColumn<bool>("sensitive");
+        QTest::addColumn<bool>("restored");
+        for (const bool restored : {false, true}) {
+            const auto prefix = restored ? QByteArray{"restored-"} : QByteArray{"live-"};
+            QTest::newRow((prefix + "normal").constData()) << QStringLiteral("Normal piano song") << false << restored;
+            for (const auto* key : {"access_token", "refresh_token", "api_key", "client_secret", "AccessToken"})
+                QTest::newRow((prefix + key).constData())
+                    << QString::fromLatin1(key) + QStringLiteral("=COPY_TITLE_CANARY") << true << restored;
+        }
+    }
+    void informationCopyOmitsCompoundCredentialTitles() {
+        QFETCH(QString, title);
+        QFETCH(bool, sensitive);
+        QFETCH(bool, restored);
+        Harness h;
+        const auto id = restored ? QStringLiteral("old-1") : QStringLiteral("fresh-1");
+        if (restored) {
+            QVERIFY(h.binding.start());
+            const DownloadCheckpoint checkpoint{.receipts = {{.request_id = request_id,
+                                                              .fingerprint = std::string(64, 'a'),
+                                                              .job_ids = {"old-1"},
+                                                              .retained_request_bytes = 128}},
+                                                .jobs = {{.job_id = "old-1",
+                                                          .title = title.toStdString(),
+                                                          .state = DownloadJobState::Failed,
+                                                          .completed_units = 9007199254740993ULL,
+                                                          .error = DownloadFailure::NoAudio}}};
+            h.io.loaded({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+            h.binding.poll();
+        } else {
+            QVERIFY(h.ready());
+            auto request = input();
+            request.items[0].title = title.toStdString();
+            QCOMPARE(h.controller.begin(request).state, DownloadAdmissionState::Pending);
+            h.io.saved();
+            h.binding.poll();
+            h.execution.update = {.job_id = "fresh-1",
+                                  .state = DownloadExecutionState::Failed,
+                                  .phase = DownloadPhase::Converting,
+                                  .completed_units = 9007199254740993ULL,
+                                  .error = DownloadFailure::NoAudio};
+            h.binding.poll();
+        }
+        const auto information = h.binding.downloadInformation(id);
+        QVERIFY(information.contains(id));
+        QVERIFY(information.contains("9007199254740993"));
+        QVERIFY(information.contains("no-audio"));
+        QVERIFY(!information.contains("COPY_TITLE_CANARY"));
+        QCOMPARE(information.contains("título omitido"), sensitive);
+        if (!sensitive)
+            QVERIFY(information.contains(title));
+        QVERIFY(h.copied_information.isEmpty());
+        QVERIFY(h.binding.copyDownloadInformation(id));
+        QCOMPARE(h.copied_information, information);
+        QVERIFY(!h.copied_information.contains("COPY_TITLE_CANARY"));
+    }
+    void informationCopyUsesAnIsolatedSinkAndRejectsStaleTargetsAndReentry() {
+        Harness h;
+        QVERIFY(h.ready());
+        QCOMPARE(h.controller.begin(input()).state, DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        h.execution.update = {.job_id = "fresh-1",
+                              .state = DownloadExecutionState::Failed,
+                              .phase = DownloadPhase::Converting,
+                              .completed_units = 9007199254740993ULL,
+                              .total_units = 18446744073709551615ULL,
+                              .error = DownloadFailure::NoAudio};
+        h.binding.poll();
+        const auto text = h.binding.downloadInformation(QStringLiteral("fresh-1"));
+        QVERIFY(text.contains("9007199254740993"));
+        QVERIFY(text.contains("18446744073709551615"));
+        QVERIFY(text.contains("no-audio"));
+        QVERIFY(!text.contains("never-display"));
+        QVERIFY(!text.contains("https:"));
+        QVERIFY(!text.contains("C:/"));
+        QVERIFY(h.copied_information.isEmpty());
+        h.on_copy = [&] {
+            QVERIFY(!h.binding.copyDownloadInformation(QStringLiteral("fresh-1")));
+            QVERIFY(!h.binding.retryDownload(QStringLiteral("fresh-1")));
+        };
+        QVERIFY(h.binding.copyDownloadInformation(QStringLiteral("fresh-1")));
+        QCOMPARE(h.copied_information, text);
+        h.copy_accepted = false;
+        QVERIFY(!h.binding.copyDownloadInformation(QStringLiteral("fresh-1")));
+        h.copy_throws = true;
+        QVERIFY(!h.binding.copyDownloadInformation(QStringLiteral("fresh-1")));
+        QVERIFY(!h.binding.copyDownloadInformation(QStringLiteral("FRESH-1")));
+        QVERIFY(!h.binding.copyDownloadInformation(QString(65, QLatin1Char{'x'})));
+        QVERIFY(h.binding.downloadInformation(QStringLiteral("unknown")).isEmpty());
+        QCOMPARE(h.execution.starts, 1);
+        QCOMPARE(h.io.saves.size(), std::size_t{1});
+        QVERIFY(h.controller.archiveSettled());
+        h.io.saved();
+        h.binding.poll();
+        QVERIFY(h.binding.downloadInformation(QStringLiteral("fresh-1")).isEmpty());
+        QVERIFY(!h.binding.copyDownloadInformation(QStringLiteral("fresh-1")));
+    }
+    void restoredFailureExplainsUnavailableSourceAndRetainsExactCountersWithoutInventingPhase() {
+        Harness h;
+        QVERIFY(h.binding.start());
+        const DownloadCheckpoint checkpoint{.receipts = {{.request_id = request_id,
+                                                          .fingerprint = std::string(64, 'a'),
+                                                          .job_ids = {"old-1"},
+                                                          .retained_request_bytes = 128}},
+                                            .jobs = {{.job_id = "old-1",
+                                                      .title = "Saved historical failure",
+                                                      .state = DownloadJobState::Failed,
+                                                      .completed_units = 9007199254740993ULL,
+                                                      .total_units = 18446744073709551615ULL,
+                                                      .error = DownloadFailure::NoAudio}}};
+        h.io.loaded({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+        h.binding.poll();
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanRetryDownloadRole).toBool());
+        const auto reason = h.reviewValue(DownloadJobsModel::RetryDownloadReasonRole).toString();
+        QVERIFY(reason.contains("navegador"));
+        QVERIFY(reason.contains("reiniciar"));
+        QVERIFY(!h.binding.retryDownload(QStringLiteral("old-1")));
+        const auto text = h.binding.downloadInformation(QStringLiteral("old-1"));
+        QVERIFY(text.contains("9007199254740993"));
+        QVERIFY(text.contains("18446744073709551615"));
+        QVERIFY(text.contains("histórico sem fase"));
+        QVERIFY(!text.contains("converting"));
+        QVERIFY(h.binding.copyDownloadInformation(QStringLiteral("old-1")));
+        QCOMPARE(h.copied_information, text);
+        QVERIFY(h.io.saves.empty());
+        QCOMPARE(h.execution.starts, 0);
+    }
+    void retryDownloadCannotRunDuringRecoveryOrAfterExitIntent() {
+        Harness h{{}, true, true};
+        QVERIFY(h.interrupted());
+        QVERIFY(h.reviewValue(DownloadJobsModel::RetryDownloadReasonRole).toString().contains("navegador"));
+        auto live_request = input();
+        live_request.request_id = "01234567-89ab-4cde-8fab-0123456789ac";
+        QCOMPARE(h.controller.begin(live_request).state, DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        h.execution.update = {
+            .job_id = "fresh-1", .state = DownloadExecutionState::Failed, .error = DownloadFailure::Network};
+        h.binding.poll();
+        QVERIFY(h.binding.reviewFiles(QStringLiteral("old-1")));
+        QVERIFY(!h.binding.retryDownload(QStringLiteral("fresh-1")));
+        h.review.complete(DownloadRecoveryReviewOutcome::OwnedFinalCandidate);
+        h.binding.poll();
+        QVERIFY(h.binding.validateMedia(QStringLiteral("old-1")));
+        h.validation.complete(DownloadRecoveryValidationOutcome::Validated);
+        h.binding.poll();
+        QVERIFY(!h.binding.retryDownload(QStringLiteral("fresh-1")));
+        QVERIFY(h.binding.releaseValidation(QStringLiteral("old-1")));
+        h.validation.complete(DownloadRecoveryValidationOutcome::Released);
+        h.binding.poll();
+        QVERIFY(h.reviewValue(DownloadJobsModel::CanRetryDownloadRole, 2).toBool());
+        QVERIFY(h.presenter.requestExit());
+        QVERIFY(!h.binding.retryDownload(QStringLiteral("fresh-1")));
+        QCOMPARE(h.io.saves.size(), std::size_t{2});
+        QCOMPARE(h.io.saves.back().second.receipts, h.io.saves.front().second.receipts);
+        QCOMPARE(h.io.saves.back().second.jobs.size(), std::size_t{3});
+        QCOMPARE(h.execution.starts, 1);
+    }
+    void failedRetrySaveCanOnlyRetryTheSameAdmissionWithoutAnotherDownloadRequest() {
+        Harness h;
+        QVERIFY(h.ready());
+        QCOMPARE(h.controller.begin(input()).state, DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        h.execution.update = {
+            .job_id = "fresh-1", .state = DownloadExecutionState::Failed, .error = DownloadFailure::Network};
+        h.binding.poll();
+        QVERIFY(h.binding.retryDownload(QStringLiteral("fresh-1")));
+        const auto retry_request_id = h.io.saves.back().second.receipts.back().request_id;
+        h.io.saved(DownloadCheckpointSaveStatus::Failed);
+        h.binding.poll();
+        QVERIFY(h.binding.canRetryAdmission());
+        QVERIFY(!h.binding.retryDownload(QStringLiteral("fresh-1")));
+        QCOMPARE(h.execution.starts, 1);
+        QVERIFY(h.binding.retryAdmission());
+        QCOMPARE(h.io.saves.back().second.receipts.back().request_id, retry_request_id);
+        QCOMPARE(h.service.snapshot().size(), std::size_t{2});
+        h.io.saved();
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 2);
+        QCOMPARE(h.controller.poll(retry_request_id)->job_ids, std::vector<std::string>{"fresh-2"});
+    }
+    void fullHistoryDisablesDownloadRetryWithoutConsumingMoreQuota() {
+        Harness h{{}, false, false, {.max_jobs = 1}};
+        QVERIFY(h.ready());
+        QCOMPARE(h.controller.begin(input()).state, DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        h.execution.update = {
+            .job_id = "fresh-1", .state = DownloadExecutionState::Failed, .error = DownloadFailure::Network};
+        h.binding.poll();
+        const auto before = h.service.capacity();
+        QVERIFY2(!h.reviewValue(DownloadJobsModel::CanRetryDownloadRole).toBool(),
+                 "A full ledger must explain that a new retry cannot be admitted");
+        QVERIFY(!h.binding.retryDownload(QStringLiteral("fresh-1")));
+        QCOMPARE(h.io.saves.size(), std::size_t{1});
+        QCOMPARE(h.service.capacity().jobs, before.jobs);
+        QCOMPARE(h.service.capacity().retained_request_bytes, before.retained_request_bytes);
+        QVERIFY(h.reviewValue(DownloadJobsModel::RetryDownloadReasonRole).toString().contains("limite"));
+    }
+    void retryDownloadStagesOnlyTheFailedItemUntilSaved() {
+        Harness h;
+        QVERIFY(h.ready());
+        auto request = input();
+        request.items.push_back({.url = "https://synthetic.example.test/sibling.mp3", .title = "Sibling"});
+        QCOMPARE(h.controller.begin(request).state, DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 1);
+        QVERIFY(h.service.cancel("fresh-2"));
+        h.execution.update = {.job_id = "fresh-1",
+                              .state = DownloadExecutionState::Failed,
+                              .phase = DownloadPhase::Converting,
+                              .completed_units = 37,
+                              .total_units = 101,
+                              .error = DownloadFailure::NoAudio};
+        h.binding.poll();
+        const auto old = h.service.snapshot()[0];
+        auto* model = h.binding.jobsModel();
+        const auto retry_role = model->roleNames().key("canRetryDownload", -1);
+        QVERIFY2(model->data(model->index(0, 0), retry_role).toBool(),
+                 "A live failed item must offer an explicit durable retry");
+        const auto invoke_retry = [&] {
+            bool accepted = false;
+            const bool invoked = QMetaObject::invokeMethod(&h.binding, "retryDownload", Q_RETURN_ARG(bool, accepted),
+                                                           Q_ARG(QString, QStringLiteral("fresh-1")));
+            return invoked && accepted;
+        };
+        bool reentered = false;
+        h.io.on_save = [&] {
+            reentered = true;
+            QVERIFY(!invoke_retry());
+        };
+        QVERIFY(invoke_retry());
+        QVERIFY(reentered);
+        QVERIFY(!invoke_retry());
+        QCOMPARE(h.io.saves.size(), std::size_t{2});
+        QCOMPARE(h.service.snapshot().size(), std::size_t{3});
+        QCOMPARE(h.service.snapshot()[0], old);
+        QCOMPARE(h.io.saves.back().second.jobs[2].job_id, "fresh-3");
+        QVERIFY(h.io.saves.back().second.receipts[1].request_id != request.request_id);
+        QCOMPARE(h.io.saves.back().second.receipts[1].job_ids, std::vector<std::string>{"fresh-3"});
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 1);
+        h.io.saved();
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 2);
+        QCOMPARE(h.execution.items.back(), request.items[0]);
+        QCOMPARE(h.service.snapshot()[0], old);
+        QCOMPARE(h.service.snapshot()[1].state, DownloadJobState::Cancelled);
+        QVERIFY(!invoke_retry());
+        QCOMPARE(h.io.saves.size(), std::size_t{2});
+    }
     void opensAndChangesTheValidatedDownloadDirectory() {
         Harness h;
         FolderOpenCapture opened;

@@ -38,7 +38,10 @@ class DownloadJobsModel final : public QAbstractListModel {
         ValidationBusyRole,
         CanReleaseValidationRole,
         CanImportRecoveredRole,
-        RecoveryWithoutFilesRole
+        RecoveryWithoutFilesRole,
+        CanRetryDownloadRole,
+        RetryDownloadReasonRole,
+        DownloadInformationRole
     };
     Q_ENUM(Role)
 
@@ -49,6 +52,8 @@ class DownloadJobsModel final : public QAbstractListModel {
     [[nodiscard]] int activeCount() const noexcept;
     [[nodiscard]] int completedCount() const noexcept;
     void refresh();
+    void setDownloadRetryStatuses(QHash<QString, DownloadRetryStatus> statuses);
+    [[nodiscard]] QString downloadInformation(const QString& job_id) const;
     Q_INVOKABLE bool cancel(const QString& job_id);
     Q_INVOKABLE bool retryImport(const QString& job_id);
     void setReviewAvailable(bool available);
@@ -78,6 +83,7 @@ class DownloadJobsModel final : public QAbstractListModel {
 
     DownloadService& service_;
     std::vector<DownloadJobSnapshot> items_{};
+    QHash<QString, DownloadRetryStatus> retry_statuses_{};
     int active_count_{0};
     int completed_count_{0};
     bool refreshing_{false};

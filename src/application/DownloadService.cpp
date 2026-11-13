@@ -81,6 +81,16 @@ bool validFingerprint(const std::string_view fingerprint) {
            });
 }
 
+std::size_t retainedItemBytes(const DownloadItem& item) {
+    auto bytes = item.url.size() + item.title.size();
+    if (item.youtube) {
+        const auto& youtube = *item.youtube;
+        bytes += youtube.video_id.size() + youtube.title.size() + youtube.artist.size() + youtube.lyrics_page.size() +
+                 youtube.file_name.size() + 1;
+    }
+    return bytes;
+}
+
 bool validPhase(const DownloadPhase phase) {
     switch (phase) {
     case DownloadPhase::Downloading:
@@ -203,6 +213,9 @@ struct DownloadService::Impl {
         // Recovery telemetry remains Interrupted until the durable receipt is
         // acknowledged; it is not reconstructed transfer progress.
         std::optional<DownloadImportState> recovered_import{};
+        // A primary error (for example Timeout) must not erase a late,
+        // correlated publication/cleanup uncertainty when deciding retry.
+        bool retry_requires_recovery{false};
     };
 
     struct ArchivePlan {
@@ -325,7 +338,14 @@ struct DownloadService::Impl {
         return result;
     }
 
+    static bool ambiguousFailure(const DownloadFailure error) {
+        return error == DownloadFailure::Publication || error == DownloadFailure::InvalidResult ||
+               error == DownloadFailure::Import;
+    }
+
     void requestCancellation(Job& job, const DownloadFailure error) {
+        job.retry_requires_recovery =
+            job.retry_requires_recovery || job.phase == DownloadPhase::Publishing || ambiguousFailure(error);
         if (job.view.state == DownloadJobState::Cancelling) {
             // A new failure during draining must not disappear behind a human cancellation,
             // replace an earlier cause, or repeat the adapter cancellation request.
@@ -428,6 +448,8 @@ struct DownloadService::Impl {
     }
 
     void failTerminal(Job& job, const DownloadFailure error) {
+        job.retry_requires_recovery =
+            job.retry_requires_recovery || job.phase == DownloadPhase::Publishing || ambiguousFailure(error);
         job.view.state = DownloadJobState::Failed;
         job.view.error = error;
         job.view.completed_mp3.clear();
@@ -447,6 +469,9 @@ struct DownloadService::Impl {
                     requestCancellation(job, DownloadFailure::InvalidResult);
                 return;
             }
+            job.retry_requires_recovery =
+                job.retry_requires_recovery || !payload_valid || update.phase == DownloadPhase::Publishing ||
+                update.state == DownloadExecutionState::Published || ambiguousFailure(update.error);
             if (job.view.error != DownloadFailure::None)
                 failTerminal(job, job.view.error);
             else if (!payload_valid)
@@ -816,14 +841,8 @@ DownloadSubmissionResult DownloadService::submitImpl(const DownloadRequest& requ
     // safe; this counts retained strings and the explicit lyrics-choice byte,
     // not physical allocator/container overhead. Untyped requests retain v1 accounting.
     std::size_t bytes = request.request_id.size();
-    for (const auto& item : request.items) {
-        bytes += item.url.size() + item.title.size();
-        if (item.youtube) {
-            const auto& youtube = *item.youtube;
-            bytes += youtube.video_id.size() + youtube.title.size() + youtube.artist.size() +
-                     youtube.lyrics_page.size() + youtube.file_name.size() + 1;
-        }
-    }
+    for (const auto& item : request.items)
+        bytes += retainedItemBytes(item);
     if (bytes > state.limits.max_retained_request_bytes - state.retained_request_bytes)
         return {.error = DownloadSubmissionError::LimitExceeded};
 
@@ -1099,6 +1118,48 @@ bool DownloadService::retryImport(const std::string_view job_id) {
     if (job == nullptr || job->view.state != DownloadJobState::ImportFailed)
         return false;
     return state.import(*job);
+}
+
+DownloadRetryStatus DownloadService::downloadRetryStatus(const std::string_view job_id) const {
+    auto& state = *impl_;
+    if (state.calling_port || state.closed || state.staged_archive || !state.valid_configuration || job_id.empty() ||
+        job_id.size() > 64)
+        return DownloadRetryStatus::Unavailable;
+    const auto* job = state.find(job_id);
+    if (!job)
+        return DownloadRetryStatus::Unavailable;
+    if (job->view.state == DownloadJobState::Interrupted)
+        return DownloadRetryStatus::RecoveryRequired;
+    if (job->view.state != DownloadJobState::Failed || !job->view.completed_mp3.empty())
+        return DownloadRetryStatus::NotFailed;
+    const auto& receipt = state.receipts[job->receipt_index];
+    if (receipt.recovered || job->item_index >= receipt.request.items.size())
+        return DownloadRetryStatus::SourceUnavailable;
+    if (job->retry_requires_recovery || job->phase == DownloadPhase::Publishing ||
+        job->view.error == DownloadFailure::Publication || job->view.error == DownloadFailure::InvalidResult ||
+        job->view.error == DownloadFailure::Import)
+        return DownloadRetryStatus::RecoveryRequired;
+    if (state.jobs.size() >= state.limits.max_jobs || state.receipts.size() >= state.limits.max_requests ||
+        36 + retainedItemBytes(receipt.request.items[job->item_index]) >
+            state.limits.max_retained_request_bytes - state.retained_request_bytes)
+        return DownloadRetryStatus::LimitExceeded;
+    return DownloadRetryStatus::Available;
+}
+
+std::optional<DownloadItem> DownloadService::retrySource(const std::string_view job_id) const {
+    if (downloadRetryStatus(job_id) != DownloadRetryStatus::Available)
+        return std::nullopt;
+    const auto& job = *impl_->find(job_id);
+    return impl_->receipts[job.receipt_index].request.items[job.item_index];
+}
+
+std::optional<DownloadPhase> DownloadService::progressPhase(const std::string_view job_id) const {
+    if (job_id.empty() || job_id.size() > 64)
+        return std::nullopt;
+    const auto* job = impl_->find(job_id);
+    if (!job || impl_->receipts[job->receipt_index].recovered || job->view.state == DownloadJobState::Queued)
+        return std::nullopt;
+    return job->phase;
 }
 
 bool DownloadService::canSettleRecoveredDiscard(const std::string_view job_id) const noexcept {

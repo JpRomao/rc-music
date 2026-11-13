@@ -27,6 +27,8 @@ TestCase {
             "errorText": "",
             "canCancel": canCancel,
             "canRetryImport": canRetryImport,
+            "canRetryDownload": false,
+            "retryDownloadReason": "",
             "canReviewFiles": false,
             "canDiscardPartials": false,
             "recoveryWithoutFiles": false,
@@ -112,6 +114,100 @@ TestCase {
             return list.itemAtIndex(index) !== null;
         });
         return list.itemAtIndex(index);
+    }
+    function test_failedDownloadRetryUsesOnlyCurrentExactRowIdentity() {
+        addJob("failed-a", "failed", "Falhou", false, false, false, 0);
+        jobs.setProperty(0, "canRetryDownload", true);
+        jobs.setProperty(0, "retryDownloadReason", "Uma nova tentativa será salva antes de iniciar.");
+        const panel = openDownloads();
+        const row = rowAt(0);
+        const retry = findChild(row, "download-retry");
+        verify(retry && retry.visible && retry.enabled, "Failed downloads need a distinct retry action");
+        verifyTarget(retry);
+        compare(retry.Accessible.name, "Tentar novamente");
+        retry.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        compare(downloads.downloadRetries, ["failed-a"]);
+        jobs.setProperty(0, "canRetryDownload", false);
+        retry.clicked();
+        compare(downloads.downloadRetries.length, 1);
+        verify(findChild(row, "download-retry-reason").text.length > 0);
+        const old = downloads;
+        const replacement = createTemporaryObject(bindingComponent, testCase);
+        shell.downloads = replacement;
+        jobs.setProperty(0, "canRetryDownload", true);
+        retry.clicked();
+        compare(old.downloadRetries.length, 1);
+        compare(replacement.downloadRetries.length, 0, "A retained delegate cannot act on a different owner");
+        panel.close();
+    }
+    function test_informationIsSelectablePlainTextWithKeyboardCopyFeedback() {
+        addJob("history-a", "failed", "Falhou", false, false, false, 0);
+        jobs.setProperty(0, "retryDownloadReason", "Envie este item novamente pelo navegador.");
+        openDownloads();
+        const row = rowAt(0);
+        const information = findChild(row, "download-information");
+        verify(information && information.visible && information.enabled, "History needs selectable/copyable information");
+        information.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        const dialog = findChild(shell, "download-information-dialog");
+        const text = findChild(shell, "download-information-text");
+        const copy = findChild(shell, "download-copy-information");
+        const close = findChild(shell, "download-information-close");
+        tryCompare(dialog, "opened", true);
+        tryCompare(text, "activeFocus", true);
+        compare(text.textFormat, TextEdit.PlainText);
+        verify(text.readOnly && text.selectByMouse && text.activeFocusOnTab);
+        compare(text.text, downloads.downloadInformation("history-a"));
+        keyClick(Qt.Key_A, Qt.ControlModifier);
+        compare(text.selectedText, text.text);
+        verify(!text.text.includes("never-show-me"));
+        keyClick(Qt.Key_Tab);
+        tryCompare(copy, "activeFocus", true);
+        verifyTarget(copy);
+        keyClick(Qt.Key_Return);
+        compare(downloads.copiedIds, ["history-a"]);
+        const feedback = findChild(shell, "download-copy-feedback");
+        compare(feedback.text, "Informações copiadas.");
+        compare(feedback.textFormat, Text.PlainText);
+        downloads.copyAccepted = false;
+        keyClick(Qt.Key_Return);
+        compare(feedback.text, "Não foi possível copiar as informações.");
+        keyClick(Qt.Key_Tab);
+        tryCompare(close, "activeFocus", true);
+        keyClick(Qt.Key_Escape);
+        tryCompare(information, "activeFocus", true);
+        verify(!dialog.visible);
+        compare(presenter.playbackState, PlayerPresenter.Unloaded);
+    }
+    function test_informationRevokesRemovedHistoryAndChangedBackend() {
+        addJob("history-a", "failed", "Falhou", false, false, false, 0);
+        openDownloads();
+        const information = findChild(rowAt(0), "download-information");
+        verify(information);
+        mouseClick(information);
+        const dialog = findChild(shell, "download-information-dialog");
+        const copy = findChild(shell, "download-copy-information");
+        tryCompare(dialog, "opened", true);
+        jobs.clear();
+        tryCompare(dialog, "visible", false);
+        copy.clicked();
+        compare(downloads.copiedIds.length, 0);
+        addJob("history-b", "failed", "Falhou", false, false, false, 0);
+        const replacementRow = rowAt(0);
+        compare(replacementRow.jobId, "history-b");
+        verify(replacementRow.validationIdentityCurrent(), "New history must have a current delegate identity");
+        const replacementInformation = findChild(replacementRow, "download-information");
+        verify(replacementInformation.enabled, "New history must enable information");
+        verifyTarget(replacementInformation);
+        mouseClick(replacementInformation);
+        tryCompare(dialog, "opened", true);
+        const old = downloads;
+        shell.downloads = createTemporaryObject(bindingComponent, testCase);
+        tryCompare(dialog, "visible", false);
+        copy.clicked();
+        compare(old.copiedIds.length, 0);
+        compare(shell.downloads.copiedIds.length, 0);
     }
     function test_absentBindingPreservesLocalPlayer() {
         compare(shell.downloads, null, "Downloads must be absent by default");
@@ -372,6 +468,8 @@ TestCase {
         compare(jobs.cancelledIds.length, 0);
         compare(jobs.retriedIds.length, 0);
         compare(presenter.playbackState, PlayerPresenter.Unloaded);
+        keyClick(Qt.Key_Tab);
+        tryCompare(row.informationControl, "activeFocus", true);
         keyClick(Qt.Key_Tab);
         tryVerify(function () {
             return findChild(shell, "downloads-close").activeFocus;
@@ -921,7 +1019,11 @@ TestCase {
         keyClick(Qt.Key_Tab);
         tryCompare(validate, "activeFocus", true);
         keyClick(Qt.Key_Tab);
+        tryCompare(row.informationControl, "activeFocus", true);
+        keyClick(Qt.Key_Tab);
         tryCompare(close, "activeFocus", true);
+        keyClick(Qt.Key_Backtab);
+        tryCompare(row.informationControl, "activeFocus", true);
         keyClick(Qt.Key_Backtab);
         tryCompare(validate, "activeFocus", true);
         keyClick(Qt.Key_Backtab);
@@ -939,7 +1041,11 @@ TestCase {
         compare(downloads.releasedIds.length, 1);
         compare(downloads.releasedIds[0], "final-a");
         keyClick(Qt.Key_Tab);
+        tryCompare(row.informationControl, "activeFocus", true);
+        keyClick(Qt.Key_Tab);
         tryCompare(close, "activeFocus", true);
+        keyClick(Qt.Key_Backtab);
+        tryCompare(row.informationControl, "activeFocus", true);
         keyClick(Qt.Key_Backtab);
         tryCompare(release, "activeFocus", true);
         keyClick(Qt.Key_Backtab);
@@ -981,7 +1087,7 @@ TestCase {
         compare(replacement.validatedIds.length, 0, "An old delegate cannot act on its replacement owner");
         compare(replacement.releasedIds.length, 0);
     }
-    function test_validationActionsWrapAndKeepTheSevenControlFocusOrder() {
+    function test_validationActionsWrapAndKeepTheEightControlFocusOrder() {
         addJob("all-actions", "interrupted", "Interrompido", true, true, false, 0);
         jobs.setProperty(0, "canReviewFiles", true);
         jobs.setProperty(0, "canDiscardPartials", true);
@@ -990,7 +1096,7 @@ TestCase {
         jobs.setProperty(0, "canReleaseValidation", true);
         openDownloads();
         const row = rowAt(0);
-        const controls = [row.cancelControl, row.retryControl, row.reviewControl, row.discardControl, row.validateControl, row.importRecoveredControl, row.releaseValidationControl];
+        const controls = [row.cancelControl, row.retryControl, row.reviewControl, row.discardControl, row.validateControl, row.importRecoveredControl, row.releaseValidationControl, row.informationControl];
         for (let index = 0; index < controls.length; ++index) {
             verifyTarget(controls[index]);
             verify(controls[index].Accessible.name.length > 0);
@@ -1358,6 +1464,9 @@ TestCase {
             property bool exitObservedDuringAbandonment: false
             property int exitCallsObservedDuringAbandonment: -1
             property var jobsModel: jobs
+            property var downloadRetries: []
+            property var copiedIds: []
+            property bool copyAccepted: true
             property int startupRetries: 0
             property int namespaceRenewals: 0
             property var reviewedIds: []
@@ -1379,6 +1488,21 @@ TestCase {
             property int unsafeCloses: 0
             property string warningText: ""
 
+            function retryDownload(jobId) {
+                downloadRetries = downloadRetries.concat([jobId]);
+                return true;
+            }
+            function downloadInformation(jobId) {
+                for (let index = 0; index < jobs.count; ++index) {
+                    if (jobs.get(index).jobId === jobId)
+                        return "Título: <b>Áudio literal</b>\nID: " + jobId + "\nEstado: failed\nFalha: no-audio\nUnidades na fase: 9007199254740993\nRecuperação: nenhuma";
+                }
+                return "";
+            }
+            function copyDownloadInformation(jobId) {
+                copiedIds = copiedIds.concat([jobId]);
+                return copyAccepted;
+            }
             function openDownloadDirectory() {
                 ++folderOpens;
                 return true;

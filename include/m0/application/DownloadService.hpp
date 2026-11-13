@@ -29,6 +29,15 @@ struct DownloadServiceCapacity final {
 
 enum class DownloadRecoveryStatus { NotRequested, Ready, InvalidHistory, NamespaceConflict, ReceiptConflict };
 enum class DownloadRecoveryDisposition { Imported, Unconfirmed, Interrupted, Unchanged };
+enum class DownloadRetryStatus {
+    Available,
+    Unavailable,
+    NotFailed,
+    SourceUnavailable,
+    AlreadyRetried,
+    RecoveryRequired,
+    LimitExceeded
+};
 
 struct DownloadRecoveryItem final {
     std::string job_id{};
@@ -111,6 +120,13 @@ class DownloadService final : public DownloadSubmission {
     void tick(std::int64_t now_ms, const std::function<bool()>& allow_start = {});
     [[nodiscard]] bool cancel(std::string_view job_id);
     [[nodiscard]] bool retryImport(std::string_view job_id);
+    // Pure, bounded lookup of one trusted item retained by this session. Never
+    // reconstructs a source from history, paths or a signed execution endpoint.
+    [[nodiscard]] DownloadRetryStatus downloadRetryStatus(std::string_view job_id) const;
+    [[nodiscard]] std::optional<DownloadItem> retrySource(std::string_view job_id) const;
+    // Counters are phase-local. Historical checkpoints do not retain the phase;
+    // report unknown instead of guessing from a terminal state or zero count.
+    [[nodiscard]] std::optional<DownloadPhase> progressPhase(std::string_view job_id) const;
     // Trusted caller settles only the exact restored job whose temporary
     // cleanup was physically confirmed and acknowledged by the journal.
     // A subsequent checkpoint save persists the change to the history.

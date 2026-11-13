@@ -1,6 +1,8 @@
 #include "DownloadJobsModel.hpp"
 
+#include <QRegularExpression>
 #include <QScopedValueRollback>
+#include <QStringList>
 
 #include <algorithm>
 #include <limits>
@@ -122,6 +124,81 @@ QString pathText(const std::filesystem::path& path) {
 #else
     return QString::fromStdString(path.native());
 #endif
+}
+
+QString retryReason(const DownloadRetryStatus status, const DownloadJobState state) {
+    switch (status) {
+    case DownloadRetryStatus::Available:
+        return DownloadJobsModel::tr("Uma nova tentativa será salva antes de iniciar o download.");
+    case DownloadRetryStatus::SourceUnavailable:
+        return DownloadJobsModel::tr(
+            "A origem não foi retida após reiniciar. Envie este item novamente pelo navegador.");
+    case DownloadRetryStatus::AlreadyRetried:
+        return DownloadJobsModel::tr("Uma nova tentativa já foi criada. Acompanhe o novo item no histórico.");
+    case DownloadRetryStatus::RecoveryRequired:
+        return DownloadJobsModel::tr(
+            "É necessário revisar a recuperação dos arquivos antes de outro download. Após revisar, "
+            "envie o item novamente pelo navegador se necessário.");
+    case DownloadRetryStatus::NotFailed:
+        return state == DownloadJobState::ImportFailed
+                   ? DownloadJobsModel::tr(
+                         "O MP3 já está pronto. Use Tentar importar novamente, sem baixar o áudio outra vez.")
+                   : DownloadJobsModel::tr("Somente downloads com falha podem criar uma nova tentativa.");
+    case DownloadRetryStatus::LimitExceeded:
+        return DownloadJobsModel::tr(
+            "O histórico atingiu um limite. Arquive pedidos encerrados antes de tentar novamente.");
+    case DownloadRetryStatus::Unavailable:
+        return DownloadJobsModel::tr(
+            "Nova tentativa indisponível enquanto há confirmação, recuperação ou encerramento pendente.");
+    }
+    return {};
+}
+
+QString failureCode(const DownloadFailure error) {
+    switch (error) {
+    case DownloadFailure::None:
+        return QStringLiteral("none");
+    case DownloadFailure::Unavailable:
+        return QStringLiteral("unavailable");
+    case DownloadFailure::Network:
+        return QStringLiteral("network");
+    case DownloadFailure::Expired:
+        return QStringLiteral("expired");
+    case DownloadFailure::Restricted:
+        return QStringLiteral("restricted");
+    case DownloadFailure::UnsupportedMedia:
+        return QStringLiteral("unsupported-media");
+    case DownloadFailure::NoAudio:
+        return QStringLiteral("no-audio");
+    case DownloadFailure::LimitExceeded:
+        return QStringLiteral("limit-exceeded");
+    case DownloadFailure::Conversion:
+        return QStringLiteral("conversion");
+    case DownloadFailure::Publication:
+        return QStringLiteral("publication");
+    case DownloadFailure::Import:
+        return QStringLiteral("import");
+    case DownloadFailure::Timeout:
+        return QStringLiteral("timeout");
+    case DownloadFailure::InvalidResult:
+        return QStringLiteral("invalid-result");
+    }
+    return QStringLiteral("invalid-result");
+}
+
+QString informationTitle(const std::string& title) {
+    const auto text = QString::fromStdString(title);
+    // Titles remain plain text, but cannot smuggle endpoints, local paths,
+    // credential-looking values or additional labelled lines into a report.
+    static const QRegularExpression sensitive{
+        QStringLiteral(
+            R"((://|www\.|(?<!<)[/\\]|\b(authorization|bearer|cookie|password|token|secret)\b|)"
+            R"(\b[\w-]*(token|secret|password|cookie|authorization|api[_-]?key|access[_-]?key|signature|credential)[\w-]*\s*[:=]))"),
+        QRegularExpression::CaseInsensitiveOption};
+    if (text.isEmpty() || text.size() > 800 || sensitive.match(text).hasMatch() ||
+        std::ranges::any_of(text, [](const QChar ch) { return !ch.isPrint(); }))
+        return DownloadJobsModel::tr("[título omitido por privacidade]");
+    return text;
 }
 
 bool sameSnapshot(const DownloadJobSnapshot& left, const DownloadJobSnapshot& right) {
@@ -283,6 +360,14 @@ QVariant DownloadJobsModel::data(const QModelIndex& index, const int role) const
                item.state != DownloadJobState::Importing;
     case CanRetryImportRole:
         return item.state == DownloadJobState::ImportFailed;
+    case CanRetryDownloadRole:
+        return retry_statuses_.value(QString::fromStdString(item.job_id), DownloadRetryStatus::Unavailable) ==
+               DownloadRetryStatus::Available;
+    case RetryDownloadReasonRole:
+        return retryReason(retry_statuses_.value(QString::fromStdString(item.job_id), DownloadRetryStatus::Unavailable),
+                           item.state);
+    case DownloadInformationRole:
+        return downloadInformation(QString::fromStdString(item.job_id));
     case CanReviewFilesRole:
         return review_available_ && !review_unavailable_ && review_job_id_.isEmpty() && validation_job_id_.isEmpty() &&
                item.state == DownloadJobState::Interrupted;
@@ -397,7 +482,67 @@ QHash<int, QByteArray> DownloadJobsModel::roleNames() const {
             {ValidationBusyRole, "validationBusy"},
             {CanReleaseValidationRole, "canReleaseValidation"},
             {CanImportRecoveredRole, "canImportRecovered"},
-            {RecoveryWithoutFilesRole, "recoveryWithoutFiles"}};
+            {RecoveryWithoutFilesRole, "recoveryWithoutFiles"},
+            {CanRetryDownloadRole, "canRetryDownload"},
+            {RetryDownloadReasonRole, "retryDownloadReason"},
+            {DownloadInformationRole, "downloadInformation"}};
+}
+
+QString DownloadJobsModel::downloadInformation(const QString& job_id) const {
+    if (job_id.isEmpty() || job_id.size() > 64)
+        return {};
+    const auto jobs = service_.snapshot();
+    const auto found =
+        std::ranges::find_if(jobs, [&](const auto& job) { return QString::fromStdString(job.job_id) == job_id; });
+    if (found == jobs.end())
+        return {};
+    const auto& job = *found;
+    const auto phase = service_.progressPhase(job.job_id);
+    const auto phase_text = !phase && job.state == DownloadJobState::Queued ? tr("ainda não iniciada")
+                            : !phase                                        ? tr("desconhecida (histórico sem fase)")
+                            : *phase == DownloadPhase::Downloading          ? QStringLiteral("downloading")
+                            : *phase == DownloadPhase::Converting           ? QStringLiteral("converting")
+                                                                            : QStringLiteral("publishing");
+    const auto retry = retry_statuses_.value(job_id, DownloadRetryStatus::Unavailable);
+    QStringList recovery;
+    const auto projected = std::ranges::find(items_, job.job_id, &DownloadJobSnapshot::job_id);
+    if (projected != items_.end() && projected->state == job.state) {
+        const auto row = index(static_cast<int>(projected - items_.begin()), 0);
+        if (retry != DownloadRetryStatus::Unavailable && data(row, CanRetryImportRole).toBool())
+            recovery.push_back(tr("tentar importar novamente"));
+        if (data(row, CanReviewFilesRole).toBool())
+            recovery.push_back(tr("revisar arquivos"));
+        if (data(row, CanDiscardPartialsRole).toBool())
+            recovery.push_back(tr("encerrar recuperação"));
+        if (data(row, CanValidateMediaRole).toBool())
+            recovery.push_back(tr("validar MP3"));
+        if (data(row, CanImportRecoveredRole).toBool())
+            recovery.push_back(tr("adicionar à fila"));
+        if (data(row, CanReleaseValidationRole).toBool())
+            recovery.push_back(tr("liberar validação"));
+    }
+    return QStringList{
+        tr("Título: %1").arg(informationTitle(job.title)),
+        tr("ID: %1").arg(job_id),
+        tr("Estado: %1").arg(stateName(job.state)),
+        tr("Falha: %1").arg(failureCode(job.error)),
+        tr("Fase dos contadores: %1").arg(phase_text),
+        tr("Unidades concluídas na fase: %1").arg(QString::number(job.completed_units)),
+        tr("Unidades totais na fase: %1")
+            .arg(job.total_units ? QString::number(*job.total_units) : tr("desconhecidas")),
+        tr("Nova tentativa: %1").arg(retryReason(retry, job.state)),
+        tr("Recuperação: %1")
+            .arg(recovery.isEmpty() ? tr("nenhuma ação disponível") : recovery.join(QStringLiteral(", ")))}
+        .join(QLatin1Char{'\n'});
+}
+
+void DownloadJobsModel::setDownloadRetryStatuses(QHash<QString, DownloadRetryStatus> statuses) {
+    if (retry_statuses_ == statuses)
+        return;
+    retry_statuses_.swap(statuses);
+    if (!items_.empty())
+        emit dataChanged(index(0, 0), index(rowCount() - 1, 0),
+                         {CanRetryDownloadRole, RetryDownloadReasonRole, DownloadInformationRole});
 }
 
 int DownloadJobsModel::activeCount() const noexcept { return active_count_; }
@@ -406,13 +551,13 @@ void DownloadJobsModel::notifyReviewChanged() {
     if (!items_.empty())
         emit dataChanged(index(0, 0), index(rowCount() - 1, 0),
                          {CanReviewFilesRole, ReviewTextRole, ReviewBusyRole, CanDiscardPartialsRole,
-                          CanValidateMediaRole, ValidationTextRole, RecoveryWithoutFilesRole});
+                          CanValidateMediaRole, ValidationTextRole, RecoveryWithoutFilesRole, DownloadInformationRole});
 }
 void DownloadJobsModel::notifyValidationChanged() {
     if (!items_.empty())
         emit dataChanged(index(0, 0), index(rowCount() - 1, 0),
                          {CanValidateMediaRole, ValidationTextRole, ValidationBusyRole, CanReleaseValidationRole,
-                          CanReviewFilesRole, CanDiscardPartialsRole, CanImportRecoveredRole});
+                          CanReviewFilesRole, CanDiscardPartialsRole, CanImportRecoveredRole, DownloadInformationRole});
 }
 void DownloadJobsModel::setReviewAvailable(const bool available) {
     if (review_available_ == available)

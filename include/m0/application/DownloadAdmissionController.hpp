@@ -51,6 +51,11 @@ class DownloadAdmissionController final : public AsyncDownloadSubmission {
     [[nodiscard]] DownloadAdmissionResult begin(const DownloadRequest& request) override;
     [[nodiscard]] std::optional<DownloadSubmissionResult> poll(std::string_view request_id) override;
     [[nodiscard]] bool retryAdmission();
+    [[nodiscard]] DownloadRetryStatus downloadRetryStatus(std::string_view job_id) const;
+    // Trusted composition creates a fresh UUID, never QML. Each failed row can
+    // create one successor; follow that successor for any further attempt.
+    // Uses begin(), including its matching Saved barrier and unchanged quotas.
+    [[nodiscard]] DownloadAdmissionResult retryDownload(std::string_view job_id, std::string_view new_request_id);
     // Keeps the current rows and quotas until the prepared checkpoint is Saved.
     // A failed or uncertain write keeps the same candidate for explicit retry.
     [[nodiscard]] bool canArchiveSettled() const;

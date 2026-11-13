@@ -32,12 +32,14 @@ std::filesystem::path admissionFinalPath() {
 
 struct AdmissionExecution final : DownloadExecution {
     std::vector<std::string> starts{};
+    std::vector<DownloadItem> started_items{};
     std::vector<std::string> polls{};
     std::vector<std::string> cancellations{};
     DownloadExecutionUpdate update{};
     std::function<void()> on_cancel{};
-    bool start(const std::string& id, const DownloadItem&) override {
+    bool start(const std::string& id, const DownloadItem& item) override {
         starts.push_back(id);
+        started_items.push_back(item);
         update = {.job_id = id};
         return true;
     }
@@ -257,6 +259,290 @@ struct RecoveryAdmissionHarness {
 };
 
 } // namespace
+
+TEST_CASE("Explicit download retry retains exactly one trusted item and waits for Saved",
+          "[download][download-retry]") {
+    AdmissionHarness h;
+    h.ready();
+    auto request = admissionInput(1, 3);
+    request.items[1] = {
+        .url = "https://www.youtube.com/watch?v=AAAAAAAAAAA",
+        .title = "Trusted title",
+        .kind = DownloadMediaKind::Audio,
+        .youtube = YoutubeAudioItem{
+            .video_id = "AAAAAAAAAAA", .title = "Trusted title", .artist = "Trusted artist", .fetch_lyrics = true}};
+    pendingWithoutAck(h.controller.begin(request));
+    h.io.saved();
+    h.controller.tick(1);
+    h.execution.update = {.job_id = "owner-1",
+                          .state = DownloadExecutionState::Published,
+                          .phase = DownloadPhase::Publishing,
+                          .completed_units = 10,
+                          .total_units = 10,
+                          .published_mp3 = admissionFinalPath()};
+    h.controller.tick(2);
+    h.controller.tick(3);
+    h.execution.update = {.job_id = "owner-2",
+                          .state = DownloadExecutionState::Failed,
+                          .phase = DownloadPhase::Converting,
+                          .completed_units = 17,
+                          .total_units = 19,
+                          .error = DownloadFailure::NoAudio};
+    h.controller.tick(4);
+    h.importer.pending = true;
+    h.controller.tick(5);
+    h.execution.update = {.job_id = "owner-3",
+                          .state = DownloadExecutionState::Published,
+                          .phase = DownloadPhase::Publishing,
+                          .completed_units = 10,
+                          .total_units = 10,
+                          .published_mp3 = admissionFinalPath()};
+    h.controller.tick(6);
+    h.importer.polled = DownloadImportState::Failed;
+    h.controller.tick(7);
+    const auto before = h.service.snapshot();
+    REQUIRE(before[0].state == DownloadJobState::Completed);
+    REQUIRE(before[1].state == DownloadJobState::Failed);
+    REQUIRE(before[2].state == DownloadJobState::ImportFailed);
+    REQUIRE(h.controller.downloadRetryStatus("owner-1") == DownloadRetryStatus::NotFailed);
+    REQUIRE(h.controller.downloadRetryStatus("owner-3") == DownloadRetryStatus::NotFailed);
+    REQUIRE(h.controller.retryDownload("owner-1", admissionInput(2).request_id).result.error !=
+            DownloadSubmissionError::None);
+    REQUIRE(h.controller.retryDownload("owner-3", admissionInput(2).request_id).result.error !=
+            DownloadSubmissionError::None);
+    REQUIRE(h.service.retrySource("owner-2") == request.items[1]);
+    bool reentered = false;
+    h.io.on_save = [&] {
+        reentered = true;
+        REQUIRE(h.controller.retryDownload("owner-2", admissionInput(3).request_id).state !=
+                DownloadAdmissionState::Pending);
+    };
+    pendingWithoutAck(h.controller.retryDownload("owner-2", admissionInput(2).request_id));
+    REQUIRE(reentered);
+    h.controller.tick(8);
+    REQUIRE(h.execution.starts == std::vector<std::string>{"owner-1", "owner-2", "owner-3"});
+    REQUIRE(h.service.snapshot()[0] == before[0]);
+    REQUIRE(h.service.snapshot()[1] == before[1]);
+    REQUIRE(h.service.snapshot()[2] == before[2]);
+    REQUIRE(h.io.saves.back().checkpoint.receipts.back().job_ids == std::vector<std::string>{"owner-4"});
+    h.io.saved();
+    h.controller.tick(9);
+    REQUIRE(h.controller.poll(admissionInput(2).request_id)->job_ids == std::vector<std::string>{"owner-4"});
+    REQUIRE(h.execution.starts.back() == "owner-4");
+    REQUIRE(h.execution.started_items.back() == request.items[1]);
+    REQUIRE(h.controller.downloadRetryStatus("owner-2") == DownloadRetryStatus::AlreadyRetried);
+    REQUIRE(h.controller.retryDownload("owner-2", admissionInput(3).request_id).result.error !=
+            DownloadSubmissionError::None);
+    REQUIRE(h.io.saves.size() == 2);
+}
+
+TEST_CASE("Download retry preserves unsafe terminal evidence behind a primary timeout",
+          "[download][download-retry][review-r1]") {
+    enum class Terminal { SafeCancelled, SafeNetwork, Publication, Published, Malformed, PublishingCancelled };
+    const auto terminal = GENERATE(Terminal::SafeCancelled, Terminal::SafeNetwork, Terminal::Publication,
+                                   Terminal::Published, Terminal::Malformed, Terminal::PublishingCancelled);
+    const bool safe = terminal == Terminal::SafeCancelled || terminal == Terminal::SafeNetwork;
+    AdmissionHarness h{{.job_timeout_ms = 10}};
+    h.ready();
+    pendingWithoutAck(h.controller.begin(admissionInput()));
+    h.io.saved();
+    h.controller.tick(1);
+    h.execution.update = {.job_id = "owner-1", .phase = DownloadPhase::Converting, .completed_units = 7};
+    h.controller.tick(2);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Ready);
+    auto update = DownloadExecutionUpdate{.job_id = "owner-1", .state = DownloadExecutionState::Cancelled};
+    if (terminal == Terminal::SafeNetwork || terminal == Terminal::Publication || terminal == Terminal::Malformed) {
+        update.state = DownloadExecutionState::Failed;
+        update.error = terminal == Terminal::Publication   ? DownloadFailure::Publication
+                       : terminal == Terminal::SafeNetwork ? DownloadFailure::Network
+                                                           : DownloadFailure::None;
+    } else if (terminal == Terminal::Published) {
+        update.state = DownloadExecutionState::Published;
+        update.phase = DownloadPhase::Publishing;
+        update.published_mp3 = admissionFinalPath();
+    } else if (terminal == Terminal::PublishingCancelled) {
+        update.phase = DownloadPhase::Publishing;
+    }
+    h.execution.update = update;
+    h.controller.tick(11);
+    const auto before = h.service.snapshot();
+    REQUIRE(before.size() == 1);
+    REQUIRE(before[0].state == DownloadJobState::Failed);
+    REQUIRE(before[0].error == DownloadFailure::Timeout);
+    REQUIRE(before[0].completed_units == 7);
+    REQUIRE(before[0].completed_mp3.empty());
+    REQUIRE(h.execution.cancellations == std::vector<std::string>{"owner-1"});
+    REQUIRE(h.importer.calls == 0);
+    REQUIRE(h.controller.downloadRetryStatus("owner-1") ==
+            (safe ? DownloadRetryStatus::Available : DownloadRetryStatus::RecoveryRequired));
+    if (safe) {
+        pendingWithoutAck(h.controller.retryDownload("owner-1", admissionInput(2).request_id));
+        REQUIRE(h.execution.starts.size() == 1);
+        h.io.saved();
+        h.controller.tick(12);
+        REQUIRE(h.execution.starts == std::vector<std::string>{"owner-1", "owner-2"});
+    } else {
+        REQUIRE_FALSE(h.service.retrySource("owner-1"));
+        REQUIRE(h.controller.retryDownload("owner-1", admissionInput(2).request_id).state !=
+                DownloadAdmissionState::Pending);
+        REQUIRE(h.io.saves.size() == 1);
+        REQUIRE(h.execution.starts == std::vector<std::string>{"owner-1"});
+        REQUIRE(h.service.snapshot() == before);
+    }
+}
+
+TEST_CASE("Download retry failed uncertain or mismatched checkpoint never executes", "[download][download-retry]") {
+    enum class Failure { Failed, Blocked, WrongId, WrongKind, Refused, Uncertain };
+    const auto failure = GENERATE(Failure::Failed, Failure::Blocked, Failure::WrongId, Failure::WrongKind,
+                                  Failure::Refused, Failure::Uncertain);
+    AdmissionHarness h{{}, DownloadFinalSavePolicy::HoldForDecision};
+    h.ready();
+    pendingWithoutAck(h.controller.begin(admissionInput()));
+    h.io.saved();
+    h.controller.tick(1);
+    h.execution.update = {
+        .job_id = "owner-1", .state = DownloadExecutionState::Failed, .error = DownloadFailure::Network};
+    h.controller.tick(2);
+    if (failure == Failure::Refused)
+        h.io.save_command = DownloadCheckpointIoCommand::Busy;
+    if (failure == Failure::Uncertain)
+        h.io.throw_save_after_accept = true;
+    const auto retried = h.controller.retryDownload("owner-1", admissionInput(2).request_id);
+    if (failure != Failure::Refused && failure != Failure::Uncertain) {
+        pendingWithoutAck(retried);
+        h.io.saved(failure == Failure::Blocked  ? DownloadCheckpointSaveStatus::BlockedByExistingData
+                   : failure == Failure::Failed ? DownloadCheckpointSaveStatus::Failed
+                                                : DownloadCheckpointSaveStatus::Saved);
+        if (failure == Failure::WrongId || failure == Failure::WrongKind) {
+            h.io.deliver_malformed = true;
+            if (failure == Failure::WrongId)
+                ++h.io.completion->operation_id;
+            else
+                h.io.completion->operation = DownloadCheckpointOperation::Load;
+        }
+    }
+    h.controller.tick(3);
+    REQUIRE(h.controller.state() == DownloadAdmissionControllerState::AdmissionFailed);
+    REQUIRE(h.execution.starts == std::vector<std::string>{"owner-1"});
+    REQUIRE(h.service.snapshot().size() == 2);
+    REQUIRE(h.service.snapshot()[1].state == DownloadJobState::Queued);
+    REQUIRE(h.controller.retryDownload("owner-1", admissionInput(3).request_id).state !=
+            DownloadAdmissionState::Pending);
+    REQUIRE(h.io.saves.size() == 2);
+    h.controller.shutdown();
+    if (failure == Failure::Uncertain)
+        h.io.saved();
+    h.controller.tick(4);
+    REQUIRE(h.execution.starts.size() == 1);
+    REQUIRE(h.service.snapshot()[1].state == DownloadJobState::Cancelled);
+}
+
+TEST_CASE("Download retry refuses stale historical ambiguous and closing targets without effects",
+          "[download][download-retry]") {
+    SECTION("Restored failed history has no retained source or invented progress phase") {
+        auto checkpoint = recoveredAdmission();
+        checkpoint.jobs[0].state = DownloadJobState::Failed;
+        checkpoint.jobs[0].error = DownloadFailure::NoAudio;
+        AdmissionHarness h;
+        REQUIRE(h.controller.start());
+        h.io.loaded({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+        h.controller.tick(0);
+        REQUIRE(h.controller.downloadRetryStatus("old-1") == DownloadRetryStatus::SourceUnavailable);
+        REQUIRE_FALSE(h.service.retrySource("old-1"));
+        REQUIRE_FALSE(h.service.progressPhase("old-1"));
+        REQUIRE(h.controller.retryDownload("old-1", admissionInput(2).request_id).state !=
+                DownloadAdmissionState::Pending);
+        REQUIRE(h.io.saves.empty());
+        REQUIRE(h.execution.starts.empty());
+    }
+    SECTION("Uncertain publication requires recovery, never blind redownload") {
+        const auto error = GENERATE(DownloadFailure::Publication, DownloadFailure::InvalidResult);
+        AdmissionHarness h;
+        h.ready();
+        pendingWithoutAck(h.controller.begin(admissionInput()));
+        h.io.saved();
+        h.controller.tick(1);
+        h.execution.update = {.job_id = "owner-1",
+                              .state = DownloadExecutionState::Failed,
+                              .phase = DownloadPhase::Publishing,
+                              .error = error};
+        h.controller.tick(2);
+        REQUIRE(h.controller.downloadRetryStatus("owner-1") == DownloadRetryStatus::RecoveryRequired);
+        REQUIRE(h.controller.retryDownload("owner-1", admissionInput(2).request_id).state !=
+                DownloadAdmissionState::Pending);
+        REQUIRE(h.io.saves.size() == 1);
+    }
+    SECTION("Completed retry ancestors, removed IDs, malformed identities and shutdown cannot retry") {
+        AdmissionHarness h;
+        h.ready();
+        pendingWithoutAck(h.controller.begin(admissionInput()));
+        h.io.saved();
+        h.controller.tick(1);
+        REQUIRE(h.controller.retryDownload("owner-1", admissionInput(2).request_id).state !=
+                DownloadAdmissionState::Pending);
+        h.execution.update = {
+            .job_id = "owner-1", .state = DownloadExecutionState::Failed, .error = DownloadFailure::Network};
+        h.controller.tick(2);
+        const auto before = h.service.snapshot();
+        REQUIRE(h.controller.retryDownload("OWNER-1", admissionInput(2).request_id).state !=
+                DownloadAdmissionState::Pending);
+        REQUIRE(h.controller.retryDownload("owner-1", admissionInput().request_id).state !=
+                DownloadAdmissionState::Pending);
+        REQUIRE(h.controller.retryDownload("owner-1", "not-a-uuid").state != DownloadAdmissionState::Pending);
+        REQUIRE(h.service.snapshot() == before);
+        pendingWithoutAck(h.controller.retryDownload("owner-1", admissionInput(2).request_id));
+        h.io.saved();
+        h.controller.tick(3);
+        h.execution.update = {.job_id = "owner-2",
+                              .state = DownloadExecutionState::Published,
+                              .phase = DownloadPhase::Publishing,
+                              .published_mp3 = admissionFinalPath()};
+        h.controller.tick(4);
+        REQUIRE(h.controller.retryDownload("owner-1", admissionInput(3).request_id).state !=
+                DownloadAdmissionState::Pending);
+        REQUIRE(h.controller.retryDownload("owner-2", admissionInput(3).request_id).state !=
+                DownloadAdmissionState::Pending);
+        REQUIRE(h.controller.archiveSettled());
+        h.io.saved();
+        h.controller.tick(5);
+        REQUIRE(h.service.snapshot().empty());
+        REQUIRE(h.controller.retryDownload("owner-1", admissionInput(3).request_id).state !=
+                DownloadAdmissionState::Pending);
+        h.controller.shutdown();
+        REQUIRE(h.controller.retryDownload("owner-1", admissionInput(3).request_id).state !=
+                DownloadAdmissionState::Pending);
+        REQUIRE(h.execution.starts.size() == 2);
+        REQUIRE(h.io.saves.size() == 3);
+    }
+}
+
+TEST_CASE("Download retry preserves request job and logical-byte quotas", "[download][download-retry]") {
+    const auto limit = GENERATE(0, 1, 2);
+    const auto original = admissionInput();
+    const auto bytes = original.request_id.size() + original.items[0].url.size() + original.items[0].title.size();
+    DownloadServiceLimits limits;
+    if (limit == 0)
+        limits.max_jobs = 1;
+    if (limit == 1)
+        limits.max_requests = 1;
+    if (limit == 2)
+        limits.max_retained_request_bytes = bytes * 2 - 1;
+    AdmissionHarness h{limits};
+    h.ready();
+    pendingWithoutAck(h.controller.begin(original));
+    h.io.saved();
+    h.controller.tick(1);
+    h.execution.update = {
+        .job_id = "owner-1", .state = DownloadExecutionState::Failed, .error = DownloadFailure::Network};
+    h.controller.tick(2);
+    REQUIRE(h.controller.downloadRetryStatus("owner-1") == DownloadRetryStatus::LimitExceeded);
+    const auto before = h.service.snapshot();
+    REQUIRE(h.controller.retryDownload("owner-1", admissionInput(2).request_id).state !=
+            DownloadAdmissionState::Pending);
+    REQUIRE(h.service.snapshot() == before);
+    REQUIRE(h.service.capacity().retained_request_bytes == bytes);
+    REQUIRE(h.io.saves.size() == 1);
+}
 
 TEST_CASE("Durable admission reconciles a saved session beyond a queued checkpoint without importing",
           "[download][recovery-controller][FR-051]") {

@@ -41,6 +41,9 @@ struct DownloadApplicationBindingOptions final {
     // Borrowed Qt-worker validation owner, including its retained candidate.
     // No path/capability is exposed to QML. Owner survives physical drain.
     DownloadRecoveryValidation* recovery_validation{nullptr};
+    // Optional prompt composition/test seam. The default writes plain text to
+    // Qt's clipboard only on explicit user action; tests supply an isolated sink.
+    std::function<bool(const QString&)> copy_information{};
 };
 
 // Qt application-thread owner of projection/timer/exit coordination only. The
@@ -113,6 +116,9 @@ class DownloadApplicationBinding final : public QObject {
     Q_INVOKABLE bool retryStartup();
     Q_INVOKABLE bool renewNamespace();
     Q_INVOKABLE bool retryAdmission();
+    Q_INVOKABLE bool retryDownload(const QString& job_id);
+    Q_INVOKABLE QString downloadInformation(const QString& job_id) const;
+    Q_INVOKABLE bool copyDownloadInformation(const QString& job_id);
     Q_INVOKABLE bool requestArchiveConfirmation();
     Q_INVOKABLE bool confirmArchive(const QString& token);
     Q_INVOKABLE void cancelArchiveConfirmation(const QString& token);

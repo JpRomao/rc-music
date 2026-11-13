@@ -47,6 +47,7 @@ struct DownloadAdmissionController::Impl {
     const DownloadFinalSavePolicy final_save_policy;
     std::vector<Receipt> confirmed;
     std::optional<Receipt> pending;
+    std::vector<std::string> retried_jobs;
     std::optional<DownloadCheckpoint> archive_checkpoint;
     std::optional<Operation> operation;
     // At most one explicit probe may follow an uncertain operation. If that
@@ -463,6 +464,46 @@ bool DownloadAdmissionController::retryAdmission() {
         return false;
     const Impl::Guard guard(owner);
     return owner.save(Impl::Purpose::Admission);
+}
+DownloadRetryStatus DownloadAdmissionController::downloadRetryStatus(const std::string_view job_id) const {
+    const auto& owner = *impl_;
+    if (owner.operating || owner.closing || owner.state != DownloadAdmissionControllerState::Ready || owner.operation ||
+        owner.uncertain_offer || owner.pending || owner.archive_checkpoint)
+        return DownloadRetryStatus::Unavailable;
+    if (std::ranges::find(owner.retried_jobs, job_id) != owner.retried_jobs.end())
+        return DownloadRetryStatus::AlreadyRetried;
+    return owner.service.downloadRetryStatus(job_id);
+}
+DownloadAdmissionResult DownloadAdmissionController::retryDownload(const std::string_view job_id,
+                                                                   const std::string_view new_request_id) {
+    auto& owner = *impl_;
+    if (downloadRetryStatus(job_id) != DownloadRetryStatus::Available)
+        return rejected();
+    try {
+        const auto id = canonicalId(new_request_id);
+        if (id.empty() ||
+            std::ranges::any_of(owner.confirmed, [&](const Impl::Receipt& receipt) { return receipt.id == id; }))
+            return rejected(DownloadSubmissionError::InvalidRequest);
+        auto source = owner.service.retrySource(job_id);
+        if (!source)
+            return rejected();
+        DownloadRequest request{.request_id = id, .items = {std::move(*source)}};
+        // Only current rows retain a retry marker. Archive removal cannot grow
+        // this session-only index beyond the service's bounded live ledger.
+        const auto jobs = owner.service.snapshot();
+        std::erase_if(owner.retried_jobs, [&](const std::string& previous) {
+            return std::ranges::none_of(jobs, [&](const DownloadJobSnapshot& job) { return job.job_id == previous; });
+        });
+        owner.retried_jobs.emplace_back(job_id);
+        auto result = begin(request);
+        // Failed/uncertain saves retain the staged admission and its marker.
+        // Only a rejection before staging permits the same row to try again.
+        if (!owner.pending || owner.pending->id != id)
+            owner.retried_jobs.pop_back();
+        return result;
+    } catch (...) {
+        return rejected();
+    }
 }
 bool DownloadAdmissionController::canArchiveSettled() const {
     const auto& owner = *impl_;

@@ -13,6 +13,11 @@ Popup {
     readonly property bool archiveConsentCurrent: archiveAvailable && archiveConsentOwner === downloads && archiveConsentToken.length > 0 && downloads.archiveConsentToken === archiveConsentToken
     property var closeConsentOwner: null
     property string closeConsentWarning: ""
+    property var informationOwner: null
+    property string informationJobId: ""
+    property string informationText: ""
+    property string copyFeedback: ""
+    property Item informationRestoreFocusItem: null
     property var discardConsentOwner: null
     property string discardConsentJobId: ""
     property string discardConsentToken: ""
@@ -42,6 +47,63 @@ Popup {
     readonly property string warning: downloads !== null ? downloads.warningText : ""
 
     signal exitRequested
+
+    function rowIdentityCurrent(row) {
+        return opened && downloads !== null && row !== null && row.validationIdentityCurrent() && jobsList.itemAtIndex(row.index) === row;
+    }
+    function rowActionAllowed(row) {
+        return rowIdentityCurrent(row) && !archiveConfirmation.visible && !discardConfirmation.visible && !importConfirmation.visible && !exitConfirmation.visible && !informationDialog.visible && !lyricsDialog.visible;
+    }
+    function showInformation(row, opener) {
+        if (!rowActionAllowed(row) || typeof downloads.downloadInformation !== "function")
+            return;
+        const owner = downloads;
+        const jobId = row.jobId;
+        const text = owner.downloadInformation(jobId);
+        if (!text || owner !== downloads || !rowIdentityCurrent(row) || row.jobId !== jobId)
+            return;
+        informationOwner = owner;
+        informationJobId = jobId;
+        informationText = text;
+        copyFeedback = "";
+        informationRestoreFocusItem = opener;
+        informationDialog.open();
+    }
+    function invalidateInformation() {
+        informationOwner = null;
+        informationJobId = "";
+        informationText = "";
+        copyFeedback = "";
+        if (informationDialog.visible)
+            informationDialog.close();
+    }
+    function refreshInformation() {
+        if (!informationDialog.visible)
+            return;
+        if (!opened || informationOwner === null || informationOwner !== downloads) {
+            invalidateInformation();
+            return;
+        }
+        const text = informationOwner.downloadInformation(informationJobId);
+        if (!text) {
+            invalidateInformation();
+            return;
+        }
+        if (informationText !== text) {
+            informationText = text;
+            copyFeedback = "";
+        }
+    }
+    function copyInformation() {
+        refreshInformation();
+        if (!informationDialog.opened || informationOwner === null || informationOwner !== downloads || typeof informationOwner.copyDownloadInformation !== "function")
+            return;
+        const owner = informationOwner;
+        const jobId = informationJobId;
+        const copied = owner.copyDownloadInformation(jobId) === true;
+        if (informationDialog.opened && informationOwner === owner && downloads === owner && informationJobId === jobId)
+            copyFeedback = copied ? labels.copied : labels.copyFailed;
+    }
 
     function canPromptArchive() {
         return opened && archiveAvailable && !archiveConfirmation.visible && !discardConfirmation.visible && !importConfirmation.visible && !exitConfirmation.visible && !lyricsDialog.visible;
@@ -195,7 +257,7 @@ Popup {
     function rowControls(row) {
         if (!row)
             return [];
-        return [row.cancelControl, row.retryControl, row.reviewControl, row.discardControl, row.validateControl, row.importRecoveredControl, row.releaseValidationControl].filter(function (item) {
+        return [row.cancelControl, row.retryControl, row.downloadRetryControl, row.reviewControl, row.discardControl, row.validateControl, row.importRecoveredControl, row.releaseValidationControl, row.informationControl].filter(function (item) {
             return item && item.visible && item.enabled;
         });
     }
@@ -495,6 +557,10 @@ Popup {
 
                 required property bool canCancel
                 required property bool canRetryImport
+                required property bool canRetryDownload
+                required property string retryDownloadReason
+                required property var model
+                readonly property string jobState: model.state
                 required property bool canReviewFiles
                 required property bool canDiscardPartials
                 required property bool canValidateMedia
@@ -507,6 +573,8 @@ Popup {
                 required property string jobId
                 required property real progressRatio
                 property alias retryControl: retryButton
+                property alias downloadRetryControl: downloadRetryButton
+                property alias informationControl: informationButton
                 property alias reviewControl: reviewButton
                 property alias discardControl: discardButton
                 property alias validateControl: validateButton
@@ -656,7 +724,7 @@ Popup {
                     Flow {
                         Layout.fillWidth: true
                         spacing: root.contract.spacingUnit
-                        visible: row.canCancel || row.canRetryImport || row.canReviewFiles || row.reviewBusy || row.canDiscardPartials || row.canValidateMedia || row.canImportRecovered || row.canReleaseValidation
+                        visible: true
 
                         AccessibleTransportButton {
                             id: cancelButton
@@ -696,6 +764,25 @@ Popup {
                             onClicked: {
                                 if (row.canRetryImport && root.downloads !== null)
                                     root.downloads.jobsModel.retryImport(row.jobId);
+                            }
+                        }
+                        AccessibleTransportButton {
+                            id: downloadRetryButton
+
+                            KeyNavigation.backtab: root.nextRowControl(row, downloadRetryButton, true)
+                            KeyNavigation.tab: root.nextRowControl(row, downloadRetryButton, false)
+                            contract: root.contract
+                            enabled: row.canRetryDownload && root.opened && row.validationIdentityCurrent()
+                            objectName: "download-retry"
+                            text: labels.retryDownload
+                            visible: row.jobState === "failed"
+                            onActiveFocusChanged: {
+                                if (activeFocus)
+                                    root.showRow(row.index);
+                            }
+                            onClicked: {
+                                if (row.canRetryDownload && root.rowActionAllowed(row) && typeof root.downloads.retryDownload === "function")
+                                    root.downloads.retryDownload(row.jobId);
                             }
                         }
                         AccessibleTransportButton {
@@ -798,6 +885,32 @@ Popup {
                                     root.downloads.releaseValidation(row.validationJobId);
                             }
                         }
+                        AccessibleTransportButton {
+                            id: informationButton
+
+                            KeyNavigation.backtab: root.nextRowControl(row, informationButton, true)
+                            KeyNavigation.tab: root.nextRowControl(row, informationButton, false)
+                            contract: root.contract
+                            enabled: root.opened && row.validationIdentityCurrent() && typeof root.downloads.downloadInformation === "function"
+                            objectName: "download-information"
+                            text: labels.information
+                            onActiveFocusChanged: {
+                                if (activeFocus)
+                                    root.showRow(row.index);
+                            }
+                            onClicked: root.showInformation(row, informationButton)
+                        }
+                    }
+                    Text {
+                        Accessible.name: text
+                        Accessible.role: Accessible.StaticText
+                        Layout.fillWidth: true
+                        color: root.contract.textSecondaryColor
+                        objectName: "download-retry-reason"
+                        text: row.retryDownloadReason
+                        textFormat: Text.PlainText
+                        visible: (row.jobState === "failed" || row.jobState === "interrupted") && text.length > 0
+                        wrapMode: Text.Wrap
                     }
                 }
             }
@@ -836,6 +949,7 @@ Popup {
     }
 
     onAboutToHide: {
+        invalidateInformation();
         invalidateArchiveConsent();
         invalidateCloseConsent();
         invalidateDiscardConsent();
@@ -880,6 +994,7 @@ Popup {
         });
     }
     onDownloadsChanged: {
+        invalidateInformation();
         invalidateArchiveConsent();
         invalidateCloseConsent();
         invalidateDiscardConsent();
@@ -892,6 +1007,117 @@ Popup {
 
     DownloadText {
         id: labels
+    }
+    Connections {
+        target: root.downloads !== null ? root.downloads.jobsModel : null
+        function onDataChanged() {
+            root.refreshInformation();
+        }
+        function onRowsRemoved() {
+            root.refreshInformation();
+        }
+        function onModelReset() {
+            root.refreshInformation();
+        }
+    }
+    Popup {
+        id: informationDialog
+        closePolicy: Popup.CloseOnEscape
+        dim: false
+        focus: true
+        modal: true
+        objectName: "download-information-dialog"
+        padding: root.contract.spacingUnit * 3
+        parent: root.parent
+        popupType: Popup.Item
+        width: Math.min(root.width, 600)
+        height: Math.min(root.height, 480)
+        x: root.x + (root.width - width) / 2
+        y: root.y + (root.height - height) / 2
+        background: Rectangle {
+            color: root.contract.surfaceRaisedColor
+            border.color: root.contract.borderColor
+            border.width: root.contract.highContrast ? 2 : 1
+            radius: root.contract.radiusMedium
+        }
+        contentItem: ColumnLayout {
+            Accessible.name: labels.information
+            Accessible.role: Accessible.Dialog
+            spacing: root.contract.spacingUnit * 2
+            ScrollView {
+                id: informationScroll
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                TextArea {
+                    id: informationDetails
+                    width: informationScroll.availableWidth
+                    objectName: "download-information-text"
+                    text: root.informationText
+                    textFormat: TextEdit.PlainText
+                    readOnly: true
+                    selectByMouse: true
+                    activeFocusOnTab: true
+                    wrapMode: TextEdit.Wrap
+                    color: root.contract.textPrimaryColor
+                    selectionColor: root.contract.accentColor
+                    selectedTextColor: root.contract.accentTextColor
+                    Accessible.name: labels.information
+                    KeyNavigation.tab: copyInformationButton
+                    KeyNavigation.backtab: closeInformationButton
+                    background: Rectangle {
+                        color: root.contract.surfaceColor
+                        border.width: informationDetails.activeFocus ? 3 : 1
+                        border.color: informationDetails.activeFocus ? root.contract.focusColor : root.contract.borderColor
+                        radius: root.contract.radiusSmall
+                    }
+                }
+            }
+            Text {
+                Layout.fillWidth: true
+                objectName: "download-copy-feedback"
+                text: root.copyFeedback
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                color: root.contract.textPrimaryColor
+                Accessible.name: text
+                Accessible.role: Accessible.StaticText
+            }
+            Flow {
+                Layout.fillWidth: true
+                spacing: root.contract.spacingUnit
+                AccessibleTransportButton {
+                    id: copyInformationButton
+                    contract: root.contract
+                    objectName: "download-copy-information"
+                    text: labels.copyInformation
+                    KeyNavigation.tab: closeInformationButton
+                    KeyNavigation.backtab: informationDetails
+                    onClicked: root.copyInformation()
+                }
+                AccessibleTransportButton {
+                    id: closeInformationButton
+                    contract: root.contract
+                    objectName: "download-information-close"
+                    text: labels.closeInformation
+                    KeyNavigation.tab: informationDetails
+                    KeyNavigation.backtab: copyInformationButton
+                    onClicked: root.invalidateInformation()
+                }
+            }
+        }
+        onOpened: informationDetails.forceActiveFocus(Qt.TabFocusReason)
+        onClosed: {
+            root.invalidateInformation();
+            const target = root.informationRestoreFocusItem;
+            root.informationRestoreFocusItem = null;
+            Qt.callLater(function () {
+                if (root.opened && !informationDialog.visible) {
+                    const destination = target && target.visible && target.enabled ? target : jobsList;
+                    destination.forceActiveFocus(Qt.TabFocusReason);
+                }
+            });
+        }
     }
     DownloadLyricsPanel {
         id: lyricsDialog

@@ -110,6 +110,90 @@ class DownloadJobsModelTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    void queuedInformationDoesNotMislabelAnUnstartedLiveJobAsRestoredHistory() {
+        Execution execution;
+        Importer importer;
+        DownloadService service{execution, importer, "queued"};
+        QVERIFY(service.submit(request()).error == DownloadSubmissionError::None);
+        DownloadJobsModel model{service};
+        const auto text = model.downloadInformation(QStringLiteral("queued-1"));
+        QVERIFY(text.contains("ainda não iniciada"));
+        QVERIFY(!text.contains("histórico sem fase"));
+        QCOMPARE(execution.starts, 0);
+    }
+    void informationOmitsAdversarialTitlesAndCompletedPathsWithoutLosingState() {
+        const QStringList titles{QStringLiteral("Music\nAuthorization: Bearer TITLE_CANARY"),
+                                 QStringLiteral("access_token=TITLE_CANARY"),
+                                 QStringLiteral("refresh_token=TITLE_CANARY"),
+                                 QStringLiteral("api_key=TITLE_CANARY"),
+                                 QStringLiteral("client_secret: TITLE_CANARY"),
+                                 QStringLiteral("AccessToken=TITLE_CANARY"),
+                                 QStringLiteral("https://private.invalid/TITLE_CANARY?token=private"),
+                                 QStringLiteral("C:/private/TITLE_CANARY.mp3"),
+                                 QStringLiteral("Music\u202eTITLE_CANARY")};
+        for (const auto& title : titles) {
+            Execution execution;
+            Importer importer;
+            DownloadService service{execution, importer, "private"};
+            QVERIFY(service.submit(request(request_id, title.toStdString())).error == DownloadSubmissionError::None);
+            service.tick(0);
+            execution.update = {.job_id = "private-1",
+                                .state = DownloadExecutionState::Published,
+                                .phase = DownloadPhase::Publishing,
+                                .published_mp3 = finalPath()};
+            service.tick(1);
+            DownloadJobsModel model{service};
+            const auto text = model.downloadInformation(QStringLiteral("private-1"));
+            QVERIFY(text.contains("completed"));
+            QVERIFY(text.contains("publishing"));
+            QVERIFY(text.contains("título omitido"));
+            QVERIFY(!text.contains("TITLE_CANARY"));
+            QVERIFY(!text.contains(QString::fromStdWString(finalPath().wstring())));
+            QVERIFY(!text.contains("C:"));
+            QVERIFY(!text.contains("https:"));
+            QVERIFY(model.downloadInformation(QStringLiteral("PRIVATE-1")).isEmpty());
+        }
+    }
+    void downloadInformationWhitelistsExactPhaseCountersAndOmitsOptionalSecrets() {
+        ReviewIdentity identity;
+        Execution execution;
+        Importer importer;
+        DownloadService service{execution, importer, "information", {}, &identity};
+        auto selected = request();
+        selected.items[0] = {.url = "https://www.youtube.com/watch?v=AAAAAAAAAAA",
+                             .title = "<b>Literal music title</b>",
+                             .kind = DownloadMediaKind::Audio,
+                             .youtube = YoutubeAudioItem{.video_id = "AAAAAAAAAAA",
+                                                         .title = "<b>Literal music title</b>",
+                                                         .artist = "Bearer ARTIST_CANARY",
+                                                         .lyrics_page = "https://private.invalid/LYRICS_CANARY",
+                                                         .file_name = "C:/private/PATH_CANARY.mp3"}};
+        QVERIFY(service.submit(selected).error == DownloadSubmissionError::None);
+        service.tick(0);
+        execution.update = {.job_id = "information-1",
+                            .state = DownloadExecutionState::Failed,
+                            .phase = DownloadPhase::Converting,
+                            .completed_units = 9007199254740993ULL,
+                            .total_units = 18446744073709551615ULL,
+                            .error = DownloadFailure::NoAudio};
+        service.tick(1);
+        DownloadJobsModel model{service};
+        const auto role = model.roleNames().key("downloadInformation", -1);
+        const auto information = value(model, role).toString();
+        QVERIFY2(information.contains("information-1"), "Each history row needs whitelisted selectable information");
+        QVERIFY(information.contains("<b>Literal music title</b>"));
+        QVERIFY(information.contains("failed"));
+        QVERIFY(information.contains("no-audio"));
+        QVERIFY(information.contains("converting"));
+        QVERIFY(information.contains("9007199254740993"));
+        QVERIFY(information.contains("18446744073709551615"));
+        QVERIFY(!information.contains("CANARY"));
+        QVERIFY(!information.contains("https:"));
+        QVERIFY(!information.contains("C:/"));
+        QVERIFY(!information.contains("AAAAAAAAAAA"));
+        QVERIFY(information.contains(QStringLiteral("Recuperação:")));
+        QVERIFY(information.contains(QStringLiteral("Nova tentativa:")));
+    }
     void recoveredImportNeedsHeldProofAndPreparationCannotBeReleasedOrDuplicated() {
         RecoveryModelHarness h;
         QVERIFY(h.restored);
@@ -727,7 +811,11 @@ class DownloadJobsModelTests final : public QObject {
                                          "validationText",
                                          "validationBusy",
                                          "canReleaseValidation",
-                                         "canImportRecovered"};
+                                         "canImportRecovered",
+                                         "recoveryWithoutFiles",
+                                         "canRetryDownload",
+                                         "retryDownloadReason",
+                                         "downloadInformation"};
         QCOMPARE(roles.size(), expected.size());
         for (const auto& role : expected)
             QVERIFY(roles.values().contains(role));
