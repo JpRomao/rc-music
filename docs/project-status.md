@@ -1,6 +1,6 @@
 # Estado do projeto — RC Music
 
-**Revisado em:** 2026-11-12.
+**Revisado em:** 2026-11-13.
 
 Este arquivo é um índice do estado vigente, não um diário de desenvolvimento. A sequência de trabalho e as evidências de cada incremento ficam na [seção 17 do plano](development-plan.md#17-próxima-sequência-segura). Relatos históricos não substituem esse checkpoint. Requisitos e decisões continuam nas suas fontes de verdade, conforme [agents.md](../agents.md).
 
@@ -24,7 +24,7 @@ Este arquivo é um índice do estado vigente, não um diário de desenvolvimento
 
 O objetivo do mantenedor é navegar no Brave/Chromium, selecionar a mídia da página pela extensão e acompanhar sua aquisição no RC Music, com entrega final em MP3. Quando a fonte for MP4, extrair e converter seu áudio; não salvar o vídeo como resultado alternativo. O exemplo indicado é a [página de Bleach no Letras](https://www.letras.mus.br/bleach/1222774/). A aceitação deve exercitar a jornada completa, não apenas o popup simulado ou o recebimento de um pedido.
 
-A extensão YouTube 0.1.2 detectou o vídeo na página Letras no Brave e entregou o pedido ao RC Music. A tentativa de 2026-11-13 no candidato isolado repetiu o HTTP 403 com o User-Agent do resolvedor incluído, sem receber bytes ou publicar MP3. A causa da recusa segue desconhecida. O candidato foi encerrado, os aliases originais foram restaurados e a sessão pessoal foi preservada. [Resultado e evidência do teste](download-network.md#hint-user-agent-temporário-e-default-mínimo)
+A extensão YouTube 0.1.2 detectou Asterisk na página Letras e entregou o pedido ao RC Music. O primeiro teste com User-Agent ainda retornou HTTP 403. Em 2026-11-13, o candidato isolado com yt-dlp 2026.10.26 recebeu o áudio, publicou um MP3 decodificável e persistiu uma importação na fila de teste. A instalação padrão e a jornada instalada da extensão principal com MP4 continuam com validação própria. [Resultado e evidência](youtube-audio-and-lyrics.md#atualização-do-yt-dlp-20261026)
 
 A continuidade deve reaproveitar o que existe e distinguir:
 

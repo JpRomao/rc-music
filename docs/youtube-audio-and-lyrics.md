@@ -220,7 +220,13 @@ O candidato de diagnóstico para o 403 de Asterisk usa yt-dlp 2026.10.26, manten
 
 O diagnóstico local confirmou que o caminho e a query assinados são preservados na requisição HTTP. O yt-dlp usa faixas limitadas para sua própria transferência HTTPS e o RC Music pede a representação inteira. O upstream descreve o efeito do tamanho das faixas no throttling. A relevância dessa diferença para o 403 de Asterisk segue sem evidência. [Transporte HTTP do yt-dlp](https://github.com/yt-dlp/yt-dlp/blob/2026.10.26/yt_dlp/downloader/http.py#L70-L129) · [FAQ do yt-dlp](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#i-extracted-a-video-url-but-it-does-not-play-on-another-machine--in-my-web-browser)
 
-Passaram 134 testes Python do resolvedor e da receita, 69 casos Qt do leitor de recibos e o smoke offline do broker com cinco desafios, um handoff e nenhuma tentativa de rede. O worker e seus processos encerraram e a raiz temporária foi liberada. O candidato de produção e o recibo do smoke estão em out/dg/y26/. A aquisição real continua sujeita ao teste no Brave.
+Passaram 134 testes Python do resolvedor e da receita, 69 casos Qt do leitor de recibos e o smoke offline do broker com cinco desafios, um handoff e nenhuma tentativa de rede. O worker e seus processos encerraram e a raiz temporária foi liberada. O candidato de produção e o recibo do smoke estão em `out/dg/y26/`.
+
+**Teste real de Asterisk pelo Brave.** O candidato de dceebca preservou o encaminhamento temporário de User-Agent e os hashes de rede, do host, do conversor, do Node e do EJS do ensaio anterior. Um único pedido recebeu 1.546.801 bytes de áudio e publicou um MP3 de 2.288.030 bytes. A validação independente decodificou o MP3 até o fim. O recibo de importação e a ocorrência persistiram na sessão isolada, com a fila sem faixa selecionada. A hipótese sobre o cliente antigo é consistente com o resultado, sem estabelecer a causa exata dos 403 anteriores.
+
+O candidato foi encerrado e o listener desapareceu. A leitura do Registro confirmou os oito valores e tipos originais. O RC Music instalado foi reaberto com os 17 itens, a posição e os recibos de importação preservados. O recibo sanitizado do ensaio está em out/dg/oc/registration-archive/ec5b840c202643419a1c591c962a7e7f/probe-result.json. O pacote instalado ainda usa o resolvedor anterior.
+
+O painel de downloads passou a descrever a recusa de acesso sem presumir que a mídia é privada ou protegida. A regressão da mensagem passou na suíte de 112 casos Qt do binding.
 
 ## Factory de runtime na worker
 
