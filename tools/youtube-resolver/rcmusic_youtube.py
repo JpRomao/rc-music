@@ -11,7 +11,7 @@ import re
 import struct
 import sys
 
-PINNED_YTDLP_VERSION = "2026.03.17"
+PINNED_YTDLP_VERSION = "2026.10.26"
 PINNED_EJS_VERSION = "0.8.0"
 FORMAT_SELECTOR = (
     "bestaudio[ext=m4a][vcodec=none][acodec=mp4a.40.2][protocol=https]/"

@@ -21,7 +21,7 @@ if (sys.platform != "win32" or sys.implementation.name != "cpython" or
 if pyexpat.version_info != (2, 10, 0):
     raise SystemExit("expected reviewed Expat 2.10.0 build dependency")
 
-for package, pinned in (("pyinstaller", "6.22.3"), ("yt-dlp", "2026.3.17"), ("yt-dlp-ejs", "0.8.0")):
+for package, pinned in (("pyinstaller", "6.22.3"), ("yt-dlp", "2026.10.26"), ("yt-dlp-ejs", "0.8.0")):
     if metadata.version(package) != pinned:
         raise SystemExit("unreviewed build package version")
 

@@ -36,7 +36,7 @@ PLAYER_URL = "https://www.youtube.com/s/player/rcmusic-offline/base.js"
 EXPECTED_N = {"abcdef": "fedcba", "曲A😀": "😀A曲"}
 EXPECTED_SIG = {"abcd": "bcda", "a b%?": " b%?a", "曲A😀": "A😀曲"}
 TITLE_PREFIX = "RC Music offline v1 "
-EXPECTED_RECEIPT = {"yt_dlp": "2026.03.17", "ejs": "0.8.0", "n": 2, "sig": 3,
+EXPECTED_RECEIPT = {"yt_dlp": "2026.10.26", "ejs": "0.8.0", "n": 2, "sig": 3,
                     "http": 0, "socket": 0, "init": 0, "players": 1, "providers": 1}
 
 

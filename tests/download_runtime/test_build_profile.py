@@ -272,6 +272,13 @@ class BuildProfileTests(unittest.TestCase):
         staged = next(row for row in candidate["files"] if row["component"] == "youtube" and row["role"] == "Node")
         self.assertEqual(staged["sha256"], node["sha256"])
 
+    def test_youtube_profile_accepts_the_current_resolver_receipt(self):
+        yt = self.add_youtube()
+        next(source for source in yt.receipt["sources"] if source["name"] == "yt-dlp")["version"] = "2026.10.26"
+        self.save_youtube()
+        candidate = self.module.plan(self.config)
+        self.assertTrue(any(row["role"] == "Extractor" for row in candidate["files"]))
+
     def test_historical_node_receipt_rejects_an_artifact_different_from_its_source(self):
         yt = self.add_youtube()
         next(source for source in yt.receipt["sources"] if source["name"] == "node")["sha256"] = "f" * 64

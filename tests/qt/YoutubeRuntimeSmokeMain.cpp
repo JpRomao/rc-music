@@ -239,7 +239,14 @@ QString failureName(const DownloadFailure error) {
         return QStringLiteral("unavailable");
     }
 }
-std::optional<QJsonObject> audit(const YoutubeResolverSnapshot& snapshot) {
+QString resolverRuntimeVersion(const YoutubeRuntimeReceipt& receipt) {
+    const auto source = std::find_if(receipt.sources.begin(), receipt.sources.end(),
+                                     [](const auto& item) { return item.name == QLatin1String("yt-dlp"); });
+    if (source == receipt.sources.end())
+        return {};
+    return source->version == QLatin1String("2026.3.17") ? QStringLiteral("2026.03.17") : source->version;
+}
+std::optional<QJsonObject> audit(const YoutubeResolverSnapshot& snapshot, const QString& resolver_version) {
     if (snapshot.state != YoutubeResolverState::Ready || snapshot.error != DownloadFailure::None || !snapshot.audio ||
         snapshot.audio->jobId() != job_id || snapshot.audio->videoId() != video_id ||
         snapshot.audio->data().video_id != video_id ||
@@ -258,7 +265,7 @@ std::optional<QJsonObject> audit(const YoutubeResolverSnapshot& snapshot) {
     const auto object = document.object();
     if (!youtube_receipt_detail::fields(
             object, {"yt_dlp", "ejs", "n", "sig", "http", "socket", "init", "players", "providers"}) ||
-        object.value("yt_dlp") != QJsonValue(QStringLiteral("2026.03.17")) ||
+        resolver_version.isEmpty() || object.value("yt_dlp") != QJsonValue(resolver_version) ||
         object.value("ejs") != QJsonValue(QStringLiteral("0.8.0")))
         return {};
     constexpr std::array<std::pair<const char*, int>, 7> counts{
@@ -391,7 +398,7 @@ std::optional<QJsonObject> audit(const YoutubeResolverSnapshot& snapshot) {
     }
     report.stage = QStringLiteral("audit");
     report.error = QStringLiteral("unexpected_audit");
-    const auto validated = audit(final);
+    const auto validated = audit(final, resolverRuntimeVersion(receipt));
     if (!validated)
         return;
     report.validated_audit = *validated;
@@ -436,12 +443,13 @@ struct WorkerObservations final {
 };
 class WorkerAuditConsumer final : public WindowsDownloadTask {
     std::shared_ptr<WorkerObservations> observations_;
+    QString resolver_version_;
     std::string id_{};
     bool cancelled_{};
 
   public:
-    explicit WorkerAuditConsumer(std::shared_ptr<WorkerObservations> observations)
-        : observations_(std::move(observations)) {
+    WorkerAuditConsumer(std::shared_ptr<WorkerObservations> observations, QString resolver_version)
+        : observations_(std::move(observations)), resolver_version_(std::move(resolver_version)) {
         observations_->observeConsumerThread();
     }
     ~WorkerAuditConsumer() override { observations_->observeConsumerThread(); }
@@ -459,7 +467,7 @@ class WorkerAuditConsumer final : public WindowsDownloadTask {
         id_ = capability->jobId();
         // The real session minted this capability only after the broker's
         // terminal native/pipe ACK. Reuse the same audit as the direct smoke.
-        const auto validated = audit({YoutubeResolverState::Ready, DownloadFailure::None, capability});
+        const auto validated = audit({YoutubeResolverState::Ready, DownloadFailure::None, capability}, resolver_version_);
         observations_->lease_released_at_handoff = observations_->lease_released_at_handoff && observations_->expired();
         {
             std::lock_guard lock(observations_->mutex);
@@ -549,7 +557,10 @@ void runWorker(const Options& input, YoutubeRuntimeReceipt receipt, Report& repo
                 return files;
             });
         execution = makeWindowsMediaAndYoutubeExecution(
-            std::move(source), [observations] { return std::make_unique<WorkerAuditConsumer>(observations); },
+            std::move(source),
+            [observations, resolver_version = resolverRuntimeVersion(receipt)] {
+                return std::make_unique<WorkerAuditConsumer>(observations, resolver_version);
+            },
             [] { return fixed_utc_seconds; });
         if (execution) {
             DownloadItem item{"https://www.youtube.com/watch?v=testVideo01", "RC Music synthetic fixture",

@@ -137,6 +137,17 @@ class OnedirPlanTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "unreviewed source version"):
                     planner.make_build_plan(**values)
 
+    def test_new_build_uses_the_resolver_release_with_updated_youtube_clients(self):
+        for mode in ("prod", "offline"):
+            with self.subTest(mode=mode):
+                values = inputs(mode)
+                resolver = next(source for source in values["sources"] if source["name"] == "yt-dlp")
+                resolver["version"] = "2026.10.26"
+                planner.make_build_plan(**values)
+                resolver["version"] = "2026.3.17"
+                with self.assertRaisesRegex(ValueError, "unreviewed source version"):
+                    planner.make_build_plan(**values)
+
     def test_every_required_source_is_present_once(self):
         for index in range(len(inputs()["sources"])):
             values = inputs()

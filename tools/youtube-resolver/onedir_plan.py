@@ -27,7 +27,7 @@ SOURCE_PINS = {
     "pyinstaller-hooks-contrib": "2026.9",
     "pywin32-ctypes": "0.2.3",
     "setuptools": "84.2.1",
-    "yt-dlp": "2026.3.17",
+    "yt-dlp": "2026.10.26",
     "yt-dlp-ejs": "0.8.0",
 }
 PROJECT_SOURCES = (

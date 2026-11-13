@@ -601,6 +601,15 @@ class EntrypointTests(unittest.TestCase):
         self.assertEqual(len(actual), 1)
         self.assertEqual(actual[0]["code"], "unsupported")
 
+    def test_runtime_accepts_current_release_and_rejects_the_previous_pin(self):
+        current = Bundle(); current.version = "2026.10.26"; output = io.BytesIO()
+        self.assertEqual(resolver.run(VIDEO, io.BytesIO(), output, lambda: current), 0)
+        self.assertEqual(current.constructed, 1)
+        previous = Bundle(); previous.version = "2026.03.17"; output = io.BytesIO()
+        self.assertNotEqual(resolver.run(VIDEO, io.BytesIO(), output, lambda: previous), 0)
+        self.assertEqual(previous.constructed, 0)
+        self.assertEqual(frames(output.getvalue()), [{"v": 1, "kind": "failure", "seq": 1, "code": "unsupported"}])
+
     def test_main_rejects_extra_arguments_without_importing_the_runtime(self):
         for args in ([], [VIDEO, "--cookies", "secret"], [VIDEO, "2026.03.17"]):
             with self.subTest(args=args):

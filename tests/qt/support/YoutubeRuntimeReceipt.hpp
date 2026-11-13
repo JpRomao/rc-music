@@ -112,7 +112,7 @@ inline constexpr std::array<std::pair<const char*, const char*>, 17> required_so
      {"pyinstaller-hooks-contrib", "2026.9"},
      {"pywin32-ctypes", "0.2.3"},
      {"setuptools", "84.2.1"},
-     {"yt-dlp", "2026.3.17"},
+     {"yt-dlp", "2026.10.26"},
      {"yt-dlp-ejs", "0.8.0"},
      {"entrypoint", "project"},
      {"offline-entry", "project"},
@@ -139,6 +139,8 @@ inline bool matchesVersion(const QString& name, const QString& observed) {
         return true;
     if (name == QLatin1String("node") && observed == QLatin1String("24.20.0"))
         return true; // Historical offline receipts.
+    if (name == QLatin1String("yt-dlp") && observed == QLatin1String("2026.3.17"))
+        return true; // Historical offline receipts use package metadata spelling.
     for (const auto& [known, pinned] : required_sources)
         if (name == QLatin1String(known))
             return observed == QLatin1String(pinned);

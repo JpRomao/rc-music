@@ -272,7 +272,11 @@ def _youtube(value):
             del required[name]
     if type(values) is not list or len(values) != len(required):
         raise ValueError("incorrect production source list")
-    compatible_versions = {"python": EXPAT_LICENSES, "node": (planner.SOURCE_PINS["node"], "24.20.0")}
+    compatible_versions = {
+        "python": EXPAT_LICENSES,
+        "node": (planner.SOURCE_PINS["node"], "24.20.0"),
+        "yt-dlp": (planner.SOURCE_PINS["yt-dlp"], "2026.3.17"),
+    }
     source_hashes, paths = {}, set()
     python_version = None
     for source in values:
