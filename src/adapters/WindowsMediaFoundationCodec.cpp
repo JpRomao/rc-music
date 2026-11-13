@@ -1,4 +1,5 @@
 #include "adapters/WindowsMediaFoundationCodec.hpp"
+#include "adapters/FragmentedMp4Audio.hpp"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -22,6 +23,7 @@
 #include <limits>
 #include <memory>
 #include <new>
+#include <optional>
 #include <utility>
 
 namespace music_player::m0 {
@@ -50,9 +52,13 @@ class Handle final {
 };
 
 struct StreamState final {
-    StreamState(Handle owned, const std::uint64_t length) : file(std::move(owned)), size(length) {}
+    StreamState(Handle owned, const std::uint64_t length, std::shared_ptr<const Mp4AudioRemuxPlan> mapping = {})
+        : file(std::move(owned)), source_size(length), size(mapping ? mapping->normalized_size : length),
+          remux(std::move(mapping)) {}
     Handle file;
+    const std::uint64_t source_size;
     const std::uint64_t size;
+    const std::shared_ptr<const Mp4AudioRemuxPlan> remux;
     SRWLOCK lock = SRWLOCK_INIT;
 };
 
@@ -100,6 +106,45 @@ class PinnedReadStream final : public IStream {
         if (position_ >= state_->size)
             return S_FALSE;
         const auto wanted = static_cast<DWORD>(std::min<std::uint64_t>(count, state_->size - position_));
+        if (state_->remux) {
+            const auto& mapping = *state_->remux;
+            DWORD copied = 0;
+            auto* output = static_cast<std::uint8_t*>(data);
+            while (copied < wanted) {
+                if (position_ < mapping.header.size()) {
+                    const auto take =
+                        static_cast<DWORD>(std::min<std::uint64_t>(wanted - copied, mapping.header.size() - position_));
+                    std::memcpy(output + copied, mapping.header.data() + position_, take);
+                    copied += take;
+                    position_ += take;
+                    continue;
+                }
+                auto packet = std::upper_bound(
+                    mapping.packets.begin(), mapping.packets.end(), position_,
+                    [](std::uint64_t offset, const Mp4AudioReadRange& range) { return offset < range.output_offset; });
+                if (packet == mapping.packets.begin())
+                    return STG_E_READFAULT;
+                --packet;
+                const auto within = position_ - packet->output_offset;
+                if (within >= packet->length || packet->source_offset > state_->source_size ||
+                    packet->length > state_->source_size - packet->source_offset)
+                    return STG_E_READFAULT;
+                const auto take = static_cast<DWORD>(std::min<std::uint64_t>(wanted - copied, packet->length - within));
+                LARGE_INTEGER at{};
+                at.QuadPart = static_cast<LONGLONG>(packet->source_offset + within);
+                DWORD got = 0;
+                if (!SetFilePointerEx(state_->file.get(), at, nullptr, FILE_BEGIN) ||
+                    !ReadFile(state_->file.get(), output + copied, take, &got, nullptr))
+                    return HRESULT_FROM_WIN32(GetLastError());
+                if (got != take)
+                    return STG_E_READFAULT;
+                position_ += got;
+                copied += got;
+            }
+            if (received)
+                *received = copied;
+            return copied == count ? S_OK : S_FALSE;
+        }
         LARGE_INTEGER offset{};
         offset.QuadPart = static_cast<LONGLONG>(position_);
         DWORD read = 0;
@@ -459,13 +504,80 @@ Exit drainEncoder(Functions& functions, IMFTransform* encoder, const MediaFounda
     return Exit::Conversion;
 }
 
+Exit encodeSample(Functions& functions, IMFTransform* encoder, IMFSample* sample, const std::uint64_t before,
+                  const std::uint64_t frames, const UINT32 rate, const MediaFoundationWorkerRequest& request,
+                  const MediaFoundationCodecCallbacks& callbacks, std::uint64_t& written) {
+    if (FAILED(sample->SetSampleTime(static_cast<LONGLONG>(before * 10'000'000 / rate))) ||
+        FAILED(sample->SetSampleDuration(static_cast<LONGLONG>(frames * std::uint64_t{10'000'000} / rate))))
+        return Exit::Conversion;
+    auto status = encoder->ProcessInput(0, sample, 0);
+    if (status == MF_E_NOTACCEPTING) {
+        const auto drained = drainEncoder(functions, encoder, request, callbacks, written);
+        if (drained != Exit::Success)
+            return drained;
+        status = encoder->ProcessInput(0, sample, 0);
+    }
+    if (FAILED(status))
+        return Exit::Conversion;
+    return drainEncoder(functions, encoder, request, callbacks, written);
+}
+
+struct PcmEditWindow final {
+    std::uint64_t begin{0};
+    std::uint64_t frames{0};
+    std::uint64_t silence{0};
+};
+
+// Divide first: a valid large timescale must not overflow an intermediate
+// units * sample-rate multiplication. At most one sample is rounded at a cut.
+bool editFrames(const std::uint64_t units, const std::uint32_t scale, const UINT32 rate, const bool round_up,
+                std::uint64_t& frames) {
+    if (!scale || !rate || units / scale > std::numeric_limits<std::uint64_t>::max() / rate)
+        return false;
+    const auto whole = units / scale * rate;
+    const auto fraction = units % scale * rate;
+    const auto tail = fraction / scale + (round_up && fraction % scale ? 1 : 0);
+    if (tail > std::numeric_limits<std::uint64_t>::max() - whole)
+        return false;
+    frames = whole + tail;
+    return true;
+}
+
+Exit presentationWindow(const Mp4AudioRemuxPlan& plan, const UINT32 rate, const MediaFoundationWorkerRequest& request,
+                        PcmEditWindow& window) {
+    if (plan.edits.empty() || plan.edits.size() > 2)
+        return Exit::Unsupported;
+    const auto& media = plan.edits.back();
+    if (media.media_time < 0 || !media.movie_duration ||
+        !editFrames(static_cast<std::uint64_t>(media.media_time), plan.media_timescale, rate, true, window.begin) ||
+        !editFrames(media.movie_duration, plan.movie_timescale, rate, false, window.frames) || !window.frames)
+        return Exit::Unsupported;
+    if (plan.edits.size() == 2 &&
+        (plan.edits.front().media_time != -1 ||
+         !editFrames(plan.edits.front().movie_duration, plan.movie_timescale, rate, false, window.silence)))
+        return Exit::Unsupported;
+    const auto limit = request.max_duration_us * rate / 1'000'000;
+    if (window.begin > limit || window.frames > limit - window.begin || window.silence > limit ||
+        window.frames > limit - window.silence)
+        return Exit::LimitExceeded;
+    return Exit::Success;
+}
+
 Exit decode(Functions& functions, IMFSourceReader* reader, IMFMediaType* pcm,
-            const MediaFoundationWorkerRequest& request, const MediaFoundationCodecCallbacks& callbacks) {
+            const MediaFoundationWorkerRequest& request, const MediaFoundationCodecCallbacks& callbacks,
+            const Mp4AudioRemuxPlan* remux) {
     UINT32 rate = 0, channels = 0;
     if (!pcmType(pcm, rate, channels))
         return Exit::Unsupported;
     const bool converting = request.mode == MediaFoundationWorkerMode::Convert;
     const auto failed = converting ? Exit::Conversion : Exit::Validation;
+    std::optional<PcmEditWindow> window;
+    if (remux && !remux->edits.empty()) {
+        window.emplace();
+        const auto configured = presentationWindow(*remux, rate, request, *window);
+        if (configured != Exit::Success)
+            return configured;
+    }
     ComPtr<IMFTransform> encoder;
     if (converting) {
         if (FAILED(CoCreateInstance(CLSID_MP3ACMCodecWrapper, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&encoder))))
@@ -474,7 +586,74 @@ Exit decode(Functions& functions, IMFSourceReader* reader, IMFMediaType* pcm,
         if (configured != Exit::Success)
             return configured;
     }
-    std::uint64_t decoded_frames = 0, written = 0;
+    std::uint64_t decoded_frames = 0, source_frames = 0, written = 0;
+    std::uint64_t coded_frames = 0, coding_frame_limit = std::numeric_limits<std::uint64_t>::max();
+    auto encoded_callbacks = callbacks;
+    encoded_callbacks.write = [&](const std::span<const std::uint8_t> bytes) {
+        // ACM produces whole MPEG-1 frames. Its EOF lookahead can emit surplus
+        // frames, especially in stereo; do not export the coding guard as
+        // presentation silence. Malformed output still fails, even after cap.
+        constexpr std::array<unsigned, 16> bitrates{0,   32,  40,  48,  56,  64,  80,  96,
+                                                    112, 128, 160, 192, 224, 256, 320, 0};
+        constexpr std::array<unsigned, 3> rates{44100, 48000, 32000};
+        std::size_t offset = 0, prefix = 0;
+        std::uint64_t kept = 0;
+        if (coded_frames > coding_frame_limit)
+            return false;
+        while (offset < bytes.size()) {
+            if (bytes.size() - offset < 4)
+                return false;
+            const auto h = bytes.subspan(offset, 4);
+            const auto bitrate = h[2] >> 4, rate_index = (h[2] >> 2) & 3;
+            if (h[0] != 0xff || (h[1] & 0xfe) != 0xfa || !bitrate || bitrate == 15 || rate_index == 3 ||
+                rates[rate_index] != rate || (h[3] & 3) == 2)
+                return false;
+            const auto length = std::size_t{144000} * bitrates[bitrate] / rate + ((h[2] >> 1) & 1);
+            if (length < 4 || length > bytes.size() - offset)
+                return false;
+            if (kept < coding_frame_limit - coded_frames) {
+                prefix += length;
+                ++kept;
+            }
+            offset += length;
+        }
+        if (prefix && !callbacks.write(bytes.first(prefix)))
+            return false;
+        coded_frames += kept;
+        return true;
+    };
+    bool silence_emitted = false;
+    const auto progress = [&]() {
+        try {
+            return !callbacks.progress || callbacks.progress(decoded_frames * 1'000'000 / rate);
+        } catch (...) {
+            return false;
+        }
+    };
+    const auto emitPcm = [&](const std::span<const std::uint8_t> bytes, const bool presentation = true) {
+        ComPtr<IMFMediaBuffer> buffer;
+        ComPtr<IMFSample> sample;
+        if (bytes.empty() || bytes.size() > maximum_sample_bytes ||
+            FAILED(functions.buffer(static_cast<DWORD>(bytes.size()), &buffer)))
+            return Exit::Conversion;
+        BYTE* output = nullptr;
+        if (FAILED(buffer->Lock(&output, nullptr, nullptr)))
+            return Exit::Conversion;
+        std::memcpy(output, bytes.data(), bytes.size());
+        const auto unlocked = buffer->Unlock();
+        if (FAILED(unlocked) || FAILED(buffer->SetCurrentLength(static_cast<DWORD>(bytes.size()))) ||
+            FAILED(functions.sample(&sample)) || FAILED(sample->AddBuffer(buffer.Get())))
+            return Exit::Conversion;
+        const auto frames = bytes.size() / (channels * 2);
+        const auto encoded = encodeSample(functions, encoder.Get(), sample.Get(), decoded_frames, frames, rate, request,
+                                          encoded_callbacks, written);
+        if (encoded != Exit::Success)
+            return encoded;
+        if (!presentation)
+            return Exit::Success;
+        decoded_frames += frames;
+        return progress() ? Exit::Success : Exit::Output;
+    };
     unsigned empty_reads = 0;
     for (;;) {
         DWORD stream = 0, flags = 0;
@@ -499,49 +678,84 @@ Exit decode(Functions& functions, IMFSourceReader* reader, IMFMediaType* pcm,
                 return failed;
             const auto frames = bytes / (channels * 2);
             const auto maximum_frames = request.max_duration_us * rate / 1'000'000;
-            if (frames > maximum_frames - decoded_frames)
+            if (frames > maximum_frames - source_frames)
                 return Exit::LimitExceeded;
+            const auto source_before = source_frames;
+            source_frames += frames;
+            if (window) {
+                // The canonical read-view contains raw media time starting at
+                // zero and no edit list. Materialize its retained edits once,
+                // including AAC priming cuts and an intentional empty lead.
+                const auto begin = std::max(source_before, window->begin);
+                const auto end = std::min(source_frames, window->begin + window->frames);
+                if (begin < end) {
+                    if (!silence_emitted) {
+                        const std::array<std::uint8_t, 64 * 1024> zeros{};
+                        auto remaining = window->silence;
+                        while (remaining) {
+                            const auto take = std::min<std::uint64_t>(remaining, zeros.size() / (channels * 2));
+                            const auto emitted = emitPcm(std::span<const std::uint8_t>{zeros}.first(
+                                static_cast<std::size_t>(take * channels * 2)));
+                            if (emitted != Exit::Success)
+                                return emitted;
+                            remaining -= take;
+                        }
+                        silence_emitted = true;
+                    }
+                    ComPtr<IMFMediaBuffer> buffer;
+                    if (FAILED(sample->ConvertToContiguousBuffer(&buffer)))
+                        return failed;
+                    LockedBuffer locked{buffer.Get()};
+                    if (!locked.valid() || locked.bytes().size() != bytes)
+                        return failed;
+                    const auto emitted =
+                        emitPcm(locked.bytes().subspan(static_cast<std::size_t>((begin - source_before) * channels * 2),
+                                                       static_cast<std::size_t>((end - begin) * channels * 2)));
+                    if (emitted != Exit::Success)
+                        return emitted;
+                }
+                if (flags & MF_SOURCE_READERF_ENDOFSTREAM)
+                    break;
+                continue;
+            }
             const auto before = decoded_frames;
             decoded_frames += frames;
             if (converting) {
-                if (FAILED(sample->SetSampleTime(static_cast<LONGLONG>(before * 10'000'000 / rate))) ||
-                    FAILED(sample->SetSampleDuration(static_cast<LONGLONG>(frames * std::uint64_t{10'000'000} / rate))))
-                    return failed;
-                auto status = encoder->ProcessInput(0, sample.Get(), 0);
-                if (status == MF_E_NOTACCEPTING) {
-                    const auto drained = drainEncoder(functions, encoder.Get(), request, callbacks, written);
-                    if (drained != Exit::Success)
-                        return drained;
-                    status = encoder->ProcessInput(0, sample.Get(), 0);
-                }
-                if (FAILED(status))
-                    return failed;
-                const auto drained = drainEncoder(functions, encoder.Get(), request, callbacks, written);
-                if (drained != Exit::Success)
-                    return drained;
+                const auto encoded = encodeSample(functions, encoder.Get(), sample.Get(), before, frames, rate, request,
+                                                  encoded_callbacks, written);
+                if (encoded != Exit::Success)
+                    return encoded;
             }
-            try {
-                if (callbacks.progress && !callbacks.progress(decoded_frames * 1'000'000 / rate))
-                    return Exit::Output;
-            } catch (...) {
+            if (!progress())
                 return Exit::Output;
-            }
         } else if (++empty_reads > 256) {
             return failed;
         }
         if (flags & MF_SOURCE_READERF_ENDOFSTREAM)
             break;
     }
-    if (!decoded_frames)
-        return converting ? Exit::NoAudio : Exit::Validation;
+    if (!decoded_frames || (window && decoded_frames != window->frames + window->silence))
+        return failed;
     if (converting) {
+        coding_frame_limit = decoded_frames / 1152 + (decoded_frames % 1152 != 0);
+        if (coded_frames > coding_frame_limit)
+            return failed;
+        // Flush lookahead plus a fractional coding frame, without changing
+        // presentation/progress. Output is capped to the whole MPEG frames
+        // needed by that presentation; the byte quota still covers all MFT
+        // output, including discarded guard frames, and validation stays on.
+        constexpr std::size_t coding_tail_frames = 3 * 1152;
+        const std::array<std::uint8_t, coding_tail_frames * 2 * 2> coding_tail{};
+        const auto flushed = emitPcm(std::span(coding_tail).first(coding_tail_frames * channels * 2), false);
+        if (flushed != Exit::Success)
+            return flushed;
         if (FAILED(encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0)) ||
             FAILED(encoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0)))
             return failed;
-        const auto drained = drainEncoder(functions, encoder.Get(), request, callbacks, written);
+        const auto drained = drainEncoder(functions, encoder.Get(), request, encoded_callbacks, written);
         if (drained != Exit::Success)
             return drained;
-        if (!written)
+        if (!written || coded_frames != coding_frame_limit)
             return failed;
         static_cast<void>(encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0));
     }
@@ -583,6 +797,31 @@ MediaFoundationWorkerExit runWindowsMediaFoundationCodec(const MediaFoundationWo
         } else if (!supportedContainer(input.get(), bytes)) {
             return Exit::Unsupported;
         }
+        std::shared_ptr<const Mp4AudioRemuxPlan> remux;
+        if (!validating) {
+            auto inspected = inspectFragmentedMp4Audio(
+                bytes, [&](const std::uint64_t offset, const std::span<std::uint8_t> destination) {
+                    return offset <= bytes && destination.size() <= bytes - offset &&
+                           readAt(input.get(), offset, destination);
+                });
+            switch (inspected.status) {
+            case Mp4AudioRemuxStatus::Invalid:
+                return Exit::Input;
+            case Mp4AudioRemuxStatus::Unsupported:
+                return Exit::Unsupported;
+            case Mp4AudioRemuxStatus::LimitExceeded:
+                return Exit::LimitExceeded;
+            case Mp4AudioRemuxStatus::Ready:
+                if (inspected.header.empty() || inspected.packets.empty() || !inspected.normalized_size)
+                    return Exit::Input;
+                if (inspected.normalized_size > request.max_input_bytes)
+                    return Exit::LimitExceeded;
+                remux = std::make_shared<Mp4AudioRemuxPlan>(std::move(inspected));
+                break;
+            case Mp4AudioRemuxStatus::Passthrough:
+                break;
+            }
+        }
         Functions functions;
         if (!functions.initialize())
             return Exit::Unavailable;
@@ -593,7 +832,7 @@ MediaFoundationWorkerExit runWindowsMediaFoundationCodec(const MediaFoundationWo
         if (!DuplicateHandle(GetCurrentProcess(), input.get(), GetCurrentProcess(), &duplicate, read_access, FALSE, 0))
             return Exit::Input;
         Handle owned{duplicate};
-        auto state = std::make_shared<StreamState>(std::move(owned), bytes);
+        auto state = std::make_shared<StreamState>(std::move(owned), bytes, remux);
         ComPtr<IStream> local;
         local.Attach(new (std::nothrow) PinnedReadStream(std::move(state)));
         if (!local)
@@ -621,7 +860,7 @@ MediaFoundationWorkerExit runWindowsMediaFoundationCodec(const MediaFoundationWo
         ComPtr<IMFMediaType> source;
         const auto native_type = reader->GetNativeMediaType(audio_stream, 0, &source);
         if (native_type == MF_E_INVALIDSTREAMNUMBER || native_type == MF_E_NO_MORE_TYPES)
-            return validating ? Exit::Validation : Exit::NoAudio;
+            return validating ? Exit::Validation : remux ? Exit::Unsupported : Exit::NoAudio;
         if (FAILED(native_type))
             return validating ? Exit::Validation : Exit::Unsupported;
         GUID subtype{};
@@ -650,7 +889,7 @@ MediaFoundationWorkerExit runWindowsMediaFoundationCodec(const MediaFoundationWo
         ComPtr<IMFMediaType> pcm;
         if (FAILED(reader->GetCurrentMediaType(audio_stream, &pcm)))
             return validating ? Exit::Validation : Exit::Unsupported;
-        return decode(functions, reader.Get(), pcm.Get(), request, callbacks);
+        return decode(functions, reader.Get(), pcm.Get(), request, callbacks, remux.get());
     } catch (...) {
         return request.mode == MediaFoundationWorkerMode::Validate ? Exit::Validation : Exit::Conversion;
     }

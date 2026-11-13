@@ -12,7 +12,8 @@ rc_music_configure_cpp(rc_music_media_foundation_protocol)
 # Windows media components produce a typed result instead of loader failure.
 set(rc_music_media_foundation_libraries mfuuid wmcodecdspuuid ole32)
 add_library(rc_music_media_foundation_codec STATIC EXCLUDE_FROM_ALL
-    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsMediaFoundationCodec.cpp")
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsMediaFoundationCodec.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/FragmentedMp4Audio.cpp")
 target_link_libraries(rc_music_media_foundation_codec PUBLIC rc_music_media_foundation_protocol
     PRIVATE ${rc_music_media_foundation_libraries})
 rc_music_configure_cpp(rc_music_media_foundation_codec)
@@ -20,6 +21,7 @@ rc_music_configure_cpp(rc_music_media_foundation_codec)
 add_executable(rc_music_media_foundation_worker
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/MediaFoundationWorkerProtocol.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsMediaFoundationCodec.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/FragmentedMp4Audio.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsMediaFoundationWorkerMain.cpp")
 target_include_directories(rc_music_media_foundation_worker PRIVATE
     "${RC_MUSIC_SOURCE_ROOT}/src" "${RC_MUSIC_SOURCE_ROOT}/src/adapters")
@@ -300,12 +302,12 @@ if(BUILD_TESTING)
         LABELS "download-network;security;appcontainer;parser;windows" TIMEOUT 15
         ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
-    foreach(unit IN ITEMS AppContainerNetworkObserver AppContainerObserverProtocol AppContainerObserverFiles AppContainerObserverIdentity AppContainerObserverProcess AppContainerObserverDriver AppContainerObserverActor AppContainerProbeProtocol MediaFoundationWorkerProtocol WindowsMediaFoundationCodec WindowsMediaFoundationConversion
+    foreach(unit IN ITEMS AppContainerNetworkObserver AppContainerObserverProtocol AppContainerObserverFiles AppContainerObserverIdentity AppContainerObserverProcess AppContainerObserverDriver AppContainerObserverActor AppContainerProbeProtocol MediaFoundationWorkerProtocol FragmentedMp4Audio WindowsMediaFoundationCodec WindowsMediaFoundationConversion
                           WindowsMediaFoundationLaunch)
         set(target "rc_music_${unit}_tests")
         add_executable(${target} "${RC_MUSIC_SOURCE_ROOT}/tests/qt/${unit}Tests.cpp")
         target_link_libraries(${target} PRIVATE rc_music_download_network Qt6::Test)
-        if(unit STREQUAL "WindowsMediaFoundationCodec")
+        if(unit STREQUAL "WindowsMediaFoundationCodec" OR unit STREQUAL "FragmentedMp4Audio")
             target_link_libraries(${target} PRIVATE rc_music_media_foundation_codec)
         endif()
         if(unit STREQUAL "AppContainerNetworkObserver")
