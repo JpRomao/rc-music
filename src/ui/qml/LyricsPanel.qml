@@ -41,13 +41,13 @@ Item {
             Qt.openUrlExternally("https://www.lyricfind.com/");
     }
 
-    function openQueuedVariant(occurrenceId, title, artist = "", album = "", durationMs = 0) {
+    function openQueuedVariant(occurrenceId, displayTitle) {
         if (!queueVariantActionAvailable || queryOpen)
             return;
         if (typeof lyrics.openQueuedManager === "function")
-            variantsPanel.openQueuedManager(occurrenceId, title, artist, album, durationMs);
+            variantsPanel.openQueuedManager(occurrenceId, displayTitle);
         else
-            variantsPanel.openQueuedForm(occurrenceId, title);
+            variantsPanel.openQueuedForm(occurrenceId, displayTitle);
     }
 
     onTrackIdentityChanged: {
@@ -325,7 +325,7 @@ Item {
         trackIdentity: root.trackIdentity
         enabled: root.enabled
         queuedFeedbackText: root.queuedFeedbackText
-        onRecordingSearchRequested: (token, title, artist, album, durationMs) => queryDialog.openForTarget(true, token, title, artist, album, durationMs)
+        onRecordingSearchRequested: (token, title, artist, album, durationMs, displayTitle) => queryDialog.openForTarget(true, token, title, artist, album, durationMs, displayTitle)
         onQueuedFormClosed: submitted => {
             if (submitted)
                 root.queuedSaveFeedback = true;
@@ -363,6 +363,12 @@ Item {
         readonly property bool queuedTarget: managerToken.length > 0
         readonly property bool targetAvailable: root.enabled && backend !== null && backend === root.lyrics && (!managedTarget || variantsPanel.opened) && (queuedTarget ? variantsPanel.managerToken === managerToken && backend.queuedManagerSearchAvailable === true : root.visible && track === root.trackIdentity)
         readonly property bool current: visible && targetAvailable
+        readonly property var trackMetadata: current && !queuedTarget && !showingResults ? ({
+                title: backend.title ?? "",
+                artist: backend.artist ?? "",
+                album: backend.album ?? "",
+                durationMs: backend.durationMs ?? 0
+            }) : null
         readonly property bool searching: current && backend.recordingSearchBusy === true
         readonly property var recordings: current ? (backend.recordingCandidates ?? []) : []
         readonly property var selected: current && choiceRevision === backend.recordingSearchRevision ? recordings[recordingIndex] ?? null : null
@@ -387,6 +393,14 @@ Item {
         padding: root.contract.spacingUnit * 3
         onOpened: titleField.forceActiveFocus(Qt.TabFocusReason)
         onTargetAvailableChanged: Qt.callLater(closeIfTargetUnavailable)
+        onTrackMetadataChanged: {
+            if (!trackMetadata)
+                return;
+            titleField.refreshDefault(trackMetadata.title);
+            artistField.refreshDefault(trackMetadata.artist);
+            albumField.refreshDefault(trackMetadata.album);
+            durationField.refreshDefault(durationText(trackMetadata.durationMs));
+        }
         onSavePendingChanged: {
             if (current && saveRequested && !savePending)
                 Qt.callLater(captureSaveStatus);
@@ -406,19 +420,23 @@ Item {
                 searchButton.forceActiveFocus(Qt.TabFocusReason);
         }
 
-        function openForTarget(managed, token, title, artist, album, durationMs) {
+        function durationText(durationMs) {
+            const seconds = Math.round(durationMs / 1000);
+            return seconds > 0 ? String(seconds) : "";
+        }
+
+        function openForTarget(managed, token, title, artist, album, durationMs, displayTitle = title) {
             if (visible)
                 return;
             track = root.trackIdentity;
             managedTarget = managed;
             managerToken = token;
-            targetTitle = title;
+            targetTitle = displayTitle;
             backend = root.lyrics;
-            titleField.text = title;
-            artistField.text = artist;
-            albumField.text = album;
-            const seconds = Math.round(durationMs / 1000);
-            durationField.text = seconds > 0 ? String(seconds) : "";
+            titleField.resetDefault(title);
+            artistField.resetDefault(artist);
+            albumField.resetDefault(album);
+            durationField.resetDefault(durationText(durationMs));
             if (targetAvailable) {
                 open();
             } else {
@@ -521,25 +539,27 @@ Item {
                 QueryLabel {
                     text: titleField.Accessible.name
                 }
-                QueryField {
+                QueryMetadataField {
                     id: titleField
                     objectName: "lyrics-query-title"
                     Accessible.name: qsTr("Título da música")
+                    placeholderText: qsTr("Informe o título se estiver em branco")
                     onAccepted: artistField.forceActiveFocus(Qt.TabFocusReason)
                 }
                 QueryLabel {
                     text: artistField.Accessible.name
                 }
-                QueryField {
+                QueryMetadataField {
                     id: artistField
                     objectName: "lyrics-query-artist"
                     Accessible.name: qsTr("Artista")
+                    placeholderText: qsTr("Informe o artista se estiver em branco")
                     onAccepted: albumField.forceActiveFocus(Qt.TabFocusReason)
                 }
                 QueryLabel {
                     text: albumField.Accessible.name
                 }
-                QueryField {
+                QueryMetadataField {
                     id: albumField
                     objectName: "lyrics-query-album"
                     Accessible.name: qsTr("Álbum")
@@ -548,7 +568,7 @@ Item {
                 QueryLabel {
                     text: durationField.Accessible.name
                 }
-                QueryField {
+                QueryMetadataField {
                     id: durationField
                     objectName: "lyrics-query-duration"
                     Accessible.name: qsTr("Duração em segundos")
@@ -781,6 +801,21 @@ Item {
             radius: root.contract.radiusSmall
             border.width: field.activeFocus ? 3 : 1
             border.color: field.activeFocus ? root.contract.focusColor : root.contract.borderColor
+        }
+    }
+
+    component QueryMetadataField: QueryField {
+        property bool manuallyEdited: false
+        onTextEdited: manuallyEdited = true
+
+        function resetDefault(value) {
+            manuallyEdited = false;
+            text = value;
+        }
+
+        function refreshDefault(value) {
+            if (!manuallyEdited && text !== value)
+                text = value;
         }
     }
 

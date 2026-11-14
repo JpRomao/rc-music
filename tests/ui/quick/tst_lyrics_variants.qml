@@ -47,6 +47,7 @@ TestCase {
         property bool queuedManagerBusy: false
         property bool queuedManagerCanEdit: true
         property bool queuedManagerSearchAvailable: true
+        property var queuedLyricsMetadata: ({})
         property string queuedManagerStatus: "Versões da faixa na fila"
         property var queuedManagerVariants: []
         property var openQueuedManager: null
@@ -223,6 +224,7 @@ TestCase {
         backend.queuedVariantStatusText = "";
         backend.queuedManagerCanEdit = true;
         backend.queuedManagerSearchAvailable = true;
+        backend.queuedLyricsMetadata = {};
         backend.queuedManagerStatus = "Versões da faixa na fila";
         backend.recordingSearchBusy = false;
         backend.recordingCandidates = [];
@@ -333,6 +335,12 @@ TestCase {
         tryCompare(findChild(shell, "lyrics-variant-search-lrclib"), "activeFocus", true);
     }
     function test_queueManagerSearchSurvivesPlaybackAdvanceAndRetryDoesNotQueryAgain() {
+        backend.queuedLyricsMetadata = {
+            title: "Título oficial",
+            artist: "Artista da faixa",
+            album: "Álbum original",
+            durationMs: 123000
+        };
         backend.openQueuedManager = occurrence => {
             backend.record("openManager", [occurrence]);
             return "queue-manager";
@@ -344,9 +352,11 @@ TestCase {
         tryCompare(manager, "visible", true);
         const dialog = openManagerSearch();
         compare(lastCall("openManager").args[0], menu.target);
-        compare(findChild(shell, "lyrics-query-title").text, menu.title);
+        verify(menu.title !== "Título oficial");
+        compare(findChild(shell, "lyrics-query-title").text, "Título oficial");
+        compare(findChild(shell, "lyrics-query-artist").text, "Artista da faixa");
         mouseClick(findChild(shell, "lyrics-query-submit"));
-        compare(lastCall("searchQueuedRecordings").args.slice(0, 2), ["queue-manager", menu.title]);
+        compare(lastCall("searchQueuedRecordings").args, ["queue-manager", "Título oficial", "Artista da faixa", "Álbum original", 123000]);
         const previous = presenter.currentOccurrenceId;
         driver.publishLocalSourceUnavailable();
         tryVerify(() => presenter.currentOccurrenceId !== previous && presenter.currentOccurrenceId !== menu.target);
@@ -375,6 +385,24 @@ TestCase {
         tryCompare(dialog, "opened", false);
         tryCompare(manager, "opened", true);
         verify(!findChild(shell, "lyrics-variant-search-lrclib").enabled);
+    }
+    function test_queueSearchLeavesMissingTagsBlankUntilEdited() {
+        backend.openQueuedManager = () => "untagged-manager";
+        const menu = openQueueVariantMenu();
+        menu.action.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        const dialog = openManagerSearch();
+        const title = findChild(shell, "lyrics-query-title");
+        const artist = findChild(shell, "lyrics-query-artist");
+        const submit = findChild(shell, "lyrics-query-submit");
+        verify(dialog.opened);
+        compare(title.text, "");
+        compare(artist.text, "");
+        verify(!submit.enabled);
+        title.text = "Título informado";
+        artist.text = "Artista informado";
+        mouseClick(submit);
+        compare(lastCall("searchQueuedRecordings").args, ["untagged-manager", "Título informado", "Artista informado", "", 0]);
     }
     function openPanel() {
         const opener = findChild(shell, "lyrics-versions");

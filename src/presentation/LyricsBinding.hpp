@@ -32,6 +32,7 @@ struct AcquiredLyricsSaveSnapshot final {
 };
 class QtLyricsService;
 class LyricsVariantsStore;
+class MetadataExtractor;
 struct LyricsDocument;
 struct LyricsQuery;
 struct LyricsSearchCandidate;
@@ -70,6 +71,7 @@ class LyricsBinding final : public QObject {
     Q_PROPERTY(bool queueVariantAvailable READ queueVariantAvailable NOTIFY changed)
     Q_PROPERTY(QString queuedVariantStatusText READ queuedVariantStatusText NOTIFY changed)
     Q_PROPERTY(QVariantList queuedManagerVariants READ queuedManagerVariants NOTIFY changed)
+    Q_PROPERTY(QVariantMap queuedLyricsMetadata READ queuedLyricsMetadata NOTIFY changed)
     Q_PROPERTY(bool queuedManagerBusy READ queuedManagerBusy NOTIFY changed)
     Q_PROPERTY(bool queuedManagerCanEdit READ queuedManagerCanEdit NOTIFY changed)
     Q_PROPERTY(bool queuedManagerSearchAvailable READ queuedManagerSearchAvailable NOTIFY changed)
@@ -94,6 +96,7 @@ class LyricsBinding final : public QObject {
     void setPosition(qint64 confirmed_position_ms);
     // Resolves queue occurrence IDs in trusted C++. QML receives only a form token.
     void setQueueLyricsSource(std::function<QString(const QString&)> source);
+    void setQueuedLyricsMetadataExtractor(std::shared_ptr<const MetadataExtractor> extractor);
     void refreshQueuedLyricsTarget();
     using JapaneseRomanizer = std::function<std::optional<std::vector<std::string>>(const std::vector<std::string>&)>;
     void setJapaneseRomanizer(JapaneseRomanizer romanizer);
@@ -137,6 +140,7 @@ class LyricsBinding final : public QObject {
     [[nodiscard]] bool queueVariantAvailable() const;
     [[nodiscard]] QString queuedVariantStatusText() const;
     [[nodiscard]] QVariantList queuedManagerVariants() const;
+    [[nodiscard]] QVariantMap queuedLyricsMetadata() const;
     [[nodiscard]] bool queuedManagerBusy() const;
     [[nodiscard]] bool queuedManagerCanEdit() const;
     [[nodiscard]] bool queuedManagerSearchAvailable() const;

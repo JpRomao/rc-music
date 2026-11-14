@@ -528,7 +528,7 @@ ApplicationWindow {
         locationFocusRestoreAllowed: window.active && window.windowShortcutsEnabled && !preferencesPanel.visible
         onCloseRequested: window.setQueueOpen(false)
         onPlayRequested: occurrenceId => window.presenter.playQueueOccurrence(occurrenceId)
-        onAddLyricVariantRequested: (occurrenceId, title, artist, album, durationMs) => lyricsPanel.openQueuedVariant(occurrenceId, title, artist, album, durationMs)
+        onAddLyricVariantRequested: (occurrenceId, displayTitle) => lyricsPanel.openQueuedVariant(occurrenceId, displayTitle)
     }
     SourceImportStatus {
         id: sourceImportStatus

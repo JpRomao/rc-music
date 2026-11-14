@@ -33,9 +33,6 @@ Dialog {
     property string queuedTitle: ""
     property string managerToken: ""
     property string managerTitle: ""
-    property string managerArtist: ""
-    property string managerAlbum: ""
-    property double managerDurationMs: 0
     property string managerSelection: ""
     readonly property bool managingQueue: managerToken.length > 0
     readonly property var storedVariants: supported ? (managingQueue ? lyrics.queuedManagerVariants : lyrics.variants) : []
@@ -97,7 +94,7 @@ Dialog {
     popupType: Popup.Item
     closePolicy: Popup.CloseOnEscape
     signal queuedFormClosed(bool submitted)
-    signal recordingSearchRequested(string token, string title, string artist, string album, double durationMs)
+    signal recordingSearchRequested(string token, string title, string artist, string album, double durationMs, string displayTitle)
     onOpened: {
         const startRomaji = startRomajiOnOpen;
         startRomajiOnOpen = false;
@@ -284,17 +281,14 @@ Dialog {
         queuedTitle = title;
         startForm("queued");
     }
-    function openQueuedManager(occurrenceId, title, artist, album, durationMs) {
+    function openQueuedManager(occurrenceId, displayTitle) {
         if (!queuedFormAvailable || visible || childDialogOpen || typeof lyrics.openQueuedManager !== "function")
             return;
         const token = lyrics.openQueuedManager(occurrenceId);
         if (!token.length)
             return;
         managerToken = token;
-        managerTitle = title;
-        managerArtist = artist;
-        managerAlbum = album;
-        managerDurationMs = durationMs;
+        managerTitle = displayTitle;
         managerSelection = "";
         open();
     }
@@ -589,10 +583,12 @@ Dialog {
                 onClicked: {
                     if (!enabled)
                         return;
-                    if (root.managingQueue)
-                        root.recordingSearchRequested(root.managerToken, root.managerTitle, root.managerArtist, root.managerAlbum, root.managerDurationMs);
-                    else
-                        root.recordingSearchRequested("", root.lyrics.title, root.lyrics.artist, root.lyrics.album ?? "", root.lyrics.durationMs ?? 0);
+                    if (root.managingQueue) {
+                        const tags = root.lyrics.queuedLyricsMetadata ?? {};
+                        root.recordingSearchRequested(root.managerToken, tags.title ?? "", tags.artist ?? "", tags.album ?? "", tags.durationMs ?? 0, root.managerTitle);
+                    } else {
+                        root.recordingSearchRequested("", root.lyrics.title, root.lyrics.artist, root.lyrics.album ?? "", root.lyrics.durationMs ?? 0, root.lyrics.title);
+                    }
                 }
             }
             AccessibleTransportButton {

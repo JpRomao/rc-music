@@ -782,6 +782,7 @@ int main(int argc, char* argv[]) {
         });
         QObject::connect(&application, &QCoreApplication::aboutToQuit, playlists_binding.get(),
                          &music_player::m0::PlaylistsBinding::beginShutdown);
+        lyrics_binding.setQueuedLyricsMetadataExtractor(std::make_shared<music_player::m0::TagLibMetadataExtractor>());
         lyrics_binding.setQueueLyricsSource(
             [guarded_presenter = QPointer<PlayerPresenter>{&presenter}](const QString& occurrence_id) {
                 return guarded_presenter ? guarded_presenter->queuedLyricsSource(occurrence_id) : QString{};
@@ -804,8 +805,8 @@ int main(int argc, char* argv[]) {
                 static_cast<void>(lyrics_binding.prepareExit());
                 return;
             }
-            lyrics_binding.setTrack(presenter.detailsFilePath(), presenter.currentTitle(), presenter.currentArtist(),
-                                    presenter.currentAlbum(), presenter.hasDuration() ? presenter.durationMs() : 0,
+            lyrics_binding.setTrack(presenter.detailsFilePath(), presenter.detailsTitle(), presenter.detailsArtist(),
+                                    presenter.detailsAlbum(), presenter.hasDuration() ? presenter.durationMs() : 0,
                                     presenter.currentOccurrenceId());
             lyrics_binding.setPosition(presenter.confirmedPositionMs());
         };

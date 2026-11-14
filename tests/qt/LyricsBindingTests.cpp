@@ -1,5 +1,6 @@
 #include "adapters/QtLyricsService.hpp"
 #include "m0/ports/LyricsVariantsStore.hpp"
+#include "m0/ports/MetadataExtractor.hpp"
 #include "presentation/LyricsBinding.hpp"
 
 #include <QFile>
@@ -13,6 +14,7 @@
 #include <QTest>
 #include <QThread>
 #include <QTimer>
+#include <QUrlQuery>
 
 #include <algorithm>
 #include <atomic>
@@ -140,6 +142,7 @@ class OnlineReply final : public QNetworkReply {
 class OnlineNetwork final : public QNetworkAccessManager {
   public:
     int requests{};
+    QUrl last_url;
     QByteArray body{
         R"({"syncedLyrics":"[00:01.000]Online original\n[00:04.000]Online next","plainLyrics":"Online original\nOnline next","instrumental":false})"};
 
@@ -148,7 +151,24 @@ class OnlineNetwork final : public QNetworkAccessManager {
         if (operation != GetOperation)
             return nullptr;
         ++requests;
+        last_url = request.url();
         return new OnlineReply(request, body, this);
+    }
+};
+class QueueTagExtractor final : public MetadataExtractor {
+  public:
+    std::filesystem::path tagged_path;
+    mutable QSemaphore entered, release;
+    MetadataReadResult read(const std::filesystem::path& path, const MetadataReadCancellation&) const override {
+        entered.release();
+        if (!release.tryAcquire(1, 3000))
+            return MetadataReadError{MetadataReadErrorCode::ReadFailed};
+        TrackMetadata metadata{.source_path = path, .display_title = "File name fallback"};
+        if (path == tagged_path) {
+            metadata.tags = {.title = "Título real", .artist = "Artista real", .album = "Álbum real"};
+            metadata.audio.duration_ms = 82000;
+        }
+        return metadata;
     }
 };
 } // namespace
@@ -301,6 +321,51 @@ class LyricsBindingTests final : public QObject {
         QVERIFY(!binding.searchQueuedRecordings(manager, "Song", {}, {}, 0));
         QCOMPARE(network.requests, 1);
         QCOMPARE(store->save_calls.load(), 0);
+    }
+    void queuedSearchPrefillReadsSourceTagsAndNeverUsesTheFileName() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto queued = temp.filePath("download-file-name.mp3");
+        const auto untagged = temp.filePath("untagged.mp3");
+        auto target = queued;
+        auto store = std::make_shared<MemoryVariantsStore>();
+        auto extractor = std::make_shared<QueueTagExtractor>();
+        extractor->tagged_path = nativePath(queued);
+        OnlineNetwork network;
+        network.body = "[]";
+        QtLyricsService service(&network);
+        LyricsBinding binding(service, store);
+        // Test the QML-visible contract through QObject metadata.
+        QVERIFY(binding.metaObject()->indexOfProperty("queuedLyricsMetadata") >= 0);
+        binding.setQueuedLyricsMetadataExtractor(extractor);
+        binding.setQueueLyricsSource([&](const QString&) { return target; });
+        auto manager = binding.openQueuedManager("queued-occurrence");
+        QVERIFY(!manager.isEmpty());
+        QVERIFY(!binding.queuedManagerSearchAvailable());
+        QVERIFY(!binding.searchQueuedRecordings(manager, "download-file-name", {}, {}, 0));
+        QCOMPARE(network.requests, 0);
+        extractor->release.release();
+        QTRY_VERIFY(binding.queuedManagerSearchAvailable());
+        const auto tags = binding.property("queuedLyricsMetadata").toMap();
+        QCOMPARE(tags.value("title").toString(), QStringLiteral("Título real"));
+        QCOMPARE(tags.value("artist").toString(), QStringLiteral("Artista real"));
+        QCOMPARE(tags.value("album").toString(), QStringLiteral("Álbum real"));
+        QCOMPARE(tags.value("durationMs").toLongLong(), 82000);
+        QVERIFY(binding.searchQueuedRecordings(manager, tags.value("title").toString(), tags.value("artist").toString(),
+                                               tags.value("album").toString(), tags.value("durationMs").toLongLong()));
+        const QUrlQuery request(network.last_url);
+        QCOMPARE(request.queryItemValue("track_name", QUrl::FullyDecoded), QStringLiteral("Título real"));
+        QCOMPARE(request.queryItemValue("artist_name", QUrl::FullyDecoded), QStringLiteral("Artista real"));
+        binding.closeQueuedManager(manager);
+        target = untagged;
+        manager = binding.openQueuedManager("queued-occurrence");
+        QVERIFY(!manager.isEmpty());
+        extractor->release.release();
+        QTRY_VERIFY(binding.queuedManagerSearchAvailable());
+        const auto blank = binding.property("queuedLyricsMetadata").toMap();
+        QVERIFY(blank.contains("title"));
+        QVERIFY(blank.value("title").toString().isEmpty());
+        QVERIFY(blank.value("artist").toString().isEmpty());
     }
     void managedRecordingAddsToThePlayingCatalogueWithoutSelectingTheNewLyric() {
         QTemporaryDir temp;

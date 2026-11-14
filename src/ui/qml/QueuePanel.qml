@@ -39,7 +39,7 @@ FocusScope {
     readonly property bool queueFocusRestoreAllowed: visible && enabled && locationFocusRestoreAllowed && !presenter.exiting && !presenter.selectingAudioFiles && !addingFilesPending && presenter.locatingOccurrenceId.length === 0 && !clearConfirmation.visible
     signal closeRequested
     signal playRequested(string occurrenceId)
-    signal addLyricVariantRequested(string occurrenceId, string title, string artist, string album, double durationMs)
+    signal addLyricVariantRequested(string occurrenceId, string displayTitle)
 
     QueueText {
         id: queueText
@@ -569,12 +569,9 @@ FocusScope {
                 const row = queueList.currentItem as QueueOccurrenceDelegate;
                 if (!row || row.occurrenceId !== occurrenceId)
                     return;
-                const title = row.title.length > 0 ? row.title : row.fileName;
-                const artist = row.artist;
-                const album = row.album;
-                const durationMs = row.durationMs ?? 0;
+                const displayTitle = row.title.length > 0 ? row.title : row.fileName;
                 rowMenu.close();
-                root.addLyricVariantRequested(occurrenceId, title, artist, album, durationMs);
+                root.addLyricVariantRequested(occurrenceId, displayTitle);
             }
         }
         MenuItem {

@@ -94,6 +94,10 @@ TestCase {
     }
     function init() {
         driver.resetLocalScenario();
+        lyrics.title = "Original song";
+        lyrics.artist = "Artist";
+        lyrics.album = "Disc";
+        lyrics.durationMs = 246000;
         lyrics.requests = 0;
         lyrics.uses = 0;
         lyrics.cancels = 0;
@@ -194,6 +198,50 @@ TestCase {
         compare(lyrics.submittedArtist, "");
         compare(lyrics.submittedAlbum, "Corrected album");
         compare(lyrics.submittedDuration, 123000);
+    }
+    function test_lateTrackTagsRefreshOnlyUntouchedFieldsUntilSearch() {
+        lyrics.title = "";
+        lyrics.artist = "";
+        lyrics.album = "";
+        lyrics.durationMs = 0;
+        const playing = presenter.currentOccurrenceId;
+        mouseClick(findChild(shell, "lyrics-search"));
+        const dialog = findChild(shell, "lyrics-query-dialog");
+        tryCompare(dialog, "opened", true);
+        const title = findChild(shell, "lyrics-query-title");
+        const artist = findChild(shell, "lyrics-query-artist");
+        const album = findChild(shell, "lyrics-query-album");
+        const duration = findChild(shell, "lyrics-query-duration");
+        const submit = findChild(shell, "lyrics-query-submit");
+        verify(!submit.enabled);
+        album.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(album, "activeFocus", true);
+        keyClick(Qt.Key_X);
+        const customAlbum = album.text;
+        verify(customAlbum.length > 0);
+        lyrics.title = "Tagged song";
+        lyrics.artist = "Tagged artist";
+        lyrics.album = "Tagged album";
+        lyrics.durationMs = 123000;
+        tryCompare(title, "text", "Tagged song");
+        compare(artist.text, "Tagged artist");
+        compare(album.text, customAlbum);
+        compare(duration.text, "123");
+        compare(lyrics.requests, 0);
+        mouseClick(submit);
+        compare(lyrics.requests, 1);
+        compare(lyrics.submittedTitle, "Tagged song");
+        compare(lyrics.submittedArtist, "Tagged artist");
+        compare(lyrics.submittedAlbum, customAlbum);
+        compare(lyrics.submittedDuration, 123000);
+        lyrics.title = "Updated tag";
+        lyrics.durationMs = 456000;
+        compare(title.text, "Tagged song");
+        compare(duration.text, "123");
+        compare(dialog.queryDuration, 123);
+        compare(lyrics.requests, 1);
+        compare(presenter.currentOccurrenceId, playing);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
     }
     function test_previewAndExplicitChoiceKeepSameTitleRecordingsSeparate() {
         mouseClick(findChild(shell, "lyrics-search"));

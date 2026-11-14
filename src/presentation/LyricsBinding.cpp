@@ -4,6 +4,7 @@
 #include "m0/domain/AcquiredLyrics.hpp"
 #include "m0/domain/LocalAudioFilePolicy.hpp"
 #include "m0/ports/LyricsVariantsStore.hpp"
+#include "m0/ports/MetadataExtractor.hpp"
 
 #include <QDir>
 #include <QFileInfo>
@@ -69,6 +70,7 @@ struct VariantsJob final {
     LyricsVariantsLoadResult loaded{};
     LyricsVariantsSaveStatus saved{LyricsVariantsSaveStatus::Failed};
     AcquiredLyricsMergeResult merged{};
+    std::optional<LyricsQuery> queued_metadata{};
     bool invalid_drafts{};
     bool stale_catalog{};
 };
@@ -239,6 +241,7 @@ struct LyricsBinding::VariantsState final {
         QueueTarget target;
         LyricsVariants library;
         QString notice;
+        std::optional<LyricsQuery> metadata{};
         bool ready{};
         bool invalidated{};
         std::uint64_t next_id{1};
@@ -251,6 +254,7 @@ struct LyricsBinding::VariantsState final {
     };
     LyricsBinding& owner;
     std::shared_ptr<LyricsVariantsStore> store;
+    std::shared_ptr<const MetadataExtractor> queue_metadata_extractor;
     LyricsVariants library;
     std::optional<LyricsVariants> pending;
     std::optional<LyricsSelection> pending_selection;
@@ -287,6 +291,9 @@ struct LyricsBinding::VariantsState final {
     bool queueEditable(const QString& token) const {
         return canAppend() && queueCurrent(token) && queue_manager->ready;
     }
+    bool queueSearchAvailable(const QString& token) const {
+        return allowed() && queueCurrent(token) && (!queue_metadata_extractor || queue_manager->metadata.has_value());
+    }
     void closeQueueManager() {
         if (edit_target && !edit_target->manager_token.isEmpty())
             edit_target.reset();
@@ -299,24 +306,43 @@ struct LyricsBinding::VariantsState final {
         ++manager.revision;
         manager.ready = false;
         manager.library.clear();
+        manager.metadata.reset();
         manager.notice = LyricsBinding::tr("Carregando versões da letra da faixa…");
         const auto retained_store = store;
+        const auto metadata_extractor = queue_metadata_extractor;
         const auto path = nativePath(manager.target.path);
         loading_manager_token = token;
         busy = true;
         try {
-            watcher.setFuture(QtConcurrent::run([retained_store, path] {
+            watcher.setFuture(QtConcurrent::run([retained_store, metadata_extractor, path] {
                 VariantsJob result;
                 try {
                     result.loaded = retained_store->load(path);
                 } catch (...) {
                     result.loaded.status = LyricsVariantsLoadStatus::Unavailable;
                 }
+                if (metadata_extractor) {
+                    auto& query = result.queued_metadata.emplace();
+                    try {
+                        const auto read = metadata_extractor->read(path);
+                        if (const auto* metadata = std::get_if<TrackMetadata>(&read);
+                            metadata && metadata->source_path == path) {
+                            query = {text(metadata->tags.title.value_or(std::string{})),
+                                     text(metadata->tags.artist.value_or(std::string{})),
+                                     text(metadata->tags.album.value_or(std::string{})),
+                                     metadata->audio.duration_ms.value_or(0)};
+                        }
+                    } catch (...) {
+                        // Unreadable tags leave the search fields available for manual entry.
+                    }
+                }
                 return result;
             }));
         } catch (...) {
             busy = false;
             loading_manager_token.clear();
+            if (metadata_extractor)
+                manager.metadata.emplace();
             manager.notice = LyricsBinding::tr("Não foi possível carregar as versões da faixa.");
         }
         emit owner.changed();
@@ -578,6 +604,7 @@ struct LyricsBinding::VariantsState final {
             const auto token = std::exchange(loading_manager_token, QString{});
             if (queueCurrent(token)) {
                 auto& manager = *queue_manager;
+                manager.metadata = std::move(result.queued_metadata);
                 manager.ready = readableCatalog(result.loaded.status) && isValidLyricsVariants(result.loaded.variants);
                 if (manager.ready) {
                     manager.library = std::move(result.loaded.variants);
@@ -879,6 +906,9 @@ void LyricsBinding::setQueueLyricsSource(std::function<QString(const QString&)> 
         cancelRecordingSearch();
     emit changed();
 }
+void LyricsBinding::setQueuedLyricsMetadataExtractor(std::shared_ptr<const MetadataExtractor> extractor) {
+    variants_->queue_metadata_extractor = std::move(extractor);
+}
 void LyricsBinding::refreshQueuedLyricsTarget() {
     auto& manager = variants_->queue_manager;
     if (!manager || manager->invalidated || variants_->queueCurrent(manager->target.token))
@@ -965,6 +995,16 @@ QVariantList LyricsBinding::queuedManagerVariants() const {
     const auto& manager = variants_->queue_manager;
     return manager && variants_->queueCurrent(manager->target.token) ? variantRows(manager->library) : QVariantList{};
 }
+QVariantMap LyricsBinding::queuedLyricsMetadata() const {
+    const auto& manager = variants_->queue_manager;
+    if (!manager || !variants_->queueCurrent(manager->target.token) || !manager->metadata)
+        return {};
+    const auto& metadata = *manager->metadata;
+    return {{QStringLiteral("title"), metadata.title},
+            {QStringLiteral("artist"), metadata.artist},
+            {QStringLiteral("album"), metadata.album},
+            {QStringLiteral("durationMs"), metadata.duration_ms}};
+}
 bool LyricsBinding::queuedManagerBusy() const { return variants_->busy; }
 bool LyricsBinding::queuedManagerCanEdit() const {
     const auto& manager = variants_->queue_manager;
@@ -972,7 +1012,7 @@ bool LyricsBinding::queuedManagerCanEdit() const {
 }
 bool LyricsBinding::queuedManagerSearchAvailable() const {
     const auto& manager = variants_->queue_manager;
-    return variants_->allowed() && manager && variants_->queueCurrent(manager->target.token);
+    return manager && variants_->queueSearchAvailable(manager->target.token);
 }
 QString LyricsBinding::queuedManagerStatus() const {
     const auto& manager = variants_->queue_manager;
@@ -1624,7 +1664,7 @@ bool LyricsBinding::searchRecordings(const QString& title, const QString& artist
 }
 bool LyricsBinding::searchQueuedRecordings(const QString& manager_token, const QString& title, const QString& artist,
                                            const QString& album, qint64 duration_ms) {
-    if (!variants_->queueCurrent(manager_token))
+    if (!variants_->queueSearchAvailable(manager_token))
         return false;
     return startRecordingSearch(manager_token, {owned(title), owned(artist), owned(album), duration_ms});
 }

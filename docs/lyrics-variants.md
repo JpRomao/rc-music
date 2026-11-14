@@ -26,11 +26,11 @@ Com o [componente local pykakasi preparado](../tools/lyrics-romanizer/README.md)
 
 ### Buscar e escolher uma gravação
 
-Abra **Buscar letra**, confira título, artista e álbum e clique em **Buscar**. É possível buscar só pelo título. O RC Music envia esses campos ao LRCLIB e usa a duração somente para ordenar e sinalizar gravações diferentes. Abrir o formulário e editar os campos são ações locais.
+Abra **Buscar letra**, confira título, artista e álbum e clique em **Buscar**. O formulário preenche esses campos com as tags do áudio. Quando faltar uma tag, você pode preencher o campo manualmente. É possível buscar só pelo título. O RC Music envia os campos preenchidos ao LRCLIB e usa a duração para ordenar e sinalizar gravações diferentes. Abrir o formulário e editar os campos são ações locais.
 
 Escolha a gravação pelo título, artista, álbum e duração disponíveis. Quando aparecer mais de um formato, escolha **Sincronizada** ou **Texto simples** para ler a prévia. **Usar nesta sessão** muda a exibição e **Salvar versão** grava a letra com o nome informado e origem LRCLIB. O catálogo registra o resultado como original e permite acrescentar idioma e escrita ao gerenciar a versão. Fechar a busca, cancelar ou receber um erro conserva a letra que estava em uso. Um resultado instrumental exige confirmação própria.
 
-Em **Versões** ou **Fila → Gerenciar letras**, clique em **Buscar no LRCLIB**, escolha a gravação e o formato e confira a prévia. Para faixas cujos metadados ainda não foram carregados, confira o título sugerido pelo nome do arquivo e acrescente artista ou álbum se souber. **Salvar versão** adiciona a letra à faixa indicada no painel. A música e a letra em uso seguem durante a consulta, a prévia e a gravação. Se o salvamento falhar, o botão de tentar novamente repete a escrita da versão escolhida.
+Em **Versões** ou **Fila → Gerenciar letras**, clique em **Buscar no LRCLIB**, escolha a gravação e o formato e confira a prévia. O gerenciamento da fila lê as tags da faixa selecionada mesmo que ela nunca tenha sido tocada. O nome do arquivo identifica a faixa na interface quando necessário. **Salvar versão** adiciona a letra à faixa indicada no painel. A música e a letra em uso seguem durante a consulta, a prévia e a gravação. Se o salvamento falhar, o botão de tentar novamente repete a escrita da versão escolhida.
 
 ### Fonte opcional LyricFind
 
