@@ -10,7 +10,7 @@ Abra **Versões** junto à letra. Adicione texto, use **Importar .lrc** para car
 
 Selecione uma versão salva e clique em **Editar**. É possível alterar nome, texto, idioma, escrita e forma, e salvar na mesma versão ou como nova. Para alterar o tempo de um verso, marque **Permitir alterar tempos**. Excluir pede confirmação da versão e da faixa. O áudio, as playlists e o `.lrc` irmão são preservados.
 
-Para adicionar, editar ou remover versões sem trocar o que está tocando, abra o menu de uma faixa disponível na **Fila** e escolha **Gerenciar letras**. O painel identifica a faixa e conserva o alvo quando a reprodução avança. Se a faixa sair da fila ou mudar de arquivo antes de salvar, reabra o painel para escolher o destino.
+Para buscar, adicionar, editar ou remover versões sem trocar o que está tocando, abra o menu de uma faixa disponível na **Fila** e escolha **Gerenciar letras**. O painel identifica a faixa e conserva o alvo quando a reprodução avança. Se a faixa sair da fila ou mudar de arquivo antes de salvar, reabra o painel para escolher o destino.
 
 O aviso acima da barra de progresso acompanha a gravação. Em caso de falha, **Revisar salvamento** abre as opções de recuperação. Uma gravação já iniciada continua vinculada ao arquivo escolhido, inclusive se a faixa sair da fila.
 
@@ -24,11 +24,13 @@ LRC conserva seus tempos quando aceito pelo parser. Texto comum permanece sem si
 
 Com o [componente local pykakasi preparado](../tools/lyrics-romanizer/README.md), abra uma letra japonesa, selecione **Versões → Gerar romaji** e revise o texto antes de salvar. O player conserva os tempos da versão sincronizada e guarda o romaji como versão separada, identificada como gerada pelo pykakasi. Para uma letra que usa somente kanji, salve primeiro uma versão com idioma `ja` para indicar que o texto é japonês. A leitura de alguns kanji pode precisar de correção. O conversor usa somente o texto e funciona offline.
 
-### Resultados da busca no player
+### Buscar e escolher uma gravação
 
 Abra **Buscar letra**, confira título, artista e álbum e clique em **Buscar**. É possível buscar só pelo título. O RC Music envia esses campos ao LRCLIB e usa a duração somente para ordenar e sinalizar gravações diferentes. Abrir o formulário e editar os campos são ações locais.
 
 Escolha a gravação pelo título, artista, álbum e duração disponíveis. Quando aparecer mais de um formato, escolha **Sincronizada** ou **Texto simples** para ler a prévia. **Usar nesta sessão** muda a exibição e **Salvar versão** grava a letra com o nome informado e origem LRCLIB. O catálogo registra o resultado como original e permite acrescentar idioma e escrita ao gerenciar a versão. Fechar a busca, cancelar ou receber um erro conserva a letra que estava em uso. Um resultado instrumental exige confirmação própria.
+
+Em **Versões** ou **Fila → Gerenciar letras**, clique em **Buscar no LRCLIB**, escolha a gravação e o formato e confira a prévia. Para faixas cujos metadados ainda não foram carregados, confira o título sugerido pelo nome do arquivo e acrescente artista ou álbum se souber. **Salvar versão** adiciona a letra à faixa indicada no painel. A música e a letra em uso seguem durante a consulta, a prévia e a gravação. Se o salvamento falhar, o botão de tentar novamente repete a escrita da versão escolhida.
 
 ### Fonte opcional LyricFind
 

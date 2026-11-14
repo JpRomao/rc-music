@@ -147,6 +147,131 @@ class OnlineNetwork final : public QNetworkAccessManager {
 class LyricsBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void queueRecordingSearchSurvivesPlaybackAdvanceAndSavesOnlyTheOriginalTarget() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto playing = temp.filePath("playing.mp3");
+        const auto next = temp.filePath("next.mp3");
+        const auto queued = temp.filePath("queued.mp3");
+        auto target = queued;
+        auto store = std::make_shared<MemoryVariantsStore>();
+        store->disk[nativePath(playing)] = {{1, "Playing", {}, {}, "Manual", "Playing lyric"}};
+        store->disk[nativePath(next)] = {{2, "Next", {}, {}, "Manual", "Next lyric"}};
+        OnlineNetwork network;
+        network.body = R"([
+          {"id":15,"trackName":"Queued","artistName":"Artist","albumName":"Album","duration":82,
+           "instrumental":false,"plainLyrics":"Queue words","syncedLyrics":"[00:01.00]Timed queue words"}
+        ])";
+        QtLyricsService service(&network);
+        LyricsBinding binding(service, store);
+        binding.setQueueLyricsSource(
+            [&](const QString& occurrence) { return occurrence == "queued-occurrence" ? target : QString{}; });
+        binding.setTrack(playing, "Playing", {}, {}, 1000, "first");
+        QTRY_VERIFY(binding.variantsCanEdit());
+        QVERIFY(binding.selectVariant("1"));
+        const auto manager = binding.openQueuedManager("queued-occurrence");
+        QVERIFY(!manager.isEmpty());
+        QVERIFY(binding.property("queuedManagerSearchAvailable").toBool());
+        QTRY_VERIFY(binding.queuedManagerCanEdit());
+        QCOMPARE(network.requests, 0);
+        QVERIFY(binding.searchQueuedRecordings(manager, "Queued", "Artist", "Album", 82'000));
+        QCOMPARE(binding.plainText(), QStringLiteral("Playing lyric"));
+        binding.setTrack(next, "Next", {}, {}, 1000, "second");
+        QTRY_VERIFY(!binding.recordingSearchBusy() && binding.variantsReady());
+        QVERIFY(binding.selectVariant("2"));
+        QCOMPARE(binding.recordingCandidates().size(), 1);
+        const auto revision = binding.recordingSearchRevision();
+        QCOMPARE(binding.previewRecording(0, 1, revision), QStringLiteral("Queue words"));
+        QVERIFY(!binding.useRecording(0, 1, revision));
+        QVERIFY(!binding.saveRecording(0, 1, "Wrong target", revision));
+        QVERIFY(!binding.saveQueuedRecording("wrong manager", 0, 1, "Queue original", revision));
+        QCOMPARE(store->save_calls.load(), 0);
+        store->save_status = LyricsVariantsSaveStatus::Failed;
+        QVERIFY(binding.saveQueuedRecording(manager, 0, 1, "Queue original", revision));
+        QTRY_VERIFY(binding.variantsCanRetrySave());
+        QCOMPARE(binding.pendingRecordingSaveRevision(), revision);
+        QVERIFY(!binding.retryRecordingSave("wrong revision"));
+        QCOMPARE(binding.queuedManagerVariants().size(), 0);
+        QCOMPARE(binding.plainText(), QStringLiteral("Next lyric"));
+        store->save_status = LyricsVariantsSaveStatus::Saved;
+        QVERIFY(binding.retryRecordingSave(revision));
+        QTRY_COMPARE(binding.queuedManagerVariants().size(), 1);
+        const auto saved = store->read(nativePath(queued));
+        QCOMPARE(saved.front().content, std::string{"Queue words"});
+        QCOMPARE(saved.front().source, std::string{"LRCLIB"});
+        QCOMPARE(binding.selectedVariantId(), QStringLiteral("2"));
+        QCOMPARE(binding.plainText(), QStringLiteral("Next lyric"));
+        QCOMPARE(network.requests, 1);
+
+        target = temp.filePath("relocated.mp3");
+        binding.refreshQueuedLyricsTarget();
+        QVERIFY(!binding.property("queuedManagerSearchAvailable").toBool());
+        QVERIFY(binding.recordingCandidates().isEmpty());
+        QVERIFY(binding.previewRecording(0, 1, revision).isEmpty());
+        QVERIFY(!binding.saveQueuedRecording(manager, 0, 1, "Queue original", revision));
+        QVERIFY(store->read(nativePath(target)).empty());
+    }
+    void removingTheQueuedTargetAbortsPendingSearchAndRevokesItsToken() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        auto target = temp.filePath("queued.mp3");
+        const auto original = target;
+        auto store = std::make_shared<MemoryVariantsStore>();
+        OnlineNetwork network;
+        QtLyricsService service(&network);
+        LyricsBinding binding(service, store);
+        binding.setQueueLyricsSource([&](const QString&) { return target; });
+        const auto manager = binding.openQueuedManager("queued-occurrence");
+        QVERIFY(!manager.isEmpty());
+        QVERIFY(binding.searchQueuedRecordings(manager, "Song", {}, {}, 0));
+        QCOMPARE(network.requests, 1);
+        QVERIFY(binding.recordingSearchBusy());
+        const auto revision = binding.recordingSearchRevision();
+        target.clear();
+        binding.refreshQueuedLyricsTarget();
+        QVERIFY(!binding.queuedManagerSearchAvailable());
+        QVERIFY(!binding.recordingSearchBusy());
+        QVERIFY(binding.recordingSearchRevision() != revision);
+        QCoreApplication::processEvents();
+        QVERIFY(binding.recordingCandidates().isEmpty());
+        QVERIFY(binding.recordingSearchStatus().isEmpty());
+        QVERIFY(binding.previewRecording(0, 0, revision).isEmpty());
+        target = original;
+        binding.refreshQueuedLyricsTarget();
+        QVERIFY(!binding.queuedManagerSearchAvailable());
+        QVERIFY(!binding.searchQueuedRecordings(manager, "Song", {}, {}, 0));
+        QCOMPARE(network.requests, 1);
+        QCOMPARE(store->save_calls.load(), 0);
+    }
+    void managedRecordingAddsToThePlayingCatalogueWithoutSelectingTheNewLyric() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto path = temp.filePath("playing.mp3");
+        auto store = std::make_shared<MemoryVariantsStore>();
+        store->disk[nativePath(path)] = {{12, "Playing", {}, {}, "Manual", "Playing lyric"}};
+        OnlineNetwork network;
+        network.body = R"([
+          {"id":15,"trackName":"Played","artistName":"Artist","albumName":"Album","duration":82,
+           "instrumental":false,"plainLyrics":"Alternative","syncedLyrics":null}
+        ])";
+        QtLyricsService service(&network);
+        LyricsBinding binding(service, store);
+        binding.setTrack(path, "Played", "Artist", {}, 82'000, "first");
+        QTRY_VERIFY(binding.variantsCanEdit());
+        QVERIFY(binding.selectVariant("12"));
+        QVERIFY(binding.searchRecordings("Played", "Artist", {}, 82'000));
+        QTRY_COMPARE(binding.recordingCandidates().size(), 1);
+        const auto revision = binding.recordingSearchRevision();
+        QCOMPARE(binding.previewRecording(0, 0, revision), QStringLiteral("Alternative"));
+        QCOMPARE(store->save_calls.load(), 0);
+        QVERIFY(binding.saveManagedRecording(0, 0, "Alternative", revision));
+        QTRY_COMPARE(binding.variants().size(), 2);
+        QCOMPARE(store->read(nativePath(path)).back().content, std::string{"Alternative"});
+        QCOMPARE(binding.selectedVariantId(), QStringLiteral("12"));
+        QCOMPARE(binding.plainText(), QStringLiteral("Playing lyric"));
+        QVERIFY(binding.pendingRecordingSaveRevision().isEmpty());
+        QVERIFY(!binding.retryRecordingSave(revision));
+    }
     void importsAnLrcAsAnUncommittedDraftAndRejectsDifferentTrackOrNonLocalUrl() {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());

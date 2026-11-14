@@ -39,13 +39,18 @@ FocusScope {
     readonly property bool queueFocusRestoreAllowed: visible && enabled && locationFocusRestoreAllowed && !presenter.exiting && !presenter.selectingAudioFiles && !addingFilesPending && presenter.locatingOccurrenceId.length === 0 && !clearConfirmation.visible
     signal closeRequested
     signal playRequested(string occurrenceId)
-    signal addLyricVariantRequested(string occurrenceId, string title)
+    signal addLyricVariantRequested(string occurrenceId, string title, string artist, string album, double durationMs)
 
     QueueText {
         id: queueText
     }
     component QueueOccurrenceDelegate: ItemDelegate {
         required property string occurrenceId
+        required property string fileName
+        required property string title
+        required property string artist
+        required property string album
+        required property var durationMs
     }
 
     function formatDuration(milliseconds) {
@@ -418,10 +423,6 @@ FocusScope {
                 id: row
                 required property int index
                 required property int orderIndex
-                required property string fileName
-                required property string title
-                required property string artist
-                required property var durationMs
                 required property bool available
                 required property var errorCode
                 readonly property bool retrying: occurrenceId === root.presenter.retryingOccurrenceId
@@ -565,9 +566,15 @@ FocusScope {
                 if (!queuedVariantMenuItem.enabled)
                     return;
                 const occurrenceId = root.menuOccurrenceId;
-                const title = root.selectedTitle;
+                const row = queueList.currentItem as QueueOccurrenceDelegate;
+                if (!row || row.occurrenceId !== occurrenceId)
+                    return;
+                const title = row.title.length > 0 ? row.title : row.fileName;
+                const artist = row.artist;
+                const album = row.album;
+                const durationMs = row.durationMs ?? 0;
                 rowMenu.close();
-                root.addLyricVariantRequested(occurrenceId, title);
+                root.addLyricVariantRequested(occurrenceId, title, artist, album, durationMs);
             }
         }
         MenuItem {

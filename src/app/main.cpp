@@ -786,6 +786,19 @@ int main(int argc, char* argv[]) {
             [guarded_presenter = QPointer<PlayerPresenter>{&presenter}](const QString& occurrence_id) {
                 return guarded_presenter ? guarded_presenter->queuedLyricsSource(occurrence_id) : QString{};
             });
+        auto* const lyrics_queue = presenter.queueModelObject();
+        auto refresh_lyrics_target = [&lyrics_binding] { lyrics_binding.refreshQueuedLyricsTarget(); };
+        // The presenter has already mutated the queue when it publishes the
+        // model change. Revoke a stale target before it can be restored.
+        QObject::connect(lyrics_queue, &QAbstractItemModel::rowsRemoved, &lyrics_binding, refresh_lyrics_target);
+        QObject::connect(lyrics_queue, &QAbstractItemModel::modelReset, &lyrics_binding, refresh_lyrics_target);
+        QObject::connect(lyrics_queue, &QAbstractItemModel::dataChanged, &lyrics_binding,
+                         [refresh_lyrics_target](const QModelIndex&, const QModelIndex&, const QList<int>& roles) {
+                             using Queue = music_player::m0::LocalQueueListModel;
+                             if (roles.empty() || roles.contains(Queue::AvailableRole) ||
+                                 roles.contains(Queue::FileNameRole))
+                                 refresh_lyrics_target();
+                         });
         const auto update_lyrics = [&] {
             if (presenter.exiting()) {
                 static_cast<void>(lyrics_binding.prepareExit());

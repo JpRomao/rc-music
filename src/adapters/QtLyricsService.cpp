@@ -376,8 +376,9 @@ struct QtLyricsService::Impl final {
     LyricsQuery search_metadata;
     SearchCompletion recording_completion;
     qint64 duration_ms{};
-    quint64 generation{};
+    quint64 generation{}, request_revision{};
     bool stopping{}, local_running{}, cooldown_forever{}, lookup_only{}, fallback_started{};
+    bool recording_independent{};
     std::optional<PendingLocal> pending_local;
     Status status{Status::Idle};
     Source source{Source::None};
@@ -438,10 +439,15 @@ struct QtLyricsService::Impl final {
             previous->deleteLater();
         }
     }
-    void revoke() {
+    void revokeRequest() {
+        ++request_revision;
+        recording_completion = {};
+        recording_independent = false;
+        cancelReply();
+    }
+    void revoke(const bool playback_changed = false) {
         ++generation;
         pending_local.reset();
-        recording_completion = {};
         online_documents.clear();
         if (displayed_provider == Provider::LyricFind) {
             document = {};
@@ -449,7 +455,8 @@ struct QtLyricsService::Impl final {
             displayed_provider = Provider::LRCLIB;
             attribution.clear();
         }
-        cancelReply();
+        if (!playback_changed || !recording_independent)
+            revokeRequest();
     }
     void startLocal(PendingLocal pending) {
         if (local_running) {
@@ -465,12 +472,13 @@ struct QtLyricsService::Impl final {
             }
         }));
     }
-    bool matches(const quint64 expected_generation, const QNetworkReply* expected_reply) const {
-        return !stopping && generation == expected_generation && reply == expected_reply &&
+    bool matches(const quint64 expected_revision, const QNetworkReply* expected_reply) const {
+        return !stopping && request_revision == expected_revision && reply == expected_reply &&
                (recording_completion || status == Status::Searching);
     }
     void completeSearch(LyricsSearchResult result) {
         auto completion = std::exchange(recording_completion, {});
+        recording_independent = false;
         cancelReply();
         QPointer<QtLyricsService> alive(&owner);
         completion(std::move(result));
@@ -534,8 +542,8 @@ struct QtLyricsService::Impl final {
         response.append(chunk);
         return true;
     }
-    bool startRequest(const Provider provider, const quint64 expected_generation) {
-        if (!network || !matches(expected_generation, nullptr))
+    bool startRequest(const Provider provider, const quint64 expected_revision) {
+        if (!network || !matches(expected_revision, nullptr))
             return false;
         active_provider = provider;
         const bool lyricfind_request = provider == Provider::LyricFind;
@@ -560,7 +568,7 @@ struct QtLyricsService::Impl final {
         } else {
             next = network->get(request);
         }
-        if (!matches(expected_generation, nullptr)) {
+        if (!matches(expected_revision, nullptr)) {
             if (next) {
                 next->abort();
                 next->deleteLater();
@@ -573,24 +581,24 @@ struct QtLyricsService::Impl final {
         }
         reply = next;
         next->setReadBufferSize(maximum_response_bytes + 1);
-        QObject::connect(next, &QNetworkReply::readyRead, &owner, [this, expected_generation, next] {
-            if (matches(expected_generation, next))
+        QObject::connect(next, &QNetworkReply::readyRead, &owner, [this, expected_revision, next] {
+            if (matches(expected_revision, next))
                 static_cast<void>(consume());
         });
         QObject::connect(next, &QNetworkReply::finished, &owner,
-                         [this, expected_generation, next] { finish(expected_generation, next); });
+                         [this, expected_revision, next] { finish(expected_revision, next); });
         timeout.start();
         if (next->isFinished())
-            finish(expected_generation, next);
+            finish(expected_revision, next);
         return true;
     }
-    void applyResult(OnlineResult result, const quint64 expected_generation) {
+    void applyResult(OnlineResult result, const quint64 expected_revision) {
         const auto provider = active_provider;
         cancelReply();
         if (result.status == Status::NotFound && !fallback_started && !lyricfind.display_key.isEmpty() && network) {
             fallback_started = true;
-            static_cast<void>(startRequest(provider == Provider::LRCLIB ? Provider::LyricFind : Provider::LRCLIB,
-                                           expected_generation));
+            static_cast<void>(
+                startRequest(provider == Provider::LRCLIB ? Provider::LyricFind : Provider::LRCLIB, expected_revision));
             return;
         }
         status = result.status;
@@ -633,14 +641,14 @@ struct QtLyricsService::Impl final {
         completeSearch(json.isArray() ? parseRecordings(json.array(), search_metadata)
                                       : LyricsSearchResult{SearchError::InvalidResponse, {}});
     }
-    void finish(const quint64 expected_generation, QNetworkReply* expected_reply) {
-        if (!matches(expected_generation, expected_reply) || handleRateLimit(expected_reply) || !consume())
+    void finish(const quint64 expected_revision, QNetworkReply* expected_reply) {
+        if (!matches(expected_revision, expected_reply) || handleRateLimit(expected_reply) || !consume())
             return;
         const auto http_status = expected_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (recording_completion)
             return finishRecordings(http_status, *expected_reply);
         if (http_status == 404) {
-            applyResult({Status::NotFound}, expected_generation);
+            applyResult({Status::NotFound}, expected_revision);
             return;
         }
         if (http_status != 200 || expected_reply->error() != QNetworkReply::NoError) {
@@ -661,7 +669,7 @@ struct QtLyricsService::Impl final {
         auto result = active_provider == Provider::LyricFind
                           ? parseLyricFind(json.object(), !lyricfind.lrc_key.isEmpty())
                           : parseLrclib(json.object());
-        applyResult(std::move(result), expected_generation);
+        applyResult(std::move(result), expected_revision);
     }
 };
 
@@ -744,21 +752,19 @@ void QtLyricsService::setTrack(QString path, QString title, QString artist, QStr
     if (same_path) {
         const bool revoke_online = occurrence_changed && (value.status == Status::Searching ||
                                                           value.displayed_provider == Provider::LyricFind);
-        const bool revoke_search = occurrence_changed && bool(value.recording_completion);
+        const bool revoke_search = occurrence_changed && value.recording_completion && !value.recording_independent;
         if (revoke_online) {
-            value.revoke();
+            value.revoke(true);
             value.status = content(value.document) ? Status::Ready : Status::NotFound;
             value.message.clear();
         }
-        if (revoke_search && !revoke_online) {
-            value.recording_completion = {};
-            value.cancelReply();
-        }
+        if (revoke_search && !revoke_online)
+            value.revokeRequest();
         if (changed_metadata || revoke_online || revoke_search)
             emit this->changed();
         return;
     }
-    value.revoke();
+    value.revoke(true);
     value.path = std::move(path);
     value.document = {};
     value.source = Source::None;
@@ -801,21 +807,22 @@ bool QtLyricsService::searchOnline(QString title_override, QString artist_overri
         return false;
     }
     value.revoke();
-    const auto generation = value.generation;
+    const auto request_revision = value.request_revision;
     const auto album = validMetadata(value.album) ? value.album.trimmed() : QString{};
     value.search_metadata = {owned(title), owned(artist), owned(album), value.duration_ms};
     value.fallback_started = false;
     value.status = Status::Searching;
     value.message.clear();
     emit changed();
-    if (!value.matches(generation, nullptr))
+    if (!value.matches(request_revision, nullptr))
         return false;
     value.cooldown.start(500);
     const auto preferred =
         lyricFindConfigured() && value.lyricfind.preferred ? OnlineProvider::LyricFind : OnlineProvider::LRCLIB;
-    return value.startRequest(preferred, generation);
+    return value.startRequest(preferred, request_revision);
 }
-bool QtLyricsService::search(const LyricsQuery& query, SearchCompletion completion) {
+bool QtLyricsService::search(const LyricsQuery& query, SearchCompletion completion,
+                             const bool independent_of_playback) {
     if (!completion)
         return false;
     auto& value = *impl_;
@@ -823,8 +830,8 @@ bool QtLyricsService::search(const LyricsQuery& query, SearchCompletion completi
         completion({error, {}});
         return false;
     };
-    if (value.stopping || value.path.isEmpty() || !value.network || !validClient(value.client) ||
-        value.status == Status::Searching || value.recording_completion)
+    if (value.stopping || (!independent_of_playback && value.path.isEmpty()) || !value.network ||
+        !validClient(value.client) || value.status == Status::Searching || value.recording_completion)
         return fail(SearchError::Unavailable);
     if (value.cooldown.isActive() || value.cooldown_forever)
         return fail(SearchError::RateLimited);
@@ -837,19 +844,20 @@ bool QtLyricsService::search(const LyricsQuery& query, SearchCompletion completi
     value.search_metadata = {owned(title), owned(artist), owned(album),
                              std::clamp<qint64>(query.duration_ms, 0, lyrics_max_timestamp_ms)};
     value.recording_completion = std::move(completion);
+    value.recording_independent = independent_of_playback;
     value.cooldown.start(500);
-    const auto generation = value.generation;
+    const auto request_revision = ++value.request_revision;
+    const QPointer<QtLyricsService> alive(this);
     emit changed();
-    if (!value.matches(generation, nullptr))
+    if (!alive || !value.matches(request_revision, nullptr))
         return false;
-    return value.startRequest(Provider::LRCLIB, generation);
+    return value.startRequest(Provider::LRCLIB, request_revision);
 }
 void QtLyricsService::cancelSearch() {
     auto& value = *impl_;
     if (!value.recording_completion)
         return;
-    value.recording_completion = {};
-    value.cancelReply();
+    value.revokeRequest();
     emit changed();
 }
 void QtLyricsService::cancel() {

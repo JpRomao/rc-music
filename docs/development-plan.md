@@ -477,9 +477,9 @@ O recorte de seleção principal assíncrona de M2.1/M3.1 substitui o seletor es
 | M3.8 | Revisão UX, desempenho de 1.000 itens e convergência visual | UX-001–010, NFR-PERF-004, NFR-PERF-006 | `CHK-UI`, `CHK-A11Y`, `CHK-PERF`, `CHK-TRACE`, `CHK-CLOSE` | jornadas 1–4, 8–9 e decisão visual registradas |
 | M3.9 | Letras acima do progresso: LRC local/LRCLIB explícito, versões locais original/romanizada com inclusão posterior, pausa/seek, fallback de texto e volume percentual | FR-054, FR-011 | `CHK-TDD`, `CHK-FAST`, `CHK-UI`, `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | recorte automatizado implementado; Saved/restart/erros/identidade/tempos; aceitação nativa/pacote pendente |
 
-Em M3.9, **Buscar letra** no player oferece gravações do LRCLIB e, após a escolha da gravação, prévia de cada formato disponível. Usar na sessão ou salvar são ações explícitas. A busca conserva a letra em uso e a troca de ocorrência revoga a prévia. [Letras e versões](lyrics-variants.md#resultados-da-busca-no-player)
+Em M3.9, **Buscar letra** no player oferece gravações do LRCLIB e, após a escolha da gravação, prévia de cada formato disponível. **Versões** e **Fila → Gerenciar letras** também permitem buscar e guardar no catálogo. [Letras e versões](lyrics-variants.md#buscar-e-escolher-uma-gravação)
 
-A troca de ocorrência revoga uma consulta de letra pendente, inclusive entre duas ocorrências da mesma música. O arquivo `.lrc` e o catálogo continuam associados ao caminho do áudio. [Regressão e checks](lyrics-variants.md#resultados-da-busca-no-player)
+A troca de ocorrência revoga a consulta da música em reprodução, inclusive entre duas ocorrências do mesmo arquivo. A consulta da fila acompanha a ocorrência escolhida e é revogada se ela sair da fila ou apontar para outro arquivo. O arquivo `.lrc` e o catálogo continuam associados ao caminho do áudio. [Letras e versões](lyrics-variants.md#buscar-e-escolher-uma-gravação)
 
 Em UX-005, o painel Playlists anuncia mudanças de resultado do ingresso na fila e do salvamento, preservando o foco. [Fluxo e validação Qt Quick](playlists.md#adicionar-músicas-à-fila)
 

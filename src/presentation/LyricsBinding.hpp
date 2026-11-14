@@ -33,6 +33,7 @@ struct AcquiredLyricsSaveSnapshot final {
 class QtLyricsService;
 class LyricsVariantsStore;
 struct LyricsDocument;
+struct LyricsQuery;
 struct LyricsSearchCandidate;
 // Application-thread projection. Playback remains authoritative for position;
 // lyrics do not load/play audio or change the queue and expose no file paths.
@@ -56,6 +57,7 @@ class LyricsBinding final : public QObject {
     Q_PROPERTY(QString recordingSearchStatus READ recordingSearchStatus NOTIFY recordingSearchChanged)
     Q_PROPERTY(QString recordingSearchRevision READ recordingSearchRevision NOTIFY recordingSearchChanged)
     Q_PROPERTY(QVariantList recordingCandidates READ recordingCandidates NOTIFY recordingSearchChanged)
+    Q_PROPERTY(QString pendingRecordingSaveRevision READ pendingRecordingSaveRevision NOTIFY changed)
     Q_PROPERTY(bool canSaveRecording READ canSaveRecording NOTIFY changed)
     Q_PROPERTY(QVariantList variants READ variants NOTIFY changed)
     Q_PROPERTY(QString selectedVariantId READ selectedVariantId NOTIFY changed)
@@ -70,6 +72,7 @@ class LyricsBinding final : public QObject {
     Q_PROPERTY(QVariantList queuedManagerVariants READ queuedManagerVariants NOTIFY changed)
     Q_PROPERTY(bool queuedManagerBusy READ queuedManagerBusy NOTIFY changed)
     Q_PROPERTY(bool queuedManagerCanEdit READ queuedManagerCanEdit NOTIFY changed)
+    Q_PROPERTY(bool queuedManagerSearchAvailable READ queuedManagerSearchAvailable NOTIFY changed)
     Q_PROPERTY(QString queuedManagerStatus READ queuedManagerStatus NOTIFY changed)
     Q_PROPERTY(bool canSaveCurrentLyrics READ canSaveCurrentLyrics NOTIFY changed)
     Q_PROPERTY(QVariantList onlineLyricsCandidates READ onlineLyricsCandidates NOTIFY onlineLyricsCandidatesChanged)
@@ -91,6 +94,7 @@ class LyricsBinding final : public QObject {
     void setPosition(qint64 confirmed_position_ms);
     // Resolves queue occurrence IDs in trusted C++. QML receives only a form token.
     void setQueueLyricsSource(std::function<QString(const QString&)> source);
+    void refreshQueuedLyricsTarget();
     using JapaneseRomanizer = std::function<std::optional<std::vector<std::string>>(const std::vector<std::string>&)>;
     void setJapaneseRomanizer(JapaneseRomanizer romanizer);
     // Trusted publication/consent owner only, never a QML/browser path. Uses
@@ -120,6 +124,7 @@ class LyricsBinding final : public QObject {
     [[nodiscard]] QString recordingSearchStatus() const;
     [[nodiscard]] QString recordingSearchRevision() const;
     [[nodiscard]] QVariantList recordingCandidates() const;
+    [[nodiscard]] QString pendingRecordingSaveRevision() const;
     [[nodiscard]] bool canSaveRecording() const;
     [[nodiscard]] QVariantList variants() const;
     [[nodiscard]] QString selectedVariantId() const;
@@ -134,6 +139,7 @@ class LyricsBinding final : public QObject {
     [[nodiscard]] QVariantList queuedManagerVariants() const;
     [[nodiscard]] bool queuedManagerBusy() const;
     [[nodiscard]] bool queuedManagerCanEdit() const;
+    [[nodiscard]] bool queuedManagerSearchAvailable() const;
     [[nodiscard]] QString queuedManagerStatus() const;
     [[nodiscard]] bool canSaveCurrentLyrics() const;
     [[nodiscard]] QVariantList onlineLyricsCandidates() const;
@@ -148,10 +154,16 @@ class LyricsBinding final : public QObject {
     Q_INVOKABLE bool search(const QString& title, const QString& artist);
     Q_INVOKABLE bool searchRecordings(const QString& title, const QString& artist, const QString& album,
                                       qint64 duration_ms);
+    Q_INVOKABLE bool searchQueuedRecordings(const QString& manager_token, const QString& title, const QString& artist,
+                                            const QString& album, qint64 duration_ms);
     Q_INVOKABLE void cancelRecordingSearch();
     Q_INVOKABLE QString previewRecording(int index, int format, const QString& revision) const;
     Q_INVOKABLE bool useRecording(int index, int format, const QString& revision);
     Q_INVOKABLE bool saveRecording(int index, int format, const QString& name, const QString& revision);
+    Q_INVOKABLE bool saveManagedRecording(int index, int format, const QString& name, const QString& revision);
+    Q_INVOKABLE bool saveQueuedRecording(const QString& manager_token, int index, int format, const QString& name,
+                                         const QString& revision);
+    Q_INVOKABLE bool retryRecordingSave(const QString& revision);
     Q_INVOKABLE bool selectVariant(const QString& id);
     Q_INVOKABLE bool selectOnlineLyricsCandidate(int index);
     Q_INVOKABLE bool addVariant(const QString& name, const QString& language, const QString& script,
@@ -201,6 +213,10 @@ class LyricsBinding final : public QObject {
     [[nodiscard]] const LyricsDocument& displayedDocument() const;
     [[nodiscard]] const LyricsSearchCandidate* recordingCandidate(int index, const QString& revision) const;
     [[nodiscard]] const LyricsDocument* recordingFormat(int index, int format, const QString& revision) const;
+    [[nodiscard]] bool recordingTargetCurrent() const;
+    [[nodiscard]] bool startRecordingSearch(const QString& manager_token, LyricsQuery query);
+    [[nodiscard]] bool saveCurrentRecording(int index, int format, const QString& name, const QString& revision,
+                                            bool activate);
     void updateOnlineLyricsCandidates();
     void updateReaderDocument();
     void finishDirectSearch();

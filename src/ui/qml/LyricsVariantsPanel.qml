@@ -31,6 +31,9 @@ Dialog {
     property string queuedTitle: ""
     property string managerToken: ""
     property string managerTitle: ""
+    property string managerArtist: ""
+    property string managerAlbum: ""
+    property double managerDurationMs: 0
     property string managerSelection: ""
     readonly property bool managingQueue: managerToken.length > 0
     readonly property var storedVariants: supported ? (managingQueue ? lyrics.queuedManagerVariants : lyrics.variants) : []
@@ -42,6 +45,8 @@ Dialog {
     readonly property bool supported: lyrics !== null && typeof lyrics.variants !== "undefined"
     readonly property bool busy: supported && (managingQueue ? lyrics.queuedManagerBusy : lyrics.variantsBusy)
     readonly property bool canEdit: visible && enabled && supported && (managingQueue ? lyrics.queuedManagerCanEdit : lyrics.variantsCanEdit) && !busy
+    readonly property bool recordingSearchSupported: supported && (managingQueue ? typeof lyrics.searchQueuedRecordings === "function" : typeof lyrics.searchRecordings === "function")
+    readonly property bool recordingSearchAvailable: visible && enabled && recordingSearchSupported && lyrics.recordingSearchBusy !== true && (managingQueue ? lyrics.queuedManagerSearchAvailable === true : !lyrics.busy && lyrics.canSearch)
     readonly property bool canSelect: visible && enabled && supported && (managingQueue || lyrics.variantsReady) && !busy && !lyrics.variantsHasPendingChange
     readonly property bool canReload: visible && enabled && supported && !busy
     readonly property bool noTrackToReload: !managingQueue && trackIdentity.length === 0
@@ -89,6 +94,7 @@ Dialog {
     popupType: Popup.Item
     closePolicy: Popup.CloseOnEscape
     signal queuedFormClosed(bool submitted)
+    signal recordingSearchRequested(string token, string title, string artist, string album, double durationMs)
     onOpened: {
         variantList.restoreCursor(selectedId);
         if (canSelect)
@@ -245,7 +251,7 @@ Dialog {
         queuedTitle = title;
         startForm("queued");
     }
-    function openQueuedManager(occurrenceId, title) {
+    function openQueuedManager(occurrenceId, title, artist, album, durationMs) {
         if (!queuedFormAvailable || visible || childDialogOpen || typeof lyrics.openQueuedManager !== "function")
             return;
         const token = lyrics.openQueuedManager(occurrenceId);
@@ -253,8 +259,17 @@ Dialog {
             return;
         managerToken = token;
         managerTitle = title;
+        managerArtist = artist;
+        managerAlbum = album;
+        managerDurationMs = durationMs;
         managerSelection = "";
         open();
+    }
+    function focusRecordingSearch() {
+        if (opened && recordingSearchButton.enabled)
+            recordingSearchButton.forceActiveFocus(Qt.TabFocusReason);
+        else if (opened)
+            closeButton.forceActiveFocus(Qt.TabFocusReason);
     }
     function startForm(mode, draftText = "", draft = null) {
         formMode = mode;
@@ -532,6 +547,22 @@ Dialog {
         RowLayout {
             Layout.fillWidth: true
             AccessibleTransportButton {
+                id: recordingSearchButton
+                objectName: "lyrics-variant-search-lrclib"
+                contract: root.contract
+                text: qsTr("Buscar no LRCLIB")
+                visible: root.recordingSearchSupported
+                enabled: root.recordingSearchAvailable && !root.childDialogOpen
+                onClicked: {
+                    if (!enabled)
+                        return;
+                    if (root.managingQueue)
+                        root.recordingSearchRequested(root.managerToken, root.managerTitle, root.managerArtist, root.managerAlbum, root.managerDurationMs);
+                    else
+                        root.recordingSearchRequested("", root.lyrics.title, root.lyrics.artist, root.lyrics.album ?? "", root.lyrics.durationMs ?? 0);
+                }
+            }
+            AccessibleTransportButton {
                 id: addButton
                 objectName: "lyrics-variant-add"
                 contract: root.contract
@@ -544,6 +575,7 @@ Dialog {
                 objectName: "lyrics-variant-save-current"
                 contract: root.contract
                 text: qsTr("Salvar letra atual")
+                visible: !root.managingQueue
                 enabled: root.canSaveCurrent
                 onClicked: root.openForm("current")
             }
@@ -569,7 +601,7 @@ Dialog {
         }
         Text {
             Layout.fillWidth: true
-            visible: root.selectedId.length > 0
+            visible: !root.managingQueue && root.selectedId.length > 0
             text: qsTr("Selecione Arquivo / busca atual para salvar a letra carregada.")
             textFormat: Text.PlainText
             color: root.contract.textSecondaryColor

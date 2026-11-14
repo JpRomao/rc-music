@@ -14,6 +14,8 @@ TestCase {
         id: lyricsBackend
         property string title: "Test song"
         property string artist: "Artist"
+        property string album: "Test album"
+        property int durationMs: 123000
         property string statusText: "Letra atual"
         property string currentLine: "<b>Service verse</b>"
         property string previousLine: ""
@@ -44,12 +46,20 @@ TestCase {
         property string queuedVariantStatusText: ""
         property bool queuedManagerBusy: false
         property bool queuedManagerCanEdit: true
+        property bool queuedManagerSearchAvailable: true
         property string queuedManagerStatus: "Versões da faixa na fila"
         property var queuedManagerVariants: []
         property var openQueuedManager: null
         property var closeQueuedManager: null
         property var prepareQueuedVariantEdit: null
         property var removeQueuedVariant: null
+        property bool recordingSearchBusy: false
+        property string recordingSearchStatus: ""
+        property string recordingSearchRevision: "matches-7"
+        property var recordingCandidates: []
+        property bool canSaveRecording: true
+        property string pendingRecordingSaveRevision: ""
+        property bool failRecordingSave: false
         property var calls: []
         signal importedVariantLrc(string token, string name, string content)
         function record(action, args) {
@@ -63,6 +73,42 @@ TestCase {
         }
         function search(title, artist) {
             return record("search", [title, artist]);
+        }
+        function searchRecordings(title, artist, album, durationMs) {
+            recordingSearchBusy = true;
+            return record("searchRecordings", [title, artist, album, durationMs]);
+        }
+        function searchQueuedRecordings(token, title, artist, album, durationMs) {
+            recordingSearchBusy = true;
+            return record("searchQueuedRecordings", [token, title, artist, album, durationMs]);
+        }
+        function previewRecording(index, format, revision) {
+            return index === 0 && format === 1 && revision === recordingSearchRevision ? "<i>Text preview</i>" : "";
+        }
+        function saveManagedRecording(index, format, name, revision) {
+            variantsStatusText = "Versão da letra salva.";
+            return record("saveManagedRecording", [index, format, name, revision]);
+        }
+        function saveQueuedRecording(token, index, format, name, revision) {
+            variantsHasPendingChange = failRecordingSave;
+            variantsCanRetrySave = failRecordingSave;
+            pendingRecordingSaveRevision = failRecordingSave ? revision : "";
+            queuedManagerStatus = failRecordingSave ? "A gravação falhou." : "Versão da letra salva.";
+            return record("saveQueuedRecording", [token, index, format, name, revision]);
+        }
+        function retryRecordingSave(revision) {
+            if (revision !== pendingRecordingSaveRevision)
+                return false;
+            queuedManagerStatus = "Versão da letra salva.";
+            pendingRecordingSaveRevision = "";
+            variantsHasPendingChange = false;
+            variantsCanRetrySave = false;
+            return record("retryRecordingSave", [revision]);
+        }
+        function cancelRecordingSearch() {
+            recordingSearchBusy = false;
+            recordingCandidates = [];
+            record("cancelSearchRecordings", []);
         }
         function selectVariant(id) {
             selectedVariantId = id;
@@ -170,6 +216,13 @@ TestCase {
         backend.queueVariantAvailable = true;
         backend.queuedToken = "";
         backend.queuedVariantStatusText = "";
+        backend.queuedManagerCanEdit = true;
+        backend.queuedManagerSearchAvailable = true;
+        backend.queuedManagerStatus = "Versões da faixa na fila";
+        backend.recordingSearchBusy = false;
+        backend.recordingCandidates = [];
+        backend.pendingRecordingSaveRevision = "";
+        backend.failRecordingSave = false;
         backend.canSaveCurrentLyrics = true;
         backend.canGenerateRomaji = false;
         backend.romajiSourceRevision = "";
@@ -216,6 +269,107 @@ TestCase {
         shell = null;
         wait(0);
         driver.resetLocalScenario();
+    }
+    function openManagerSearch() {
+        const action = findChild(shell, "lyrics-variant-search-lrclib");
+        verify(action && action.visible && action.enabled, "Gerenciar letras oferece busca no LRCLIB");
+        mouseClick(action);
+        const dialog = findChild(shell, "lyrics-query-dialog");
+        tryCompare(dialog, "opened", true);
+        return dialog;
+    }
+    function showRecordingForManager() {
+        backend.recordingSearchBusy = false;
+        backend.recordingCandidates = [
+            {
+                id: "9",
+                title: "Match 1",
+                artist: "Result artist",
+                durationMs: 123000,
+                album: "Result album",
+                formats: [
+                    {
+                        label: "Sincronizada"
+                    },
+                    {
+                        label: "Texto simples"
+                    }
+                ]
+            }
+        ];
+        const recording = findChild(shell, "lyrics-recording-choice");
+        tryCompare(recording, "count", 2);
+        recording.activated(1);
+        const format = findChild(shell, "lyrics-recording-format");
+        tryCompare(format, "visible", true);
+        format.activated(2);
+        const preview = findChild(shell, "lyrics-recording-preview");
+        compare(preview.text, "<i>Text preview</i>");
+        compare(preview.textFormat, Text.PlainText);
+    }
+    function test_currentManagerOffersExplicitLrclibPreviewAndSaveOnly() {
+        const manager = openPanel();
+        const dialog = openManagerSearch();
+        compare(backend.calls.length, 0);
+        compare(findChild(shell, "lyrics-query-title").text, "Test song");
+        compare(findChild(shell, "lyrics-query-album").text, "Test album");
+        compare(findChild(shell, "lyrics-query-duration").text, "123");
+        mouseClick(findChild(shell, "lyrics-query-submit"));
+        compare(lastCall("searchRecordings").args, ["Test song", "Artist", "Test album", 123000]);
+        showRecordingForManager();
+        verify(!findChild(shell, "lyrics-recording-use").visible);
+        compare(backend.calls.length, 1);
+        mouseClick(findChild(shell, "lyrics-recording-save"));
+        compare(lastCall("saveManagedRecording").args, [0, 1, "Match 1", "matches-7"]);
+        compare(backend.currentLine, "<b>Service verse</b>");
+        keyClick(Qt.Key_Escape);
+        tryCompare(dialog, "opened", false);
+        tryCompare(manager, "opened", true);
+        tryCompare(findChild(shell, "lyrics-variant-search-lrclib"), "activeFocus", true);
+    }
+    function test_queueManagerSearchSurvivesPlaybackAdvanceAndRetryDoesNotQueryAgain() {
+        backend.openQueuedManager = occurrence => {
+            backend.record("openManager", [occurrence]);
+            return "queue-manager";
+        };
+        const menu = openQueueVariantMenu();
+        menu.action.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        const manager = findChild(shell, "lyrics-variants-panel");
+        tryCompare(manager, "visible", true);
+        const dialog = openManagerSearch();
+        compare(lastCall("openManager").args[0], menu.target);
+        compare(findChild(shell, "lyrics-query-title").text, menu.title);
+        mouseClick(findChild(shell, "lyrics-query-submit"));
+        compare(lastCall("searchQueuedRecordings").args.slice(0, 2), ["queue-manager", menu.title]);
+        const previous = presenter.currentOccurrenceId;
+        driver.publishLocalSourceUnavailable();
+        tryVerify(() => presenter.currentOccurrenceId !== previous && presenter.currentOccurrenceId !== menu.target);
+        driver.publishLocalReady();
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        tryCompare(dialog, "opened", true);
+        showRecordingForManager();
+        verify(!findChild(shell, "lyrics-recording-use").visible);
+        backend.failRecordingSave = true;
+        mouseClick(findChild(shell, "lyrics-recording-save"));
+        compare(lastCall("saveQueuedRecording").args, ["queue-manager", 0, 1, "Match 1", "matches-7"]);
+        const retry = findChild(shell, "lyrics-recording-retry-save");
+        tryCompare(retry, "visible", true);
+        verify(!findChild(shell, "lyrics-recording-choice").enabled);
+        mouseClick(retry);
+        compare(lastCall("retryRecordingSave").args, ["matches-7"]);
+        verify(!retry.visible);
+        verify(findChild(shell, "lyrics-recording-choice").enabled);
+        backend.variantsCanRetrySave = true;
+        backend.pendingRecordingSaveRevision = "unrelated-write";
+        verify(!retry.visible);
+        compare(backend.calls.filter(call => call.action === "searchQueuedRecordings").length, 1);
+        compare(backend.currentLine, "<b>Service verse</b>");
+        backend.queuedManagerSearchAvailable = false;
+        tryCompare(dialog, "opened", false);
+        tryCompare(manager, "opened", true);
+        verify(!findChild(shell, "lyrics-variant-search-lrclib").enabled);
     }
     function openPanel() {
         const opener = findChild(shell, "lyrics-versions");

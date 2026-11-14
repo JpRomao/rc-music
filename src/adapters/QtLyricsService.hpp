@@ -78,9 +78,10 @@ class QtLyricsService final : public QObject {
     void setLookupTrack(QString path, QString title, QString artist, QString album, qint64 duration_ms);
     [[nodiscard]] bool searchOnline(QString title_override = {}, QString artist_override = {});
     // Explicit LRCLIB recording search. A pending search leaves the displayed
-    // lyric intact. Cancelling or changing the track drops its completion.
+    // lyric intact. Independently targeted searches survive playback changes.
     using SearchCompletion = std::function<void(LyricsSearchResult)>;
-    [[nodiscard]] bool search(const LyricsQuery& query, SearchCompletion completion);
+    [[nodiscard]] bool search(const LyricsQuery& query, SearchCompletion completion,
+                              bool independent_of_playback = false);
     void cancelSearch();
     void cancel();
     // Irreversible exit preparation. Does not join file I/O on the UI thread.

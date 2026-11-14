@@ -109,6 +109,48 @@ void awaitLocal(Service& service) { QTRY_VERIFY_WITH_TIMEOUT(service.status() !=
 class QtLyricsServiceTests final : public QObject {
     Q_OBJECT
   private slots:
+    void independentRecordingSearchSurvivesLocalAndLicensedPlaybackChanges() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        QVERIFY(save(temp.filePath("second.lrc"), "[00:01.00]Second local lyric"));
+        Network network;
+        Service service(&network);
+        service.configureLyricFind({"test-display-key", {}, "BR", true});
+        setTrack(service, temp.filePath("first.mp3"));
+        awaitLocal(service);
+        QVERIFY(service.searchOnline());
+        QTRY_COMPARE(network.requests.size(), 1);
+        const auto& previous = network.requests.back();
+        QCOMPARE(previous.url().host(), "api.lyricfind.com");
+        network.replies.back()->finish(200, R"({"response":{"code":101},"track":{
+            "viewable":true,"lyrics":"Protected verse","copyright":"Publisher","writer":"Writer"}})");
+        QCOMPARE(service.onlineProvider(), Service::OnlineProvider::LyricFind);
+        // The next operation has a distinct transport fence from local reads.
+        QTRY_VERIFY(service.canSearch());
+        bool complete = false;
+        QVERIFY(service.search(
+            {"Target"},
+            [&](LyricsSearchResult result) {
+                complete = result.error == LyricsSearchError::None && result.candidates.size() == 1;
+            },
+            true));
+        QCOMPARE(network.requests.size(), 2);
+        const auto reply = network.replies.back();
+        service.setTrack(temp.filePath("first.mp3"), "First", "Artist", {}, 1000, "repeat");
+        QVERIFY(!reply->aborted);
+        QCOMPARE(service.onlineProvider(), Service::OnlineProvider::LRCLIB);
+        QVERIFY(service.document().plain_text.empty());
+        service.setTrack(temp.filePath("second.mp3"), "Second", "Artist", {}, 1000, "another");
+        awaitLocal(service);
+        QVERIFY(!reply->aborted);
+        QCOMPARE(service.document().lines.size(), 1U);
+        QCOMPARE(service.document().lines.front().text, "Second local lyric");
+        reply->finish(200, QJsonDocument(QJsonArray{recording(1, "Target", "Artist", {}, 80, {}, "Search result")})
+                               .toJson(QJsonDocument::Compact));
+        QVERIFY(complete);
+        QCOMPARE(service.document().lines.front().text, "Second local lyric");
+        QCOMPARE(network.requests.size(), 2);
+    }
     void recordingSearchRanksAndDeduplicatesWithoutReplacingLocalLyrics() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());

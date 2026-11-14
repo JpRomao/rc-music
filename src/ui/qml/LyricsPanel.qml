@@ -39,11 +39,11 @@ Item {
             Qt.openUrlExternally("https://www.lyricfind.com/");
     }
 
-    function openQueuedVariant(occurrenceId, title) {
+    function openQueuedVariant(occurrenceId, title, artist = "", album = "", durationMs = 0) {
         if (!queueVariantActionAvailable || queryOpen)
             return;
         if (typeof lyrics.openQueuedManager === "function")
-            variantsPanel.openQueuedManager(occurrenceId, title);
+            variantsPanel.openQueuedManager(occurrenceId, title, artist, album, durationMs);
         else
             variantsPanel.openQueuedForm(occurrenceId, title);
     }
@@ -51,7 +51,7 @@ Item {
     onTrackIdentityChanged: {
         if (!variantsPending)
             queuedSaveFeedback = false;
-        if (queryDialog)
+        if (queryDialog && !queryDialog.queuedTarget)
             queryDialog.close();
         if (variantsPanel && !variantsPanel.managingQueue)
             variantsPanel.close();
@@ -68,9 +68,9 @@ Item {
             reader.close();
     }
     onVisibleChanged: {
-        if (!visible && queryDialog)
+        if (!visible && queryDialog && !queryDialog.queuedTarget)
             queryDialog.close();
-        if (!visible && variantsPanel)
+        if (!visible && variantsPanel && !variantsPanel.managingQueue)
             variantsPanel.close();
         if (!visible && reader)
             reader.close();
@@ -151,14 +151,7 @@ Item {
                         return;
                     root.queuedSaveFeedback = false;
                     variantsPanel.close();
-                    queryDialog.track = root.trackIdentity;
-                    queryDialog.backend = root.lyrics;
-                    titleField.text = root.lyrics ? root.lyrics.title : "";
-                    artistField.text = root.lyrics ? root.lyrics.artist : "";
-                    albumField.text = root.lyrics.album ?? "";
-                    const seconds = Math.round((root.lyrics.durationMs ?? 0) / 1000);
-                    durationField.text = seconds > 0 ? String(seconds) : "";
-                    queryDialog.open();
+                    queryDialog.openForTarget(false, "", root.lyrics.title, root.lyrics.artist, root.lyrics.album ?? "", root.lyrics.durationMs ?? 0);
                 }
             }
         }
@@ -314,12 +307,15 @@ Item {
         trackIdentity: root.trackIdentity
         enabled: root.enabled
         queuedFeedbackText: root.queuedFeedbackText
+        onRecordingSearchRequested: (token, title, artist, album, durationMs) => queryDialog.openForTarget(true, token, title, artist, album, durationMs)
         onQueuedFormClosed: submitted => {
             if (submitted)
                 root.queuedSaveFeedback = true;
             root.queuedVariantFormClosed();
         }
         onClosed: {
+            if (queryDialog.managedTarget)
+                queryDialog.close();
             if (!root.variantsPending)
                 root.queuedSaveFeedback = false;
             if (root.visible && root.enabled && versionsButton.visible)
@@ -332,19 +328,32 @@ Item {
         objectName: "lyrics-query-dialog"
         property string track: ""
         property var backend: null
+        property bool managedTarget: false
+        property string managerToken: ""
+        property string targetTitle: ""
         property bool showingResults: false
         property int recordingIndex: -1
         property int formatIndex: -1
         property string choiceRevision: ""
+        property bool saveAttempted: false
         property bool saveRequested: false
-        readonly property bool current: visible && root.enabled && root.visible && backend !== null && backend === root.lyrics && track === root.trackIdentity
+        property string completedSaveStatus: ""
+        readonly property bool queuedTarget: managerToken.length > 0
+        readonly property bool targetAvailable: root.enabled && backend !== null && backend === root.lyrics && (!managedTarget || variantsPanel.opened) && (queuedTarget ? variantsPanel.managerToken === managerToken && backend.queuedManagerSearchAvailable === true : root.visible && track === root.trackIdentity)
+        readonly property bool current: visible && targetAvailable
         readonly property bool searching: current && backend.recordingSearchBusy === true
         readonly property var recordings: current ? (backend.recordingCandidates ?? []) : []
         readonly property var selected: current && choiceRevision === backend.recordingSearchRevision ? recordings[recordingIndex] ?? null : null
         readonly property bool canApply: selected !== null && (selected.instrumental === true || formatIndex >= 0) && !searching
-        readonly property bool configuredLookup: current && backend.lyricFindConfigured === true
+        readonly property bool configuredLookup: current && !managedTarget && backend.lyricFindConfigured === true
+        readonly property bool canSave: current && (queuedTarget ? backend.queuedManagerCanEdit === true : backend.canSaveRecording === true)
+        readonly property bool savePending: current && saveRequested && backend.pendingRecordingSaveRevision === choiceRevision
+        readonly property bool canRetrySave: savePending && backend.variantsCanRetrySave === true
+        readonly property string writerStatus: current ? (queuedTarget ? backend.queuedManagerStatus : backend.variantsStatusText ?? "") : ""
+        readonly property string saveStatus: !current || !saveAttempted ? "" : saveRequested ? (completedSaveStatus || writerStatus) : qsTr("Não foi possível salvar a versão. Confira o nome e tente novamente.")
+        readonly property string dialogHeading: managedTarget ? qsTr("Buscar no LRCLIB") : qsTr("Buscar letra online")
         readonly property int queryDuration: durationField.text.length ? Number(durationField.text) : 0
-        readonly property bool canSubmit: current && root.searchAvailable && titleField.text.trim().length > 0 && (durationField.text.length === 0 || durationField.acceptableInput && queryDuration <= 86400)
+        readonly property bool canSubmit: current && (queuedTarget || root.searchAvailable) && !searching && titleField.text.trim().length > 0 && (durationField.text.length === 0 || durationField.acceptableInput && queryDuration <= 86400)
 
         parent: Overlay.overlay
         anchors.centerIn: parent
@@ -355,14 +364,56 @@ Item {
         closePolicy: Popup.CloseOnEscape
         padding: root.contract.spacingUnit * 3
         onOpened: titleField.forceActiveFocus(Qt.TabFocusReason)
+        onTargetAvailableChanged: Qt.callLater(closeIfTargetUnavailable)
+        onSavePendingChanged: {
+            if (current && saveRequested && !savePending)
+                Qt.callLater(captureSaveStatus);
+        }
         onClosed: {
+            const returnToManager = managedTarget && variantsPanel.opened && backend === root.lyrics;
             if (backend && typeof backend.cancelRecordingSearch === "function")
                 backend.cancelRecordingSearch();
             backend = null;
+            managedTarget = false;
+            managerToken = "";
             showingResults = false;
             resetChoice();
-            if (root.visible && searchButton.enabled)
+            if (returnToManager)
+                variantsPanel.focusRecordingSearch();
+            else if (root.visible && searchButton.enabled)
                 searchButton.forceActiveFocus(Qt.TabFocusReason);
+        }
+
+        function openForTarget(managed, token, title, artist, album, durationMs) {
+            if (visible)
+                return;
+            track = root.trackIdentity;
+            managedTarget = managed;
+            managerToken = token;
+            targetTitle = title;
+            backend = root.lyrics;
+            titleField.text = title;
+            artistField.text = artist;
+            albumField.text = album;
+            const seconds = Math.round(durationMs / 1000);
+            durationField.text = seconds > 0 ? String(seconds) : "";
+            if (targetAvailable) {
+                open();
+            } else {
+                backend = null;
+                managedTarget = false;
+                managerToken = "";
+            }
+        }
+
+        function closeIfTargetUnavailable() {
+            if (visible && !targetAvailable)
+                close();
+        }
+
+        function captureSaveStatus() {
+            if (current && saveRequested && !savePending)
+                completedSaveStatus = writerStatus;
         }
 
         function resetChoice() {
@@ -370,6 +421,8 @@ Item {
             formatIndex = -1;
             choiceRevision = "";
             versionName.text = "";
+            completedSaveStatus = "";
+            saveAttempted = false;
             saveRequested = false;
         }
 
@@ -395,16 +448,26 @@ Item {
         contentItem: ColumnLayout {
             spacing: root.contract.spacingUnit * 2
             Accessible.role: Accessible.Dialog
-            Accessible.name: qsTr("Buscar letra online")
+            Accessible.name: queryDialog.dialogHeading
 
             Text {
                 Layout.fillWidth: true
-                text: qsTr("Buscar letra online")
+                text: queryDialog.dialogHeading
                 textFormat: Text.PlainText
                 color: root.contract.textPrimaryColor
                 font.bold: true
                 font.pixelSize: 20
                 Accessible.ignored: true
+            }
+            Text {
+                Layout.fillWidth: true
+                visible: queryDialog.managedTarget && queryDialog.targetTitle.length > 0
+                text: qsTr("Salvar letra em %1").arg(queryDialog.targetTitle)
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: root.contract.textPrimaryColor
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
             }
             Text {
                 objectName: "lyrics-query-notice"
@@ -489,10 +552,13 @@ Item {
                 id: recordingChoice
                 objectName: "lyrics-recording-choice"
                 visible: queryDialog.showingResults && queryDialog.recordings.length > 0
+                enabled: !queryDialog.savePending
                 model: [qsTr("Escolher gravação")].concat(queryDialog.recordings.map(recording => queryDialog.recordingLabel(recording)))
                 currentIndex: queryDialog.recordingIndex + 1
                 Accessible.name: qsTr("Gravações do LRCLIB")
                 onActivated: index => {
+                    if (!enabled)
+                        return;
                     queryDialog.resetChoice();
                     if (index <= 0)
                         return;
@@ -508,10 +574,18 @@ Item {
             RecordingChoice {
                 objectName: "lyrics-recording-format"
                 visible: queryDialog.showingResults && model.length > 2
+                enabled: !queryDialog.savePending
                 model: [qsTr("Escolher formato")].concat(queryDialog.selected?.formats.map(format => format.label) ?? [])
                 currentIndex: queryDialog.formatIndex + 1
                 Accessible.name: qsTr("Formato da letra")
-                onActivated: index => queryDialog.formatIndex = index - 1
+                onActivated: index => {
+                    if (!enabled || queryDialog.formatIndex === index - 1)
+                        return;
+                    queryDialog.formatIndex = index - 1;
+                    queryDialog.completedSaveStatus = "";
+                    queryDialog.saveAttempted = false;
+                    queryDialog.saveRequested = false;
+                }
             }
             ScrollView {
                 id: previewScroll
@@ -537,15 +611,16 @@ Item {
             }
             QueryField {
                 id: versionName
-                visible: queryDialog.showingResults && queryDialog.canApply && queryDialog.formatIndex >= 0 && queryDialog.backend.canSaveRecording === true
+                visible: queryDialog.showingResults && queryDialog.canApply && queryDialog.formatIndex >= 0 && (queryDialog.canSave || queryDialog.saveRequested)
+                readOnly: queryDialog.saveRequested
                 Accessible.name: qsTr("Nome da versão")
                 placeholderText: Accessible.name
                 maximumLength: 128
             }
             Text {
                 Layout.fillWidth: true
-                visible: queryDialog.showingResults && queryDialog.saveRequested && text.length > 0
-                text: queryDialog.current ? (queryDialog.backend.variantsStatusText ?? "") : ""
+                visible: queryDialog.showingResults && text.length > 0
+                text: queryDialog.saveStatus
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.contract.textSecondaryColor
@@ -566,9 +641,11 @@ Item {
                 AccessibleTransportButton {
                     contract: root.contract
                     visible: queryDialog.showingResults
-                    enabled: queryDialog.current
+                    enabled: queryDialog.current && !queryDialog.savePending
                     text: qsTr("Editar busca")
                     onClicked: {
+                        if (!enabled)
+                            return;
                         queryDialog.backend.cancelRecordingSearch();
                         queryDialog.resetChoice();
                         queryDialog.showingResults = false;
@@ -597,25 +674,55 @@ Item {
                             return;
                         queryDialog.resetChoice();
                         queryDialog.showingResults = true;
-                        queryDialog.backend.searchRecordings(titleField.text.trim(), artistField.text.trim(), albumField.text.trim(), queryDialog.queryDuration * 1000);
+                        const title = titleField.text.trim();
+                        const artist = artistField.text.trim();
+                        const album = albumField.text.trim();
+                        const durationMs = queryDialog.queryDuration * 1000;
+                        if (queryDialog.queuedTarget)
+                            queryDialog.backend.searchQueuedRecordings(queryDialog.managerToken, title, artist, album, durationMs);
+                        else
+                            queryDialog.backend.searchRecordings(title, artist, album, durationMs);
                         cancelButton.forceActiveFocus(Qt.TabFocusReason);
                     }
                 }
                 AccessibleTransportButton {
+                    objectName: "lyrics-recording-save"
                     contract: root.contract
                     text: qsTr("Salvar versão")
                     visible: versionName.visible
-                    enabled: visible && versionName.text.trim().length > 0 && !queryDialog.saveRequested
+                    enabled: visible && queryDialog.canSave && versionName.text.trim().length > 0 && !queryDialog.saveRequested
+                    onClicked: {
+                        if (!enabled)
+                            return;
+                        const index = queryDialog.recordingIndex;
+                        const format = queryDialog.formatIndex;
+                        const name = versionName.text.trim();
+                        const revision = queryDialog.choiceRevision;
+                        queryDialog.saveAttempted = true;
+                        if (queryDialog.queuedTarget)
+                            queryDialog.saveRequested = queryDialog.backend.saveQueuedRecording(queryDialog.managerToken, index, format, name, revision);
+                        else if (queryDialog.managedTarget)
+                            queryDialog.saveRequested = queryDialog.backend.saveManagedRecording(index, format, name, revision);
+                        else
+                            queryDialog.saveRequested = queryDialog.backend.saveRecording(index, format, name, revision);
+                    }
+                }
+                AccessibleTransportButton {
+                    objectName: "lyrics-recording-retry-save"
+                    contract: root.contract
+                    text: qsTr("Tentar salvar novamente")
+                    visible: queryDialog.canRetrySave
+                    enabled: visible
                     onClicked: {
                         if (enabled)
-                            queryDialog.saveRequested = queryDialog.backend.saveRecording(queryDialog.recordingIndex, queryDialog.formatIndex, versionName.text.trim(), queryDialog.choiceRevision);
+                            queryDialog.backend.retryRecordingSave(queryDialog.choiceRevision);
                     }
                 }
                 AccessibleActionButton {
                     controlId: "lyrics-recording-use"
                     contract: root.contract
                     text: queryDialog.selected?.instrumental ? qsTr("Marcar como instrumental") : qsTr("Usar nesta sessão")
-                    visible: queryDialog.showingResults && queryDialog.recordings.length > 0
+                    visible: !queryDialog.managedTarget && queryDialog.showingResults && queryDialog.recordings.length > 0
                     enabled: visible && queryDialog.canApply && queryDialog.backend.variantsBusy !== true && queryDialog.backend.variantsHasPendingChange !== true
                     onClicked: {
                         if (enabled && queryDialog.backend.useRecording(queryDialog.recordingIndex, queryDialog.formatIndex, queryDialog.choiceRevision))

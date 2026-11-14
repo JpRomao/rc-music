@@ -6,9 +6,9 @@ O mantenedor confirmou que os downloads funcionam. A próxima entrega é ler, en
 
 ## Progresso
 
-- A busca por gravações foi priorizada. O player oferece consulta, prévia, escolha do formato e uso ou salvamento explícito. A revisão de um MP3 já publicado oferece **Ver outras correspondências**.
+- A busca por gravações foi priorizada. O player oferece consulta, prévia, escolha do formato e uso ou salvamento explícito. **Versões** e **Fila → Gerenciar letras** permitem buscar e salvar diretamente no catálogo da faixa escolhida. A revisão de um MP3 já publicado oferece **Ver outras correspondências**.
 - O leitor expandido acompanha a reprodução, aceita navegação por verso e guarda o tamanho do texto. O catálogo permite importar `.lrc` no player e adicionar, editar ou excluir versões no player e na fila.
-- A pesquisa online para uma faixa da fila que não está tocando, a duração real e o álbum na pesquisa inicial de um MP3 publicado, o gerenciamento de `.lrc` irmão, limites compartilhados entre consumidores, a comparação entre formas e o aceite instalado permanecem nas próximas etapas.
+- A duração real e o álbum na pesquisa inicial de um MP3 publicado, o gerenciamento de `.lrc` irmão, limites compartilhados com a revisão de downloads, a comparação entre formas e o aceite instalado permanecem nas próximas etapas.
 
 ## Diagnóstico inicial
 
