@@ -56,12 +56,13 @@ makeWindowsConfiguredDownloadExecution(WindowsDownloadExecutionProfile profile,
     // all configuration bytes before returning or starting the worker thread.
     const auto job = copiedJob(profile.job);
     const auto journal = owned(profile.journal_directory);
-    WindowsDownloadExecution::Preflight preflight = [workspace = job.workspace, journal](const auto& evidence) {
+    WindowsDownloadExecution::Preflight preflight = [workspace = job.workspace, journal](std::string_view job_id,
+                                                                                         const auto& evidence) {
         QString directory;
         if (!download_artifacts::validPath(journal, directory))
             return DownloadFailure::InvalidResult;
         WindowsDownloadOwnershipStore store{std::move(directory)};
-        switch (WindowsDownloadOwnershipRecovery::ensureCapacity(workspace, store, evidence)) {
+        switch (WindowsDownloadOwnershipRecovery::ensureCapacity(workspace, store, evidence, job_id)) {
         case DownloadOwnershipCapacity::Available:
             return DownloadFailure::None;
         case DownloadOwnershipCapacity::Full:
@@ -69,6 +70,7 @@ makeWindowsConfiguredDownloadExecution(WindowsDownloadExecutionProfile profile,
         case DownloadOwnershipCapacity::HistoryUnavailable:
             return DownloadFailure::InvalidResult;
         case DownloadOwnershipCapacity::ReclaimUnconfirmed:
+        case DownloadOwnershipCapacity::PriorAttemptUnresolved:
             return DownloadFailure::Publication;
         }
         return DownloadFailure::InvalidResult;

@@ -21,10 +21,10 @@ struct DownloadCheckpointJsonResult final {
     std::optional<DownloadCheckpoint> checkpoint{};
 };
 
-// A strict bounded private document, never authority to execute/import/delete media.
+// Strict bounded encoding. Buffers containing resume sources require a protected store.
 class DownloadCheckpointJson final {
   public:
-    static constexpr int schema_version = 2;
+    static constexpr int schema_version = 3;
     static constexpr qsizetype max_document_bytes = 2 * 1024 * 1024;
     [[nodiscard]] static QByteArray encode(const DownloadCheckpoint& checkpoint);
     [[nodiscard]] static DownloadCheckpointJsonResult decode(QByteArrayView bytes);

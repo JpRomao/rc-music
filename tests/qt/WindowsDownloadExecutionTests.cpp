@@ -307,14 +307,16 @@ class WindowsDownloadExecutionTests final : public QObject {
         std::array<std::string, 1> retired{"retired-job"};
         bool observed_original_evidence = false;
         bool ran_on_worker = false;
-        WindowsDownloadExecution execution(factory(c), [&](const ArchivedDownloadJobEvidence& evidence) {
-            ran_on_worker = std::this_thread::get_id() != caller_thread;
-            c->factory_gate.enter();
-            observed_original_evidence =
-                evidence.archived_job_ids.size() == 1 && evidence.archived_job_ids.front() == "archived-job" &&
-                evidence.retired_import_job_ids.size() == 1 && evidence.retired_import_job_ids.front() == "retired-job";
-            return preflight_error;
-        });
+        WindowsDownloadExecution execution(
+            factory(c), [&](std::string_view job_id, const ArchivedDownloadJobEvidence& evidence) {
+                ran_on_worker = std::this_thread::get_id() != caller_thread;
+                c->factory_gate.enter();
+                observed_original_evidence = job_id == "job-1" && evidence.archived_job_ids.size() == 1 &&
+                                             evidence.archived_job_ids.front() == "archived-job" &&
+                                             evidence.retired_import_job_ids.size() == 1 &&
+                                             evidence.retired_import_job_ids.front() == "retired-job";
+                return preflight_error;
+            });
         Finish finish{c, execution};
         QVERIFY(execution.startWithArchivedJobs("job-1", item, {archived, retired}));
         QVERIFY(c->factory_gate.wait());

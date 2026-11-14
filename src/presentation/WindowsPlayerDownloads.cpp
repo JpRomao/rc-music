@@ -224,8 +224,9 @@ struct WindowsPlayerDownloads::Impl final : AsyncDownloadSubmission {
                   options.job_namespace.empty() ? QUuid::createUuid().toString(QUuid::Id128).toStdString()
                                                 : std::move(options.job_namespace),
                   {}, &identity),
-          controller(service, checkpoint, session, DownloadFinalSavePolicy::HoldForDecision), youtube(controller),
-          lyrics_writer(options.lyrics_writer),
+          controller(service, checkpoint, session, DownloadFinalSavePolicy::HoldForDecision,
+                     DownloadQueueClosePolicy::Preserve),
+          youtube(controller), lyrics_writer(options.lyrics_writer),
           lyrics_service(lyrics_writer ? std::make_unique<QtLyricsService>(options.lyrics_network) : nullptr),
           lyrics_lookup(lyrics_service ? std::make_unique<DownloadLyricsLookup>(*lyrics_service) : nullptr),
           lyrics_view(lyrics_lookup ? std::make_unique<DownloadLyricsBinding>(*lyrics_lookup, *lyrics_writer)

@@ -150,6 +150,20 @@ DownloadCheckpoint example(const std::string& title = "Áudio sintético 音") {
     };
 }
 
+DownloadCheckpoint resumableExample() {
+    auto checkpoint = example();
+    auto& job = checkpoint.jobs.front();
+    job.state = DownloadJobState::Queued;
+    job.completed_units = 0;
+    job.total_units.reset();
+    job.completed_mp3.clear();
+    checkpoint.resumable_jobs = {
+        {.job_id = job.job_id,
+         .item = {.url = "https://media.example.test/audio.mp3?private-token=synthetic-secret", .title = job.title}},
+    };
+    return checkpoint;
+}
+
 struct ObservedExecution final : DownloadExecution {
     int starts{0}, polls{0}, cancels{0};
     DownloadExecutionUpdate update{
@@ -409,6 +423,56 @@ class WindowsDownloadCheckpointStoreTests final : public QObject {
         QVERIFY(loaded.checkpoint && *loaded.checkpoint == archived);
         QVERIFY(fixture.privateFile(fixture.journal()));
         QCOMPARE(fixture.bytes(), archived_bytes);
+    }
+    void savesResumableCheckpointWithoutWritingTheOriginInClearText() {
+        Fixture fixture;
+        QVERIFY(fixture.created);
+        const auto checkpoint = resumableExample();
+        {
+            WindowsDownloadCheckpointStore store(fixture.directory);
+            QCOMPARE(store.save(checkpoint), WindowsDownloadCheckpointSaveStatus::Saved);
+        }
+        const auto bytes = fixture.bytes();
+        QVERIFY(!bytes.contains("private-token=synthetic-secret"));
+        QVERIFY(!bytes.contains("\"schemaVersion\""));
+        QVERIFY(fixture.privateFile(fixture.journal()));
+
+        WindowsDownloadCheckpointStore reopened(fixture.directory);
+        const auto loaded = reopened.load();
+        QCOMPARE(loaded.status, WindowsDownloadCheckpointLoadStatus::Loaded);
+        QVERIFY(loaded.checkpoint && *loaded.checkpoint == checkpoint);
+
+        QCOMPARE(reopened.save(example()), WindowsDownloadCheckpointSaveStatus::Saved);
+        QVERIFY(fixture.bytes().contains("\"schemaVersion\":1"));
+    }
+    void refusesUnprotectedResumableCheckpointAndPreservesItsBytes() {
+        Fixture fixture;
+        QVERIFY(fixture.created);
+        const auto bytes = DownloadCheckpointJson::encode(resumableExample());
+        QVERIFY(bytes.contains("\"schemaVersion\":3"));
+        QVERIFY(fixture.write(fixture.journal(), bytes));
+
+        WindowsDownloadCheckpointStore store(fixture.directory);
+        QCOMPARE(store.load().status, WindowsDownloadCheckpointLoadStatus::Invalid);
+        QCOMPARE(store.save(example()), WindowsDownloadCheckpointSaveStatus::BlockedByExistingData);
+        QCOMPARE(fixture.bytes(), bytes);
+    }
+    void refusesDamagedProtectedCheckpointAndPreservesItsBytes() {
+        Fixture source;
+        QVERIFY(source.created);
+        WindowsDownloadCheckpointStore original(source.directory);
+        QCOMPARE(original.save(resumableExample()), WindowsDownloadCheckpointSaveStatus::Saved);
+        auto bytes = source.bytes();
+        QVERIFY(bytes.size() > 32);
+        bytes[bytes.size() / 2] ^= 1;
+
+        Fixture damaged;
+        QVERIFY(damaged.created);
+        QVERIFY(damaged.write(damaged.journal(), bytes));
+        WindowsDownloadCheckpointStore store(damaged.directory);
+        QCOMPARE(store.load().status, WindowsDownloadCheckpointLoadStatus::Invalid);
+        QCOMPARE(store.save(example()), WindowsDownloadCheckpointSaveStatus::BlockedByExistingData);
+        QCOMPARE(damaged.bytes(), bytes);
     }
     void newJournalLockAndTemporaryHaveProtectedPrivateDacl() {
         Fixture fixture;

@@ -7,7 +7,8 @@ add_library(rc_music_download_documents STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DownloadMediaProfileJson.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DownloadOwnershipJson.cpp")
 target_include_directories(rc_music_download_documents PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
-target_link_libraries(rc_music_download_documents PUBLIC rc_music_downloads Qt6::Core PRIVATE rc_music_youtube_codec)
+target_link_libraries(rc_music_download_documents PUBLIC rc_music_downloads Qt6::Core PRIVATE
+    rc_music_media_data rc_music_youtube_codec)
 rc_music_configure_cpp(rc_music_download_documents)
 if(WIN32)
     target_sources(rc_music_download_documents PRIVATE

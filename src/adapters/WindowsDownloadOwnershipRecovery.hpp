@@ -4,6 +4,7 @@
 #include "adapters/WindowsDownloadWorkspace.hpp"
 
 #include <memory>
+#include <string_view>
 
 namespace music_player::m0 {
 
@@ -11,7 +12,13 @@ struct ArchivedDownloadJobEvidence;
 class WindowsDownloadOwnershipStore;
 
 enum class DownloadOwnershipAssessment { Unverified, OwnedPartial, OwnedFinalCandidate, Missing, Conflict, Unreadable };
-enum class DownloadOwnershipCapacity { Available, Full, HistoryUnavailable, ReclaimUnconfirmed };
+enum class DownloadOwnershipCapacity {
+    Available,
+    Full,
+    HistoryUnavailable,
+    ReclaimUnconfirmed,
+    PriorAttemptUnresolved
+};
 
 enum class DownloadOwnershipDiscardOutcome {
     Discarded,
@@ -59,10 +66,12 @@ struct DownloadFinalPinResult final {
 // This does not defend against a malicious same-user process or administrator.
 class WindowsDownloadOwnershipRecovery final {
   public:
-    // Retire at most one proven-clean row when the journal is full. Keep any existing MP3.
+    // Reuse a job ID only after proving the prior attempt left no files.
+    // Otherwise retire at most one proven-clean archived row when the journal is full.
     [[nodiscard]] static DownloadOwnershipCapacity ensureCapacity(const WindowsDownloadWorkspaceConfig& config,
                                                                   WindowsDownloadOwnershipStore& store,
-                                                                  const ArchivedDownloadJobEvidence& evidence) noexcept;
+                                                                  const ArchivedDownloadJobEvidence& evidence,
+                                                                  std::string_view job_id = {}) noexcept;
     [[nodiscard]] static DownloadOwnershipAssessment assess(const WindowsDownloadWorkspaceConfig& config,
                                                             const DownloadOwnershipRecord& record) noexcept;
     // Read-only review of a cleaned record under freshly pinned configured roots.

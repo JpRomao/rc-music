@@ -113,6 +113,10 @@ class DownloadService final : public DownloadSubmission {
     [[nodiscard]] bool restoreWithFreshNamespace(const DownloadCheckpoint& checkpoint,
                                                  std::span<const DownloadImportReceipt> confirmed_imports);
     [[nodiscard]] DownloadRecoveryReport recoveryReport() const;
+    // The durable owner confirms only after a matching Saved has consumed the
+    // previous close's restart entries. Until then no restored job can start.
+    [[nodiscard]] bool hasUnconfirmedRestoredQueue() const noexcept;
+    void confirmRestoredQueue() noexcept;
     // Trusted composition may suppress a new native start after a handoff
     // callback requests owner shutdown. Existing execution/import drains remain
     // observed. The optional predicate is bounded and cannot reenter mutations;
@@ -144,7 +148,8 @@ class DownloadService final : public DownloadSubmission {
                                             const std::filesystem::path& trusted_published_path,
                                             const std::function<bool()>& allow_handoff = {});
     [[nodiscard]] std::optional<DownloadImportState> recoveredImportState(std::string_view job_id) const;
-    void shutdown();
+    // Durable owners may retain queued jobs and requeue cleanly stopped transfers.
+    void shutdown(bool preserve_queue = false);
     [[nodiscard]] bool stopped() const;
 
   private:

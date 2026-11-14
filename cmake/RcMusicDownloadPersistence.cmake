@@ -3,7 +3,7 @@ include_guard(GLOBAL)
 if(WIN32)
     add_library(rc_music_download_persistence STATIC
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadCheckpointStore.cpp")
-    target_link_libraries(rc_music_download_persistence PUBLIC rc_music_download_documents)
+    target_link_libraries(rc_music_download_persistence PUBLIC rc_music_download_documents PRIVATE crypt32)
     rc_music_configure_cpp(rc_music_download_persistence)
 else()
     add_library(rc_music_download_persistence INTERFACE)

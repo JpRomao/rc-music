@@ -1162,65 +1162,103 @@ class PlayerDownloadsCompositionTests final : public QObject {
         QVERIFY(files.sourcesPreserved());
     }
 
-    void exitCancelsStalledTransferAndDrainsWithoutSuccessorOrImport() {
+    void exitPreservesStalledTransferAndRestartsTheQueueOnReopen() {
         Files files;
         QVERIFY(files.initialize());
-        auto observation = std::make_shared<Observation>();
-        observation->release();
-        Player player{files, observation};
-        QVERIFY(player.ready());
-        auto batch = request(QStringLiteral("mp3"), true);
-        batch.items.push_back(request(QStringLiteral("mp4")).items.front());
-        QCOMPARE(player.owner->submission().begin(batch).state, DownloadAdmissionState::Pending);
-        QVERIFY(waitFor([&] {
-            return observation->factories == 1 && player.state() == QStringLiteral("downloading") &&
+        const WindowsDownloadExecutionProfile profile{
+            .network = files.network, .media = files.media, .job = files.job, .journal_directory = files.documents};
+        QString first_job;
+        QString second_job;
+        const auto transferred = [](const Player& player) {
+            return player.state() == QStringLiteral("downloading") &&
                    player.jobs()
                            ->data(player.jobs()->index(0, 0), DownloadJobsModel::CompletedUnitsRole)
                            .toULongLong() > 0;
-        }));
-        // The helper resolves the ordinary host and stalls only on the transfer
-        // request-target after delivering a partial body, without Terminal/EOF.
-        // Real progress proves transfer reached the owned workspace; factory
-        // admission or an elapsed delay cannot establish that. Its bytes are
-        // local authenticated fixtures, without a socket or public TLS request.
-        WindowsDownloadOwnershipStore pending_ownership{files.documents};
-        const auto pending = pending_ownership.load();
-        QCOMPARE(pending.status, DownloadCheckpointLoadStatus::Loaded);
-        QVERIFY(pending.journal);
-        QCOMPARE(pending.journal->records.size(), std::size_t{1});
-        QCOMPARE(pending.journal->records.front().stage, DownloadOwnershipStage::WorkspaceReady);
-        QVERIFY(!pending.journal->records.front().cleanup_complete);
-        QCOMPARE(entries(files.staging).size(), 1);
-        QCOMPARE(observation->factories.load(), 1);
-        QCOMPARE(player.presenter.queueModelObject()->rowCount(), 0);
-        QVERIFY(player.presenter.requestExit());
-        QVERIFY(player.drain());
-        QCOMPARE(observation->factories.load(), 1);
-        QCOMPARE(player.state(0), QStringLiteral("cancelled"));
-        QCOMPARE(player.state(1), QStringLiteral("cancelled"));
-        QCOMPARE(player.presenter.queueModelObject()->rowCount(), 0);
-        QCOMPARE(player.audio.loads, 0);
-        QCOMPARE(player.audio.plays, 0);
-        QVERIFY(entries(files.publication).isEmpty());
+        };
+        auto batch = request(QStringLiteral("mp3"), true);
+        batch.items.push_back(request(QStringLiteral("mp4")).items.front());
+        {
+            auto observation = std::make_shared<Observation>();
+            observation->release();
+            Player player{files, observation, {}, false, profile};
+            QVERIFY(player.owner);
+            QVERIFY(player.ready());
+            QCOMPARE(player.owner->submission().begin(batch).state, DownloadAdmissionState::Pending);
+            QVERIFY(waitFor([&] { return transferred(player); }));
+            first_job = player.jobId(0);
+            second_job = player.jobId(1);
+            QVERIFY(!first_job.isEmpty());
+            QVERIFY(!second_job.isEmpty());
+            // The helper resolves the ordinary host and stalls only on the transfer
+            // request-target after delivering a partial body, without Terminal/EOF.
+            // Real progress proves transfer reached the owned workspace; factory
+            // admission or an elapsed delay cannot establish that. Its bytes are
+            // local authenticated fixtures, without a socket or public TLS request.
+            WindowsDownloadOwnershipStore pending_ownership{files.documents};
+            const auto pending = pending_ownership.load();
+            QCOMPARE(pending.status, DownloadCheckpointLoadStatus::Loaded);
+            QVERIFY(pending.journal);
+            QCOMPARE(pending.journal->records.size(), std::size_t{1});
+            QCOMPARE(pending.journal->records.front().stage, DownloadOwnershipStage::WorkspaceReady);
+            QVERIFY(!pending.journal->records.front().cleanup_complete);
+            QCOMPARE(entries(files.staging).size(), 1);
+            QCOMPARE(player.presenter.queueModelObject()->rowCount(), 0);
+            QVERIFY(player.presenter.requestExit());
+            QVERIFY(player.drain());
+            QCOMPARE(player.state(0), QStringLiteral("queued"));
+            QCOMPARE(player.state(1), QStringLiteral("queued"));
+            QCOMPARE(player.presenter.queueModelObject()->rowCount(), 0);
+            QCOMPARE(player.audio.loads, 0);
+            QCOMPARE(player.audio.plays, 0);
+            QVERIFY(entries(files.publication).isEmpty());
+            QVERIFY(files.transientParentsEmpty());
+            QVERIFY(observation->checkpoint_destroyed);
+            QtJsonWindowsSessionStore fresh_session{files.documents};
+            QVERIFY(fresh_session.load().snapshot.download_import_receipts.empty());
+            WindowsDownloadCheckpointStore checkpoint{files.documents};
+            const auto saved = checkpoint.load();
+            QCOMPARE(saved.status, DownloadCheckpointLoadStatus::Loaded);
+            QVERIFY(saved.checkpoint);
+            QCOMPARE(saved.checkpoint->jobs.size(), std::size_t{2});
+            QCOMPARE(saved.checkpoint->resumable_jobs.size(), std::size_t{2});
+            QVERIFY(std::ranges::all_of(saved.checkpoint->jobs, [](const auto& job) {
+                return job.state == DownloadJobState::Queued && job.completed_units == 0 && !job.total_units;
+            }));
+            WindowsDownloadOwnershipStore ownership{files.documents};
+            const auto journal = ownership.load();
+            QCOMPARE(journal.status, DownloadCheckpointLoadStatus::Loaded);
+            QVERIFY(journal.journal);
+            QCOMPARE(journal.journal->records.size(), std::size_t{1});
+            QVERIFY(journal.journal->records.front().cleanup_complete);
+            QCOMPARE(journal.journal->records.front().output_bytes, std::uint64_t{0});
+            QCOMPARE(player.owner->submission().begin(batch).result.error, DownloadSubmissionError::NotAvailable);
+        }
+
+        auto observation = std::make_shared<Observation>();
+        observation->release();
+        Player reopened{files, observation, {}, false, profile};
+        QVERIFY(reopened.owner);
+        QVERIFY(reopened.ready());
+        QVERIFY(waitFor([&] { return transferred(reopened); }));
+        QCOMPARE(reopened.jobId(0), first_job);
+        QCOMPARE(reopened.jobId(1), second_job);
+        QCOMPARE(reopened.state(1), QStringLiteral("queued"));
+        auto* jobs = qobject_cast<DownloadJobsModel*>(reopened.jobs());
+        QVERIFY(jobs);
+        QVERIFY(jobs->cancel(first_job));
+        QVERIFY(waitFor([&] { return reopened.state(1) == QStringLiteral("completed"); }));
+        QCOMPARE(reopened.state(0), QStringLiteral("cancelled"));
+        QCOMPARE(reopened.presenter.queueModelObject()->rowCount(), 1);
+        QCOMPARE(reopened.audio.plays, 0);
+        QCOMPARE(entries(files.publication).size(), 1);
+        QVERIFY(reopened.drain());
         QVERIFY(files.transientParentsEmpty());
-        QVERIFY(observation->checkpoint_destroyed);
-        QtJsonWindowsSessionStore fresh_session{files.documents};
-        QVERIFY(fresh_session.load().snapshot.download_import_receipts.empty());
-        WindowsDownloadCheckpointStore checkpoint{files.documents};
-        const auto saved = checkpoint.load();
-        QCOMPARE(saved.status, DownloadCheckpointLoadStatus::Loaded);
-        QVERIFY(saved.checkpoint);
-        QCOMPARE(saved.checkpoint->jobs.size(), std::size_t{2});
-        QVERIFY(std::ranges::all_of(saved.checkpoint->jobs,
-                                    [](const auto& job) { return job.state == DownloadJobState::Cancelled; }));
-        WindowsDownloadOwnershipStore ownership{files.documents};
-        const auto journal = ownership.load();
-        QCOMPARE(journal.status, DownloadCheckpointLoadStatus::Loaded);
-        QVERIFY(journal.journal);
-        QCOMPARE(journal.journal->records.size(), std::size_t{1});
-        QVERIFY(journal.journal->records.front().cleanup_complete);
-        QCOMPARE(journal.journal->records.front().output_bytes, std::uint64_t{0});
-        QCOMPARE(player.owner->submission().begin(batch).result.error, DownloadSubmissionError::NotAvailable);
+        const auto final = WindowsDownloadCheckpointStore{files.documents}.load();
+        QVERIFY(final.checkpoint);
+        QVERIFY(final.checkpoint->resumable_jobs.empty());
+        const auto imports = QtJsonWindowsSessionStore{files.documents}.load().snapshot.download_import_receipts;
+        QCOMPARE(imports.size(), std::size_t{1});
+        QCOMPARE(imports.front().job_id, second_job.toStdString());
         QVERIFY(files.sourcesPreserved());
     }
 };

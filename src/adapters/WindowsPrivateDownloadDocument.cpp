@@ -1,6 +1,7 @@
 #include "adapters/WindowsPrivateDownloadDocument.hpp"
 #include "adapters/DownloadMediaProfile.hpp"
 #include "adapters/WindowsDownloadArtifactPins.hpp"
+#include "adapters/WindowsDownloadCheckpointStore.hpp"
 
 #include <QDir>
 #include <QScopeGuard>
@@ -29,7 +30,8 @@ struct Policy final {
 std::optional<Policy> documentPolicy(const WindowsPrivateDownloadDocumentKind kind) {
     switch (kind) {
     case WindowsPrivateDownloadDocumentKind::Checkpoint:
-        return Policy{"download-checkpoint.json", "download-checkpoint.lock", "download-checkpoint-", 2 * 1024 * 1024};
+        return Policy{"download-checkpoint.json", "download-checkpoint.lock", "download-checkpoint-",
+                      WindowsDownloadCheckpointStore::maximum_file_size};
     case WindowsPrivateDownloadDocumentKind::Ownership:
         return Policy{"download-ownership.json", "download-ownership.lock", "download-ownership-", 256 * 1024};
     case WindowsPrivateDownloadDocumentKind::MediaProfile:

@@ -682,6 +682,86 @@ class WindowsConfiguredDownloadExecutionTests final : public QObject {
         QCOMPARE(state->media.load(), 0);
         QVERIFY(!QDir{h.profile.journal_directory}.exists());
     }
+    void onlyCleanedUnpublishedJobsCanRestart_data() {
+        QTest::addColumn<bool>("cleaned");
+        QTest::addColumn<bool>("final_exists");
+        QTest::addColumn<bool>("published");
+        QTest::newRow("cleaned workspace") << true << false << false;
+        QTest::newRow("unconfirmed cleanup") << false << false << false;
+        QTest::newRow("unexpected file at planned final") << true << true << false;
+        QTest::newRow("previously published and moved") << true << false << true;
+    }
+    void onlyCleanedUnpublishedJobsCanRestart() {
+        QFETCH(bool, cleaned);
+        QFETCH(bool, final_exists);
+        QFETCH(bool, published);
+        Fixture h;
+        QVERIFY(h.initialize());
+        bool fail_save = false;
+        WindowsDownloadOwnershipStore store{h.profile.journal_directory, {.inject_fault = [&](const auto point) {
+                                                return fail_save &&
+                                                       point == WindowsDownloadOwnershipFaultPoint::BeforeCommit;
+                                            }}};
+        constexpr auto id = "prior_job";
+        QString final_path;
+        {
+            WindowsDownloadWorkspace workspace{h.profile.job.workspace, id, store};
+            QVERIFY(workspace.create());
+            final_path = workspace.plannedPublicationPath();
+            if (published) {
+                QVERIFY(workspace.inputSink());
+                QCOMPARE(workspace.inputSink()->write("input"), 5);
+                QVERIFY(workspace.sealInput());
+                QVERIFY(workspace.outputSink());
+                QCOMPARE(workspace.outputSink()->write("output"), 6);
+                QVERIFY(workspace.sealOutput());
+                QCOMPARE(workspace.validateAndPublish([](const QString&) { return true; }), final_path);
+            }
+            fail_save = !cleaned;
+            QCOMPARE(workspace.cleanup(), cleaned);
+        }
+        fail_save = false;
+        if (published)
+            QVERIFY(QFile::remove(final_path));
+        if (final_exists) {
+            QFile final{final_path};
+            QVERIFY(final.open(QIODevice::WriteOnly | QIODevice::NewOnly));
+            QCOMPARE(final.write("unrelated file"), 14);
+        }
+        WindowsDownloadWorkspace other{h.profile.job.workspace, "other_job", store};
+        QVERIFY(other.create());
+        QVERIFY(other.cleanup());
+        const auto prior = store.load();
+        QVERIFY(prior.journal);
+        const auto state = std::make_shared<Observations>();
+        h.enableYoutube(state);
+        auto execution = makeWindowsConfiguredDownloadExecution(h.profile, rejecting(state));
+        QVERIFY(execution);
+        Drain drain{*execution, h};
+        const bool restart_allowed = cleaned && !final_exists && !published;
+        QVERIFY(execution->start(id, youtube()));
+        QVERIFY(waitFor([&] { return execution->poll(id).state == DownloadExecutionState::Failed; }));
+        QCOMPARE(execution->poll(id).error,
+                 restart_allowed ? DownloadFailure::Unavailable : DownloadFailure::Publication);
+        QCOMPARE(state->youtubes.load(), restart_allowed ? 1 : 0);
+        const auto current = store.load();
+        QVERIFY(current.journal);
+        if (restart_allowed) {
+            QVERIFY(current.journal->records.size() + 1 == prior.journal->records.size());
+            QCOMPARE(current.journal->records.back(), prior.journal->records.back());
+            WindowsDownloadWorkspace resumed{h.profile.job.workspace, id, store};
+            QVERIFY(resumed.create());
+            QVERIFY(resumed.plannedPublicationPath() != final_path);
+            QVERIFY(resumed.cleanup());
+        } else {
+            QCOMPARE(current.journal->records, prior.journal->records);
+        }
+        if (final_exists) {
+            QFile final{final_path};
+            QVERIFY(final.open(QIODevice::ReadOnly));
+            QCOMPARE(final.readAll(), QByteArray{"unrelated file"});
+        }
+    }
     void fullOwnershipJournalBlocksDirectAndYoutubeBeforePreparation() {
         Fixture h;
         QVERIFY(h.initialize());

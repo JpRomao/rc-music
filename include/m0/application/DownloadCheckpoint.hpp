@@ -50,13 +50,21 @@ struct DownloadArchivedRequest final {
     bool operator==(const DownloadArchivedRequest&) const = default;
 };
 
-// Private bounded recovery evidence, NOT authority to execute, import or delete a
-// file. A final path is only a candidate requiring separate ownership/media review.
-// No source URL, query, browser credentials or monotonic deadline is persisted.
+struct DownloadResumeEntry final {
+    std::string job_id{};
+    DownloadItem item{};
+    bool operator==(const DownloadResumeEntry&) const = default;
+};
+
+// Private bounded recovery evidence. A final path is only a candidate requiring
+// separate ownership and media review. Sources belong to eligible queued rows
+// and require private storage. No resolved YouTube URL or browser credentials
+// are retained.
 struct DownloadCheckpoint final {
     std::vector<DownloadCheckpointReceipt> receipts{};
     std::vector<DownloadJobSnapshot> jobs{};
     std::vector<DownloadArchivedRequest> archived_receipts{};
+    std::vector<DownloadResumeEntry> resumable_jobs{};
     bool operator==(const DownloadCheckpoint&) const = default;
 };
 

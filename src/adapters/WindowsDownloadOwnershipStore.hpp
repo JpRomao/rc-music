@@ -31,7 +31,9 @@ class WindowsDownloadOwnershipStore final : public DownloadOwnershipStore {
     // journal is locked. Only a full journal can release one record.
     [[nodiscard]] DownloadCheckpointSaveStatus reclaimAtCapacity(const DownloadOwnershipRecord& expected,
                                                                  const std::function<bool()>& still_reclaimable);
-    enum class CleanedRecordChange { Acknowledge, MarkPlannedCleaned, ReclaimAtCapacity };
+    [[nodiscard]] DownloadCheckpointSaveStatus retireUnpublishedAttempt(const DownloadOwnershipRecord& expected,
+                                                                        const std::function<bool()>& still_absent);
+    enum class CleanedRecordChange { Acknowledge, MarkPlannedCleaned, ReclaimAtCapacity, RetireUnpublishedAttempt };
     [[nodiscard]] DownloadCheckpointSaveStatus changeCleanedRecord(const DownloadOwnershipRecord& expected,
                                                                    const std::function<bool()>& still_verified,
                                                                    CleanedRecordChange change);

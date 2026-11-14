@@ -1478,11 +1478,17 @@ void DownloadApplicationBinding::refreshProjection() {
                               "novamente no aviso da sessão.");
         break;
     case DownloadAdmissionControllerState::AdmissionPending:
-        next.status = tr("Confirmando solicitação de download");
+        next.status = impl_->download_service.hasUnconfirmedRestoredQueue() ? tr("Preparando a retomada dos downloads")
+                                                                            : tr("Confirmando solicitação de download");
         break;
     case DownloadAdmissionControllerState::AdmissionFailed:
-        next.status = tr("A solicitação ainda não foi confirmada");
-        next.warning = tr("A gravação da solicitação falhou. O download não será iniciado sem confirmação.");
+        if (impl_->download_service.hasUnconfirmedRestoredQueue()) {
+            next.status = tr("Fila de downloads aguardando retomada");
+            next.warning = tr("Não foi possível confirmar a retomada. Selecione Tentar novamente.");
+        } else {
+            next.status = tr("A solicitação ainda não foi confirmada");
+            next.warning = tr("A gravação da solicitação falhou. O download não será iniciado sem confirmação.");
+        }
         break;
     case DownloadAdmissionControllerState::ArchivePending:
         next.status = tr("Salvando o arquivamento de pedidos encerrados");

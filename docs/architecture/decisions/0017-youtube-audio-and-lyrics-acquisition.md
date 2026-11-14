@@ -49,7 +49,7 @@ Essa implementação não qualifica um runtime real. A preparação autenticada 
 
 ### Incremento de admissão durável e fila compartilhada — 2026-11-05
 
-O código agora acrescenta contexto opcional `YoutubeAudioItem` ao `DownloadItem`, com video ID, título, artista, página Letras e opção de letra. O contexto completo participa de validação, igualdade, quotas e identidade do pedido; não é uma permissão de origem. Pedidos legados sem contexto conservam seu algoritmo v1 de fingerprint. O checkpoint não passa a armazenar o payload completo desses metadados: conserva hash/contagem e IDs; um replay explícito após reiniciar não inicia nem retoma áudio automaticamente.
+O código acrescentou o contexto opcional `YoutubeAudioItem` ao `DownloadItem`, com ID do vídeo, título, artista, página Letras e opção de letra. O contexto completo participa de validação, igualdade, quotas e identidade do pedido. Pedidos legados sem contexto conservam seu algoritmo v1 de fingerprint. O checkpoint de admissão conserva hash, contagem e IDs. O [checkpoint protegido de encerramento](../../download-jobs.md#retomada-da-fila-após-sair) guarda também os metadados necessários para resolver novamente a mídia pendente.
 
 A ponte `YoutubeAudioAdmission` implementa `AsyncYoutubeAudioSubmission` sobre o controlador durável comum. `NativeYoutubeAudioSession` mantém protocolo/observador separados da principal, com origem exata vinda da configuração/transporte, teto de 64 KiB conferido antes do corpo e nenhuma resposta de admissão durante Pending. EOF, reentrada e exceções não viram cancelamento, retry ou ACK fabricado do trabalho que pertence ao controlador. Isso implementa a fronteira em código; não comprova origem autenticada de uma instalação Brave ou um host IPC operacional.
 

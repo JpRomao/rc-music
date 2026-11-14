@@ -1,6 +1,7 @@
 #include "m0/application/DownloadCheckpoint.hpp"
 
 #include <algorithm>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace music_player::m0 {
@@ -127,12 +128,35 @@ bool validJob(const DownloadJobSnapshot& job) {
     }
     return false;
 }
+
+std::optional<std::size_t> resumeSourceBytes(const DownloadItem& item) {
+    if ((item.kind != DownloadMediaKind::Audio && item.kind != DownloadMediaKind::Video) || item.url.empty() ||
+        item.url.size() > 8192 || !validUtf8(item.url))
+        return std::nullopt;
+    if (!item.youtube) {
+        if (!item.url.starts_with("https://") && !item.url.starts_with("http://"))
+            return std::nullopt;
+        return item.url.size();
+    }
+    const auto& youtube = *item.youtube;
+    constexpr std::string_view watch_prefix = "https://www.youtube.com/watch?v=";
+    if (item.kind != DownloadMediaKind::Audio || youtube.video_id.size() != 11 || !asciiId(youtube.video_id) ||
+        !item.url.starts_with(watch_prefix) ||
+        std::string_view{item.url}.substr(watch_prefix.size()) != youtube.video_id || item.title != youtube.title ||
+        youtube.title.size() > 512 || youtube.artist.size() > 512 || youtube.lyrics_page.size() > 2048 ||
+        youtube.file_name.size() > 512 || !validUtf8(youtube.artist) || !validUtf8(youtube.lyrics_page) ||
+        !validUtf8(youtube.file_name))
+        return std::nullopt;
+    return item.url.size() + youtube.video_id.size() + youtube.title.size() + youtube.artist.size() +
+           youtube.lyrics_page.size() + youtube.file_name.size() + 1;
+}
 } // namespace
 
 bool validDownloadCheckpoint(const DownloadCheckpoint& checkpoint) {
     if (checkpoint.jobs.size() > download_checkpoint_max_jobs ||
         checkpoint.receipts.size() > download_checkpoint_max_receipts ||
-        checkpoint.archived_receipts.size() > download_checkpoint_max_archived_receipts)
+        checkpoint.archived_receipts.size() > download_checkpoint_max_archived_receipts ||
+        checkpoint.resumable_jobs.size() > checkpoint.jobs.size())
         return false;
     std::size_t retained_bytes = 0;
     const auto retain = [&](const std::size_t bytes) {
@@ -148,6 +172,12 @@ bool validDownloadCheckpoint(const DownloadCheckpoint& checkpoint) {
             !retain(job.completed_mp3.native().size() * sizeof(std::filesystem::path::value_type)))
             return false;
     }
+    std::unordered_map<std::string_view, const DownloadItem*> sources;
+    for (const auto& entry : checkpoint.resumable_jobs) {
+        if (!asciiId(entry.job_id) || !retain(entry.job_id.size()) ||
+            !sources.emplace(entry.job_id, &entry.item).second)
+            return false;
+    }
     std::unordered_set<std::string_view> request_ids;
     const auto retainReceiptIdentity = [&](const auto& receipt) {
         return canonicalUuid(receipt.request_id) && digest(receipt.fingerprint) &&
@@ -161,13 +191,28 @@ bool validDownloadCheckpoint(const DownloadCheckpoint& checkpoint) {
             receipt.retained_request_bytes > download_checkpoint_max_bytes - original_bytes ||
             receipt.retained_request_bytes > 36 + receipt.job_ids.size() * (8192 + 800))
             return false;
-        std::size_t minimum_bytes = 36 + receipt.job_ids.size();
+        std::size_t minimum_bytes = 36;
         for (const auto& id : receipt.job_ids) {
             // Admission order is also the one-to-one receipt/job mapping. This rejects
             // duplicates, omissions, reordered associations and orphan records.
             if (job_index >= checkpoint.jobs.size() || checkpoint.jobs[job_index].job_id != id || !retain(id.size()))
                 return false;
-            minimum_bytes += checkpoint.jobs[job_index++].title.size();
+            const auto& job = checkpoint.jobs[job_index++];
+            minimum_bytes += job.title.size();
+            const auto source = sources.find(id);
+            if (source == sources.end()) {
+                ++minimum_bytes;
+                continue;
+            }
+            const auto& item = *source->second;
+            if (job.state != DownloadJobState::Queued || job.completed_units != 0 || job.total_units ||
+                item.title != job.title)
+                return false;
+            const auto source_bytes = resumeSourceBytes(item);
+            if (!source_bytes)
+                return false;
+            minimum_bytes += *source_bytes;
+            sources.erase(source);
         }
         if (receipt.retained_request_bytes < minimum_bytes)
             return false;
@@ -181,6 +226,6 @@ bool validDownloadCheckpoint(const DownloadCheckpoint& checkpoint) {
                 return false;
         }
     }
-    return job_index == checkpoint.jobs.size();
+    return job_index == checkpoint.jobs.size() && sources.empty();
 }
 } // namespace music_player::m0

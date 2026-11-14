@@ -1,4 +1,5 @@
 #include "adapters/DownloadCheckpointJson.hpp"
+#include "adapters/DirectMediaPolicy.hpp"
 #include "adapters/YoutubeAudioCodec.hpp"
 
 #include <QCryptographicHash>
@@ -19,6 +20,9 @@ namespace music_player::m0 {
 namespace {
 
 constexpr std::string_view owner = "rc-music-download-checkpoint";
+constexpr int archive_schema_version = 2;
+constexpr std::string_view resume_youtube_request_id = "00000000-0000-4000-8000-000000000000";
+constexpr std::array<std::string_view, 2> media_kind_names{"audio", "video"};
 constexpr std::array<std::string_view, 12> state_names{"queued",        "downloading", "converting", "publishing",
                                                        "cancelling",    "completed",   "cancelled",  "failed",
                                                        "import-failed", "interrupted", "importing",  "imported"};
@@ -308,6 +312,65 @@ std::optional<DownloadJobSnapshot> job(const QJsonValue& value) {
     };
 }
 
+std::optional<DownloadResumeEntry> resumeEntry(const QJsonValue& value) {
+    if (!value.isObject())
+        return std::nullopt;
+    const auto object = value.toObject();
+    const auto id = object.value(QStringLiteral("jobId"));
+    if (!id.isString())
+        return std::nullopt;
+    DownloadResumeEntry result{.job_id = id.toString().toUtf8().toStdString()};
+    if (object.contains(QStringLiteral("youtube"))) {
+        const auto youtube = object.value(QStringLiteral("youtube"));
+        if (!exactKeys(object, {QStringLiteral("jobId"), QStringLiteral("youtube")}) || !youtube.isObject())
+            return std::nullopt;
+        const QJsonObject envelope{{QStringLiteral("schemaVersion"), 1},
+                                   {QStringLiteral("type"), QStringLiteral("youtube.audio.request")},
+                                   {QStringLiteral("requestId"), latin(resume_youtube_request_id)},
+                                   {QStringLiteral("items"), QJsonArray{youtube}}};
+        auto decoded = decodeYoutubeAudioRequest(QJsonDocument{envelope}.toJson(QJsonDocument::Compact));
+        if (decoded.error != DownloadSubmissionError::None || decoded.request.items.size() != 1)
+            return std::nullopt;
+        auto& item = decoded.request.items.front();
+        result.item = {.url = canonicalYoutubeWatchUrl(item.video_id).toUtf8().toStdString(),
+                       .title = item.title,
+                       .youtube = std::move(item)};
+        return result;
+    }
+    const auto url = object.value(QStringLiteral("url"));
+    const auto title = object.value(QStringLiteral("title"));
+    const auto kind = enumValue<DownloadMediaKind>(object.value(QStringLiteral("kind")), media_kind_names);
+    if (!exactKeys(object,
+                   {QStringLiteral("jobId"), QStringLiteral("title"), QStringLiteral("kind"), QStringLiteral("url")}) ||
+        !url.isString() || !title.isString() || !kind || !isAllowedDirectMediaUrl(url.toString()))
+        return std::nullopt;
+    result.item = {
+        .url = url.toString().toUtf8().toStdString(), .title = title.toString().toUtf8().toStdString(), .kind = *kind};
+    return result;
+}
+
+std::optional<QJsonObject> resumeObject(const DownloadResumeEntry& entry) {
+    const auto& item = entry.item;
+    QJsonObject object{{QStringLiteral("jobId"), latin(entry.job_id)}};
+    if (item.youtube) {
+        const auto typed =
+            encodeYoutubeAudioRequest({.request_id = std::string{resume_youtube_request_id}, .items = {*item.youtube}});
+        if (typed.isEmpty())
+            return std::nullopt;
+        const auto youtube = QJsonDocument::fromJson(typed).object().value(QStringLiteral("items")).toArray().at(0);
+        object.insert(QStringLiteral("youtube"), youtube);
+    } else {
+        const auto url = utf8Text(item.url);
+        const auto title = utf8Text(item.title);
+        if (!url || !title || !isAllowedDirectMediaUrl(*url))
+            return std::nullopt;
+        object.insert(QStringLiteral("title"), *title);
+        object.insert(QStringLiteral("kind"), enumText(item.kind, media_kind_names));
+        object.insert(QStringLiteral("url"), *url);
+    }
+    return object;
+}
+
 void appendUnsigned(QCryptographicHash& hash, const std::uint64_t value) {
     std::array<char, 8> bytes{};
     for (std::size_t index = 0; index < bytes.size(); ++index)
@@ -349,18 +412,30 @@ QByteArray DownloadCheckpointJson::encode(const DownloadCheckpoint& checkpoint) 
             {QStringLiteral("error"), enumText(saved.error, error_names)},
         });
     }
+    const bool has_resume = !checkpoint.resumable_jobs.empty();
     const bool has_archive = !checkpoint.archived_receipts.empty();
+    const auto version = has_resume ? schema_version : (has_archive ? archive_schema_version : 1);
     QJsonObject object{
-        {QStringLiteral("schemaVersion"), has_archive ? schema_version : 1},
+        {QStringLiteral("schemaVersion"), version},
         {QStringLiteral("owner"), latin(owner)},
         {QStringLiteral("receipts"), receipts},
         {QStringLiteral("jobs"), jobs},
     };
-    if (has_archive) {
+    if (has_archive || has_resume) {
         QJsonArray archive;
         for (const auto& saved : checkpoint.archived_receipts)
             archive.append(receiptIdentityObject(saved));
         object.insert(QStringLiteral("archivedReceipts"), archive);
+    }
+    if (has_resume) {
+        QJsonArray resumed;
+        for (const auto& entry : checkpoint.resumable_jobs) {
+            const auto source = resumeObject(entry);
+            if (!source)
+                return {};
+            resumed.append(*source);
+        }
+        object.insert(QStringLiteral("resumableJobs"), resumed);
     }
     const auto encoded = QJsonDocument{object}.toJson(QJsonDocument::Compact);
     return encoded.size() <= max_document_bytes ? encoded : QByteArray{};
@@ -392,17 +467,30 @@ DownloadCheckpointJsonResult DownloadCheckpointJson::decode(const QByteArrayView
     if (version > schema_version)
         return {.status = DownloadCheckpointJsonStatus::FutureVersion};
     QJsonArray archive;
+    QJsonArray resume;
     if (version == 1) {
         if (!exactKeys(object, {QStringLiteral("schemaVersion"), QStringLiteral("owner"), QStringLiteral("receipts"),
                                 QStringLiteral("jobs")}))
             return {};
-    } else if (version == 2) {
+    } else if (version == archive_schema_version) {
         const auto archive_value = object.value(QStringLiteral("archivedReceipts"));
         if (!exactKeys(object, {QStringLiteral("schemaVersion"), QStringLiteral("owner"), QStringLiteral("receipts"),
                                 QStringLiteral("jobs"), QStringLiteral("archivedReceipts")}) ||
             !archive_value.isArray())
             return {};
         archive = archive_value.toArray();
+    } else if (version == schema_version) {
+        const auto archive_value = object.value(QStringLiteral("archivedReceipts"));
+        const auto resume_value = object.value(QStringLiteral("resumableJobs"));
+        if (!exactKeys(object,
+                       {QStringLiteral("schemaVersion"), QStringLiteral("owner"), QStringLiteral("receipts"),
+                        QStringLiteral("jobs"), QStringLiteral("archivedReceipts"), QStringLiteral("resumableJobs")}) ||
+            !archive_value.isArray() || !resume_value.isArray())
+            return {};
+        archive = archive_value.toArray();
+        resume = resume_value.toArray();
+        if (resume.isEmpty())
+            return {};
     } else
         return {};
     if (object.value(QStringLiteral("owner")) != QJsonValue{latin(owner)} ||
@@ -412,12 +500,14 @@ DownloadCheckpointJsonResult DownloadCheckpointJson::decode(const QByteArrayView
     const auto jobs = object.value(QStringLiteral("jobs")).toArray();
     if (receipts.size() > static_cast<qsizetype>(download_checkpoint_max_receipts) ||
         jobs.size() > static_cast<qsizetype>(download_checkpoint_max_jobs) ||
-        archive.size() > static_cast<qsizetype>(download_checkpoint_max_archived_receipts))
+        archive.size() > static_cast<qsizetype>(download_checkpoint_max_archived_receipts) ||
+        resume.size() > jobs.size())
         return {};
     DownloadCheckpoint checkpoint;
     checkpoint.receipts.reserve(static_cast<std::size_t>(receipts.size()));
     checkpoint.jobs.reserve(static_cast<std::size_t>(jobs.size()));
     checkpoint.archived_receipts.reserve(static_cast<std::size_t>(archive.size()));
+    checkpoint.resumable_jobs.reserve(static_cast<std::size_t>(resume.size()));
     for (const auto& saved : receipts) {
         auto decoded = receipt(saved);
         if (!decoded)
@@ -435,6 +525,12 @@ DownloadCheckpointJsonResult DownloadCheckpointJson::decode(const QByteArrayView
         if (!decoded)
             return {};
         checkpoint.archived_receipts.push_back(std::move(*decoded));
+    }
+    for (const auto& saved : resume) {
+        auto decoded = resumeEntry(saved);
+        if (!decoded)
+            return {};
+        checkpoint.resumable_jobs.push_back(std::move(*decoded));
     }
     if (!validDownloadCheckpoint(checkpoint))
         return {};

@@ -28,10 +28,12 @@ struct WindowsDownloadCheckpointStoreOptions final {
 // a malicious same-user process. The leaf permits native write/delete sharing;
 // revalidation is not protection against a concurrent malicious reparse race.
 // Failed after commit is deliberately ambiguous.
-// The document is recovery evidence only, never execute/import/delete authority.
+// Resumable origins are encrypted on disk with Windows user DPAPI. Legacy
+// documents without origins remain plain JSON. Final paths are recovery evidence.
 class WindowsDownloadCheckpointStore final : public DownloadCheckpointStore {
   public:
-    static constexpr qsizetype maximum_file_size = 2 * 1024 * 1024;
+    // Preserve the JSON codec's 2 MiB budget plus bounded DPAPI overhead.
+    static constexpr qsizetype maximum_file_size = 2 * 1024 * 1024 + 4 * 1024;
 
     explicit WindowsDownloadCheckpointStore(QString config_directory,
                                             WindowsDownloadCheckpointStoreOptions options = {});

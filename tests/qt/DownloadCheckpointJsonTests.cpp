@@ -98,6 +98,45 @@ namespace {
     return QSet<QString>{names.begin(), names.end()};
 }
 
+[[nodiscard]] QJsonObject resumeObject() {
+    auto root = validObject();
+    root.insert(u"schemaVersion"_s, 3);
+    root.insert(u"archivedReceipts"_s, QJsonArray{});
+    auto receipts = root.value(u"receipts"_s).toArray();
+    auto receipt = receipts[0].toObject();
+    receipt.insert(u"retainedRequestBytes"_s, u"512"_s);
+    receipts[0] = receipt;
+    root.insert(u"receipts"_s, receipts);
+    auto jobs = root.value(u"jobs"_s).toArray();
+    for (qsizetype index = 0; index < jobs.size(); ++index) {
+        auto job = jobs[index].toObject();
+        job.insert(u"state"_s, u"queued"_s);
+        job.insert(u"completedUnits"_s, u"0"_s);
+        job.insert(u"totalUnits"_s, QJsonValue::Null);
+        job.insert(u"completedMp3"_s, u""_s);
+        job.insert(u"error"_s, u"none"_s);
+        jobs[index] = job;
+    }
+    auto youtube_job = jobs[1].toObject();
+    youtube_job.insert(u"title"_s, u"Synthetic 日本"_s);
+    jobs[1] = youtube_job;
+    root.insert(u"jobs"_s, jobs);
+    root.insert(u"resumableJobs"_s,
+                QJsonArray{QJsonObject{{u"jobId"_s, u"job-a"_s},
+                                       {u"title"_s, u"Abertura 日本 ☕"_s},
+                                       {u"kind"_s, u"video"_s},
+                                       {u"url"_s, u"https://example.org/source.mp4?token=ephemeral%2Bvalue"_s}},
+                           QJsonObject{{u"jobId"_s, u"job-b"_s},
+                                       {u"youtube"_s,
+                                        QJsonObject{{u"videoId"_s, u"AbCdEf_12-3"_s},
+                                                    {u"title"_s, u"Synthetic 日本"_s},
+                                                    {u"artist"_s, u"Artist café"_s},
+                                                    {u"lyricsPage"_s, u"https://letras.mus.br/synthetic/opening/"_s},
+                                                    {u"fetchLyrics"_s, true},
+                                                    {u"fileName"_s, u"Nome opcional"_s}}}}});
+    return root;
+}
+
 [[nodiscard]] DownloadRequest request() {
     return {.request_id = "12345678-1234-4234-8234-123456789abc",
             .items = {{.url = "https://example.org/a.mp3", .title = "A", .kind = DownloadMediaKind::Audio}}};
@@ -203,6 +242,76 @@ class DownloadCheckpointJsonTests final : public QObject {
         }
     }
 
+    void versionThreeRoundTripsValidatedSourcesForQueuedRows() {
+        const auto document = bytes(resumeObject());
+        const auto decoded = DownloadCheckpointJson::decode(document);
+        QCOMPARE(decoded.status, DownloadCheckpointJsonStatus::Valid);
+        QVERIFY(decoded.checkpoint);
+        const auto& entries = decoded.checkpoint->resumable_jobs;
+        QCOMPARE(entries.size(), std::size_t{2});
+        QCOMPARE(entries[0].item.url, std::string{"https://example.org/source.mp4?token=ephemeral%2Bvalue"});
+        QCOMPARE(entries[0].item.kind, DownloadMediaKind::Video);
+        auto youtube = youtubeRequest().items.front();
+        youtube.youtube->file_name = "Nome opcional";
+        QCOMPARE(entries[1].item, youtube);
+        QCOMPARE(DownloadCheckpointJson::encode(*decoded.checkpoint), document);
+        QVERIFY(!document.contains("youtube.com/watch"));
+    }
+
+    void versionThreeRejectsOrphansDuplicatesAndInvalidSources() {
+        const auto replaceEntry = [](qsizetype index, const QString& field, const QJsonValue& value) {
+            auto root = resumeObject();
+            auto entries = root.value(u"resumableJobs"_s).toArray();
+            auto entry = entries[index].toObject();
+            entry.insert(field, value);
+            entries[index] = entry;
+            root.insert(u"resumableJobs"_s, entries);
+            return bytes(root);
+        };
+        for (const auto& invalid : {replaceEntry(0, u"jobId"_s, u"orphan"_s), replaceEntry(1, u"jobId"_s, u"job-a"_s),
+                                    replaceEntry(0, u"title"_s, u"Other"_s), replaceEntry(0, u"kind"_s, u"unknown"_s),
+                                    replaceEntry(0, u"url"_s, u"file:///C:/audio.mp4"_s),
+                                    replaceEntry(0, u"url"_s, u"https://user:password@example.org/a.mp4"_s),
+                                    replaceEntry(0, u"url"_s, u"https://localhost/a.mp4"_s),
+                                    replaceEntry(1, u"url"_s, u"https://example.org/resolved.mp4"_s)})
+            QCOMPARE(DownloadCheckpointJson::decode(invalid).status, DownloadCheckpointJsonStatus::Invalid);
+
+        auto root = resumeObject();
+        root.insert(u"resumableJobs"_s, QJsonArray{});
+        QCOMPARE(DownloadCheckpointJson::decode(bytes(root)).status, DownloadCheckpointJsonStatus::Invalid);
+        root = resumeObject();
+        auto jobs = root.value(u"jobs"_s).toArray();
+        auto job = jobs[0].toObject();
+        job.insert(u"state"_s, u"cancelled"_s);
+        jobs[0] = job;
+        root.insert(u"jobs"_s, jobs);
+        QCOMPARE(DownloadCheckpointJson::decode(bytes(root)).status, DownloadCheckpointJsonStatus::Invalid);
+
+        job.insert(u"state"_s, u"queued"_s);
+        job.insert(u"completedUnits"_s, u"1"_s);
+        jobs[0] = job;
+        root.insert(u"jobs"_s, jobs);
+        QCOMPARE(DownloadCheckpointJson::decode(bytes(root)).status, DownloadCheckpointJsonStatus::Invalid);
+
+        root = resumeObject();
+        auto receipts = root.value(u"receipts"_s).toArray();
+        auto receipt = receipts[0].toObject();
+        receipt.insert(u"retainedRequestBytes"_s, u"100"_s);
+        receipts[0] = receipt;
+        root.insert(u"receipts"_s, receipts);
+        QCOMPARE(DownloadCheckpointJson::decode(bytes(root)).status, DownloadCheckpointJsonStatus::Invalid);
+
+        root = resumeObject();
+        auto entries = root.value(u"resumableJobs"_s).toArray();
+        auto entry = entries[1].toObject();
+        auto youtube = entry.value(u"youtube"_s).toObject();
+        youtube.insert(u"lyricsPage"_s, u"https://other.org/blocked/"_s);
+        entry.insert(u"youtube"_s, youtube);
+        entries[1] = entry;
+        root.insert(u"resumableJobs"_s, entries);
+        QCOMPARE(DownloadCheckpointJson::decode(bytes(root)).status, DownloadCheckpointJsonStatus::Invalid);
+    }
+
     void importingStateIsClosedRoundTripsAndRejectsMissingFinalEvidence() {
         auto checkpoint = sample();
         checkpoint.jobs[0].state = DownloadJobState::Importing;
@@ -285,7 +394,7 @@ class DownloadCheckpointJsonTests final : public QObject {
 
     void futureSchemaIsDistinguishedBeforeKnownVersionFields_data() {
         QTest::addColumn<QByteArray>("json");
-        QTest::newRow("version-only") << QByteArray{R"({"schemaVersion":3})"};
+        QTest::newRow("version-only") << QByteArray{R"({"schemaVersion":4})"};
         QTest::newRow("foreign-fields") << QByteArray{R"({"schemaVersion":99,"jobs":false,"owner":7})"};
         QTest::newRow("large-future") << QByteArray{R"({"schemaVersion":2147483648})"};
     }
@@ -440,7 +549,7 @@ class DownloadCheckpointJsonTests final : public QObject {
 
     void depthBoundaryCountsContainersNotScalarValues() {
         const auto nested = [](const qsizetype arrays, const QByteArray& scalar) {
-            return QByteArray{"{\"schemaVersion\":3,\"x\":"} + QByteArray(arrays, '[') + scalar +
+            return QByteArray{"{\"schemaVersion\":4,\"x\":"} + QByteArray(arrays, '[') + scalar +
                    QByteArray(arrays, ']') + QByteArray{"}"};
         };
         // The root object counts as one container; scalar values do not count.

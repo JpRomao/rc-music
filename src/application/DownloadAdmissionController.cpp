@@ -34,7 +34,7 @@ struct DownloadAdmissionController::Impl {
         std::string id;
         DownloadSubmissionResult result;
     };
-    enum class Purpose { Load, Admission, Archive, Final };
+    enum class Purpose { Load, Admission, Resume, Archive, Final };
     struct Operation {
         std::uint64_t id;
         Purpose purpose;
@@ -45,6 +45,7 @@ struct DownloadAdmissionController::Impl {
     DownloadService& service;
     DownloadCheckpointIo& io;
     const DownloadFinalSavePolicy final_save_policy;
+    const DownloadQueueClosePolicy queue_close_policy;
     std::vector<Receipt> confirmed;
     std::optional<Receipt> pending;
     std::vector<std::string> retried_jobs;
@@ -70,8 +71,9 @@ struct DownloadAdmissionController::Impl {
     std::optional<DownloadCheckpoint> namespace_checkpoint{};
     DownloadRecoveryStatus blocked_recovery_status{DownloadRecoveryStatus::NotRequested};
 
-    Impl(DownloadService& owner, DownloadCheckpointIo& storage, const DownloadFinalSavePolicy policy)
-        : service(owner), io(storage), final_save_policy(policy) {
+    Impl(DownloadService& owner, DownloadCheckpointIo& storage, const DownloadFinalSavePolicy policy,
+         const DownloadQueueClosePolicy queue_policy)
+        : service(owner), io(storage), final_save_policy(policy), queue_close_policy(queue_policy) {
         confirmed.reserve(maximum_confirmed_requests);
     }
     static std::vector<Receipt> acknowledgements(const DownloadCheckpoint& checkpoint) {
@@ -117,7 +119,7 @@ struct DownloadAdmissionController::Impl {
         // Trusted job control can request owner shutdown from inside a service
         // port callback. The service refuses that reentry; retry its idempotent
         // shutdown on the next outer tick rather than remembering a false commit.
-        service.shutdown();
+        service.shutdown(queue_close_policy == DownloadQueueClosePolicy::Preserve);
         // A startup load cannot authorise a final empty replacement after shutdown.
         // Closing IO is prompt; the worker still owns its active native drain.
         if (!healthy_startup && (!operation || operation->purpose == Purpose::Load))
@@ -198,6 +200,14 @@ struct DownloadAdmissionController::Impl {
         failedSave(DownloadCheckpointSaveStatus::Failed);
         return false;
     }
+    void finishRestore() {
+        healthy_startup = true;
+        state = DownloadAdmissionControllerState::Ready;
+        if (load_status == DownloadCheckpointLoadStatus::Loaded)
+            service.retireArchivedImportReceipts();
+        if (!closing && service.hasUnconfirmedRestoredQueue())
+            (void)save(Purpose::Resume);
+    }
     void observeLoad(DownloadCheckpointLoadResult loaded) {
         load_status = loaded.status;
         namespace_checkpoint.reset();
@@ -243,10 +253,7 @@ struct DownloadAdmissionController::Impl {
                 return;
             }
             confirmed.swap(receipts);
-            healthy_startup = true;
-            state = DownloadAdmissionControllerState::Ready;
-            if (loaded.status == DownloadCheckpointLoadStatus::Loaded)
-                service.retireArchivedImportReceipts();
+            finishRestore();
         } catch (...) {
             namespace_checkpoint.reset();
             blocked_recovery_status = DownloadRecoveryStatus::NotRequested;
@@ -288,6 +295,8 @@ struct DownloadAdmissionController::Impl {
                 // Reserved capacity and noexcept moves precede any observer's ACK.
                 confirmed.push_back(std::move(*pending));
                 pending.reset();
+            } else if (expected.purpose == Purpose::Resume) {
+                service.confirmRestoredQueue();
             } else if (expected.purpose == Purpose::Archive) {
                 if (!archive_checkpoint || !service.confirmSettledArchive()) {
                     failedSave(DownloadCheckpointSaveStatus::Failed);
@@ -355,12 +364,14 @@ struct DownloadAdmissionController::Impl {
 };
 
 DownloadAdmissionController::DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io,
-                                                         DownloadFinalSavePolicy final_save_policy)
-    : impl_(std::make_unique<Impl>(service, io, final_save_policy)) {}
+                                                         DownloadFinalSavePolicy final_save_policy,
+                                                         DownloadQueueClosePolicy queue_close_policy)
+    : impl_(std::make_unique<Impl>(service, io, final_save_policy, queue_close_policy)) {}
 DownloadAdmissionController::DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io,
                                                          const SessionLoadResult& initial_session,
-                                                         DownloadFinalSavePolicy final_save_policy)
-    : DownloadAdmissionController(service, io, final_save_policy) {
+                                                         DownloadFinalSavePolicy final_save_policy,
+                                                         DownloadQueueClosePolicy queue_close_policy)
+    : DownloadAdmissionController(service, io, final_save_policy, queue_close_policy) {
     auto& owner = *impl_;
     owner.reconcile_imports = true;
     try {
@@ -418,7 +429,7 @@ DownloadAdmissionResult DownloadAdmissionController::begin(const DownloadRequest
                                         [&](const Impl::Receipt& receipt) { return receipt.id == id; });
         if (known != owner.confirmed.end())
             return {.result = owner.service.submitStaged(request)};
-        if (owner.archive_checkpoint)
+        if (owner.archive_checkpoint || owner.service.hasUnconfirmedRestoredQueue())
             return rejected(DownloadSubmissionError::Busy);
         if (owner.pending) {
             if (owner.pending->id != id)
@@ -458,12 +469,13 @@ std::optional<DownloadSubmissionResult> DownloadAdmissionController::poll(const 
 }
 bool DownloadAdmissionController::retryAdmission() {
     auto& owner = *impl_;
-    if (owner.operating || owner.closing || !owner.pending || owner.uncertain_offer ||
+    const bool resuming = owner.service.hasUnconfirmedRestoredQueue();
+    if (owner.operating || owner.closing || (!owner.pending && !resuming) || owner.uncertain_offer ||
         (owner.operation && !owner.operation->drain_only) ||
         owner.state != DownloadAdmissionControllerState::AdmissionFailed)
         return false;
     const Impl::Guard guard(owner);
-    return owner.save(Impl::Purpose::Admission);
+    return owner.save(resuming ? Impl::Purpose::Resume : Impl::Purpose::Admission);
 }
 DownloadRetryStatus DownloadAdmissionController::downloadRetryStatus(const std::string_view job_id) const {
     const auto& owner = *impl_;
@@ -572,10 +584,7 @@ bool DownloadAdmissionController::renewStartupNamespace() {
         owner.confirmed.swap(receipts);
         owner.namespace_checkpoint.reset();
         owner.blocked_recovery_status = DownloadRecoveryStatus::NotRequested;
-        owner.healthy_startup = true;
-        owner.state = DownloadAdmissionControllerState::Ready;
-        if (owner.load_status == DownloadCheckpointLoadStatus::Loaded)
-            owner.service.retireArchivedImportReceipts();
+        owner.finishRestore();
         return true;
     } catch (...) {
         return false;

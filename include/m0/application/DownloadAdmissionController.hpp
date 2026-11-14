@@ -22,25 +22,28 @@ enum class DownloadAdmissionControllerState {
 };
 
 enum class DownloadFinalSavePolicy { CloseAfterAttempt, HoldForDecision };
+enum class DownloadQueueClosePolicy { Cancel, Preserve };
 enum class DownloadStartupRecoveryAction { None, RetryCheckpoint, ReloadSession, RenewNamespace, ReviewHistory };
 
 // Single application-thread owner of admission, restoration and checkpoints.
 // Trusted job controls may use the service on that same thread, never submit or
 // restore behind this owner. Ports cannot reenter service mutations directly.
 // Borrowed service/IO/ports outlive shutdown/drain. No destructor I/O or join.
-// Admission and final shutdown checkpoints are persisted; this is not a media
-// ownership journal, queue+import transaction or automatic recovery/retry.
+// Persists admissions, orderly shutdown and the one-time restart barrier.
+// Media ownership and durable imports are coordinated by their own ports.
 class DownloadAdmissionController final : public AsyncDownloadSubmission {
   public:
     DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io,
-                                DownloadFinalSavePolicy final_save_policy = DownloadFinalSavePolicy::CloseAfterAttempt);
+                                DownloadFinalSavePolicy final_save_policy = DownloadFinalSavePolicy::CloseAfterAttempt,
+                                DownloadQueueClosePolicy queue_close_policy = DownloadQueueClosePolicy::Cancel);
     // Durable startup composition: copy only a bounded receipt ledger from a
     // valid Loaded primary or an exactly empty Missing session. Backup/defaults/
     // future history blocks ingress; retrying download I/O cannot upgrade it.
     // This is store evidence, never the current unsaved presenter snapshot.
     DownloadAdmissionController(DownloadService& service, DownloadCheckpointIo& io,
                                 const SessionLoadResult& initial_session,
-                                DownloadFinalSavePolicy final_save_policy = DownloadFinalSavePolicy::CloseAfterAttempt);
+                                DownloadFinalSavePolicy final_save_policy = DownloadFinalSavePolicy::CloseAfterAttempt,
+                                DownloadQueueClosePolicy queue_close_policy = DownloadQueueClosePolicy::Cancel);
     ~DownloadAdmissionController() override;
     DownloadAdmissionController(const DownloadAdmissionController&) = delete;
     DownloadAdmissionController& operator=(const DownloadAdmissionController&) = delete;

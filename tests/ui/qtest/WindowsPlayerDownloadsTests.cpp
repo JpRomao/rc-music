@@ -304,20 +304,22 @@ struct Harness final {
                               metadata,
                               [] { return std::vector<std::filesystem::path>{}; },
                               {.autosave = &preferences, .session = {.autosave = &autosave}}};
-    std::shared_ptr<CheckpointState> checkpoint{std::make_shared<CheckpointState>()};
+    std::shared_ptr<CheckpointState> checkpoint;
     std::shared_ptr<TaskState> task{std::make_shared<TaskState>()};
     std::unique_ptr<WindowsPlayerDownloads> owner;
     explicit Harness(bool youtube = false, LyricsBinding* lyrics_writer = nullptr,
                      QNetworkAccessManager* lyrics_network = nullptr, bool automatic_polling = false,
                      std::optional<WindowsPlayerNativeIngressOptions> native_ingress = {},
-                     bool embedded_browser_ingress = false) {
+                     bool embedded_browser_ingress = false, std::shared_ptr<CheckpointState> checkpoint_state = {},
+                     std::string job_namespace = "owner")
+        : checkpoint(checkpoint_state ? std::move(checkpoint_state) : std::make_shared<CheckpointState>()) {
         WindowsDownloadExecution::TaskFactory destination = [state = task] { return std::make_unique<Task>(state); };
         auto execution =
             youtube ? makeWindowsMediaAndYoutubeExecution(
                           [] { return std::make_unique<music_player::m0::test::FixtureYoutubeResolverProcess>(); },
                           destination, [] { return qint64{1'999'999'000}; })
                     : std::make_unique<WindowsDownloadExecution>(destination);
-        WindowsPlayerDownloadsOptions options{.job_namespace = "owner",
+        WindowsPlayerDownloadsOptions options{.job_namespace = std::move(job_namespace),
                                               .binding = {.automatic_polling = automatic_polling},
                                               .lyrics_writer = lyrics_writer,
                                               .lyrics_network = lyrics_network,
@@ -350,10 +352,11 @@ struct Harness final {
         return false;
     }
     bool ready() {
+        const auto previous_loads = checkpoint->loads.load();
         if (!owner->start())
             return false;
         return wait([&] {
-            return checkpoint->loads == 1 &&
+            return checkpoint->loads == previous_loads + 1 &&
                    owner->binding()->statusText() == DownloadApplicationBinding::tr("Histórico de downloads carregado");
         });
     }
@@ -872,27 +875,57 @@ class WindowsPlayerDownloadsTests final : public QObject {
         QVERIFY(h.checkpoint->destroyed);
         QCOMPARE(h.task->starts.load(), 0);
     }
-    void exitWaitsForTaskAcknowledgementWithoutStartingSuccessorOrImporting() {
-        Harness h;
-        h.task->complete = false;
-        h.task->allow_cancel_terminal = false;
-        QVERIFY(h.ready());
+    void exitWaitsForTaskAcknowledgementAndRestoresTheQueueOnReopen() {
+        auto checkpoint = std::make_shared<CheckpointState>();
         auto batch = request();
-        batch.items.push_back(batch.items.front());
-        QVERIFY(h.wait([&] { return h.owner->submission().begin(batch).state == DownloadAdmissionState::Pending; }));
-        QVERIFY(h.wait([&] { return h.task->starts == 1; }));
-        QVERIFY(h.presenter.requestExit());
-        QVERIFY(h.wait([&] { return h.task->cancelled.load(); }));
-        QVERIFY(!h.owner->stopped());
-        QCOMPARE(h.platform.exits, 0);
-        QCOMPARE(h.presenter.queueModelObject()->rowCount(), 0);
-        h.task->allow_cancel_terminal = true;
-        QVERIFY(h.drain());
-        QCOMPARE(h.task->starts.load(), 1);
-        QCOMPARE(h.state(0), QStringLiteral("cancelled"));
-        QCOMPARE(h.state(1), QStringLiteral("cancelled"));
-        QCOMPARE(h.owner->submission().begin(batch).result.error, DownloadSubmissionError::NotAvailable);
-        QVERIFY(h.session_writer.disk.download_import_receipts.empty());
+        batch.items.push_back({"https://synthetic.example.test/next.mp3?key=test", "Next audio"});
+        std::vector<std::string> job_ids;
+        {
+            Harness h(false, nullptr, nullptr, false, {}, false, checkpoint);
+            h.task->complete = false;
+            h.task->allow_cancel_terminal = false;
+            QVERIFY(h.ready());
+            QCOMPARE(h.owner->submission().begin(batch).state, DownloadAdmissionState::Pending);
+            QVERIFY(h.wait([&] { return h.task->starts == 1; }));
+            const auto acknowledged = h.owner->submission().poll(batch.request_id);
+            QVERIFY(acknowledged && acknowledged->error == DownloadSubmissionError::None);
+            job_ids = acknowledged->job_ids;
+            QCOMPARE(job_ids.size(), batch.items.size());
+
+            QVERIFY(h.presenter.requestExit());
+            QVERIFY(h.wait([&] { return h.task->cancelled.load(); }));
+            QVERIFY(!h.owner->stopped());
+            QCOMPARE(h.platform.exits, 0);
+            QCOMPARE(h.presenter.queueModelObject()->rowCount(), 0);
+            h.task->allow_cancel_terminal = true;
+            QVERIFY(h.drain());
+            QCOMPARE(h.task->starts.load(), 1);
+            QCOMPARE(h.state(0), QStringLiteral("queued"));
+            QCOMPARE(h.state(1), QStringLiteral("queued"));
+            QCOMPARE(h.owner->submission().begin(batch).result.error, DownloadSubmissionError::NotAvailable);
+            QVERIFY(h.session_writer.disk.download_import_receipts.empty());
+            QVERIFY(checkpoint->disk);
+            const auto& saved = *checkpoint->disk;
+            QCOMPARE(saved.resumable_jobs.size(), batch.items.size());
+            for (std::size_t i = 0; i < saved.resumable_jobs.size(); ++i) {
+                QCOMPARE(saved.resumable_jobs[i].job_id, job_ids[i]);
+                QVERIFY(saved.resumable_jobs[i].item == batch.items[i]);
+                QCOMPARE(saved.jobs[i].state, DownloadJobState::Queued);
+            }
+        }
+
+        Harness reopened(false, nullptr, nullptr, false, {}, false, checkpoint, "reopened-owner");
+        reopened.task->complete = false;
+        QVERIFY(reopened.ready());
+        QVERIFY(reopened.wait([&] { return reopened.task->starts >= 1; }));
+        QCOMPARE(reopened.task->starts.load(), 1);
+        QCOMPARE(reopened.state(0), QStringLiteral("downloading"));
+        QCOMPARE(reopened.state(1), QStringLiteral("queued"));
+        const auto replay = reopened.owner->submission().begin(batch);
+        QCOMPARE(replay.state, DownloadAdmissionState::Completed);
+        QCOMPARE(replay.result.error, DownloadSubmissionError::None);
+        QCOMPARE(replay.result.job_ids, job_ids);
+        QVERIFY(reopened.drain());
     }
 };
 QTEST_MAIN(WindowsPlayerDownloadsTests)

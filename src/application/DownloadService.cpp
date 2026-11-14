@@ -216,6 +216,8 @@ struct DownloadService::Impl {
         // A primary error (for example Timeout) must not erase a late,
         // correlated publication/cleanup uncertainty when deciding retry.
         bool retry_requires_recovery{false};
+        bool resume_on_close{false};
+        std::optional<DownloadItem> restored_source{};
     };
 
     struct ArchivePlan {
@@ -242,8 +244,10 @@ struct DownloadService::Impl {
     std::uint64_t next_id{1};
     bool valid_configuration;
     bool closed{false};
+    bool preserve_queue_on_close{false};
     bool calling_port{false};
     bool restoration_performed{false};
+    bool restored_queue_pending{false};
 
     Impl(DownloadExecution& worker, DownloadImport& local_import, std::string id_prefix, DownloadServiceLimits caps,
          DownloadRequestIdentity* request_identity)
@@ -281,16 +285,20 @@ struct DownloadService::Impl {
         }
     }
 
+    static const DownloadItem* retainedSource(const Job& job, std::span<const Receipt> active_receipts) noexcept {
+        if (job.restored_source)
+            return &*job.restored_source;
+        const auto& receipt = active_receipts[job.receipt_index];
+        return job.item_index < receipt.request.items.size() ? &receipt.request.items[job.item_index] : nullptr;
+    }
+
     const YoutubeAudioItem* livePublishedYoutubeSource(const Job& job) const noexcept {
         if (job.lyrics_review_finished || job.view.completed_mp3.empty() || job.receipt_index >= receipts.size() ||
             (job.view.state != DownloadJobState::Completed && job.view.state != DownloadJobState::Importing &&
              job.view.state != DownloadJobState::Imported && job.view.state != DownloadJobState::ImportFailed))
             return nullptr;
-        const auto& receipt = receipts[job.receipt_index];
-        if (receipt.recovered || job.item_index >= receipt.request.items.size())
-            return nullptr;
-        const auto& source = receipt.request.items[job.item_index].youtube;
-        return source ? &*source : nullptr;
+        const auto* item = retainedSource(job, receipts);
+        return item && item->youtube ? &*item->youtube : nullptr;
     }
 
     bool eligibleForArchive(const std::size_t receipt_index) const {
@@ -314,7 +322,8 @@ struct DownloadService::Impl {
 
     static std::optional<DownloadCheckpoint> makeCheckpoint(std::span<const Receipt> active_receipts,
                                                             std::span<const Job> active_jobs,
-                                                            std::span<const DownloadArchivedRequest> archived) {
+                                                            std::span<const DownloadArchivedRequest> archived,
+                                                            const bool preserve_queue = false) {
         DownloadCheckpoint result;
         result.receipts.reserve(active_receipts.size());
         result.jobs.reserve(active_jobs.size());
@@ -331,6 +340,10 @@ struct DownloadService::Impl {
             auto view = job.view;
             if (!job.candidate_mp3.empty())
                 view.completed_mp3 = job.candidate_mp3;
+            if (preserve_queue && view.state == DownloadJobState::Queued && !job.awaiting_confirmation) {
+                if (const auto* source = retainedSource(job, active_receipts))
+                    result.resumable_jobs.push_back({view.job_id, *source});
+            }
             result.jobs.push_back(std::move(view));
         }
         if (!validDownloadCheckpoint(result))
@@ -479,9 +492,21 @@ struct DownloadService::Impl {
             else if (update.state == DownloadExecutionState::Failed)
                 failTerminal(job, update.error);
             else {
-                // Publication racing with cancellation is not a local-import handoff.
-                job.view.state = DownloadJobState::Cancelled;
                 job.view.completed_mp3.clear();
+                if (job.resume_on_close && !job.retry_requires_recovery &&
+                    update.state == DownloadExecutionState::Cancelled) {
+                    job.view.state = DownloadJobState::Queued;
+                    job.view.completed_units = 0;
+                    job.view.total_units.reset();
+                } else if (job.resume_on_close && job.retry_requires_recovery) {
+                    // Keep the final as private recovery evidence without importing or restarting it.
+                    job.view.state = DownloadJobState::Interrupted;
+                    job.view.error = DownloadFailure::Unavailable;
+                    if (update.state == DownloadExecutionState::Published)
+                        job.candidate_mp3 = update.published_mp3;
+                } else {
+                    job.view.state = DownloadJobState::Cancelled;
+                }
                 active.reset();
             }
             return;
@@ -564,7 +589,7 @@ std::optional<DownloadCheckpoint> DownloadService::checkpoint() {
     const auto& state = *impl_;
     if (state.calling_port || !state.valid_configuration || state.identity == nullptr)
         return std::nullopt;
-    return Impl::makeCheckpoint(state.receipts, state.jobs, state.archived_receipts);
+    return Impl::makeCheckpoint(state.receipts, state.jobs, state.archived_receipts, state.preserve_queue_on_close);
 }
 
 bool DownloadService::restore(const DownloadCheckpoint& checkpoint) { return restoreImpl(checkpoint, {}, false); }
@@ -575,6 +600,11 @@ bool DownloadService::restore(const DownloadCheckpoint& checkpoint,
 }
 
 DownloadRecoveryReport DownloadService::recoveryReport() const { return impl_->recovery_report; }
+bool DownloadService::hasUnconfirmedRestoredQueue() const noexcept { return impl_->restored_queue_pending; }
+void DownloadService::confirmRestoredQueue() noexcept {
+    if (!impl_->calling_port)
+        impl_->restored_queue_pending = false;
+}
 
 bool DownloadService::restoreWithFreshNamespace(const DownloadCheckpoint& checkpoint) {
     return restoreImpl(checkpoint, {}, false, true);
@@ -668,8 +698,11 @@ bool DownloadService::restoreImpl(const DownloadCheckpoint& checkpoint,
             auto view = original;
             auto candidate = std::move(view.completed_mp3);
             view.completed_mp3.clear();
+            std::optional<DownloadItem> restored_source;
             auto disposition = DownloadRecoveryDisposition::Unchanged;
             const auto receipt = std::ranges::find(confirmed_imports, original.job_id, &DownloadImportReceipt::job_id);
+            const auto resume =
+                std::ranges::find(checkpoint.resumable_jobs, original.job_id, &DownloadResumeEntry::job_id);
             if (reconcile && receipt != confirmed_imports.end()) {
                 if ((!candidate.empty() && candidate != receipt->source_path) ||
                     view.state == DownloadJobState::Failed || view.state == DownloadJobState::Cancelled ||
@@ -683,6 +716,8 @@ bool DownloadService::restoreImpl(const DownloadCheckpoint& checkpoint,
                 view.state = DownloadJobState::Imported;
                 view.error = DownloadFailure::None;
                 disposition = DownloadRecoveryDisposition::Imported;
+            } else if (resume != checkpoint.resumable_jobs.end()) {
+                restored_source = resume->item;
             } else {
                 switch (view.state) {
                 case DownloadJobState::Queued:
@@ -715,13 +750,16 @@ bool DownloadService::restoreImpl(const DownloadCheckpoint& checkpoint,
             }
             if (reconcile)
                 report.items.push_back({original.job_id, disposition});
-            jobs.push_back({.view = std::move(view), .candidate_mp3 = std::move(candidate)});
+            jobs.push_back({.view = std::move(view),
+                            .candidate_mp3 = std::move(candidate),
+                            .restored_source = std::move(restored_source)});
         }
 
         // New receipt-supplied paths must fit the checkpoint's own stricter
         // representation bounds too. This remains pure lexical validation.
         if (reconcile) {
             auto prospective = checkpoint;
+            prospective.resumable_jobs.clear();
             for (std::size_t index = 0; index < jobs.size(); ++index) {
                 prospective.jobs[index] = jobs[index].view;
                 prospective.jobs[index].completed_mp3 = jobs[index].candidate_mp3;
@@ -758,6 +796,8 @@ bool DownloadService::restoreImpl(const DownloadCheckpoint& checkpoint,
         state.recovery_report = std::move(report);
         state.retained_request_bytes = retained_bytes;
         state.restoration_performed = true;
+        state.restored_queue_pending =
+            std::ranges::any_of(state.jobs, [](const Impl::Job& job) { return job.restored_source.has_value(); });
         return true;
     } catch (...) {
         return fail(DownloadRecoveryStatus::InvalidHistory);
@@ -1025,7 +1065,7 @@ void DownloadService::tick(const std::int64_t now_ms, const std::function<bool()
     // or execution cancellation being applied to the borrowed session writer.
     state.observeImports();
     if (!state.active.has_value()) {
-        if (state.closed)
+        if (state.closed || state.restored_queue_pending)
             return;
         const auto next = std::find_if(state.jobs.begin(), state.jobs.end(),
                                        [](const Impl::Job& job) { return job.view.state == DownloadJobState::Queued; });
@@ -1058,10 +1098,11 @@ void DownloadService::tick(const std::int64_t now_ms, const std::function<bool()
             bool accepted = false;
             {
                 const PortCall guard(state.calling_port);
-                const auto& item = state.receipts[job.receipt_index].request.items[job.item_index];
-                accepted = archive_evidence.archived_job_ids.empty()
-                               ? state.execution.start(job.view.job_id, item)
-                               : state.execution.startWithArchivedJobs(job.view.job_id, item, archive_evidence);
+                if (const auto* item = Impl::retainedSource(job, state.receipts)) {
+                    accepted = archive_evidence.archived_job_ids.empty()
+                                   ? state.execution.start(job.view.job_id, *item)
+                                   : state.execution.startWithArchivedJobs(job.view.job_id, *item, archive_evidence);
+                }
             }
             if (!accepted)
                 state.failTerminal(job, DownloadFailure::Unavailable);
@@ -1136,12 +1177,11 @@ DownloadRetryStatus DownloadService::downloadRetryStatus(const std::string_view 
         job->view.error == DownloadFailure::Publication || job->view.error == DownloadFailure::InvalidResult ||
         job->view.error == DownloadFailure::Import)
         return DownloadRetryStatus::RecoveryRequired;
-    const auto& receipt = state.receipts[job->receipt_index];
-    if (receipt.recovered || job->item_index >= receipt.request.items.size())
+    const auto* source = Impl::retainedSource(*job, state.receipts);
+    if (!source)
         return DownloadRetryStatus::SourceUnavailable;
     if (state.jobs.size() >= state.limits.max_jobs || state.receipts.size() >= state.limits.max_requests ||
-        36 + retainedItemBytes(receipt.request.items[job->item_index]) >
-            state.limits.max_retained_request_bytes - state.retained_request_bytes)
+        36 + retainedItemBytes(*source) > state.limits.max_retained_request_bytes - state.retained_request_bytes)
         return DownloadRetryStatus::LimitExceeded;
     return DownloadRetryStatus::Available;
 }
@@ -1149,15 +1189,14 @@ DownloadRetryStatus DownloadService::downloadRetryStatus(const std::string_view 
 std::optional<DownloadItem> DownloadService::retrySource(const std::string_view job_id) const {
     if (downloadRetryStatus(job_id) != DownloadRetryStatus::Available)
         return std::nullopt;
-    const auto& job = *impl_->find(job_id);
-    return impl_->receipts[job.receipt_index].request.items[job.item_index];
+    return *Impl::retainedSource(*impl_->find(job_id), impl_->receipts);
 }
 
 std::optional<DownloadPhase> DownloadService::progressPhase(const std::string_view job_id) const {
     if (job_id.empty() || job_id.size() > 64)
         return std::nullopt;
     const auto* job = impl_->find(job_id);
-    if (!job || impl_->receipts[job->receipt_index].recovered || job->view.state == DownloadJobState::Queued)
+    if (!job || !Impl::retainedSource(*job, impl_->receipts) || job->view.state == DownloadJobState::Queued)
         return std::nullopt;
     return job->phase;
 }
@@ -1241,17 +1280,27 @@ std::optional<DownloadImportState> DownloadService::recoveredImportState(const s
     return job != nullptr ? job->recovered_import : std::nullopt;
 }
 
-void DownloadService::shutdown() {
+void DownloadService::shutdown(const bool preserve_queue) {
     auto& state = *impl_;
     if (state.calling_port || state.closed)
         return;
     state.closed = true;
+    state.preserve_queue_on_close = preserve_queue;
     for (auto& job : state.jobs) {
-        if (job.view.state == DownloadJobState::Queued)
+        if (job.view.state == DownloadJobState::Queued &&
+            (!preserve_queue || !Impl::retainedSource(job, state.receipts)))
             job.view.state = DownloadJobState::Cancelled;
     }
-    if (state.active.has_value())
-        state.requestCancellation(state.jobs[*state.active], DownloadFailure::None);
+    if (!state.active)
+        return;
+    auto& job = state.jobs[*state.active];
+    // An observed publication already owns its final handoff. Drain it and
+    // the import acknowledgement instead of interrupting the commit.
+    if (preserve_queue && job.view.state == DownloadJobState::Publishing)
+        return;
+    job.resume_on_close =
+        preserve_queue && job.view.state != DownloadJobState::Cancelling && Impl::retainedSource(job, state.receipts);
+    state.requestCancellation(job, DownloadFailure::None);
 }
 
 bool DownloadService::stopped() const {

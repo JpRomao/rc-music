@@ -99,6 +99,14 @@ WindowsDownloadOwnershipStore::reclaimAtCapacity(const DownloadOwnershipRecord& 
 }
 
 DownloadCheckpointSaveStatus
+WindowsDownloadOwnershipStore::retireUnpublishedAttempt(const DownloadOwnershipRecord& expected,
+                                                        const std::function<bool()>& still_absent) {
+    if (expected.stage != DownloadOwnershipStage::Planned && expected.stage != DownloadOwnershipStage::WorkspaceReady)
+        return DownloadCheckpointSaveStatus::Failed;
+    return changeCleanedRecord(expected, still_absent, CleanedRecordChange::RetireUnpublishedAttempt);
+}
+
+DownloadCheckpointSaveStatus
 WindowsDownloadOwnershipStore::changeCleanedRecord(const DownloadOwnershipRecord& expected,
                                                    const std::function<bool()>& still_verified,
                                                    const CleanedRecordChange change) {
@@ -125,7 +133,7 @@ WindowsDownloadOwnershipStore::changeCleanedRecord(const DownloadOwnershipRecord
             const auto found = std::ranges::find(records, expected);
             if (found == records.end() || !still_verified())
                 return blocked;
-            if (reclaim)
+            if (reclaim || change == CleanedRecordChange::RetireUnpublishedAttempt)
                 records.erase(found);
             else if (mark_planned)
                 found->cleanup_complete = true;

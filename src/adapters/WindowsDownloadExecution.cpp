@@ -494,7 +494,8 @@ struct WindowsDownloadExecution::Impl final {
                     early.job_id = current->id;
                     if (!cancellation() && preflight) {
                         try {
-                            early.error = preflight({current->archived_job_ids, current->retired_import_job_ids});
+                            early.error =
+                                preflight(current->id, {current->archived_job_ids, current->retired_import_job_ids});
                         } catch (...) {
                             early.error = DownloadFailure::InvalidResult;
                         }

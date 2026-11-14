@@ -500,10 +500,10 @@ struct WindowsPinnedDownloadFinal::Impl {
     Impl(const WindowsDownloadWorkspaceConfig& settings, const DownloadOwnershipRecord& evidence)
         : config(settings), record(evidence) {}
 };
-DownloadOwnershipCapacity
-WindowsDownloadOwnershipRecovery::ensureCapacity(const WindowsDownloadWorkspaceConfig& config,
-                                                 WindowsDownloadOwnershipStore& store,
-                                                 const ArchivedDownloadJobEvidence& evidence) noexcept {
+DownloadOwnershipCapacity WindowsDownloadOwnershipRecovery::ensureCapacity(const WindowsDownloadWorkspaceConfig& config,
+                                                                           WindowsDownloadOwnershipStore& store,
+                                                                           const ArchivedDownloadJobEvidence& evidence,
+                                                                           const std::string_view job_id) noexcept {
     try {
         const auto loaded = store.load();
         if (loaded.status == DownloadCheckpointLoadStatus::Missing && !loaded.journal)
@@ -511,6 +511,18 @@ WindowsDownloadOwnershipRecovery::ensureCapacity(const WindowsDownloadWorkspaceC
         if (loaded.status != DownloadCheckpointLoadStatus::Loaded || !loaded.journal)
             return DownloadOwnershipCapacity::HistoryUnavailable;
         const auto& records = loaded.journal->records;
+        const auto prior = std::ranges::find(records, job_id, &DownloadOwnershipRecord::job_id);
+        if (prior != records.end()) {
+            Workspace workspace;
+            if ((prior->stage != DownloadOwnershipStage::Planned &&
+                 prior->stage != DownloadOwnershipStage::WorkspaceReady) ||
+                !pinCleanedAbsence(config, *prior, workspace))
+                return DownloadOwnershipCapacity::PriorAttemptUnresolved;
+            const auto saved =
+                store.retireUnpublishedAttempt(*prior, [&] { return removedUnderPinnedParents(workspace); });
+            return saved == DownloadCheckpointSaveStatus::Saved ? DownloadOwnershipCapacity::Available
+                                                                : DownloadOwnershipCapacity::ReclaimUnconfirmed;
+        }
         if (records.size() < DownloadOwnershipJournal::maximum_records)
             return DownloadOwnershipCapacity::Available;
         for (const auto& record : records) {

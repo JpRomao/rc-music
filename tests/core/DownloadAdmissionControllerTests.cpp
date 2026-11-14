@@ -177,8 +177,11 @@ struct AdmissionHarness {
     DownloadService service;
     DownloadAdmissionController controller;
     explicit AdmissionHarness(DownloadServiceLimits limits = {},
-                              DownloadFinalSavePolicy policy = DownloadFinalSavePolicy::CloseAfterAttempt)
-        : service(execution, importer, "owner", limits, &identity), controller(service, io, policy) {}
+                              DownloadFinalSavePolicy policy = DownloadFinalSavePolicy::CloseAfterAttempt,
+                              DownloadQueueClosePolicy queue_policy = DownloadQueueClosePolicy::Cancel,
+                              std::string job_namespace = "owner")
+        : service(execution, importer, std::move(job_namespace), limits, &identity),
+          controller(service, io, policy, queue_policy) {}
     void ready() {
         REQUIRE(controller.start());
         REQUIRE(io.loads.size() == 1);
@@ -1164,6 +1167,88 @@ TEST_CASE("Download shutdown drains pending persistence and saves its cancelled 
     REQUIRE(h.controller.stopped());
     REQUIRE(h.controller.state() == DownloadAdmissionControllerState::Stopped);
     REQUIRE(h.execution.starts.empty());
+}
+
+TEST_CASE("Download queue resumes after close in FIFO order and requires a saved restart barrier",
+          "[download][admission][resume]") {
+    AdmissionHarness previous({}, DownloadFinalSavePolicy::HoldForDecision, DownloadQueueClosePolicy::Preserve);
+    previous.ready();
+    const auto request = admissionInput(1, 3);
+    pendingWithoutAck(previous.controller.begin(request));
+    previous.io.saved();
+    previous.controller.tick(1);
+    REQUIRE(previous.execution.starts == std::vector<std::string>{"owner-1"});
+    REQUIRE(previous.service.cancel("owner-2"));
+
+    previous.controller.shutdown();
+    previous.controller.tick(2);
+    REQUIRE(previous.io.saves.size() == 1);
+    REQUIRE(previous.execution.cancellations == std::vector<std::string>{"owner-1"});
+    previous.execution.update = {.job_id = "owner-1", .state = DownloadExecutionState::Cancelled};
+    previous.controller.tick(3);
+    REQUIRE(previous.io.saves.size() == 2);
+    const auto& checkpoint = previous.io.saves.back().checkpoint;
+    CHECK(checkpoint.jobs[0].state == DownloadJobState::Queued);
+    CHECK(checkpoint.jobs[1].state == DownloadJobState::Cancelled);
+    CHECK(checkpoint.jobs[2].state == DownloadJobState::Queued);
+    previous.io.saved();
+    previous.io.allow_stopped = true;
+    previous.controller.tick(4);
+    REQUIRE(previous.controller.stopped());
+
+    AdmissionHarness reopened({}, DownloadFinalSavePolicy::HoldForDecision, DownloadQueueClosePolicy::Preserve,
+                              "reopened");
+    REQUIRE(reopened.controller.start());
+    reopened.io.loaded({.checkpoint = checkpoint, .status = DownloadCheckpointLoadStatus::Loaded});
+    reopened.controller.tick(0);
+    REQUIRE(reopened.io.saves.size() == 1);
+    REQUIRE(reopened.io.saves.front().checkpoint.resumable_jobs.empty());
+    REQUIRE(reopened.execution.starts.empty());
+    reopened.io.saved(DownloadCheckpointSaveStatus::Failed);
+    reopened.controller.tick(1);
+    REQUIRE(reopened.execution.starts.empty());
+    REQUIRE(reopened.controller.retryAdmission());
+    reopened.io.saved();
+    reopened.controller.tick(2);
+    REQUIRE(reopened.execution.starts == std::vector<std::string>{"owner-1"});
+    REQUIRE(reopened.execution.started_items.front() == request.items[0]);
+    reopened.execution.update = {.job_id = "owner-1",
+                                 .state = DownloadExecutionState::Published,
+                                 .phase = DownloadPhase::Publishing,
+                                 .published_mp3 = admissionFinalPath()};
+    reopened.controller.tick(3);
+    reopened.controller.tick(4);
+    REQUIRE((reopened.execution.starts == std::vector<std::string>{"owner-1", "owner-3"}));
+    REQUIRE(reopened.execution.started_items.back() == request.items[2]);
+    REQUIRE(reopened.importer.calls == 1);
+}
+
+TEST_CASE("A durable close lets an observed publication finish and preserves its queued successor",
+          "[download][admission][resume]") {
+    AdmissionHarness h({}, DownloadFinalSavePolicy::HoldForDecision, DownloadQueueClosePolicy::Preserve);
+    h.ready();
+    pendingWithoutAck(h.controller.begin(admissionInput(1, 2)));
+    h.io.saved();
+    h.controller.tick(1);
+    REQUIRE(h.execution.starts == std::vector<std::string>{"owner-1"});
+    h.execution.update = {.job_id = "owner-1", .phase = DownloadPhase::Publishing};
+    h.controller.tick(2);
+
+    h.controller.shutdown();
+    h.controller.tick(3);
+    REQUIRE(h.execution.cancellations.empty());
+    REQUIRE(h.io.saves.size() == 1);
+    h.execution.update = {.job_id = "owner-1",
+                          .state = DownloadExecutionState::Published,
+                          .phase = DownloadPhase::Publishing,
+                          .published_mp3 = admissionFinalPath()};
+    h.controller.tick(4);
+    REQUIRE(h.importer.calls == 1);
+    REQUIRE(h.io.saves.size() == 2);
+    const auto& checkpoint = h.io.saves.back().checkpoint;
+    REQUIRE(checkpoint.jobs[0].state == DownloadJobState::Completed);
+    REQUIRE(checkpoint.resumable_jobs.size() == 1);
+    REQUIRE(checkpoint.resumable_jobs.front().job_id == "owner-2");
 }
 
 TEST_CASE("Download shutdown waits for the actual execution acknowledgement before its final checkpoint",

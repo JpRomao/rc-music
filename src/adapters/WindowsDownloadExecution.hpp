@@ -70,7 +70,7 @@ class WindowsDownloadExecution final : public DownloadExecution {
     using TaskFactory = std::function<std::unique_ptr<WindowsDownloadTask>()>;
     // Trusted synchronous check on the execution worker before task creation.
     // The evidence spans are valid only for the call. None allows the job.
-    using Preflight = std::function<DownloadFailure(const ArchivedDownloadJobEvidence&)>;
+    using Preflight = std::function<DownloadFailure(std::string_view job_id, const ArchivedDownloadJobEvidence&)>;
     explicit WindowsDownloadExecution(TaskFactory factory, Preflight preflight = {});
     WindowsDownloadExecution(WindowsProcessDownloadIoConfig io, WindowsDownloadJobSessionConfig job);
     WindowsDownloadExecution(WindowsDownloadNetworkLaunchConfig launch, WindowsDownloadJobSessionConfig job);
