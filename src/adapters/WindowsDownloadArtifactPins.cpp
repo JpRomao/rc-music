@@ -148,7 +148,8 @@ bool createPrivateDirectory(const QString& path) {
 }
 
 namespace {
-bool copyPinnedWithSecurity(const Artifact& source, Artifact& destination, const ContainerSecurity* security) {
+bool copyPinnedWithSecurity(const Artifact& source, Artifact& destination, const ContainerSecurity* security,
+                            const bool flush_to_disk) {
     SECURITY_ATTRIBUTES attributes{};
     if (security)
         attributes = security->attributes();
@@ -172,12 +173,15 @@ bool copyPinnedWithSecurity(const Artifact& source, Artifact& destination, const
             return false;
         copied += read;
     }
-    return FlushFileBuffers(output.get()) && unchanged(source);
+    return (!flush_to_disk || FlushFileBuffers(output.get())) && unchanged(source);
 }
 } // namespace
 
 bool copyPinned(const Artifact& source, Artifact& destination) {
-    return copyPinnedWithSecurity(source, destination, nullptr);
+    return copyPinnedWithSecurity(source, destination, nullptr, true);
+}
+bool copyPinnedTemporary(const Artifact& source, Artifact& destination) {
+    return copyPinnedWithSecurity(source, destination, nullptr, false);
 }
 bool createPrivateDirectory(const QString& path, const QByteArray& app_container_sid) {
     const ContainerSecurity security(app_container_sid);
@@ -188,7 +192,7 @@ bool createPrivateDirectory(const QString& path, const QByteArray& app_container
 }
 bool copyPinned(const Artifact& source, Artifact& destination, const QByteArray& app_container_sid) {
     const ContainerSecurity security(app_container_sid);
-    return security.valid() && copyPinnedWithSecurity(source, destination, &security);
+    return security.valid() && copyPinnedWithSecurity(source, destination, &security, true);
 }
 bool runtimeDaclMatches(HANDLE handle, const QByteArray& app_container_sid) {
     return ContainerSecurity(app_container_sid).matches(handle);
@@ -310,16 +314,9 @@ bool unchanged(const Artifact& artifact) {
            finalPath(artifact.handle.get()) == artifact.final_path;
 }
 
-Error pinAndHash(Artifact& artifact, std::vector<Handle>& ancestors) {
-    if (!pinAncestors(artifact.path, ancestors))
-        return Error::FileAccess;
-    artifact.handle =
-        Handle(CreateFileW(nativePath(artifact.path).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                           FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
-    if (!artifact.handle.valid() || !information(artifact.handle.get(), false, artifact.identity, &artifact.bytes))
-        return Error::FileAccess;
-    artifact.final_path = finalPath(artifact.handle.get());
-    if (artifact.final_path.isEmpty())
+Error hashPinned(const Artifact& artifact) {
+    LARGE_INTEGER zero{};
+    if (!artifact.handle.valid() || !SetFilePointerEx(artifact.handle.get(), zero, nullptr, FILE_BEGIN))
         return Error::FileAccess;
     QCryptographicHash hash(QCryptographicHash::Sha256);
     std::array<char, 64 * 1024> block{};
@@ -335,6 +332,20 @@ Error pinAndHash(Artifact& artifact, std::vector<Handle>& ancestors) {
     if (!unchanged(artifact))
         return Error::FileAccess;
     return hash.result().toHex() == artifact.sha256 ? Error::None : Error::HashMismatch;
+}
+
+Error pinAndHashUnderPinnedAncestors(Artifact& artifact) {
+    artifact.handle =
+        Handle(CreateFileW(nativePath(artifact.path).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                           FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
+    if (!artifact.handle.valid() || !information(artifact.handle.get(), false, artifact.identity, &artifact.bytes))
+        return Error::FileAccess;
+    artifact.final_path = finalPath(artifact.handle.get());
+    return artifact.final_path.isEmpty() ? Error::FileAccess : hashPinned(artifact);
+}
+
+Error pinAndHash(Artifact& artifact, std::vector<Handle>& ancestors) {
+    return pinAncestors(artifact.path, ancestors) ? pinAndHashUnderPinnedAncestors(artifact) : Error::FileAccess;
 }
 
 bool moduleMatches(const void* address, const Artifact& expected) {

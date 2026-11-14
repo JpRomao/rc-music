@@ -13,10 +13,10 @@ import sys
 
 PINNED_YTDLP_VERSION = "2026.10.26"
 PINNED_EJS_VERSION = "0.8.0"
-FORMAT_SELECTOR = (
-    "bestaudio[ext=m4a][vcodec=none][acodec=mp4a.40.2][protocol=https]/"
-    "bestaudio[ext=m4a][vcodec=none][acodec=aac][protocol=https]"
-)
+FORMAT_SELECTOR = "bestaudio[ext=m4a][vcodec=none][acodec~='^(mp4a[.]40[.]2|aac)$'][protocol=https]"
+# Prefer the original audio and the extractor's quality signals before using
+# bitrate and sample rate to rank otherwise equivalent AAC representations.
+FORMAT_SORT = ("lang", "quality", "source", "channels", "abr", "br", "asr")
 MAX_FRAME_BYTES = 16 * 1024 * 1024
 MAX_PLAYER_BYTES = 8 * 1024 * 1024
 MAX_RESPONSE_BYTES = 1024 * 1024
@@ -350,7 +350,8 @@ def make_provider(api, transport):
 
 def fixed_options():
     return {
-        "format": FORMAT_SELECTOR, "simulate": True, "skip_download": True, "noplaylist": True,
+        "format": FORMAT_SELECTOR, "format_sort": list(FORMAT_SORT),
+        "simulate": True, "skip_download": True, "noplaylist": True,
         "quiet": True, "no_warnings": True, "noprogress": True, "verbose": False,
         "cachedir": False, "cookiefile": None, "cookiesfrombrowser": None,
         "usenetrc": False, "netrc_location": None, "netrc_cmd": None,

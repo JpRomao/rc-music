@@ -313,8 +313,10 @@ QStringList youtubeAudioResolverArguments(QString video_id, QString private_node
             QStringLiteral("--proxy"),
             QString{},
             QStringLiteral("--format"),
-            QStringLiteral("bestaudio[ext=m4a][vcodec=none][acodec=mp4a.40.2][protocol=https]/"
-                           "bestaudio[ext=m4a][vcodec=none][acodec=aac][protocol=https]"),
+            QStringLiteral("bestaudio[ext=m4a][vcodec=none]"
+                           "[acodec~='^(mp4a[.]40[.]2|aac)$'][protocol=https]"),
+            QStringLiteral("--format-sort"),
+            QStringLiteral("lang,quality,source,channels,abr,br,asr"),
             QStringLiteral("--"),
             QStringLiteral("https://www.youtube.com/watch?v=") + video_id};
 }

@@ -345,6 +345,9 @@ class YoutubeAudioResolutionTests final : public QObject {
         QVERIFY(format_index >= 0 && format_index + 1 < arguments.size());
         QVERIFY(arguments[format_index + 1].contains("m4a"));
         QVERIFY(arguments[format_index + 1].contains("https"));
+        const auto sort_index = arguments.indexOf("--format-sort");
+        QVERIFY(sort_index >= 0 && sort_index + 1 < arguments.size());
+        QCOMPARE(arguments[sort_index + 1], QStringLiteral("lang,quality,source,channels,abr,br,asr"));
         const auto print_index = arguments.indexOf("--print");
         QVERIFY(print_index >= 0 && print_index + 1 < arguments.size());
         const auto projection = arguments[print_index + 1];

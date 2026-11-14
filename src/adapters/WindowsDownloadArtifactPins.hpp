@@ -63,12 +63,17 @@ bool information(HANDLE handle, bool directory, FILE_ID_INFO& identity, quint64*
 bool sameIdentity(const FILE_ID_INFO& left, const FILE_ID_INFO& right) noexcept;
 bool pinAncestors(const QString& path, std::vector<Handle>& pins);
 bool unchanged(const Artifact& artifact);
+Error hashPinned(const Artifact& artifact);
+// The caller holds an ordinary directory pin for each lexical ancestor.
+Error pinAndHashUnderPinnedAncestors(Artifact& artifact);
 Error pinAndHash(Artifact& artifact, std::vector<Handle>& ancestors);
 bool moduleMatches(const void* address, const Artifact& expected);
 // Private child creation/copy/removal used by the reviewed download runtimes.
 // Copy reads only the held source capability; removal checks the recorded ID.
 bool createPrivateDirectory(const QString& path);
 bool copyPinned(const Artifact& source, Artifact& destination);
+// For a per-job copy verified before use and never recovered after a restart.
+bool copyPinnedTemporary(const Artifact& source, Artifact& destination);
 // Opt-in runtime only: create the new objects with the final protected DACL,
 // granting this canonical AppContainer SID exactly read/execute. No parent or
 // source ACL is changed; existing destinations are never opened for mutation.

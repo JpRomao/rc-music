@@ -88,10 +88,6 @@ struct Source final {
     Role role{};
     QString relative{};
     Artifact artifact{};
-    Handle metadata_pin{};
-    FILE_ID_INFO metadata_identity{};
-    QString metadata_final{};
-    quint64 metadata_bytes{};
 };
 
 struct Child final {
@@ -167,7 +163,6 @@ struct WindowsYoutubeRuntime::Impl final {
     std::vector<Directory> directories{};
     std::vector<File> files{};
     std::vector<Handle> parent_ancestors{};
-    std::vector<Handle> ancestors{};
 
     bool unchanged() const {
         return !directories.empty() && std::all_of(directories.begin(), directories.end(), [](const Directory& item) {
@@ -180,12 +175,10 @@ struct WindowsYoutubeRuntime::Impl final {
     }
 
     ~Impl() {
-        // Release file pins and duplicate destination ancestor pins. Retain
-        // every dedicated directory pin and outside-parent pin during file
-        // removal, so cleanup cannot traverse a substituted ancestor.
+        // Release file pins and retain every directory and parent pin during
+        // file removal, so cleanup cannot traverse a substituted ancestor.
         for (auto& file : files)
             file.artifact.handle = Handle{};
-        ancestors.clear();
         try {
             if (directories.empty() || !directories.front().created.known())
                 return;
@@ -329,34 +322,32 @@ std::shared_ptr<const WindowsYoutubeRuntime> WindowsYoutubeRuntime::prepare(cons
         std::vector<Handle> source_ancestors;
         quint64 total_bytes{};
         for (auto& source : sources) {
-            if (!download_artifacts::pinAncestors(source.artifact.path, source_ancestors))
+            auto& artifact = source.artifact;
+            if (!download_artifacts::pinAncestors(artifact.path, source_ancestors))
                 return fail(Error::FileAccess);
-            source.metadata_pin = Handle(
-                CreateFileW(download_artifacts::nativePath(source.artifact.path).c_str(), GENERIC_READ, FILE_SHARE_READ,
-                            nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
+            artifact.handle = Handle(CreateFileW(download_artifacts::nativePath(artifact.path).c_str(), GENERIC_READ,
+                                                 FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                                 FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
             LARGE_INTEGER bytes{};
-            if (!source.metadata_pin.valid() ||
-                !download_artifacts::information(source.metadata_pin.get(), false, source.metadata_identity) ||
-                !GetFileSizeEx(source.metadata_pin.get(), &bytes) || bytes.QuadPart <= 0)
+            if (!artifact.handle.valid() ||
+                !download_artifacts::information(artifact.handle.get(), false, artifact.identity) ||
+                !GetFileSizeEx(artifact.handle.get(), &bytes) || bytes.QuadPart <= 0)
                 return fail(Error::FileAccess);
-            source.metadata_bytes = static_cast<quint64>(bytes.QuadPart);
-            if (source.metadata_bytes > download_artifacts::max_artifact_bytes ||
-                source.metadata_bytes > youtube_runtime_max_bytes - total_bytes)
+            artifact.bytes = static_cast<quint64>(bytes.QuadPart);
+            if (artifact.bytes > download_artifacts::max_artifact_bytes ||
+                artifact.bytes > youtube_runtime_max_bytes - total_bytes)
                 return fail(Error::LimitExceeded);
-            total_bytes += source.metadata_bytes;
-            source.metadata_final = download_artifacts::finalPath(source.metadata_pin.get());
-            if (source.metadata_final.isEmpty())
+            total_bytes += artifact.bytes;
+            artifact.final_path = download_artifacts::finalPath(artifact.handle.get());
+            if (artifact.final_path.isEmpty())
                 return fail(Error::FileAccess);
         }
-        // Only after every source's size/type is known may any large hash read
-        // occur. Keep the metadata handles while opening/hash-pinning again.
-        for (auto& source : sources) {
-            const auto result = download_artifacts::pinAndHash(source.artifact, source_ancestors);
+        // Check every quota first, then authenticate every source before
+        // creating the private tree. Both steps use the same read-only pins.
+        for (const auto& source : sources) {
+            const auto result = download_artifacts::hashPinned(source.artifact);
             if (result != download_artifacts::Error::None)
                 return fail(artifactError(result));
-            if (!download_artifacts::sameIdentity(source.metadata_identity, source.artifact.identity) ||
-                source.metadata_bytes != source.artifact.bytes || source.metadata_final != source.artifact.final_path)
-                return fail(Error::FileAccess);
         }
         if (!download_artifacts::pinAncestors(parent + QLatin1String("/placeholder"), impl->parent_ancestors))
             return fail(Error::FileAccess);
@@ -375,7 +366,7 @@ std::shared_ptr<const WindowsYoutubeRuntime> WindowsYoutubeRuntime::prepare(cons
         }
         for (std::size_t index = 0; index < sources.size(); ++index) {
             auto& destination = impl->files[index];
-            const bool copied = download_artifacts::copyPinned(sources[index].artifact, destination.artifact);
+            const bool copied = download_artifacts::copyPinnedTemporary(sources[index].artifact, destination.artifact);
             if (!destination.artifact.final_path.isEmpty()) {
                 destination.created.path = destination.artifact.path;
                 destination.created.identity = destination.artifact.identity;
@@ -383,7 +374,9 @@ std::shared_ptr<const WindowsYoutubeRuntime> WindowsYoutubeRuntime::prepare(cons
             }
             if (!copied)
                 return fail(Error::FileAccess);
-            const auto result = download_artifacts::pinAndHash(destination.artifact, impl->ancestors);
+            // The complete directory inventory is derived from these destinations.
+            // Every lexical ancestor is already pinned by that inventory or parent_ancestors.
+            const auto result = download_artifacts::pinAndHashUnderPinnedAncestors(destination.artifact);
             if (result != download_artifacts::Error::None)
                 return fail(artifactError(result));
             if (!download_artifacts::sameIdentity(destination.created.identity, destination.artifact.identity) ||
