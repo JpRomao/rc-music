@@ -2,7 +2,7 @@ import { createYoutubePopupController } from './popup-controller.mjs';
 
 export function mountYoutubePopup({ document, chrome, newRequestId = () => crypto.randomUUID(), sendRequest }) {
   const nodes = {};
-  for (const id of ['refresh', 'status', 'selection', 'selected', 'video-title', 'title', 'artist', 'file-name', 'lyrics-page', 'fetch-lyrics', 'send']) {
+  for (const id of ['refresh', 'status', 'selection', 'selected', 'video-title', 'video-url', 'title', 'artist', 'file-name', 'lyrics-page', 'fetch-lyrics', 'send']) {
     nodes[id] = document.getElementById(id);
     if (!nodes[id]) throw new Error('Missing popup control');
   }
@@ -13,13 +13,16 @@ export function mountYoutubePopup({ document, chrome, newRequestId = () => crypt
     const editable = state.status === 'ready';
     nodes.status.textContent = state.message;
     nodes.selection.hidden = state.candidate === null;
-    nodes['video-title'].textContent = state.candidate?.title || '';
+    nodes['video-title'].textContent = state.candidate ? state.candidate.title || 'Baixar este vídeo' : '';
+    nodes['video-url'].value = state.candidate?.url ?? '';
     nodes.selected.checked = state.selected;
     nodes.selected.disabled = !editable;
     for (const [id, value] of [['title', state.title], ['artist', state.artist], ['file-name', state.fileName], ['lyrics-page', state.lyricsPage]]) {
       if (nodes[id].value !== value) nodes[id].value = value;
       nodes[id].disabled = !editable;
     }
+    nodes['file-name'].placeholder = state.title.trim() && state.artist.trim()
+      ? `${state.title.trim()} - ${state.artist.trim()}` : 'Música - Artista';
     nodes['fetch-lyrics'].checked = state.fetchLyrics;
     nodes['fetch-lyrics'].disabled = !editable;
     nodes.send.textContent = state.canRetry ? 'Repetir o mesmo pedido' : state.fetchLyrics ? 'Baixar MP3 + letra' : 'Baixar MP3';

@@ -310,6 +310,17 @@ class DownloadCheckpointJsonTests final : public QObject {
         entries[1] = entry;
         root.insert(u"resumableJobs"_s, entries);
         QCOMPARE(DownloadCheckpointJson::decode(bytes(root)).status, DownloadCheckpointJsonStatus::Invalid);
+
+        // The canonical URL is optional on the popup wire, never in stored YouTube items.
+        root = resumeObject();
+        entries = root.value(u"resumableJobs"_s).toArray();
+        entry = entries[1].toObject();
+        youtube = entry.value(u"youtube"_s).toObject();
+        youtube.insert(u"videoUrl"_s, u"https://www.youtube.com/watch?v=AbCdEf_12-3"_s);
+        entry.insert(u"youtube"_s, youtube);
+        entries[1] = entry;
+        root.insert(u"resumableJobs"_s, entries);
+        QCOMPARE(DownloadCheckpointJson::decode(bytes(root)).status, DownloadCheckpointJsonStatus::Invalid);
     }
 
     void importingStateIsClosedRoundTripsAndRejectsMissingFinalEvidence() {

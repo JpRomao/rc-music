@@ -111,6 +111,23 @@ class NativeYoutubeAudioSessionTests final : public QObject {
         QCOMPARE(port.begins, 1);
         QCOMPARE(port.polls, 2);
     }
+    void popupWireWithExplicitWatchUrlKeepsTheFullTypedRequest() {
+        Submission port;
+        NativeYoutubeAudioSession session(origin, origin, port);
+        auto value = item();
+        value.insert("videoUrl", "https://www.youtube.com/watch?v=aB0-_Cd1EF2");
+        value.insert("fileName", QStringLiteral("Preferida 日本"));
+        const auto result = session.receive(framed(payload({value})), 0);
+        QCOMPARE(result.status, NativeSessionStatus::Awaiting);
+        QCOMPARE(port.begins, 1);
+        const YoutubeAudioItem expected{.video_id = "aB0-_Cd1EF2",
+                                        .title = "歌の名前 / Canção",
+                                        .artist = "作者 日本語",
+                                        .lyrics_page = "https://www.letras.mus.br/naruto/silhouette/",
+                                        .fetch_lyrics = true,
+                                        .file_name = "Preferida 日本"};
+        QCOMPARE(port.owned.items, std::vector{expected});
+    }
     void originMustMatchTheExactTrustedExtensionOrigin_data() {
         QTest::addColumn<QString>("caller");
         QTest::addColumn<QString>("allowed");

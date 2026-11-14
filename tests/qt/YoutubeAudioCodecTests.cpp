@@ -107,6 +107,25 @@ class YoutubeAudioCodecTests final : public QObject {
             QCOMPARE(decodeYoutubeAudioRequest(bytes(request({value}))).error, DownloadSubmissionError::InvalidRequest);
         }
     }
+    void explicitWatchUrlDoesNotChangeTheTypedRequestOrInternalWire() {
+        auto value = item();
+        value.insert("fileName", QStringLiteral("Preferida 日本.MP3"));
+        const auto internal_wire = bytes(request({value}));
+        const auto previous = decodeYoutubeAudioRequest(internal_wire);
+        QCOMPARE(previous.error, DownloadSubmissionError::None);
+        value.insert("videoUrl", "https://www.youtube.com/watch?v=aB0-_Cd1EF2");
+        const auto with_url = decodeYoutubeAudioRequest(bytes(request({value})));
+        QCOMPARE(with_url.error, DownloadSubmissionError::None);
+        QCOMPARE(with_url.request, previous.request);
+        QCOMPARE(encodeYoutubeAudioRequest(with_url.request), internal_wire);
+
+        for (const auto& invalid : {QJsonValue{QJsonValue::Null}, QJsonValue{17}, QJsonValue{""},
+                                    QJsonValue{"https://www.youtube.com/watch?v=aB0-_Cd1EF2#t=5"},
+                                    QJsonValue{"https://name@www.youtube.com/watch?v=aB0-_Cd1EF2"}}) {
+            value.insert("videoUrl", invalid);
+            QCOMPARE(decodeYoutubeAudioRequest(bytes(request({value}))).error, DownloadSubmissionError::InvalidRequest);
+        }
+    }
     void artistAndLyricsPageAreOptionalValuesButNeverMissingKeys() {
         auto value = item();
         value.insert("artist", "");

@@ -322,7 +322,8 @@ std::optional<DownloadResumeEntry> resumeEntry(const QJsonValue& value) {
     DownloadResumeEntry result{.job_id = id.toString().toUtf8().toStdString()};
     if (object.contains(QStringLiteral("youtube"))) {
         const auto youtube = object.value(QStringLiteral("youtube"));
-        if (!exactKeys(object, {QStringLiteral("jobId"), QStringLiteral("youtube")}) || !youtube.isObject())
+        if (!exactKeys(object, {QStringLiteral("jobId"), QStringLiteral("youtube")}) || !youtube.isObject() ||
+            youtube.toObject().contains(QStringLiteral("videoUrl")))
             return std::nullopt;
         const QJsonObject envelope{{QStringLiteral("schemaVersion"), 1},
                                    {QStringLiteral("type"), QStringLiteral("youtube.audio.request")},

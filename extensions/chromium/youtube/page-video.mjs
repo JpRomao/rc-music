@@ -69,3 +69,86 @@ export function collectLetrasYoutubeVideo(document = globalThis.document) {
     return null;
   }
 }
+
+// Serialized by chrome.scripting in the isolated world. Only consume explicit
+// recording metadata tied to this video; general video authors are uploaders.
+export function collectYoutubeMusicMetadata(document = globalThis.document) {
+  try {
+    const videoId = raw => {
+      if (typeof raw !== 'string' || raw.length > 8192 || /[\s\u0000-\u001f\u007f-\u009f\\]/u.test(raw)) return '';
+      const matched = /^https:\/\/([^/?#]+)([^?#]*)/iu.exec(raw);
+      if (!matched) return '';
+      let url;
+      try { url = new URL(raw); } catch { return ''; }
+      if (matched[1].includes('@') || url.port) return '';
+      const path = matched[2];
+      let id;
+      if (['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(url.hostname)) {
+        if (path === '/watch' && url.searchParams.getAll('v').length === 1) id = url.searchParams.get('v');
+        else id = /^\/(?:shorts|embed)\/([a-zA-Z0-9_-]{11})\/?$/u.exec(path)?.[1];
+      } else if (['youtu.be', 'www.youtu.be'].includes(url.hostname)) {
+        id = /^\/([a-zA-Z0-9_-]{11})\/?$/u.exec(path)?.[1];
+      }
+      return /^[a-zA-Z0-9_-]{11}$/u.test(id ?? '') ? id : '';
+    };
+    const pageUrl = document?.location?.href;
+    const selectedVideo = videoId(pageUrl);
+    if (!selectedVideo) return null;
+    const empty = { pageUrl };
+    const type = (entry, name) => [entry?.['@type']].flat().some(value => value === name
+      || value === 'https://schema.org/' + name || value === 'http://schema.org/' + name);
+    const text = value => typeof value === 'string' && value.length <= 2048 ? value.trim() : '';
+    const attached = (...urls) => urls.some(value => videoId(value) === selectedVideo);
+    const entries = [];
+    const recording = entry => {
+      const performers = [entry.byArtist].flat().filter(value => value !== undefined && value !== null);
+      const artist = performers.length === 1 ? text(performers[0]?.name) : '';
+      entries.push({ title: text(entry.name), artist });
+    };
+
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    if (scripts.length > 8) return empty;
+    let remaining = 131072;
+    for (const script of scripts) {
+      const content = script.textContent ?? '';
+      if (content.length > 65536 || (remaining -= content.length) < 0) return empty;
+      let parsed;
+      try { parsed = JSON.parse(content); } catch { continue; }
+      const root = [parsed].flat();
+      if (root.length > 32) return empty;
+      for (const value of root) {
+        const graph = Array.isArray(value?.['@graph']) ? value['@graph'] : [];
+        if (graph.length > 32) return empty;
+        for (const entry of [value, ...graph]) {
+          if (type(entry, 'MusicRecording') && attached(entry.url, entry['@id'], entry.mainEntityOfPage,
+            entry.mainEntityOfPage?.['@id'])) recording(entry);
+          if (!type(entry, 'VideoObject') || !attached(entry.url, entry.embedUrl, entry['@id'])) continue;
+          const audio = [entry.audio].flat().filter(value => type(value, 'MusicRecording'));
+          if (audio.length > 1) return empty;
+          if (audio.length === 1 && (!audio[0].url || videoId(audio[0].url) === selectedVideo)) recording(audio[0]);
+        }
+      }
+    }
+
+    const tags = document.querySelectorAll('meta[property="og:type"], meta[property="og:title"], meta[property="og:url"], meta[property="music:musician"]');
+    if (tags.length > 16) return empty;
+    const values = property => [...new Set([...tags].filter(tag => tag.getAttribute('property') === property)
+      .map(tag => text(tag.getAttribute('content'))).filter(Boolean))];
+    const types = values('og:type'), urls = values('og:url'), titles = values('og:title');
+    if (types.length === 1 && types[0] === 'music.song' && urls.length === 1 && videoId(urls[0]) === selectedVideo) {
+      if (titles.length > 1) return empty;
+      const musicians = values('music:musician');
+      const artist = musicians.length === 1 && !/^(?:[a-z][a-z0-9+.-]*:|\/)/iu.test(musicians[0]) ? musicians[0] : '';
+      entries.push({ title: titles[0] ?? '', artist });
+    }
+
+    const [names, artists] = ['title', 'artist'].map(key => [...new Set(entries.map(entry => entry[key]).filter(Boolean))]);
+    if (names.length > 1 || artists.length > 1) return empty;
+    // A title and a performer supplied by separate, incomplete records may
+    // describe different songs in the same video.
+    if (names.length && artists.length && !entries.some(entry => entry.title && entry.artist)) return empty;
+    return { pageUrl, ...(names.length ? { title: names[0] } : {}), ...(artists.length ? { artist: artists[0] } : {}) };
+  } catch {
+    return null;
+  }
+}

@@ -163,6 +163,7 @@ YoutubeAudioDecodingResult decodeYoutubeAudioRequest(const QByteArray& payload) 
             return result;
         auto item = value.toObject();
         const auto name = item.take(QStringLiteral("fileName"));
+        const auto watch_url = item.take(QStringLiteral("videoUrl"));
         if (!name.isUndefined() && (!name.isString() || name.toString().isEmpty()))
             return result;
         if (!exactKeys(item, std::array{QStringLiteral("videoId"), QStringLiteral("title"), QStringLiteral("artist"),
@@ -183,6 +184,11 @@ YoutubeAudioDecodingResult decodeYoutubeAudioRequest(const QByteArray& payload) 
         }
         if (!validVideoId(video_id.toStdString()) || seen.contains(video_id) || !validMetadata(title, false) ||
             !validMetadata(artist, true) || !validMetadata(file_name, true))
+            return result;
+        // The popup may carry the canonical address explicitly. Keep the typed
+        // identity and internal host-to-owner framing based on the opaque ID.
+        if (!watch_url.isUndefined() &&
+            (!watch_url.isString() || watch_url.toString() != canonicalYoutubeWatchUrl(video_id.toStdString())))
             return result;
         if (!validLyricsPage(lyrics_page)) {
             result.error = DownloadSubmissionError::UnsupportedSource;

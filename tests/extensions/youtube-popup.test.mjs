@@ -22,7 +22,11 @@ function harness({ autoAccept = false, onState = () => {} } = {}) {
     onState: state => { states.push(state); onState(state); } });
   return { tab, window, sends, states, chrome, controller, get uuidCalls() { return uuidCalls; }, accept: () => finish(ack) };
 }
-const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+const flush = () => new Promise(resolve => setImmediate(resolve));
+function selectWithArtist(controller) {
+  controller.setFields({ artist: 'Test Artist' });
+  controller.setSelected(true);
+}
 test('a focused action popup uses its owning window even when the browser reports that window unfocused', async t => {
   for (const letras of [false, true]) await t.test(letras ? 'Letras' : 'YouTube', async () => {
     const h = letras ? letrasHarness() : harness(); h.controller.dispose();
@@ -38,7 +42,7 @@ test('a focused action popup uses its owning window even when the browser report
     assert.equal(controller.getState().candidate.tabId, 7);
     assert.equal(controller.getState().selected, false);
     assert.equal(requests.length, 0);
-    controller.setSelected(true);
+    selectWithArtist(controller);
     assert.equal(await controller.send(), true);
     assert.equal(requests.length, 1);
     controller.dispose();
@@ -51,7 +55,7 @@ test('popup focus does not authorize a different window or survive blur during c
     const controller = createYoutubePopupController({ chrome: h.chrome, hasPopupFocus: () => focused,
       newRequestId: () => requestId, async sendRequest() { calls++; return { status: 'accepted', requestId, jobIds: ['job-1'] }; } });
     assert.equal(await controller.refresh(), true);
-    controller.setSelected(true);
+    selectWithArtist(controller);
     if (reason === 'different owner') h.chrome.windows.getCurrent = async () => ({ id: 9, focused: false });
     if (reason === 'blur at focus guard') focused = false;
     if (reason === 'blur during final source read') {
@@ -82,7 +86,7 @@ function letrasHarness(options = {}) {
   } };
   return h;
 }
-test('Letras offers its declared YouTube video without sending or inferring an artist', async () => {
+test('Letras offers its declared video and requests manual confirmation when an artist is missing', async () => {
   const h = letrasHarness({ autoAccept: true });
   assert.equal(await h.controller.refresh(), true);
   const state = h.controller.getState();
@@ -95,9 +99,12 @@ test('Letras offers its declared YouTube video without sending or inferring an a
   assert.equal(h.sends.length, 0);
   h.controller.setSelected(true);
   h.controller.setFields({ fetchLyrics: false });
+  assert.equal(h.controller.getState().canSend, false);
+  assert.equal(await h.controller.send(), false);
+  h.controller.setFields({ artist: 'Orange Range' });
   assert.equal(await h.controller.send(), true);
   assert.deepEqual(h.sends, [{ schemaVersion: 1, type: 'youtube.audio.request', requestId,
-    items: [{ videoId: 'wW9TwZdWpjw', title: 'Asterisk', artist: '',
+    items: [{ videoId: 'wW9TwZdWpjw', videoUrl: 'https://www.youtube.com/watch?v=wW9TwZdWpjw', title: 'Asterisk', artist: 'Orange Range',
       lyricsPage: 'https://www.letras.mus.br/bleach/1222774/', fetchLyrics: false }] }]);
   assert.equal(h.injections.length, 3);
   assert.equal(h.injections[0].world, 'ISOLATED');
@@ -129,7 +136,7 @@ test('Letras same-URL document or video replacement revokes selected consent bef
   ]) await t.test(name, async () => {
     const h = letrasHarness({ autoAccept: true });
     assert.equal(await h.controller.refresh(), true);
-    h.controller.setSelected(true); change(h);
+    selectWithArtist(h.controller); change(h);
     assert.equal(await h.controller.send(), false);
     assert.equal(h.sends.length, 0);
     assert.equal(h.uuidCalls, 0);
@@ -175,7 +182,7 @@ test('Letras retry preserves the admitted identity and rejects a replaced embedd
       throw Object.assign(new Error('Uncertain'), { code: 'bridge_timeout' });
     } });
   assert.equal(await controller.refresh(), true);
-  controller.setSelected(true);
+  selectWithArtist(controller);
   assert.equal(await controller.send(), false);
   assert.equal(controller.getState().canRetry, true);
   assert.equal(await controller.retry(), false);
@@ -197,7 +204,7 @@ test('Letras source replacement during the final asynchronous guards prevents se
           throw Object.assign(new Error('Uncertain'), { code: 'bridge_timeout' });
         } });
       assert.equal(await controller.refresh(), true);
-      controller.setSelected(true);
+      selectWithArtist(controller);
       if (retry) {
         assert.equal(await controller.send(), false);
         assert.equal(controller.getState().canRetry, true);
@@ -232,13 +239,71 @@ test('opening or refreshing reads only the current tab and never submits a reque
   assert.equal(state.canSend, false);
   assert.equal(h.sends.length, 0);
 });
+test('YouTube music credits fill separate fields and the selected request sends the canonical URL', async () => {
+  const h = harness({ autoAccept: true });
+  h.tab.url += '&list=ignored&t=18';
+  const reads = [];
+  h.chrome.scripting = { executeScript: async options => {
+    reads.push(options);
+    return [{ frameId: 0, documentId: 'youtube-document',
+      result: { pageUrl: h.tab.url, title: 'Asterisk', artist: 'Orange Range' } }];
+  } };
+  assert.equal(await h.controller.refresh(), true);
+  const state = h.controller.getState();
+  assert.equal(state.title, 'Asterisk');
+  assert.equal(state.artist, 'Orange Range');
+  assert.equal(state.fileName, '');
+  assert.equal(reads.length, 1);
+  assert.deepEqual(reads[0].target, { tabId: 7, frameIds: [0] });
+  assert.equal(reads[0].world, 'ISOLATED');
+  h.controller.setSelected(true);
+  h.controller.setFields({ artist: 'Confirmed artist', fileName: 'Custom name' });
+  assert.equal(await h.controller.send(), true);
+  assert.deepEqual(h.sends[0].items[0], {
+    videoId: 'aB_0123-xYz', videoUrl: 'https://www.youtube.com/watch?v=aB_0123-xYz',
+    title: 'Asterisk', artist: 'Confirmed artist', lyricsPage: '', fetchLyrics: true, fileName: 'Custom name',
+  });
+  assert.equal(reads.length, 1);
+});
+test('a mismatched or unavailable YouTube metadata read leaves the fields editable', async t => {
+  for (const cause of ['Different page', 'Subframe', 'Blocked']) await t.test(cause, async () => {
+    const h = harness({ autoAccept: true });
+    h.chrome.scripting = { executeScript: async () => {
+      if (cause === 'Blocked') throw new Error('User denied permission');
+      return [{ frameId: cause === 'Subframe' ? 1 : 0, documentId: 'youtube-document',
+        result: { pageUrl: cause === 'Different page' ? 'https://youtube.com/watch?v=zzzzzzzzzzz' : h.tab.url,
+          title: 'Wrong title', artist: 'Wrong artist' } }];
+    } };
+    assert.equal(await h.controller.refresh(), true);
+    h.controller.setSelected(true);
+    assert.equal(h.controller.getState().title, '<b>曲名</b>');
+    assert.equal(h.controller.getState().artist, '');
+    assert.equal(h.controller.getState().canSend, false);
+    h.controller.setFields({ title: 'Confirmed title', artist: 'Confirmed artist' });
+    assert.equal(await h.controller.send(), true);
+  });
+});
+test('a YouTube metadata read cannot bind a silently replaced active page', async () => {
+  const h = harness({ autoAccept: true });
+  h.chrome.scripting = { executeScript: async () => {
+    const pageUrl = h.tab.url;
+    h.tab.url = 'https://www.youtube.com/watch?v=zzzzzzzzzzz';
+    return [{ frameId: 0, result: { pageUrl, title: 'Old track', artist: 'Old artist' } }];
+  } };
+  assert.equal(await h.controller.refresh(), false);
+  assert.equal(h.controller.getState().candidate, null);
+  assert.equal(await h.controller.send(), false);
+  assert.equal(h.sends.length, 0);
+});
 test('only explicit selection and submit send a detached typed request with editable metadata', async () => {
   const h = harness(); await h.controller.refresh();
   h.controller.setSelected(true);
   h.controller.setFields({ title: 'Corrected 曲名', artist: 'Artist', lyricsPage: 'https://www.letras.mus.br/artist/song/', fetchLyrics: true });
   assert.equal(h.controller.getState().canSend, true);
   const pending = h.controller.send(); await flush();
-  assert.deepEqual(h.sends, [{ schemaVersion: 1, type: 'youtube.audio.request', requestId, items: [{ videoId: 'aB_0123-xYz', title: 'Corrected 曲名', artist: 'Artist', lyricsPage: 'https://www.letras.mus.br/artist/song/', fetchLyrics: true }] }]);
+  assert.deepEqual(h.sends, [{ schemaVersion: 1, type: 'youtube.audio.request', requestId, items: [{ videoId: 'aB_0123-xYz',
+    videoUrl: 'https://www.youtube.com/watch?v=aB_0123-xYz', title: 'Corrected 曲名', artist: 'Artist',
+    lyricsPage: 'https://www.letras.mus.br/artist/song/', fetchLyrics: true }] }]);
   assert.equal(h.controller.getState().canSend, false);
   h.accept(); assert.equal(await pending, true);
   assert.equal(h.controller.getState().status, 'accepted');
@@ -248,13 +313,13 @@ test('only explicit selection and submit send a detached typed request with edit
 test('unchecked selection and invalid metadata cannot invoke a native bridge', async () => {
   const h = harness(); await h.controller.refresh();
   assert.equal(await h.controller.send(), false);
-  h.controller.setSelected(true); h.controller.setFields({ lyricsPage: 'https://evil.test/a' });
+  selectWithArtist(h.controller); h.controller.setFields({ lyricsPage: 'https://evil.test/a' });
   assert.equal(h.controller.getState().canSend, false);
   assert.equal(await h.controller.send(), false);
   assert.equal(h.sends.length, 0);
 });
 test('navigation revokes the selected video and refuses a stale submit', async () => {
-  const h = harness(); await h.controller.refresh(); h.controller.setSelected(true);
+  const h = harness(); await h.controller.refresh(); selectWithArtist(h.controller);
   h.tab.url = 'https://www.youtube.com/watch?v=zzzzzzzzzzz';
   assert.equal(await h.controller.send(), false);
   assert.equal(h.sends.length, 0);
@@ -276,7 +341,7 @@ test('browser navigation and closing the tab invalidate selection without extra 
   }
 });
 test('a late admission after navigation cannot rearm a stale popup or resubmit', async () => {
-  const h = harness(); await h.controller.refresh(); h.controller.setSelected(true);
+  const h = harness(); await h.controller.refresh(); selectWithArtist(h.controller);
   const pending = h.controller.send(); await flush();
   h.chrome.tabs.onRemoved.emit(7); h.accept();
   assert.equal(await pending, false);
@@ -296,7 +361,7 @@ test('fresh send requires the original active tab, focused window and stable com
     await t.test(label, async () => {
       const h = harness({ autoAccept: true });
       assert.equal(await h.controller.refresh(), true);
-      h.controller.setSelected(true);
+      selectWithArtist(h.controller);
       change(h);
       assert.equal(await h.controller.send(), false);
       assert.equal(h.uuidCalls, 0);
@@ -337,7 +402,7 @@ test('refresh cannot retarget from the popup window to another focused window', 
 test('background-window activation keeps consent but loss of window focus revokes it', async () => {
   const h = harness();
   assert.equal(await h.controller.refresh(), true);
-  h.controller.setSelected(true);
+  selectWithArtist(h.controller);
   h.chrome.tabs.onActivated.emit({ tabId: 8, windowId: 4 });
   assert.equal(h.controller.getState().canSend, true);
   h.chrome.windows.onFocusChanged.emit(-1);
@@ -350,7 +415,7 @@ test('navigation announced synchronously before native handoff does not post', a
     if (state.status === 'sending') h.chrome.tabs.onUpdated.emit(7, { status: 'loading' }, h.tab);
   } });
   assert.equal(await h.controller.refresh(), true);
-  h.controller.setSelected(true);
+  selectWithArtist(h.controller);
   assert.equal(await h.controller.send(), false);
   assert.equal(h.sends.length, 0);
   assert.equal(h.controller.getState().status, 'stale');
@@ -360,7 +425,7 @@ test('missing component and protocol errors remain actionable without pretending
   const h = harness();
   const controller = createYoutubePopupController({ chrome: h.chrome, newRequestId: () => requestId,
     sendRequest: async () => { throw Object.assign(new Error('private details'), { code: 'bridge_unavailable' }); } });
-  await controller.refresh(); controller.setSelected(true);
+  await controller.refresh(); selectWithArtist(controller);
   assert.equal(await controller.send(), false);
   assert.equal(controller.getState().status, 'error');
   assert.match(controller.getState().message, /componente YouTube no player/u);
@@ -413,7 +478,7 @@ test('YouTube context and metadata changes revoke an uncertain request', async t
         },
       });
       await controller.refresh();
-      controller.setSelected(true);
+      selectWithArtist(controller);
       assert.equal(await controller.send(), false);
       assert.equal(controller.getState().canRetry, true);
       change(h, controller);
@@ -457,7 +522,7 @@ test('mounted popup renders tab text literally and sends only after a real selec
   const h = harness();
   h.window.focused = false;
   const elements = new Map();
-  for (const id of ['refresh', 'status', 'selection', 'selected', 'video-title', 'title', 'artist', 'file-name', 'lyrics-page', 'fetch-lyrics', 'send']) {
+  for (const id of ['refresh', 'status', 'selection', 'selected', 'video-title', 'video-url', 'title', 'artist', 'file-name', 'lyrics-page', 'fetch-lyrics', 'send']) {
     const listeners = new Map();
     elements.set(id, { textContent: '', value: '', checked: false, hidden: true, disabled: false,
       addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name),
@@ -477,6 +542,7 @@ test('mounted popup renders tab text literally and sends only after a real selec
     } });
   await flush();
   assert.equal(elements.get('video-title').textContent, '<b>曲名</b>');
+  assert.equal(elements.get('video-url').value, 'https://www.youtube.com/watch?v=aB_0123-xYz');
   assert.equal(elements.get('selection').hidden, false);
   assert.equal(elements.get('send').disabled, true);
   assert.equal(h.sends.length, 0);
@@ -489,6 +555,7 @@ test('mounted popup renders tab text literally and sends only after a real selec
   elements.get('selected').checked = true; elements.get('selected').emit('change');
   elements.get('title').value = '<img src=x> 曲名'; elements.get('title').emit('input');
   elements.get('artist').value = 'Artist'; elements.get('artist').emit('input');
+  assert.equal(elements.get('file-name').placeholder, '<img src=x> 曲名 - Artist');
   elements.get('file-name').value = '  Minha faixa.MP3  '; elements.get('file-name').emit('input');
   assert.equal(elements.get('send').disabled, false);
   elements.get('send').emit('click'); await flush();

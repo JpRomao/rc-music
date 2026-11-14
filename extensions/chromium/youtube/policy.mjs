@@ -8,6 +8,7 @@ const videoId = /^[a-zA-Z0-9_-]{11}$/;
 const metadataControls = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/u;
 const urlControls = /[\s\u0000-\u0020\u007f-\u009f\\]/u;
 const encoder = new TextEncoder();
+const watchUrl = id => `https://www.youtube.com/watch?v=${id}`;
 
 function scalarText(value) {
   if (typeof value !== 'string') return false;
@@ -82,7 +83,12 @@ export function videoFromTab(tab) {
   }
   if (!id || !videoId.test(id)) throw protocolError('unsupported_page');
   const tabTitle = typeof tab.title === 'string' ? tab.title.slice(0, 2048).replace(/ - YouTube$/u, '') : '';
-  return { tabId: tab.id, videoId: id, url: `https://www.youtube.com/watch?v=${id}`, title: safeMetadata(tabTitle) };
+  return { tabId: tab.id, videoId: id, url: watchUrl(id), title: safeMetadata(tabTitle, '') };
+}
+export function applyYoutubeMusicMetadata(tab, candidate, snapshot) {
+  if (!snapshot || snapshot.pageUrl !== tab.url) return candidate;
+  const title = safeMetadata(snapshot.title, ''), artist = safeMetadata(snapshot.artist, '');
+  return { ...candidate, ...(title ? { title } : {}), ...(artist ? { artist } : {}) };
 }
 export function isLetrasVideoPage(raw) {
   const url = parsedHttps(raw, 2048);
@@ -97,7 +103,7 @@ export function videoFromLetrasPage(tab, snapshot) {
     || typeof snapshot.title !== 'string' || snapshot.title.length > 2048
     || (keys.includes('artist') && (typeof snapshot.artist !== 'string' || snapshot.artist.length > 2048)))
     throw protocolError('unsupported_page');
-  return { tabId: tab.id, videoId: snapshot.videoId, url: `https://www.youtube.com/watch?v=${snapshot.videoId}`,
+  return { tabId: tab.id, videoId: snapshot.videoId, url: watchUrl(snapshot.videoId),
     title: safeMetadata(snapshot.title), artist: safeMetadata(snapshot.artist, ''), lyricsPage: tab.url };
 }
 export function validateYoutubeAudioRequest(raw) {
@@ -108,25 +114,33 @@ export function validateYoutubeAudioRequest(raw) {
   const seen = new Set();
   const items = raw.items.map(item => {
     const keys = ['videoId', 'title', 'artist', 'lyricsPage', 'fetchLyrics'];
-    if (item && Object.hasOwn(item, 'fileName')) keys.push('fileName');
+    const hasFileName = item != null && Object.hasOwn(item, 'fileName');
+    const hasVideoUrl = item != null && Object.hasOwn(item, 'videoUrl');
+    if (hasFileName) keys.push('fileName');
+    if (hasVideoUrl) keys.push('videoUrl');
     if (!exactKeys(item, keys)
       || typeof item.videoId !== 'string' || !videoId.test(item.videoId) || seen.has(item.videoId)
+      || (hasVideoUrl && item.videoUrl !== watchUrl(item.videoId))
       || !validMetadata(item.title) || !validMetadata(item.artist, true)
       || typeof item.lyricsPage !== 'string' || !validLyricsPage(item.lyricsPage)
-      || typeof item.fetchLyrics !== 'boolean' || (keys.includes('fileName') && !validMetadata(item.fileName)))
+      || typeof item.fetchLyrics !== 'boolean' || (hasFileName && !validMetadata(item.fileName)))
       throw protocolError('invalid_request');
     seen.add(item.videoId);
-    return { videoId: item.videoId, title: item.title, artist: item.artist, lyricsPage: item.lyricsPage,
-      fetchLyrics: item.fetchLyrics, ...(keys.includes('fileName') ? { fileName: item.fileName } : {}) };
+    return { videoId: item.videoId, ...(hasVideoUrl ? { videoUrl: item.videoUrl } : {}),
+      title: item.title, artist: item.artist, lyricsPage: item.lyricsPage, fetchLyrics: item.fetchLyrics,
+      ...(hasFileName ? { fileName: item.fileName } : {}) };
   });
   const result = { schemaVersion: 1, type: 'youtube.audio.request', requestId: raw.requestId, items };
   if (encoder.encode(JSON.stringify(result)).byteLength > MAX_MESSAGE_BYTES) throw protocolError('limit_exceeded');
   return result;
 }
 export function buildYoutubeAudioRequest(candidate, fields, requestId) {
-  if (!candidate || !Number.isSafeInteger(candidate.tabId) || candidate.tabId < 0) throw protocolError('invalid_request');
-  const fileName = typeof fields.fileName === 'string' ? fields.fileName.trim() : fields.fileName;
+  if (!candidate || !Number.isSafeInteger(candidate.tabId) || candidate.tabId < 0
+    || typeof fields?.artist !== 'string' || !fields.artist.trim()) throw protocolError('invalid_request');
+  const trimField = value => typeof value === 'string' ? value.trim() : value;
+  const fileName = trimField(fields.fileName);
   return validateYoutubeAudioRequest({ schemaVersion: 1, type: 'youtube.audio.request', requestId,
-    items: [{ videoId: candidate.videoId, title: fields.title, artist: fields.artist, lyricsPage: fields.lyricsPage,
+    items: [{ videoId: candidate.videoId, videoUrl: candidate.url, title: trimField(fields.title),
+      artist: fields.artist.trim(), lyricsPage: trimField(fields.lyricsPage),
       fetchLyrics: fields.fetchLyrics, ...(fileName === undefined || fileName === '' ? {} : { fileName }) }] });
 }

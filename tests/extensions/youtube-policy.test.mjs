@@ -33,12 +33,22 @@ test('YouTube lookalikes, credentials, encoded paths, ambiguous IDs and other pa
 });
 test('request contains only the selected video identity and editable metadata, never tool or media URLs', () => {
   const candidate = videoFromTab({ id: 7, url: 'https://www.youtube.com/watch?v=aB_0123-xYz', title: 'Video' });
-  const fields = { title: '日本語 <b>literal</b>', artist: '', lyricsPage: '', fetchLyrics: false };
+  const fields = { title: '日本語 <b>literal</b>', artist: 'Artista', lyricsPage: '', fetchLyrics: false };
   const result = buildYoutubeAudioRequest(candidate, fields, requestId);
-  assert.deepEqual(result, { schemaVersion: 1, type: 'youtube.audio.request', requestId, items: [{ videoId: candidate.videoId, ...fields }] });
+  assert.deepEqual(result, { schemaVersion: 1, type: 'youtube.audio.request', requestId, items: [{ videoId: candidate.videoId, videoUrl: candidate.url, ...fields }] });
   assert.deepEqual(validateYoutubeAudioRequest(result), result);
   fields.title = 'Changed';
   assert.equal(result.items[0].title, '日本語 <b>literal</b>');
+});
+test('popup trims pasted fields and requires an artist before building a request', () => {
+  const candidate = videoFromTab({ id: 7, url: 'https://youtu.be/aB_0123-xYz?si=private', title: 'Video' });
+  const fields = { title: '  曲  ', artist: '  Artist  ', lyricsPage: ' https://www.letras.mus.br/artist/song/ ', fetchLyrics: true };
+  const packet = buildYoutubeAudioRequest(candidate, fields, requestId).items[0];
+  assert.deepEqual(packet, { videoId: candidate.videoId, videoUrl: candidate.url, title: '曲', artist: 'Artist',
+    lyricsPage: 'https://www.letras.mus.br/artist/song/', fetchLyrics: true });
+  assert.throws(() => buildYoutubeAudioRequest(candidate, { ...fields, artist: '   ' }, requestId), { code: 'invalid_request' });
+  assert.throws(() => buildYoutubeAudioRequest({ ...candidate, url: 'https://evil.test/song' }, fields, requestId),
+    { code: 'invalid_request' });
 });
 test('valid requests preserve all metadata and are detached from their caller', () => {
   const raw = request();
@@ -84,12 +94,12 @@ test('lyrics page is optional and otherwise bound to exact Letras HTTPS pages', 
 });
 
 test('optional output name is independent of track metadata and omitted when blank', () => {
-  const candidate = { tabId: 7, videoId: 'aB_0123-xYz' };
+  const candidate = { tabId: 7, videoId: 'aB_0123-xYz', url: 'https://www.youtube.com/watch?v=aB_0123-xYz' };
   const fields = { title: 'Number One', artist: 'Bleach', lyricsPage: '', fetchLyrics: false };
   assert.deepEqual(buildYoutubeAudioRequest(candidate, { ...fields, fileName: '  Faixa 日本.MP3  ' }, requestId).items,
-    [{ videoId: candidate.videoId, ...fields, fileName: 'Faixa 日本.MP3' }]);
+    [{ videoId: candidate.videoId, videoUrl: candidate.url, ...fields, fileName: 'Faixa 日本.MP3' }]);
   assert.deepEqual(buildYoutubeAudioRequest(candidate, { ...fields, fileName: '  ' }, requestId).items,
-    [{ videoId: candidate.videoId, ...fields }]);
+    [{ videoId: candidate.videoId, videoUrl: candidate.url, ...fields }]);
   for (const fileName of [null, '', ' padded', 'a\nb', 'x\u202ey', '日'.repeat(171)]) {
     const raw = request();
     raw.items[0].fileName = fileName;

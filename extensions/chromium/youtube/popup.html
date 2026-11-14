@@ -15,11 +15,12 @@
       <fieldset id="selection" hidden>
         <legend>Selecione o que deseja baixar</legend>
         <label><input id="selected" type="checkbox"><span id="video-title"></span></label>
+        <label for="video-url">URL do vídeo</label><input id="video-url" type="url" readonly>
       </fieldset>
-      <label for="title">Título da música</label><input id="title" type="text" maxlength="512" disabled>
-      <label for="artist">Artista</label><input id="artist" type="text" maxlength="512" disabled>
+      <label for="title">Título da música</label><input id="title" type="text" maxlength="512" placeholder="Informe o título se estiver em branco" required disabled>
+      <label for="artist">Artista</label><input id="artist" type="text" maxlength="512" placeholder="Informe o artista se estiver em branco" required disabled>
       <label for="file-name">Nome do arquivo (opcional)</label><input id="file-name" type="text" maxlength="512" disabled placeholder="Música - Artista">
-      <label for="lyrics-page">Página do Letras, se conhecida</label><input id="lyrics-page" type="url" maxlength="2048" disabled placeholder="https://www.letras.mus.br/artista/musica/">
+      <label for="lyrics-page">URL do Letras (opcional)</label><input id="lyrics-page" type="url" maxlength="2048" disabled placeholder="https://www.letras.mus.br/artista/musica/">
       <label class="check"><input id="fetch-lyrics" type="checkbox" checked disabled>Buscar letra: Letras e, se indisponível, LRCLIB</label>
       <button id="send" class="primary" type="button" disabled>Baixar MP3 + letra</button>
       <p class="help">Reconhece vídeos do YouTube e vídeos declarados no player do Letras. O pedido solicita somente áudio. O app precisa convertê-lo e validar o MP3. A letra pode falhar sem impedir o áudio.</p>

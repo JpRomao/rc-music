@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { collectLetrasYoutubeVideo } from '../../extensions/chromium/youtube/page-video.mjs';
+import * as collectors from '../../extensions/chromium/youtube/page-video.mjs';
+const { collectLetrasYoutubeVideo, collectYoutubeMusicMetadata } = collectors;
 
 const collectorSource = '(' + collectLetrasYoutubeVideo.toString() + ')()';
 const pageUrl = 'https://www.letras.mus.br/bleach/1222774/';
@@ -116,4 +117,56 @@ test('Letras rejects conflicting direct and proxy videos instead of choosing one
   assert.equal(collectLetrasYoutubeVideo(numberOneFixture([letrasProxy(), 'https://www.youtube.com/embed/aB_0123-xYz'])), null);
   const staticOther = numberOneDescriptor.replace('"YoutubeID":""', '"YoutubeID":"aB_0123-xYz"');
   assert.equal(collectLetrasYoutubeVideo(numberOneFixture([letrasProxy()], [staticOther])), null);
+});
+
+const youtubePage = 'https://www.youtube.com/watch?v=aB_0123-xYz&list=PLfixture';
+const youtubeObject = 'https://www.youtube.com/watch?v=aB_0123-xYz';
+const recording = { '@type': 'MusicRecording', url: youtubeObject, name: '音楽の題', byArtist: { name: 'Recorded Artist' } };
+function youtubeFixture({ url = youtubePage, scripts = [], properties = {} } = {}) {
+  return { location: { href: url }, querySelectorAll(selector) {
+    if (selector === 'script[type="application/ld+json"]')
+      return scripts.map(data => ({ textContent: typeof data === 'string' ? data : JSON.stringify(data) }));
+    assert.equal(selector, 'meta[property="og:type"], meta[property="og:title"], meta[property="og:url"], meta[property="music:musician"]');
+    return Object.entries(properties).flatMap(([property, content]) => [content].flat().map(value => ({
+      getAttribute: name => name === 'property' ? property : name === 'content' ? value : null,
+    })));
+  } };
+}
+test('YouTube isolated collector reads only a MusicRecording attached to the selected video', () => {
+  const document = youtubeFixture({ scripts: [{ '@context': 'https://schema.org', '@graph': [
+    { '@type': 'VideoObject', url: youtubeObject, name: 'Video title', author: { name: 'Uploader' } },
+    recording,
+  ] }] });
+  const parsed = vm.runInNewContext(`(${collectYoutubeMusicMetadata.toString()})()`, { document, URL });
+  assert.deepEqual(JSON.parse(JSON.stringify(parsed)), { pageUrl: youtubePage, title: '音楽の題', artist: 'Recorded Artist' });
+  assert.deepEqual(collectYoutubeMusicMetadata(youtubeFixture({ scripts: [{ '@type': 'VideoObject', embedUrl: 'https://www.youtube.com/embed/aB_0123-xYz',
+    audio: { '@type': 'https://schema.org/MusicRecording', byArtist: { name: 'Performer' } } }] })), { pageUrl: youtubePage, artist: 'Performer' });
+});
+test('YouTube ignores uploaded-by data, mismatched recordings, and competing songs', () => {
+  const upload = { '@type': 'VideoObject', url: youtubeObject, name: 'Video title', author: { name: 'Uploader' } };
+  for (const scripts of [[upload, { ...recording, url: 'https://www.youtube.com/watch?v=wW9TwZdWpjw' }],
+    [upload, { ...recording, url: undefined }], [recording, { ...recording, name: 'Different track' }],
+    [{ ...recording, byArtist: undefined }, { ...recording, name: undefined }],
+    [{ ...upload, audio: [{ ...recording, url: undefined }, { ...recording, url: undefined, name: 'Other song' }] }],
+    ['{"@type":"MusicRecording","byArtist":(globalThis.executed = true)}', upload],
+    Array(9).fill(recording), ['x'.repeat(65537), recording]]) {
+    assert.deepEqual(collectYoutubeMusicMetadata(youtubeFixture({ scripts })), { pageUrl: youtubePage });
+  }
+});
+test('YouTube reads song-scoped Open Graph title without using a profile URL as the artist', () => {
+  const properties = { 'og:type': 'music.song', 'og:url': youtubeObject, 'og:title': 'Song', 'music:musician': 'https://example.test/artists/a' };
+  assert.deepEqual(collectYoutubeMusicMetadata(youtubeFixture({ properties })), { pageUrl: youtubePage, title: 'Song' });
+  assert.deepEqual(collectYoutubeMusicMetadata(youtubeFixture({ properties: { ...properties, 'music:musician': 'Explicit Artist' } })),
+    { pageUrl: youtubePage, title: 'Song', artist: 'Explicit Artist' });
+  assert.deepEqual(collectYoutubeMusicMetadata(youtubeFixture({ properties: { ...properties, 'og:type': 'video.other', 'music:musician': 'Uploader' } })),
+    { pageUrl: youtubePage });
+  assert.deepEqual(collectYoutubeMusicMetadata(youtubeFixture({ scripts: [recording], properties })), { pageUrl: youtubePage });
+});
+test('YouTube collector validates video URL before reading any structured metadata', () => {
+  for (const url of ['http://www.youtube.com/watch?v=aB_0123-xYz', 'https://www.youtube.com.evil.test/watch?v=aB_0123-xYz',
+    'https://user@www.youtube.com/watch?v=aB_0123-xYz', 'https://www.youtube.com/feed/subscriptions',
+    'https://www.youtube.com/watch?v=aB_0123-xYz&v=wW9TwZdWpjw']) {
+    const document = { location: { href: url }, querySelectorAll() { assert.fail('read unsupported page'); } };
+    assert.equal(collectYoutubeMusicMetadata(document), null);
+  }
 });

@@ -1,5 +1,5 @@
-import { videoFromTab, isLetrasVideoPage, videoFromLetrasPage, buildYoutubeAudioRequest, protocolError } from './policy.mjs';
-import { collectLetrasYoutubeVideo } from './page-video.mjs';
+import { videoFromTab, applyYoutubeMusicMetadata, isLetrasVideoPage, videoFromLetrasPage, buildYoutubeAudioRequest, protocolError } from './policy.mjs';
+import { collectLetrasYoutubeVideo, collectYoutubeMusicMetadata } from './page-video.mjs';
 import { sendYoutubeAudioRequest } from './native-client.mjs';
 
 const previewId = '00000000-0000-4000-8000-000000000000';
@@ -107,7 +107,26 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
     return { candidate: videoFromLetrasPage(tab, results[0].result), documentId: results[0].documentId };
   }
 
-  async function activeVideo(windowId, documentId) {
+  async function youtubeMetadata(tab, candidate) {
+    try {
+      const results = await chrome.scripting.executeScript({ world: 'ISOLATED',
+        target: { tabId: tab.id, frameIds: [0] }, func: collectYoutubeMusicMetadata });
+      if (Array.isArray(results) && results.length === 1 && results[0]?.frameId === 0)
+        return applyYoutubeMusicMetadata(tab, candidate, results[0].result);
+    } catch {
+      // Use the tab title and leave the editable artist field blank.
+    }
+    return candidate;
+  }
+
+  async function confirmTab(tab, windowId) {
+    const current = await inspect('active_tab_recheck', () => chrome.tabs.get(tab.id));
+    if (current?.id !== tab.id || current.active !== true || current.windowId !== windowId || current.url !== tab.url
+      || current.discarded === true || (current.pendingUrl ?? '') !== ''
+      || (current.status !== undefined && current.status !== 'complete')) throw protocolError('active_tab_recheck');
+  }
+
+  async function activeVideo(windowId, documentId, readMetadata = false) {
     const tabs = await inspect('active_tab_query', () => chrome.tabs.query({ active: true, currentWindow: true }));
     if (!Array.isArray(tabs) || tabs.length !== 1) throw protocolError('active_tab_count');
     const tab = tabs[0];
@@ -116,14 +135,15 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
       || (tab.status !== undefined && tab.status !== 'complete')) throw protocolError('active_tab_state');
     if (typeof tab.url !== 'string' || !tab.url) throw protocolError('active_tab_url');
     if (!isLetrasVideoPage(tab.url)) {
-      const candidate = videoFromTab(tab);
+      let candidate = videoFromTab(tab);
+      if (readMetadata && typeof chrome.scripting?.executeScript === 'function') {
+        candidate = await youtubeMetadata(tab, candidate);
+        await confirmTab(tab, windowId);
+      }
       return { candidate, context: { tabId: candidate.tabId, windowId, pageUrl: tab.url } };
     }
     const source = await readLetrasSource(tab, documentId);
-    const current = await inspect('active_tab_recheck', () => chrome.tabs.get(tab.id));
-    if (current?.id !== tab.id || current.active !== true || current.windowId !== windowId || current.url !== tab.url
-      || current.discarded === true || (current.pendingUrl ?? '') !== ''
-      || (current.status !== undefined && current.status !== 'complete')) throw protocolError('active_tab_recheck');
+    await confirmTab(tab, windowId);
     return { candidate: source.candidate, context: { tabId: tab.id, windowId, pageUrl: tab.url, documentId: source.documentId } };
   }
 
@@ -140,7 +160,7 @@ export function createYoutubePopupController({ chrome, newRequestId, sendRequest
       const windowId = await focusedWindowId();
       if (!live(token)) return false;
       refreshWindowId = windowId;
-      const { candidate, context } = await activeVideo(windowId);
+      const { candidate, context } = await activeVideo(windowId, undefined, true);
       if (!live(token)) return false;
       if (await focusedWindowId() !== windowId) throw protocolError('window_changed');
       if (!live(token)) return false;

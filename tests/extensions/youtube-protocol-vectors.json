@@ -12,6 +12,26 @@
       "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","title":"Test","artist":"","lyricsPage":"","fetchLyrics":false}]}
     },
     {
+      "name": "canonical-watch-url-with-file-name-and-lyrics-page",
+      "valid": true,
+      "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","videoUrl":"https://www.youtube.com/watch?v=aB_0123-xYz","title":"Canção","artist":"Artista","lyricsPage":"https://www.letras.mus.br/artista/faixa/","fetchLyrics":true,"fileName":"Nome próprio"}]}
+    },
+    {
+      "name": "different-watch-id-is-rejected",
+      "valid": false,
+      "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","videoUrl":"https://www.youtube.com/watch?v=aB_0123-xY0","title":"Test","artist":"","lyricsPage":"","fetchLyrics":false}]}
+    },
+    {
+      "name": "untrusted-watch-host-is-rejected",
+      "valid": false,
+      "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","videoUrl":"https://www.youtube.com.evil.test/watch?v=aB_0123-xYz","title":"Test","artist":"","lyricsPage":"","fetchLyrics":false}]}
+    },
+    {
+      "name": "extra-watch-parameters-are-rejected",
+      "valid": false,
+      "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","videoUrl":"https://www.youtube.com/watch?v=aB_0123-xYz&list=PLx","title":"Test","artist":"","lyricsPage":"","fetchLyrics":false}]}
+    },
+    {
       "name": "default-https-port-and-uppercase-host",
       "valid": true,
       "payload": {"schemaVersion":1,"type":"youtube.audio.request","requestId":"01234567-89ab-4cde-8fab-0123456789ab","items":[{"videoId":"aB_0123-xYz","title":"Test","artist":"","lyricsPage":"https://LETRAS.MUS.BR:443/artista/faixa/","fetchLyrics":true}]}
