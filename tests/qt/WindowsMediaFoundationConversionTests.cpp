@@ -322,6 +322,44 @@ class WindowsMediaFoundationConversionTests final : public QObject {
         QCOMPARE(QDir(directory.path()).entryList(QDir::Files), QStringList{QStringLiteral("áudio 日本.mp3")});
     }
 
+    void publishesFullValidatedAudioWithSeparateUnicodeTitleAndArtist() {
+        Workspace owned;
+        const auto bytes = fixture(QStringLiteral("m4a-aac-lc.m4a"));
+        QVERIFY(owned.prepare(bytes));
+        auto config = conversionConfig();
+        const QString title = QStringLiteral("星の歌") + QString(126, u'a');
+        const QString artist = QStringLiteral("音楽家");
+        config.publication_metadata = {QStringLiteral("  ") + title + ' ', artist};
+        WindowsLocalMediaConverter converter{config};
+        QVERIFY(converter.start(owned.workspace, 0));
+        QCOMPARE(finish(converter).state, LocalMediaConversionState::Validated);
+        const auto final = owned.workspace.validateAndPublish([](const QString&) { return true; });
+        QVERIFY(!final.isEmpty());
+        QCOMPARE(read(owned.workspace.inputPath()), bytes);
+
+        const auto mp3 = read(final);
+        QVERIFY(mp3.startsWith(QByteArray("ID3\x04\x00\x00", 6)));
+        const auto synchsafe = [&](const qsizetype offset) {
+            return (quint32{static_cast<unsigned char>(mp3[offset])} << 21) |
+                   (quint32{static_cast<unsigned char>(mp3[offset + 1])} << 14) |
+                   (quint32{static_cast<unsigned char>(mp3[offset + 2])} << 7) |
+                   quint32{static_cast<unsigned char>(mp3[offset + 3])};
+        };
+        const auto title_bytes = title.toUtf8();
+        const auto artist_bytes = artist.toUtf8();
+        QCOMPARE(synchsafe(6), static_cast<quint32>(22 + title_bytes.size() + artist_bytes.size()));
+        QVERIFY(mp3.size() > 10 + synchsafe(6));
+        QCOMPARE(mp3.mid(10, 4), QByteArray("TIT2"));
+        QCOMPARE(synchsafe(14), static_cast<quint32>(1 + title_bytes.size()));
+        QCOMPARE(mp3[20], '\x03');
+        QCOMPARE(mp3.mid(21, title_bytes.size()), title_bytes);
+        const auto next = 21 + title_bytes.size();
+        QCOMPARE(mp3.mid(next, 4), QByteArray("TPE1"));
+        QCOMPARE(synchsafe(next + 4), static_cast<quint32>(1 + artist_bytes.size()));
+        QCOMPARE(mp3[next + 10], '\x03');
+        QCOMPARE(mp3.mid(next + 11, artist_bytes.size()), artist_bytes);
+    }
+
     void rejectsInvalidInputWithoutASealedOutput() {
         Workspace owned;
         QVERIFY(owned.prepare("not an audio container"));

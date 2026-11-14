@@ -6,7 +6,7 @@ O mantenedor definiu áudio do YouTube em MP3 e Letras.mus.br como fonte prefere
 
 ## Resultado esperado
 
-Na extensão YouTube separada, selecionar o vídeo, conferir título/artista e escolher **Baixar MP3 + letra**. O áudio deve ser adquirido sem a imagem do vídeo quando houver faixa separada, convertido quando necessário e validado como MP3. O MP3 usa **Música - Artista.mp3** ou o valor informado em **Nome do arquivo (opcional)**. A letra deve ser associada ao arquivo final, com origem explícita e preservação das formas disponíveis. Falha na letra conserva o áudio e permite tentar somente a letra depois. Nada começa apenas por abrir o popup; importação não inicia reprodução.
+Na extensão YouTube separada, selecionar o vídeo, conferir título/artista e escolher **Baixar MP3 + letra**. O áudio deve ser adquirido sem a imagem do vídeo quando houver faixa separada, convertido quando necessário e validado como MP3. O MP3 usa **Música - Artista.mp3** ou o valor informado em **Nome do arquivo (opcional)**. As tags do MP3 guardam o título e o artista confirmados no pedido, inclusive quando o nome do arquivo é personalizado. A busca posterior de letras usa essas tags. A letra deve ser associada ao arquivo final, com origem explícita e preservação das formas disponíveis. Falha na letra conserva o áudio e permite tentar somente a letra depois. Nada começa apenas por abrir o popup; importação não inicia reprodução.
 
 ## Limites atuais
 

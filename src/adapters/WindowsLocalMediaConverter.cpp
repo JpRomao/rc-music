@@ -7,10 +7,50 @@
 #include <QFileInfo>
 #include <qt_windows.h>
 
+#include <algorithm>
 #include <array>
 
 namespace music_player::m0 {
 namespace {
+void appendSynchsafeSize(QByteArray& bytes, const qsizetype size) {
+    for (const int shift : {21, 14, 7, 0})
+        bytes.append(static_cast<char>((size >> shift) & 0x7f));
+}
+std::optional<QByteArray> publicationTag(const DownloadMp3Metadata& metadata) {
+    constexpr qsizetype max_field_bytes = 512;
+    const auto field = [](const QString& input) -> std::optional<QByteArray> {
+        if (input.size() > max_field_bytes || !input.isValidUtf16() || std::ranges::any_of(input, [](const QChar c) {
+                const auto unit = c.unicode();
+                return unit <= 0x1f || (unit >= 0x7f && unit <= 0x9f) || (unit >= 0x2028 && unit <= 0x202e) ||
+                       (unit >= 0x2066 && unit <= 0x2069);
+            }))
+            return {};
+        auto utf8 = input.trimmed().toUtf8();
+        if (utf8.size() > max_field_bytes)
+            return {};
+        return utf8;
+    };
+    const auto title = field(metadata.title), artist = field(metadata.artist);
+    if (!title || !artist)
+        return {};
+    if (title->isEmpty() && artist->isEmpty())
+        return QByteArray{};
+    QByteArray frames;
+    const auto append_frame = [&](const QByteArrayView id, const QByteArray& text) {
+        if (!text.isEmpty()) {
+            frames.append(id);
+            appendSynchsafeSize(frames, 1 + text.size());
+            frames.append("\0\0\x03", 3); // no frame flags, UTF-8 text
+            frames.append(text);
+        }
+    };
+    append_frame("TIT2", *title);
+    append_frame("TPE1", *artist);
+    QByteArray tag("ID3\x04\0\0", 6);
+    appendSynchsafeSize(tag, frames.size());
+    tag.append(frames);
+    return tag;
+}
 bool terminal(LocalMediaConversionState state) {
     return state == LocalMediaConversionState::Validated || state == LocalMediaConversionState::Failed ||
            state == LocalMediaConversionState::Cancelled;
@@ -72,6 +112,13 @@ bool WindowsLocalMediaConverter::start(WindowsDownloadWorkspace& workspace, qint
         workspace.inputPath().isEmpty() || !workspace.outputPath().isEmpty() || !workspace.outputSink() ||
         !workspace.outputSink()->isWritable() || workspace.outputSink()->size() != 0)
         return false;
+    auto tag = publicationTag(config_.publication_metadata);
+    if (!tag) {
+        update_.state = LocalMediaConversionState::Failed;
+        update_.error = DownloadFailure::InvalidResult;
+        return false;
+    }
+    publication_tag_ = std::move(*tag);
     workspace_ = &workspace;
     started_ms_ = previous_ms_ = now_ms;
     return launch(config_.backend == WindowsLocalMediaBackend::MediaFoundation ? Stage::Conversion : Stage::InputProbe,
@@ -201,8 +248,18 @@ LocalMediaConversionUpdate WindowsLocalMediaConverter::poll(qint64 now_ms) {
             probe_bytes_ += result.stdout_chunk;
     } else if (stage_ == Stage::Conversion) {
         auto* sink = workspace_->outputSink();
-        if (!sink ||
-            (!result.stdout_chunk.isEmpty() && sink->write(result.stdout_chunk) != result.stdout_chunk.size())) {
+        // Keep the encoder blind to application metadata. Write known framing
+        // once to the same bounded sink before sealing and decoding the result.
+        const auto write_tag = [&] {
+            if (publication_tag_.isEmpty())
+                return true;
+            if (sink->write(publication_tag_) != publication_tag_.size())
+                return false;
+            publication_tag_.clear();
+            return true;
+        };
+        if (!sink || (!result.stdout_chunk.isEmpty() &&
+                      (!write_tag() || sink->write(result.stdout_chunk) != result.stdout_chunk.size()))) {
             stop(workspace_->error() == DownloadFailure::None ? DownloadFailure::Conversion : workspace_->error());
         } else if (!progress_.feed(result.stderr_chunk))
             stop(DownloadFailure::Conversion);

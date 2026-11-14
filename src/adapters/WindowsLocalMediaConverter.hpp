@@ -8,6 +8,10 @@
 
 namespace music_player::m0 {
 
+struct DownloadMp3Metadata final {
+    QString title{}, artist{};
+};
+
 struct WindowsLocalMediaConverterConfig final {
     QString ffmpeg_executable{};
     QString ffprobe_executable{};
@@ -18,6 +22,7 @@ struct WindowsLocalMediaConverterConfig final {
     // With a prepared lease, executable/CWD/environment come only from it.
     // Raw paths remain solely for the trusted local-fixture composition.
     std::shared_ptr<const WindowsMediaFoundationLaunch> prepared_launch{};
+    DownloadMp3Metadata publication_metadata{};
 };
 enum class LocalMediaConversionState {
     Idle,
@@ -60,6 +65,7 @@ class WindowsLocalMediaConverter final {
     Stage stage_{Stage::InputProbe};
     DownloadContainer input_container_{DownloadContainer::Mp3};
     QByteArray probe_bytes_{};
+    QByteArray publication_tag_{};
     DownloadProgressCodec progress_{};
     qint64 started_ms_{0};
     qint64 previous_ms_{0};

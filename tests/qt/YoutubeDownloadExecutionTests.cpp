@@ -28,7 +28,8 @@ struct State final {
     std::atomic_int invalid_destination_kind{};
     std::mutex preparation_mutex;
     std::condition_variable preparation_changed;
-    QString stream, publication_name;
+    QString stream;
+    YoutubePublication publication;
 };
 struct ReleaseAcks final {
     std::shared_ptr<State> state;
@@ -80,12 +81,12 @@ class Destination final : public WindowsDownloadTask {
         return true;
     }
     bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> cap, qint64, qint64,
-                              const QString& publication_name) override {
+                              const YoutubePublication& publication) override {
         if (!cap)
             return false;
         id_ = cap->jobId();
         state_->stream = cap->streamUrl();
-        state_->publication_name = publication_name;
+        state_->publication = publication;
         ++state_->destination_starts;
         if (state_->block_preparation) {
             std::unique_lock lock(state_->preparation_mutex);
@@ -196,18 +197,24 @@ class YoutubeDownloadExecutionTests final : public QObject {
         youtube.youtube = YoutubeAudioItem{"aB0-_Cd1EF2", youtube.title, "Artista 日本", "", false};
         QVERIFY(value->start("default_name", youtube));
         QTRY_COMPARE(value->poll("default_name").state, DownloadExecutionState::Published);
-        QCOMPARE(state->publication_name, QStringLiteral("Synthetic song - Artista 日本"));
+        QCOMPARE(state->publication.file_name, QStringLiteral("Synthetic song - Artista 日本"));
+        QCOMPARE(state->publication.metadata.title, QStringLiteral("Synthetic song"));
+        QCOMPARE(state->publication.metadata.artist, QStringLiteral("Artista 日本"));
 
         youtube.youtube->file_name = "Minha música.MP3";
         QVERIFY(value->start("custom_name", youtube));
         QTRY_COMPARE(value->poll("custom_name").state, DownloadExecutionState::Published);
-        QCOMPARE(state->publication_name, QStringLiteral("Minha música.MP3"));
+        QCOMPARE(state->publication.file_name, QStringLiteral("Minha música.MP3"));
+        QCOMPARE(state->publication.metadata.title, QStringLiteral("Synthetic song"));
+        QCOMPARE(state->publication.metadata.artist, QStringLiteral("Artista 日本"));
 
         youtube.youtube->file_name.clear();
         youtube.youtube->artist.clear();
         QVERIFY(value->start("title_only", youtube));
         QTRY_COMPARE(value->poll("title_only").state, DownloadExecutionState::Published);
-        QCOMPARE(state->publication_name, QStringLiteral("Synthetic song"));
+        QCOMPARE(state->publication.file_name, QStringLiteral("Synthetic song"));
+        QCOMPARE(state->publication.metadata.title, QStringLiteral("Synthetic song"));
+        QVERIFY(state->publication.metadata.artist.isEmpty());
     }
 
     void theMixedExecutorDoesNotInferYoutubeAuthorityFromAUrlOrIncoherentContext() {

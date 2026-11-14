@@ -262,20 +262,20 @@ WindowsDownloadJobSession::WindowsDownloadJobSession(DirectDownloadIo& io, Windo
 WindowsDownloadJobSession::~WindowsDownloadJobSession() = default;
 bool WindowsDownloadJobSession::startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> capability,
                                                      const qint64 now_ms, const qint64 trusted_epoch_seconds,
-                                                     const QString& publication_name) {
+                                                     const YoutubePublication& publication) {
     if (!capability)
         return startImpl({}, {}, now_ms, {}, trusted_epoch_seconds);
     const auto job_id = capability->jobId();
     const DownloadItem item{canonicalYoutubeWatchUrl(capability->videoId().toStdString()).toStdString(),
                             capability->data().title.toStdString(), DownloadMediaKind::Audio};
-    return startImpl(job_id, item, now_ms, std::move(capability), trusted_epoch_seconds, publication_name);
+    return startImpl(job_id, item, now_ms, std::move(capability), trusted_epoch_seconds, publication);
 }
 bool WindowsDownloadJobSession::start(const std::string& job_id, const DownloadItem& item, qint64 now_ms) {
     return startImpl(job_id, item, now_ms, {}, 0);
 }
 bool WindowsDownloadJobSession::startImpl(const std::string& job_id, const DownloadItem& item, const qint64 now_ms,
                                           std::shared_ptr<const ResolvedYoutubeAudioCapability> capability,
-                                          const qint64 trusted_epoch_seconds, const QString& publication_name) {
+                                          const qint64 trusted_epoch_seconds, const YoutubePublication& publication) {
     auto& value = *impl_;
     if (value.operating || value.stage != Impl::Stage::Idle)
         return false;
@@ -307,8 +307,10 @@ bool WindowsDownloadJobSession::startImpl(const std::string& job_id, const Downl
     value.stage = Impl::Stage::Downloading;
     try {
         auto workspace_config = value.config.workspace;
-        if (capability)
-            workspace_config.publication_name = publication_name;
+        if (capability) {
+            workspace_config.publication_name = publication.file_name;
+            value.config.converter.publication_metadata = publication.metadata;
+        }
         value.workspace = value.config.ownership_store
                               ? std::make_unique<WindowsDownloadWorkspace>(std::move(workspace_config), job_id,
                                                                            *value.config.ownership_store)

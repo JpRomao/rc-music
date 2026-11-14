@@ -7,6 +7,11 @@
 
 namespace music_player::m0 {
 
+struct YoutubePublication final {
+    QString file_name{};
+    DownloadMp3Metadata metadata{};
+};
+
 struct WindowsDownloadJobSessionConfig final {
     WindowsDownloadWorkspaceConfig workspace{};
     WindowsLocalMediaConverterConfig converter{};
@@ -36,7 +41,7 @@ class WindowsDownloadJobSession final {
     // capability. Wall time is explicit, never read implicitly by this class.
     [[nodiscard]] bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> capability,
                                             qint64 now_ms, qint64 trusted_epoch_seconds,
-                                            const QString& publication_name = {});
+                                            const YoutubePublication& publication = {});
     void cancel();
     [[nodiscard]] DownloadExecutionUpdate poll(qint64 now_ms);
 
@@ -47,7 +52,7 @@ class WindowsDownloadJobSession final {
   private:
     bool startImpl(const std::string& job_id, const DownloadItem& item, qint64 now_ms,
                    std::shared_ptr<const ResolvedYoutubeAudioCapability> capability, qint64 trusted_epoch_seconds,
-                   const QString& publication_name = {});
+                   const YoutubePublication& publication = {});
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

@@ -228,7 +228,7 @@ class Task final : public WindowsDownloadTask {
         return true;
     }
     bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> cap, qint64 now, qint64,
-                              const QString&) override {
+                              const YoutubePublication&) override {
         return cap && start(cap->jobId(), {}, now);
     }
     void cancel() override {

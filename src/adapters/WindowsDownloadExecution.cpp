@@ -111,9 +111,9 @@ class SessionTask final : public WindowsDownloadTask {
         return session_.start(id, item, now_ms);
     }
     bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> cap, const qint64 now_ms,
-                              const qint64 epoch, const QString& publication_name) override {
+                              const qint64 epoch, const YoutubePublication& publication) override {
         id_ = cap ? cap->jobId() : std::string{};
-        return session_.startResolvedYoutube(std::move(cap), now_ms, epoch, publication_name);
+        return session_.startResolvedYoutube(std::move(cap), now_ms, epoch, publication);
     }
     void cancel() override { session_.cancel(); }
     DownloadExecutionUpdate poll(const qint64 now_ms) override {
@@ -229,7 +229,7 @@ class PreparedSessionTask final : public WindowsDownloadTask {
         return true;
     }
     bool startResolvedYoutube(std::shared_ptr<const ResolvedYoutubeAudioCapability> cap, const qint64 now_ms,
-                              const qint64 epoch, const QString& publication_name) override {
+                              const qint64 epoch, const YoutubePublication& publication) override {
         if (!cap || started_ || terminal(update_.state))
             return false;
         if (epoch >= 0 && cap->expiresAtSeconds() <= epoch) {
@@ -239,7 +239,7 @@ class PreparedSessionTask final : public WindowsDownloadTask {
         }
         resolved_ = std::move(cap);
         resolved_epoch_ = epoch;
-        publication_name_ = publication_name;
+        publication_ = publication;
         return start(resolved_->jobId(), {}, now_ms);
     }
     void cancel() override {
@@ -342,8 +342,7 @@ class PreparedSessionTask final : public WindowsDownloadTask {
                     fail(DownloadFailure::InvalidResult);
                     return update_;
                 }
-                accepted =
-                    session_->startResolvedYoutube(resolved_, now_ms, resolved_epoch_ + seconds, publication_name_);
+                accepted = session_->startResolvedYoutube(resolved_, now_ms, resolved_epoch_ + seconds, publication_);
             } else {
                 accepted = session_->start(update_.job_id, item_, started_ms_);
             }
@@ -366,7 +365,7 @@ class PreparedSessionTask final : public WindowsDownloadTask {
     DownloadExecutionUpdate update_;
     std::filesystem::path retained_publication_;
     DownloadItem item_;
-    QString publication_name_;
+    YoutubePublication publication_;
     std::shared_ptr<const ResolvedYoutubeAudioCapability> resolved_;
     qint64 resolved_epoch_{0};
     qint64 started_ms_{0};

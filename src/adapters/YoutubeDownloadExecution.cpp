@@ -55,10 +55,11 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
         try {
             if (item.youtube) {
                 const auto& youtube = *item.youtube;
-                publication_name_ =
-                    QString::fromStdString(youtube.file_name.empty() ? youtube.title : youtube.file_name);
-                if (youtube.file_name.empty() && !youtube.artist.empty())
-                    publication_name_ += QStringLiteral(" - ") + QString::fromStdString(youtube.artist);
+                publication_.metadata = {QString::fromStdString(youtube.title), QString::fromStdString(youtube.artist)};
+                publication_.file_name =
+                    youtube.file_name.empty() ? publication_.metadata.title : QString::fromStdString(youtube.file_name);
+                if (youtube.file_name.empty() && !publication_.metadata.artist.isEmpty())
+                    publication_.file_name += QStringLiteral(" - ") + publication_.metadata.artist;
             }
             process_ = source_factory_(); // Passive construction on the worker.
             if (!process_) {
@@ -135,7 +136,7 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
             // A refused start still needs the destination's terminal ACK.
             try {
                 destination_start_refused_ =
-                    !destination_->startResolvedYoutube(resolution.audio, now_ms, utc, publication_name_);
+                    !destination_->startResolvedYoutube(resolution.audio, now_ms, utc, publication_);
             } catch (...) {
                 stop_error_ = DownloadFailure::Unavailable;
             }
@@ -209,7 +210,7 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
     std::unique_ptr<WindowsDownloadTask> destination_;
     DownloadExecutionUpdate update_;
     std::filesystem::path retained_;
-    QString publication_name_;
+    YoutubePublication publication_;
     DownloadFailure stop_error_{DownloadFailure::None};
     bool started_{}, cancelled_{}, destination_stop_requested_{}, destination_start_refused_{};
 };
