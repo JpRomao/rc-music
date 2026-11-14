@@ -11,6 +11,7 @@
 #include <QLockFile>
 #include <QSaveFile>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -22,10 +23,12 @@ namespace {
 enum class FileStatus { Missing, Valid, Invalid, FutureVersion, Unavailable };
 constexpr int initial_schema_version = 1;
 constexpr int translation_schema_version = 2;
+constexpr int selection_schema_version = 3;
 struct InspectedFile final {
     FileStatus status{FileStatus::Missing};
     QByteArray bytes{};
     LyricsVariants variants{};
+    LyricsSelection selection{};
 };
 bool scalarString(const QString& value) {
     for (qsizetype index = 0; index < value.size(); ++index) {
@@ -87,9 +90,23 @@ std::optional<std::string> string(const QJsonValue& value) {
         return {};
     return value.toString().toUtf8().toStdString();
 }
-QByteArray encode(const QString& track, const LyricsVariants& variants) {
-    if (!isValidLyricsVariants(variants))
+std::optional<LyricsSelection> decodeSelection(const QJsonValue& value) {
+    if (value == QStringLiteral("source"))
+        return LyricsSelection{.kind = LyricsSelectionKind::Source};
+    if (value == QStringLiteral("hidden"))
+        return LyricsSelection{.kind = LyricsSelectionKind::Hidden};
+    const auto id = decodeId(value);
+    if (id)
+        return LyricsSelection{.kind = LyricsSelectionKind::Variant, .variant_id = *id};
+    return {};
+}
+LyricsSelection availableSelection(const LyricsSelection selection, const LyricsVariants& variants) {
+    if (selection.kind == LyricsSelectionKind::Variant &&
+        std::ranges::find(variants, selection.variant_id, &LyricsVariant::id) == variants.end())
         return {};
+    return selection;
+}
+QByteArray encode(const QString& track, const LyricsVariants& variants, const LyricsSelection selection) {
     QJsonArray array;
     auto version = initial_schema_version;
     for (const auto& variant : variants) {
@@ -104,10 +121,18 @@ QByteArray encode(const QString& track, const LyricsVariants& variants) {
                                     {QStringLiteral("kind"), QString::fromUtf8(lyricsVariantKindName(variant.kind))},
                                     {QStringLiteral("generated"), variant.generated}});
     }
-    const auto bytes = QJsonDocument(QJsonObject{{QStringLiteral("schemaVersion"), version},
-                                                 {QStringLiteral("sourcePath"), track},
-                                                 {QStringLiteral("variants"), array}})
-                           .toJson(QJsonDocument::Compact);
+    QJsonObject document{{QStringLiteral("schemaVersion"), version},
+                         {QStringLiteral("sourcePath"), track},
+                         {QStringLiteral("variants"), array}};
+    if (selection.kind != LyricsSelectionKind::Automatic) {
+        document.insert(QStringLiteral("schemaVersion"), selection_schema_version);
+        const auto encoded_selection = selection.kind == LyricsSelectionKind::Source ? QStringLiteral("source")
+                                       : selection.kind == LyricsSelectionKind::Hidden
+                                           ? QStringLiteral("hidden")
+                                           : QString::number(selection.variant_id);
+        document.insert(QStringLiteral("selection"), encoded_selection);
+    }
+    const auto bytes = QJsonDocument(document).toJson(QJsonDocument::Compact);
     return bytes.size() > QtJsonLyricsVariantsStore::maximum_file_size ? QByteArray{} : bytes;
 }
 InspectedFile decode(QByteArray bytes, const QString& track) {
@@ -121,13 +146,18 @@ InspectedFile decode(QByteArray bytes, const QString& track) {
         std::trunc(version.toDouble()) != version.toDouble())
         return {.status = FileStatus::Invalid};
     // A future schema is opaque; it never grants overwrite authority.
-    if (version.toDouble() > translation_schema_version)
+    if (version.toDouble() > selection_schema_version)
         return {.status = FileStatus::FutureVersion};
-    const bool supports_translations = version.toInt() == translation_schema_version;
-    if (!detail::strictJsonPreflight(bytes) || root.size() != 3 ||
+    const bool supports_translations = version.toInt() >= translation_schema_version;
+    const bool has_selection = version.toInt() == selection_schema_version;
+    if (!detail::strictJsonPreflight(bytes) || root.size() != (has_selection ? 4 : 3) ||
         !root.value(QStringLiteral("sourcePath")).isString() ||
         root.value(QStringLiteral("sourcePath")).toString() != track ||
         !root.value(QStringLiteral("variants")).isArray())
+        return {.status = FileStatus::Invalid};
+    const auto selection =
+        has_selection ? decodeSelection(root.value(QStringLiteral("selection"))) : std::optional{LyricsSelection{}};
+    if (!selection)
         return {.status = FileStatus::Invalid};
     const auto array = root.value(QStringLiteral("variants")).toArray();
     if (static_cast<std::size_t>(array.size()) > maximum_lyrics_variants)
@@ -154,7 +184,11 @@ InspectedFile decode(QByteArray bytes, const QString& track) {
     }
     if (!isValidLyricsVariants(variants))
         return {.status = FileStatus::Invalid};
-    return {.status = FileStatus::Valid, .bytes = std::move(bytes), .variants = std::move(variants)};
+    const auto available = availableSelection(*selection, variants);
+    return {.status = FileStatus::Valid,
+            .bytes = std::move(bytes),
+            .variants = std::move(variants),
+            .selection = available};
 }
 InspectedFile inspect(const QString& path, const QString& track) {
     const QFileInfo information(path);
@@ -222,20 +256,46 @@ LyricsVariantsLoadResult QtJsonLyricsVariantsStore::load(const std::filesystem::
     if (primary.status == FileStatus::Unavailable || backup.status == FileStatus::Unavailable)
         return {.status = LyricsVariantsLoadStatus::Unavailable};
     if (primary.status == FileStatus::Valid)
-        return {.variants = std::move(primary.variants), .status = LyricsVariantsLoadStatus::Loaded};
+        return {.variants = std::move(primary.variants),
+                .status = LyricsVariantsLoadStatus::Loaded,
+                .selection = primary.selection};
     if (backup.status == FileStatus::Valid)
-        return {.variants = std::move(backup.variants), .status = LyricsVariantsLoadStatus::RecoveredFromBackup};
+        return {.variants = std::move(backup.variants),
+                .status = LyricsVariantsLoadStatus::RecoveredFromBackup,
+                .selection = backup.selection};
     if (primary.status == FileStatus::Missing && backup.status == FileStatus::Missing)
         return {};
     return {.status = LyricsVariantsLoadStatus::Invalid};
 }
 LyricsVariantsSaveStatus QtJsonLyricsVariantsStore::save(const std::filesystem::path& track,
                                                          const LyricsVariants& variants) {
+    if (!isValidLyricsVariants(variants))
+        return LyricsVariantsSaveStatus::Failed;
+    return saveDocument(track, &variants, std::nullopt);
+}
+LyricsVariantsSaveStatus QtJsonLyricsVariantsStore::saveSelection(const std::filesystem::path& track,
+                                                                  const LyricsSelection selection) {
+    switch (selection.kind) {
+    case LyricsSelectionKind::Automatic:
+    case LyricsSelectionKind::Source:
+    case LyricsSelectionKind::Hidden:
+        if (selection.variant_id != 0)
+            return LyricsVariantsSaveStatus::Failed;
+        break;
+    case LyricsSelectionKind::Variant:
+        if (selection.variant_id == 0)
+            return LyricsVariantsSaveStatus::Failed;
+        break;
+    default:
+        return LyricsVariantsSaveStatus::Failed;
+    }
+    return saveDocument(track, nullptr, selection);
+}
+LyricsVariantsSaveStatus
+QtJsonLyricsVariantsStore::saveDocument(const std::filesystem::path& track, const LyricsVariants* updated_variants,
+                                        const std::optional<LyricsSelection> updated_selection) {
     const auto identity = trackText(track);
     if (!identity)
-        return LyricsVariantsSaveStatus::Failed;
-    const auto bytes = encode(*identity, variants);
-    if (bytes.isEmpty())
         return LyricsVariantsSaveStatus::Failed;
     const auto directory = QDir(config_directory_).filePath(QStringLiteral("lyrics"));
     if (!availableDirectory(config_directory_) || !availableDirectory(directory) ||
@@ -253,6 +313,16 @@ LyricsVariantsSaveStatus QtJsonLyricsVariantsStore::save(const std::filesystem::
         return LyricsVariantsSaveStatus::Failed;
     if (primary.status != FileStatus::Valid && backup.status != FileStatus::Valid &&
         (primary.status != FileStatus::Missing || backup.status != FileStatus::Missing))
+        return LyricsVariantsSaveStatus::Failed;
+    const auto& current = primary.status == FileStatus::Valid ? primary : backup;
+    const auto& variants = updated_variants ? *updated_variants : current.variants;
+    const auto selection = availableSelection(updated_selection.value_or(current.selection), variants);
+    if (updated_selection && selection != *updated_selection)
+        return LyricsVariantsSaveStatus::Failed;
+    if (updated_selection && primary.status == FileStatus::Valid && selection == primary.selection)
+        return LyricsVariantsSaveStatus::Saved;
+    const auto bytes = encode(*identity, variants, selection);
+    if (bytes.isEmpty())
         return LyricsVariantsSaveStatus::Failed;
     if (primary.status == FileStatus::Valid &&
         !writeAtomically(primary_path + QStringLiteral(".bak"), primary.bytes, options_,

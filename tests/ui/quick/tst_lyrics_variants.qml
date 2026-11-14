@@ -53,6 +53,8 @@ TestCase {
         property var closeQueuedManager: null
         property var prepareQueuedVariantEdit: null
         property var removeQueuedVariant: null
+        property var queuedRomajiSource: null
+        property var generateQueuedRomaji: null
         property bool recordingSearchBusy: false
         property string recordingSearchStatus: ""
         property string recordingSearchRevision: "matches-7"
@@ -112,7 +114,8 @@ TestCase {
         }
         function selectVariant(id) {
             selectedVariantId = id;
-            currentLine = id === "9007199254740993" ? "Romanized verse" : (id.length ? "日本語の行" : "<b>Service verse</b>");
+            currentLine = id === "off" ? "" : id === "9007199254740993" ? "Romanized verse" : (id.length ? "日本語の行" : "<b>Service verse</b>");
+            hasSyncedLyrics = id !== "off";
             return record("select", [id]);
         }
         function selectOnlineLyricsCandidate(index) {
@@ -199,6 +202,8 @@ TestCase {
         driver.resetLocalScenario();
         backend.openQueuedManager = null;
         backend.closeQueuedManager = null;
+        backend.queuedRomajiSource = null;
+        backend.generateQueuedRomaji = null;
         backend.prepareQueuedVariantEdit = null;
         backend.removeQueuedVariant = null;
         backend.currentLine = "<b>Service verse</b>";
@@ -496,6 +501,36 @@ TestCase {
         compare(lastCall("select").args[0], "");
         compare(findChild(shell, "lyrics-current-line").text, "<b>Service verse</b>");
     }
+    function test_keyboardCanTurnLyricsOffAndReopenTheSelectedOptionWithoutPausing() {
+        backend.selectedVariantId = "1";
+        showOnlineCandidates();
+        const playing = presenter.currentOccurrenceId;
+        const panel = openPanel();
+        const list = findChild(shell, "lyrics-variants-list");
+        tryCompare(list, "activeFocus", true);
+        tryCompare(list, "currentIndex", 1);
+        keyClick(Qt.Key_End);
+        compare(list.currentItem.Accessible.name, "Sem letra");
+        compare(backend.selectedVariantId, "1");
+        keyClick(Qt.Key_Space);
+        compare(lastCall("select").args, ["off"]);
+        verify(list.currentItem.Accessible.selected);
+        verify(!findChild(shell, "lyrics-variant-save-current").enabled);
+        verify(!findChild(shell, "lyrics-variant-edit").enabled);
+        verify(!findChild(shell, "lyrics-variant-remove").enabled);
+        verify(!findChild(shell, "lyrics-online-candidates").visible);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+        compare(presenter.currentOccurrenceId, playing);
+        panel.close();
+        tryCompare(panel, "visible", false);
+        openPanel();
+        tryCompare(list, "activeFocus", true);
+        compare(list.currentItem.Accessible.name, "Sem letra");
+        keyClick(Qt.Key_Home);
+        keyClick(Qt.Key_Return);
+        compare(lastCall("select").args, [""]);
+        tryCompare(findChild(shell, "lyrics-online-candidates"), "visible", true);
+    }
     function test_addingLaterKeepsLanguageScriptSourceAndPlainTextSeparate() {
         openAddForm();
         const form = findChild(shell, "lyrics-variant-form");
@@ -693,6 +728,7 @@ TestCase {
         tryCompare(panel, "visible", true);
         compare(lastCall("openManager").args[0], menu.target);
         const playing = presenter.currentOccurrenceId;
+        compare(findChild(shell, "lyrics-variants-list").count, 1);
         tryVerify(() => rowAt(0) !== null);
         rowAt(0).Accessible.pressAction();
         tryCompare(findChild(shell, "lyrics-variant-edit"), "enabled", true);
@@ -759,6 +795,48 @@ TestCase {
         content.text = "[00:01.000]Nihon-go";
         mouseClick(findChild(shell, "lyrics-variant-submit"));
         compare(lastCall("saveRomaji").args.join("|"), "romaji-token|Romaji|[00:01.000]Nihon-go");
+        compare(presenter.currentOccurrenceId, playing);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+    }
+
+    function test_queueManagerReviewsRomajiFromTheSelectedSavedVersion() {
+        backend.openQueuedManager = occurrence => "queue-manager";
+        backend.queuedRomajiSource = (token, id) => token === "queue-manager" && id === "queued-japanese" ? {
+                revision: "queued-revision",
+                available: true,
+                status: ""
+            } : {};
+        backend.generateQueuedRomaji = (token, id) => {
+            backend.record("generateQueuedRomaji", [token, id]);
+            return "queue-romaji";
+        };
+        backend.queuedManagerVariants = [
+            {
+                id: "queued-japanese",
+                name: "Original japonês",
+                language: "ja",
+                script: "Jpan",
+                source: "Letras",
+                kind: "original",
+                generated: false
+            }
+        ];
+        const playing = presenter.currentOccurrenceId;
+        const menu = openQueueVariantMenu();
+        menu.action.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        tryVerify(() => rowAt(0) !== null);
+        rowAt(0).Accessible.pressAction();
+        const button = findChild(shell, "lyrics-variant-generate-romaji");
+        tryCompare(button, "enabled", true);
+        mouseClick(button);
+        compare(lastCall("generateQueuedRomaji").args.join("|"), "queue-manager|queued-japanese");
+        backend.romajiDraftReady("queue-romaji", "[00:01.000]Nihongo");
+        const form = findChild(shell, "lyrics-variant-form");
+        tryCompare(form, "visible", true);
+        mouseClick(findChild(shell, "lyrics-variant-submit"));
+        compare(lastCall("saveRomaji").args.join("|"), "queue-romaji|Romaji|[00:01.000]Nihongo");
+        tryCompare(form, "visible", false);
         compare(presenter.currentOccurrenceId, playing);
         compare(presenter.playbackState, PlayerPresenter.Playing);
     }
@@ -1001,7 +1079,7 @@ TestCase {
     function test_singleAvailableVersionNeedsNoRomanizedCompanion() {
         backend.variants = [backend.variants[0]];
         openPanel();
-        compare(findChild(shell, "lyrics-variants-list").count, 2);
+        compare(findChild(shell, "lyrics-variants-list").count, 3);
         mouseClick(rowAt(1));
         compare(lastCall("select").args[0], "1");
     }
@@ -1047,9 +1125,11 @@ TestCase {
         openPanel();
         const list = findChild(shell, "lyrics-variants-list");
         tryCompare(list, "activeFocus", true);
-        compare(list.count, 17);
+        compare(list.count, 18);
         verify(list.itemAtIndex(16) === null);
         keyClick(Qt.Key_End);
+        tryCompare(list, "currentIndex", 17);
+        keyClick(Qt.Key_Up);
         tryCompare(list, "currentIndex", 16);
         tryVerify(function () {
             const row = list.itemAtIndex(16);

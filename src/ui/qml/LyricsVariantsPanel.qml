@@ -27,6 +27,8 @@ Dialog {
     property string romajiToken: ""
     property string romajiRequestRevision: ""
     property var romajiRequestOwner: null
+    property bool startRomajiOnOpen: false
+    property var queuedRomaji: ({})
     property string queuedToken: ""
     property string queuedTitle: ""
     property string managerToken: ""
@@ -51,14 +53,15 @@ Dialog {
     readonly property bool canReload: visible && enabled && supported && !busy
     readonly property bool noTrackToReload: !managingQueue && trackIdentity.length === 0
     readonly property string selectedId: supported ? (managingQueue ? managerSelection : lyrics.selectedVariantId) : ""
+    readonly property string noLyricsId: "off"
     readonly property var onlineCandidates: supported && typeof lyrics.onlineLyricsCandidates !== "undefined" ? lyrics.onlineLyricsCandidates : []
     readonly property int selectedOnlineCandidate: supported && typeof lyrics.selectedOnlineLyricsCandidate !== "undefined" ? lyrics.selectedOnlineLyricsCandidate : -1
     readonly property bool showOnlineCandidates: !managingQueue && selectedId.length === 0 && onlineCandidates.length > 1
     readonly property string currentLyricsRevision: supported && typeof lyrics.currentLyricsRevision !== "undefined" ? lyrics.currentLyricsRevision : ""
-    readonly property bool canSaveCurrent: !managingQueue && canEdit && currentLyricsRevision.length > 0 && lyrics.canSaveCurrentLyrics
-    readonly property string romajiSourceRevision: supported && typeof lyrics.romajiSourceRevision === "string" ? lyrics.romajiSourceRevision : ""
-    readonly property string romajiStatusText: supported && typeof lyrics.romajiStatusText === "string" ? lyrics.romajiStatusText : ""
-    readonly property bool canGenerateRomaji: !managingQueue && canEdit && romajiSourceRevision.length > 0 && lyrics.canGenerateRomaji === true
+    readonly property bool canSaveCurrent: !managingQueue && selectedId.length === 0 && canEdit && currentLyricsRevision.length > 0 && lyrics.canSaveCurrentLyrics
+    readonly property string romajiSourceRevision: managingQueue ? queuedRomaji.revision ?? "" : supported && typeof lyrics.romajiSourceRevision === "string" ? lyrics.romajiSourceRevision : ""
+    readonly property string romajiStatusText: managingQueue ? queuedRomaji.status ?? "" : supported && typeof lyrics.romajiStatusText === "string" ? lyrics.romajiStatusText : ""
+    readonly property bool canGenerateRomaji: canEdit && romajiSourceRevision.length > 0 && (managingQueue ? queuedRomaji.available === true : selectedId !== noLyricsId && lyrics.canGenerateRomaji === true)
     readonly property var selectedVariant: variantForId(selectedId)
     readonly property var rows: variantRows()
     readonly property var versionKinds: [
@@ -96,13 +99,18 @@ Dialog {
     signal queuedFormClosed(bool submitted)
     signal recordingSearchRequested(string token, string title, string artist, string album, double durationMs)
     onOpened: {
+        const startRomaji = startRomajiOnOpen;
+        startRomajiOnOpen = false;
         variantList.restoreCursor(selectedId);
         if (canSelect)
             variantList.forceActiveFocus(Qt.TabFocusReason);
         else
             closeButton.forceActiveFocus(Qt.TabFocusReason);
+        if (startRomaji)
+            requestRomaji();
     }
     onClosed: {
+        startRomajiOnOpen = false;
         if (formDialog && formMode !== "queued")
             formDialog.close();
         if (confirmation)
@@ -127,9 +135,11 @@ Dialog {
             formDialog.close();
     }
     onSelectedIdChanged: {
+        refreshQueuedRomaji();
         if (editing && editId !== selectedId && formDialog.visible)
             formDialog.close();
     }
+    onManagerTokenChanged: refreshQueuedRomaji()
     onFormCurrentChanged: {
         if (!formCurrent)
             cancelLrcImport();
@@ -144,6 +154,9 @@ Dialog {
     Connections {
         target: root.lyrics
         ignoreUnknownSignals: true
+        function onChanged() {
+            root.refreshQueuedRomaji();
+        }
         function onRomajiDraftReady(token, content) {
             if (token !== root.romajiToken || root.romajiRequestOwner !== root.lyrics)
                 return;
@@ -162,6 +175,7 @@ Dialog {
             revokeDialogs();
     }
     function revokeDialogs() {
+        startRomajiOnOpen = false;
         clearRomajiRequest();
         if (formDialog)
             formDialog.close();
@@ -179,6 +193,19 @@ Dialog {
         if (token.length > 0 && owner && typeof owner.discardRomaji === "function")
             owner.discardRomaji(token);
     }
+    function refreshQueuedRomaji() {
+        queuedRomaji = managerToken.length > 0 && lyrics && typeof lyrics.queuedRomajiSource === "function" ? lyrics.queuedRomajiSource(managerToken, selectedId) : {};
+    }
+    function openForRomaji() {
+        if (!enabled || !supported || managingQueue)
+            return;
+        if (opened) {
+            requestRomaji();
+            return;
+        }
+        startRomajiOnOpen = true;
+        open();
+    }
     function variantRows() {
         if (managingQueue)
             return storedVariants;
@@ -193,11 +220,17 @@ Dialog {
                 generated: false
             }
         ];
-        if (supported) {
-            const stored = storedVariants;
-            for (let index = 0; index < stored.length; ++index)
-                result.push(stored[index]);
-        }
+        for (const variant of storedVariants)
+            result.push(variant);
+        result.push({
+            id: noLyricsId,
+            name: qsTr("Sem letra"),
+            language: "",
+            script: "",
+            source: "",
+            kind: "",
+            generated: false
+        });
         return result;
     }
     function variantForId(id) {
@@ -393,7 +426,7 @@ Dialog {
             return;
         const owner = lyrics;
         const revision = romajiSourceRevision;
-        const token = owner.generateRomaji();
+        const token = managingQueue ? owner.generateQueuedRomaji(managerToken, selectedId) : owner.generateRomaji();
         if (owner === lyrics && revision === romajiSourceRevision && visible) {
             romajiToken = token;
             romajiRequestRevision = revision;
@@ -601,7 +634,7 @@ Dialog {
         }
         Text {
             Layout.fillWidth: true
-            visible: !root.managingQueue && root.selectedId.length > 0
+            visible: !root.managingQueue && root.selectedVariant !== null
             text: qsTr("Selecione Arquivo / busca atual para salvar a letra carregada.")
             textFormat: Text.PlainText
             color: root.contract.textSecondaryColor

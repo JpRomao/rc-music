@@ -44,6 +44,7 @@ class MemoryVariantsStore final : public LyricsVariantsStore {
     QSemaphore load_entered, load_release, save_entered, save_release;
     std::mutex mutex;
     std::map<std::filesystem::path, LyricsVariants> disk;
+    std::map<std::filesystem::path, LyricsSelection> selections;
     std::vector<std::pair<std::filesystem::path, LyricsVariants>> attempts;
     LyricsVariantsLoadResult load(const std::filesystem::path& path) override {
         ++load_calls;
@@ -54,9 +55,16 @@ class MemoryVariantsStore final : public LyricsVariantsStore {
         if (throw_load)
             throw std::runtime_error("load refused");
         std::lock_guard lock(mutex);
-        if (const auto found = disk.find(path); found != disk.end())
-            return {.variants = found->second, .status = LyricsVariantsLoadStatus::Loaded};
-        return {.status = load_status.load()};
+        const auto found = disk.find(path);
+        const auto selection = selections.find(path);
+        return {.variants = found != disk.end() ? found->second : LyricsVariants{},
+                .status = found != disk.end() ? LyricsVariantsLoadStatus::Loaded : load_status.load(),
+                .selection = selection != selections.end() ? selection->second : LyricsSelection{}};
+    }
+    LyricsVariantsSaveStatus saveSelection(const std::filesystem::path& path, LyricsSelection selection) override {
+        std::lock_guard lock(mutex);
+        selections[path] = selection;
+        return LyricsVariantsSaveStatus::Saved;
     }
     LyricsVariantsSaveStatus save(const std::filesystem::path& path, const LyricsVariants& variants) override {
         ++save_calls;
@@ -147,6 +155,57 @@ class OnlineNetwork final : public QNetworkAccessManager {
 class LyricsBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    void defaultsToFirstAvailableLyricsAndRemembersIndependentTrackChoices() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto first = temp.filePath("first.mp3");
+        const auto second = temp.filePath("second.mp3");
+        const auto fallback = temp.filePath("fallback.mp3");
+        save(temp.filePath("first.lrc"), "Sibling lyrics");
+        save(temp.filePath("fallback.lrc"), "Fallback lyrics");
+        auto store = std::make_shared<MemoryVariantsStore>();
+        store->disk[nativePath(first)] = {{4, "Original", {}, {}, {}, "Saved original"},
+                                          {8, "Romaji", {}, {}, {}, "Saved romaji"}};
+        store->disk[nativePath(second)] = {{12, "Original", {}, {}, {}, "Other lyrics"},
+                                           {13, "Alternate", {}, {}, {}, "Other alternate"}};
+        {
+            QtLyricsService service;
+            LyricsBinding binding(service, store);
+            binding.setTrack(first, "First", {}, {}, 1000);
+            QTRY_COMPARE(binding.plainText(), QStringLiteral("Saved original"));
+            QCOMPARE(binding.selectedVariantId(), "4");
+            QVERIFY(binding.selectVariant("off"));
+            QCOMPARE(binding.selectedVariantId(), "off");
+            QVERIFY(binding.plainText().isEmpty());
+            QVERIFY(!binding.hasSyncedLyrics());
+            QVERIFY(!binding.canSaveCurrentLyrics());
+            binding.setTrack(second, "Second", {}, {}, 1000);
+            QTRY_COMPARE(binding.plainText(), QStringLiteral("Other lyrics"));
+            QVERIFY(binding.selectVariant("13"));
+            binding.setTrack(fallback, "Fallback", {}, {}, 1000);
+            QTRY_COMPARE(binding.plainText(), QStringLiteral("Fallback lyrics"));
+            binding.setTrack(first, "First", {}, {}, 1000);
+            QTRY_COMPARE(binding.selectedVariantId(), "off");
+            QVERIFY(binding.plainText().isEmpty());
+        }
+        {
+            QtLyricsService service;
+            LyricsBinding binding(service, store);
+            binding.setTrack(second, "Second", {}, {}, 1000);
+            QTRY_COMPARE(binding.plainText(), QStringLiteral("Other alternate"));
+            binding.setTrack(first, "First", {}, {}, 1000);
+            QTRY_COMPARE(binding.selectedVariantId(), "off");
+            QVERIFY(binding.selectVariant({}));
+            QTRY_COMPARE(binding.plainText(), QStringLiteral("Sibling lyrics"));
+            QTRY_VERIFY(!binding.variantsBusy());
+        }
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        binding.setTrack(first, "First", {}, {}, 1000);
+        QTRY_COMPARE(binding.plainText(), QStringLiteral("Sibling lyrics"));
+        QTRY_VERIFY(binding.variantsReady());
+        QCOMPARE(binding.selectedVariantId(), QString{});
+    }
     void queueRecordingSearchSurvivesPlaybackAdvanceAndSavesOnlyTheOriginalTarget() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());
@@ -168,7 +227,7 @@ class LyricsBindingTests final : public QObject {
             [&](const QString& occurrence) { return occurrence == "queued-occurrence" ? target : QString{}; });
         binding.setTrack(playing, "Playing", {}, {}, 1000, "first");
         QTRY_VERIFY(binding.variantsCanEdit());
-        QVERIFY(binding.selectVariant("1"));
+        QCOMPARE(binding.selectedVariantId(), "1");
         const auto manager = binding.openQueuedManager("queued-occurrence");
         QVERIFY(!manager.isEmpty());
         QVERIFY(binding.property("queuedManagerSearchAvailable").toBool());
@@ -178,7 +237,7 @@ class LyricsBindingTests final : public QObject {
         QCOMPARE(binding.plainText(), QStringLiteral("Playing lyric"));
         binding.setTrack(next, "Next", {}, {}, 1000, "second");
         QTRY_VERIFY(!binding.recordingSearchBusy() && binding.variantsReady());
-        QVERIFY(binding.selectVariant("2"));
+        QCOMPARE(binding.selectedVariantId(), "2");
         QCOMPARE(binding.recordingCandidates().size(), 1);
         const auto revision = binding.recordingSearchRevision();
         QCOMPARE(binding.previewRecording(0, 1, revision), QStringLiteral("Queue words"));
@@ -310,7 +369,7 @@ class LyricsBindingTests final : public QObject {
             [&](const QString& occurrence) { return occurrence == "queued" ? target : QString{}; });
         binding.setTrack(playing, "Playing", {}, {}, 1000, "current");
         QTRY_VERIFY(binding.variantsCanEdit());
-        QVERIFY(binding.selectVariant("1"));
+        QCOMPARE(binding.selectedVariantId(), "1");
         QVERIFY(binding.metaObject()->indexOfMethod("openQueuedManager(QString)") >= 0);
         QString manager;
         QVERIFY(
@@ -428,7 +487,7 @@ class LyricsBindingTests final : public QObject {
         };
         binding.setTrack(path, "Manual", "Artist", {}, 5000, "now");
         QTRY_VERIFY(binding.variantsCanEdit());
-        QVERIFY(binding.selectVariant("42"));
+        QCOMPARE(binding.selectedVariantId(), "42");
         binding.setPosition(2000);
         const auto token = prepare();
         QVERIFY(!token.isEmpty());
@@ -611,7 +670,7 @@ class LyricsBindingTests final : public QObject {
         binding.setQueueLyricsSource([&](const QString& id) { return id == "second" ? target : QString{}; });
         binding.setTrack(current, "Current", {}, {}, 9000);
         QTRY_VERIFY(binding.variantsReady());
-        QVERIFY(binding.selectVariant("12"));
+        QCOMPARE(binding.selectedVariantId(), "12");
         QVERIFY(binding.queueVariantAvailable());
         const auto token = binding.prepareQueuedVariant("second");
         QVERIFY(!token.isEmpty());
@@ -747,6 +806,7 @@ class LyricsBindingTests final : public QObject {
         QVERIFY(!binding.selectedVariantId().isEmpty());
         QCOMPARE(binding.selectedOnlineLyricsCandidate(), -1);
         QVERIFY(binding.selectVariant({}));
+        QTRY_VERIFY(!binding.variantsBusy());
         QVERIFY(binding.selectOnlineLyricsCandidate(0));
         QCOMPARE(binding.currentLine(), QStringLiteral("空"));
         QVERIFY(binding.saveCurrentLyrics("Original", "ja", "Jpan", "original", binding.currentLyricsRevision()));
@@ -839,7 +899,7 @@ class LyricsBindingTests final : public QObject {
         LyricsBinding binding(service, store);
         binding.setTrack(target, "Current", "Artist", {}, 0);
         QTRY_VERIFY(binding.variantsReady());
-        QVERIFY(binding.selectVariant("12"));
+        QCOMPARE(binding.selectedVariantId(), "12");
         auto fresh = base;
         fresh.push_back({21, "Other", "en", "Latn", "manual", "Another version", LyricsVariantKind::Original, false});
         {
@@ -1126,16 +1186,18 @@ class LyricsBindingTests final : public QObject {
         binding.setPosition(3000);
         QCOMPARE(binding.currentLine(), "Nihongo");
         QCOMPARE(binding.nextLine(), "Tsugi no gyou");
+        QTRY_VERIFY(!binding.variantsBusy());
         QVERIFY(binding.selectVariant(original_id));
         QCOMPARE(binding.currentLine(), QStringLiteral("日本語"));
         binding.setPosition(4500);
         QCOMPARE(binding.currentLine(), QStringLiteral("次の行"));
         QVERIFY(!binding.selectVariant("999999"));
         QCOMPARE(binding.selectedVariantId(), original_id);
+        QTRY_VERIFY(!binding.variantsBusy());
         QVERIFY(binding.selectVariant({}));
         QCOMPARE(binding.selectedVariantId(), QString{});
         QCOMPARE(binding.currentLine(), QString{});
-        QCOMPARE(store->save_calls.load(), 2); // Selecting never writes or searches.
+        QCOMPARE(store->save_calls.load(), 2); // Selecting never rewrites lyrics.
     }
     void savesTheCurrentLocalLyricsWithTheirCuesWithoutReplacingTheOriginal() {
         QTemporaryDir temp;
@@ -1240,6 +1302,7 @@ class LyricsBindingTests final : public QObject {
         QVERIFY(binding.selectVariant({}));
         release.release();
         const auto id = binding.variants().front().toMap().value("id").toString();
+        QTRY_VERIFY(!binding.variantsBusy());
         QVERIFY(binding.selectVariant(id));
         QTRY_VERIFY(binding.canGenerateRomaji());
         QCOMPARE(draft.count(), 0);
@@ -1249,6 +1312,61 @@ class LyricsBindingTests final : public QObject {
         release.release();
         QTRY_COMPARE(draft.count(), 1);
         QCOMPARE(draft.front()[1].toString(), "nihon\n\nongaku");
+        QCOMPARE(store->save_calls.load(), 1);
+    }
+    void queuedRomajiUsesTheSelectedSavedLyricsAndLeavesPlaybackUnchanged() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto playing = temp.filePath("playing.mp3");
+        const auto original = temp.filePath("japanese.mp3");
+        auto queued = original;
+        auto store = std::make_shared<MemoryVariantsStore>();
+        store->disk[nativePath(playing)] = {{1, "Playing", {}, {}, "Manual", "Playing lyric"}};
+        store->disk[nativePath(original)] = {{5, "Original", "ja", "Jpan", "Manual", "[00:01.000]日本"},
+                                             {6, "Chinese", "zh", "Hani", "Manual", "中文"}};
+        QtLyricsService service;
+        LyricsBinding binding(service, store);
+        binding.setQueueLyricsSource(
+            [&](const QString& occurrence) { return occurrence == "target" ? queued : QString{}; });
+        binding.setJapaneseRomanizer(
+            [](const std::vector<std::string>& lines) -> std::optional<std::vector<std::string>> {
+                if (lines != std::vector<std::string>{"日本"})
+                    return std::nullopt;
+                return std::vector<std::string>{"nihon"};
+            });
+        binding.setTrack(playing, "Playing", {}, {}, 9000, "current");
+        QTRY_VERIFY(binding.variantsCanEdit());
+        QCOMPARE(binding.selectedVariantId(), "1");
+        const auto manager = binding.openQueuedManager("target");
+        QTRY_VERIFY(binding.queuedManagerCanEdit());
+        QString token;
+        QVERIFY(QMetaObject::invokeMethod(&binding, "generateQueuedRomaji", qReturnArg(token), manager,
+                                          QStringLiteral("6")));
+        QVERIFY(token.isEmpty());
+        QSignalSpy draft(&binding, &LyricsBinding::romajiDraftReady);
+        QVERIFY(QMetaObject::invokeMethod(&binding, "generateQueuedRomaji", qReturnArg(token), manager,
+                                          QStringLiteral("5")));
+        QVERIFY(!token.isEmpty());
+        QTRY_COMPARE(draft.size(), 1);
+        QCOMPARE(draft.front().at(0).toString(), token);
+        QCOMPARE(draft.front().at(1).toString(), "[00:01.000]nihon\n");
+        QCOMPARE(store->save_calls.load(), 0);
+        QVERIFY(!binding.saveRomaji(token, "Romaji", "[00:02.000]Nihon"));
+        QVERIFY(binding.saveRomaji(token, "Romaji", "[00:01.000]Nihon"));
+        QTRY_COMPARE(binding.queuedManagerVariants().size(), 3);
+        const auto saved = store->read(nativePath(original));
+        QCOMPARE(saved.front().content, "[00:01.000]日本");
+        QCOMPARE(saved.back().kind, LyricsVariantKind::Romanized);
+        QCOMPARE(saved.back().script, "Latn");
+        QCOMPARE(binding.plainText(), "Playing lyric");
+        QCOMPARE(binding.selectedVariantId(), "1");
+
+        QVERIFY(QMetaObject::invokeMethod(&binding, "generateQueuedRomaji", qReturnArg(token), manager,
+                                          QStringLiteral("5")));
+        QTRY_COMPARE(draft.size(), 2);
+        queued = temp.filePath("relocated.mp3");
+        binding.refreshQueuedLyricsTarget();
+        QVERIFY(!binding.saveRomaji(token, "Stale", "[00:01.000]Nihon"));
         QCOMPARE(store->save_calls.load(), 1);
     }
     void romajiReportsAnUnavailableComponentOnlyForJapaneseLyrics() {
@@ -1437,7 +1555,7 @@ class LyricsBindingTests final : public QObject {
         QVERIFY(binding.addVariant("Latin", "ja", "Latn", "Manual", "romanized", "Only Latin\n<not markup>", false));
         QTRY_COMPARE(binding.variants().size(), 1);
         const auto first = binding.variants().front().toMap().value("id").toString();
-        QVERIFY(binding.selectVariant(first));
+        QCOMPARE(binding.selectedVariantId(), first);
         QVERIFY(!binding.hasSyncedLyrics());
         QCOMPARE(binding.plainText(), "Only Latin\n<not markup>");
         QVERIFY(binding.addVariant("Native", "ja", "Jpan", "Manual", "original", QStringLiteral("日本語"), false));

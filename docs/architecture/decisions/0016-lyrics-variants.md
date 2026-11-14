@@ -40,13 +40,17 @@ Para um MP3 publicado com página Letras validada, a revisão aceita várias for
 
 Versões salvas podem ser editadas no player ou no gerenciamento de uma faixa da fila. O editor captura a versão e o alvo antes de confirmar. A gravação na mesma versão preserva ID e origem. **Salvar como nova versão** atribui outro ID. Alterar os tempos exige consentimento no formulário e validação do LRC. O seletor de arquivo `.lrc` fornece um rascunho sem escrita; a confirmação usa o mesmo writer. O gerenciamento pela fila conserva a exibição da faixa em reprodução e confere o catálogo da faixa escolhida antes de gravar.
 
+A geração local de romaji usa o pykakasi preparado no perfil. O player oferece a ação para uma letra elegível em exibição ou uma versão japonesa selecionada no gerenciamento da fila. A revisão preserva os tempos e acrescenta uma versão independente.
+
+Ao abrir uma faixa, o player aplica a escolha explícita guardada no catálogo. Na ausência dela, usa a primeira versão salva ou a letra local disponível. O schema 3 acrescenta a escolha entre versão salva por ID, arquivo/busca atual ou **Sem letra**. Um ID removido volta à seleção automática. Catálogos sem escolha continuam usando os schemas 1 e 2. A atualização da escolha usa o mesmo arquivo, lock e confirmação de gravação.
+
 ## Alternativas e consequências
 
 - Um único `.lrc` não atende às várias representações e pode exigir escrita em pasta de mídia sem permissão. Os documentos de configuração evitam modificar a biblioteca pessoal.
 - Guardar cada forma como se fosse outra música duplicaria áudio e confundiria fila e playlists. As versões pertencem ao arquivo existente.
 - Scraping de Letras ou captura de seu player não resolve autorização, identidade da gravação ou aquisição de MP3. A integração depende de evidência e decisão próprias; não é habilitada por este ADR.
 - Um banco, serviço remoto ou engine de LLM não é necessário para persistir texto. O catálogo limitado usa o SDK Qt existente.
-- A identidade por path exato não funde automaticamente caminhos com caixa diferente, aliases, cópias ou faixas movidas. Seleção de uma versão afeta a exibição da sessão; as versões são persistentes, sem promessa de memorizar a última seleção.
+- A identidade por path exato mantém versões e escolhas separadas para caminhos diferentes, incluindo aliases, cópias e faixas movidas.
 - O lock/backup oferece proteção cooperativa e recuperação delimitada, sem alegação de filesystem hostil, troca adversarial de ancestrais ou durabilidade após perda física de energia. Armazenamento pessoal não concede licença de redistribuição das letras.
 
 ## Validação e revisão

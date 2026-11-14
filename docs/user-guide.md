@@ -12,7 +12,7 @@ No painel, **↑**, **↓**, **Home** e **End** movem o foco nas listas. **Enter
 
 ## Letras das músicas
 
-Use **Versões** para guardar várias formas da letra da música atual. Em **Adicionar versão**, cole texto ou LRC e escolha **Original**, **Romanizada** ou **Tradução**. Você também pode informar idioma, escrita e origem. **Salvar letra atual** guarda a letra do arquivo ou da busca. Se uma versão salva estiver selecionada, volte primeiro a **Arquivo / busca atual**.
+Use **Versões** para guardar várias formas da letra da música atual. O RC Music abre a primeira versão salva ou a letra do arquivo local quando disponível. Selecione outra versão, **Arquivo / busca atual** ou **Sem letra** para lembrar essa escolha por música. Em **Adicionar versão**, cole texto ou LRC e escolha **Original**, **Romanizada** ou **Tradução**. **Salvar letra atual** guarda a letra do arquivo ou da busca. Selecione **Arquivo / busca atual** para usar essa ação.
 
 Na lista de versões, use **↑/↓** para mover o cursor e **Home/End** para ir ao início ou ao fim. **Enter** ou **Espaço** aplicam a versão em foco à letra exibida, preservando a reprodução.
 
@@ -24,7 +24,7 @@ A versão selecionada aparece **acima da barra de progresso**. O player carrega 
 
 Para buscar no player, clique em **Buscar letra**, confira ou corrija os metadados e confirme **Buscar**. A busca por gravações envia título, artista e álbum ao LRCLIB. A duração serve para comparar os resultados no app. Escolha a gravação e, se houver mais de um formato, **Sincronizada** ou **Texto simples**. Confira a prévia antes de usar ou guardar. Se a reprodução mudar, a busca da música atual é fechada. A busca aberta pela fila continua vinculada à faixa escolhida.
 
-**Gerar romaji**, em **Versões**, cria um rascunho editável a partir da letra japonesa selecionada e conserva os tempos existentes. Com chaves de parceiro, o **LyricFind** pode complementar a busca do LRCLIB. [Preparar o romaji](lyrics-variants.md#gerar-romaji) · [Configurar o LyricFind](lyrics-variants.md#fonte-opcional-lyricfind)
+Ao detectar japonês, **Gerar romaji** aparece junto à letra. Na fila, abra **Gerenciar letras** e selecione uma versão japonesa salva. Revise o rascunho editável e salve como uma nova versão. Os tempos da letra são preservados. Com chaves de parceiro, o **LyricFind** pode complementar a busca do LRCLIB. [Preparar o romaji](lyrics-variants.md#gerar-romaji) · [Configurar o LyricFind](lyrics-variants.md#fonte-opcional-lyricfind)
 
 Na barra de volume, a porcentagem atual de **0 a 100%** aparece ao passar o mouse ou durante o arraste, inclusive ao levar o ponteiro para fora do slider enquanto o botão estiver pressionado.
 

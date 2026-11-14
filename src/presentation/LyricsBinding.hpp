@@ -184,6 +184,8 @@ class LyricsBinding final : public QObject {
     Q_INVOKABLE bool saveCurrentLyrics(const QString& name, const QString& language, const QString& script,
                                        const QString& kind, const QString& expected_revision);
     Q_INVOKABLE QString generateRomaji();
+    Q_INVOKABLE QVariantMap queuedRomajiSource(const QString& manager_token, const QString& id) const;
+    Q_INVOKABLE QString generateQueuedRomaji(const QString& manager_token, const QString& id);
     Q_INVOKABLE bool saveRomaji(const QString& token, const QString& name, const QString& content);
     Q_INVOKABLE void discardRomaji(const QString& token);
     Q_INVOKABLE bool removeVariant(const QString& id);

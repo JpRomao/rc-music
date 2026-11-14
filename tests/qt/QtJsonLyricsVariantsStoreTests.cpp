@@ -160,6 +160,64 @@ class QtJsonLyricsVariantsStoreTests final : public QObject {
         QVERIFY(store.load(native(b)).variants.empty());
         QVERIFY(store.load(native(a)).variants == one);
     }
+    void perTrackChoiceSurvivesReopenAndVariantSavesKeepItUntilTheChoiceIsRemoved() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto a = native(temp.filePath("a.mp3")), b = native(temp.filePath("b.mp3"));
+        const auto original = fixture();
+        const LyricsSelection romanized{.kind = LyricsSelectionKind::Variant, .variant_id = original[1].id};
+        const LyricsSelection source{.kind = LyricsSelectionKind::Source};
+        const LyricsSelection hidden{.kind = LyricsSelectionKind::Hidden};
+        {
+            QtJsonLyricsVariantsStore store(temp.path());
+            QCOMPARE(store.save(a, original), LyricsVariantsSaveStatus::Saved);
+            QCOMPARE(store.load(a).selection, LyricsSelection{});
+            QCOMPARE(store.saveSelection(a, romanized), LyricsVariantsSaveStatus::Saved);
+            QCOMPARE(store.saveSelection(b, hidden), LyricsVariantsSaveStatus::Saved);
+        }
+
+        QtJsonLyricsVariantsStore reopened(temp.path());
+        const auto restored = reopened.load(a);
+        QCOMPARE(restored.status, LyricsVariantsLoadStatus::Loaded);
+        QCOMPARE(restored.selection, romanized);
+        QCOMPARE(restored.variants, original);
+        QCOMPARE(reopened.load(b).selection, hidden);
+        QVERIFY(reopened.load(b).variants.empty());
+        QCOMPARE(reopened.save(b, original), LyricsVariantsSaveStatus::Saved);
+        QCOMPARE(reopened.load(b).selection, hidden);
+
+        auto edited = original;
+        edited[1].name = "Edited";
+        QCOMPARE(reopened.save(a, edited), LyricsVariantsSaveStatus::Saved);
+        QCOMPARE(reopened.load(a).selection, romanized);
+        edited.pop_back();
+        QCOMPARE(reopened.save(a, edited), LyricsVariantsSaveStatus::Saved);
+        QCOMPARE(reopened.load(a).selection, LyricsSelection{});
+        QCOMPARE(reopened.saveSelection(a, romanized), LyricsVariantsSaveStatus::Failed);
+        QCOMPARE(reopened.saveSelection(a, source), LyricsVariantsSaveStatus::Saved);
+        QCOMPARE(reopened.load(a).selection, source);
+        QCOMPARE(reopened.load(a).variants, edited);
+        QCOMPARE(reopened.load(b).selection, hidden);
+    }
+    void staleSelectionInAnOtherwiseValidDocumentFallsBackToAutomatic() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto track = temp.filePath("song.mp3"), primary = slot(temp, track);
+        QtJsonLyricsVariantsStore store(temp.path());
+        const auto original = fixture();
+        QCOMPARE(store.save(native(track), original), LyricsVariantsSaveStatus::Saved);
+        auto root = QJsonDocument::fromJson(read(primary)).object();
+        root.insert("schemaVersion", 3);
+        root.insert("selection", "99");
+        const auto bytes = QJsonDocument(root).toJson(QJsonDocument::Compact);
+        write(primary, bytes);
+
+        const auto loaded = store.load(native(track));
+        QCOMPARE(loaded.status, LyricsVariantsLoadStatus::Loaded);
+        QCOMPARE(loaded.selection, LyricsSelection{});
+        QCOMPARE(loaded.variants, original);
+        QCOMPARE(read(primary), bytes);
+    }
     void schemaTwoLoadsAndRoundTripsTranslationsAlongsideExistingForms() {
         QTemporaryDir temp;
         const auto track = temp.filePath("song.mp3"), primary = slot(temp, track);
@@ -227,11 +285,13 @@ class QtJsonLyricsVariantsStoreTests final : public QObject {
         const auto track = temp.filePath("song.mp3"), primary = slot(temp, track);
         QtJsonLyricsVariantsStore store(temp.path());
         QCOMPARE(store.save(native(track), fixture()), LyricsVariantsSaveStatus::Saved);
-        const QByteArray future = "{\"schemaVersion\":3,\"opaque\":{\"next\":[1,2,3]}}";
+        const QByteArray future = "{\"schemaVersion\":4,\"opaque\":{\"next\":[1,2,3]}}";
         write(primary + (backup ? ".bak" : ""), future);
         const auto before = read(primary), before_backup = read(primary + ".bak");
         QCOMPARE(store.load(native(track)).status, LyricsVariantsLoadStatus::FutureVersion);
         QCOMPARE(store.save(native(track), {}), LyricsVariantsSaveStatus::BlockedByFutureVersion);
+        QCOMPARE(store.saveSelection(native(track), {.kind = LyricsSelectionKind::Hidden}),
+                 LyricsVariantsSaveStatus::BlockedByFutureVersion);
         QCOMPARE(read(primary), before);
         QCOMPARE(read(primary + ".bak"), before_backup);
     }
@@ -375,6 +435,7 @@ class QtJsonLyricsVariantsStoreTests final : public QObject {
         QVERIFY(!bytes.isEmpty());
         const auto root = QJsonDocument::fromJson(bytes).object();
         QCOMPARE(root.value("sourcePath").toString(), track);
+        QCOMPARE(root.value("selection").toString(), QStringLiteral("9007199254740993"));
         const auto variants = root.value("variants").toArray();
         QCOMPARE(variants.size(), 2);
         QCOMPARE(variants[0].toObject().value("id").toString(), QStringLiteral("18446744073709551615"));
@@ -411,15 +472,18 @@ int main(int argc, char** argv) {
             return 3;
         QtJsonLyricsVariantsStore store(directory);
         const auto expected = fixture();
+        const LyricsSelection selection{.kind = LyricsSelectionKind::Variant, .variant_id = expected[1].id};
         if (arguments[1] == QStringLiteral("--write")) {
             auto first = expected;
             first.pop_back();
             if (store.save(native(track), first) != LyricsVariantsSaveStatus::Saved ||
-                store.save(native(track), expected) != LyricsVariantsSaveStatus::Saved)
+                store.save(native(track), expected) != LyricsVariantsSaveStatus::Saved ||
+                store.saveSelection(native(track), selection) != LyricsVariantsSaveStatus::Saved)
                 return 4;
         } else {
             const auto restored = store.load(native(track));
-            if (restored.status != LyricsVariantsLoadStatus::Loaded || restored.variants != expected)
+            if (restored.status != LyricsVariantsLoadStatus::Loaded || restored.variants != expected ||
+                restored.selection != selection)
                 return 5;
         }
         return read(track) == QByteArray("AUDIO-SENTINEL") ? 0 : 6;

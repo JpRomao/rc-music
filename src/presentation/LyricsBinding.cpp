@@ -242,6 +242,7 @@ struct LyricsBinding::VariantsState final {
         bool ready{};
         bool invalidated{};
         std::uint64_t next_id{1};
+        quint64 revision{};
     };
     struct QueueMutation final {
         QString token;
@@ -252,12 +253,14 @@ struct LyricsBinding::VariantsState final {
     std::shared_ptr<LyricsVariantsStore> store;
     LyricsVariants library;
     std::optional<LyricsVariants> pending;
+    std::optional<LyricsSelection> pending_selection;
     LyricsDocument selected_document;
     QFutureWatcher<VariantsJob> watcher;
     QString job_path, pending_path, notice, recording_save_revision;
     std::optional<std::uint64_t> select_after_save;
     std::uint64_t selected{}, next_id{1}, next_after_save{1};
-    bool busy{}, loading{}, ready{};
+    LyricsSelection remembered{};
+    bool busy{}, loading{}, ready{}, lyrics_hidden{};
     AcquiredLyricsSaveSnapshot acquired;
     std::shared_ptr<const LyricsVariants> acquired_drafts;
     std::function<QString(const QString&)> queue_source;
@@ -273,7 +276,7 @@ struct LyricsBinding::VariantsState final {
         QObject::connect(&watcher, &QFutureWatcher<VariantsJob>::finished, &owner, [this] { finished(); });
     }
     bool allowed() const { return !owner.shutting_down_ && !owner.exit_preparing_; }
-    bool hasPending() const { return pending.has_value() || acquired_pending; }
+    bool hasPending() const { return pending.has_value() || pending_selection.has_value() || acquired_pending; }
     bool canAppend() const { return store && allowed() && !busy && !hasPending(); }
     bool editable() const { return ready && canAppend(); }
     bool queueCurrent(const QString& token) const {
@@ -293,6 +296,7 @@ struct LyricsBinding::VariantsState final {
         if (!canAppend() || !queueCurrent(token))
             return false;
         auto& manager = *queue_manager;
+        ++manager.revision;
         manager.ready = false;
         manager.library.clear();
         manager.notice = LyricsBinding::tr("Carregando versões da letra da faixa…");
@@ -361,6 +365,7 @@ struct LyricsBinding::VariantsState final {
     void clearSelection() {
         selected = 0;
         selected_document = {};
+        lyrics_hidden = false;
     }
     bool select(const std::uint64_t id) {
         if (id == 0) {
@@ -375,6 +380,43 @@ struct LyricsBinding::VariantsState final {
             return false;
         selected = id;
         selected_document = std::move(parsed.document);
+        lyrics_hidden = false;
+        return true;
+    }
+    void applyRememberedSelection() {
+        if (remembered.kind == LyricsSelectionKind::Hidden) {
+            clearSelection();
+            lyrics_hidden = true;
+        } else if (remembered.kind == LyricsSelectionKind::Source) {
+            clearSelection();
+        } else if (remembered.kind != LyricsSelectionKind::Variant || !select(remembered.variant_id)) {
+            remembered = {};
+            static_cast<void>(select(library.empty() ? 0 : library.front().id));
+        }
+    }
+    bool saveSelection() {
+        if (!allowed() || busy || !pending_selection)
+            return false;
+        const auto retained_store = store;
+        const auto selection = *pending_selection;
+        const auto path = nativePath(pending_path);
+        job_path = pending_path;
+        busy = true;
+        notice = LyricsBinding::tr("Salvando a escolha de letra…");
+        try {
+            watcher.setFuture(QtConcurrent::run([retained_store, selection, path] {
+                VariantsJob result;
+                try {
+                    result.saved = retained_store->saveSelection(path, selection);
+                } catch (...) {
+                }
+                return result;
+            }));
+        } catch (...) {
+            busy = false;
+            notice = LyricsBinding::tr("Não foi possível salvar a escolha de letra. Tente novamente.");
+        }
+        emit owner.changed();
         return true;
     }
     void clearView() {
@@ -383,6 +425,7 @@ struct LyricsBinding::VariantsState final {
         ready = false;
         library.clear();
         clearSelection();
+        remembered = {};
         notice.clear();
         next_id = 1;
     }
@@ -554,6 +597,21 @@ struct LyricsBinding::VariantsState final {
             return;
         }
         const bool same_track = job_path == owner.path_;
+        if (pending_selection) {
+            if (result.saved == LyricsVariantsSaveStatus::Saved) {
+                if (same_track)
+                    remembered = *pending_selection;
+                pending_selection.reset();
+                pending_path.clear();
+                notice.clear();
+            } else {
+                notice = LyricsBinding::tr("Não foi possível salvar a escolha de letra. Tente novamente.");
+            }
+            if (!ready && !hasPending() && allowed())
+                static_cast<void>(load());
+            emit owner.changed();
+            return;
+        }
         if (acquired_loading) {
             acquired_loading = false;
             const auto status = result.loaded.status;
@@ -576,8 +634,9 @@ struct LyricsBinding::VariantsState final {
                 if (same_track) {
                     library = std::move(result.merged.variants);
                     ready = true;
-                    if (!select(selected))
-                        clearSelection();
+                    if (!lyrics_hidden && !select(selected))
+                        applyRememberedSelection();
+                    ++owner.selection_revision_;
                     resetAllocator();
                     owner.updateReaderDocument();
                 }
@@ -613,7 +672,8 @@ struct LyricsBinding::VariantsState final {
                 ready = usable && isValidLyricsVariants(result.loaded.variants);
                 if (ready) {
                     library = result.loaded.variants;
-                    clearSelection();
+                    remembered = result.loaded.selection;
+                    applyRememberedSelection();
                     resetAllocator();
                     notice = status == LyricsVariantsLoadStatus::RecoveredFromBackup
                                  ? LyricsBinding::tr("Versões da letra recuperadas do backup.")
@@ -629,6 +689,7 @@ struct LyricsBinding::VariantsState final {
         } else if (result.saved == LyricsVariantsSaveStatus::Saved && pending) {
             if (queued_mutation && queueCurrent(queued_mutation->token)) {
                 queue_manager->library = *pending;
+                ++queue_manager->revision;
                 queue_manager->next_id = queued_mutation->next_id;
                 queue_manager->notice = LyricsBinding::tr("Versões da faixa salvas.");
             }
@@ -637,8 +698,11 @@ struct LyricsBinding::VariantsState final {
                     acquired_pending || queued_mutation ? selected : select_after_save.value_or(selected);
                 library = std::move(*pending);
                 ready = true;
-                if (!select(keep_selection))
-                    clearSelection();
+                if (remembered.kind == LyricsSelectionKind::Variant && find(remembered.variant_id) == library.end())
+                    remembered = {};
+                if (!lyrics_hidden && !select(keep_selection))
+                    applyRememberedSelection();
+                ++owner.selection_revision_;
                 if (acquired_pending || queued_mutation)
                     resetAllocator();
                 else
@@ -680,8 +744,10 @@ struct LyricsBinding::RomajiState final {
     LyricsBinding& owner;
     JapaneseRomanizer romanizer;
     QFutureWatcher<std::optional<RomajiDraft>> watcher;
-    QString token, revision, notice;
+    QString token, revision, notice, manager_token, variant_id;
     QString checked_revision;
+    QString checked_queue_revision;
+    std::optional<LyricsDocument> queued_document;
     std::optional<RomajiDraft> draft;
     bool busy{};
     bool japanese{};
@@ -703,13 +769,81 @@ struct LyricsBinding::RomajiState final {
                 emit owner.romajiDraftReady(completed_token, text(draft->content));
         });
     }
+
+    QString queuedRevision(const QString& manager, const QString& id) {
+        const auto& variants = *owner.variants_;
+        const auto parsed_id = identifier(id);
+        if (!parsed_id || !variants.allowed() || !variants.queueCurrent(manager) || !variants.queue_manager->ready)
+            return {};
+        const auto& catalog = *variants.queue_manager;
+        const auto key = manager + QLatin1Char(':') + QString::number(catalog.revision) + QLatin1Char(':') + id;
+        if (key != checked_queue_revision) {
+            checked_queue_revision = key;
+            queued_document.reset();
+            const auto found = std::ranges::find(catalog.library, *parsed_id, &LyricsVariant::id);
+            if (found != catalog.library.end() && found->kind != LyricsVariantKind::Romanized) {
+                auto parsed = parseLrc(found->content);
+                const bool known_japanese = found->language == "ja" || found->language.starts_with("ja-");
+                if (parsed.error == LyricsParseError::None && containsJapaneseScript(parsed.document, known_japanese))
+                    queued_document = std::move(parsed.document);
+            }
+        }
+        return queued_document ? key : QString{};
+    }
+
+    QString status(const QString& source_revision) const {
+        if (source_revision.isEmpty())
+            return {};
+        if (!romanizer)
+            return LyricsBinding::tr("Prepare o componente local de romaji e reinicie o RC Music.");
+        if (source_revision != revision)
+            return {};
+        return busy ? LyricsBinding::tr("Gerando romaji…") : notice;
+    }
+
+    QString begin(QString source_revision, LyricsDocument document, QString manager = {}, QString id = {}) {
+        const auto generation = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        reset();
+        token = generation;
+        revision = std::move(source_revision);
+        manager_token = std::move(manager);
+        variant_id = std::move(id);
+        busy = true;
+        try {
+            watcher.setFuture(QtConcurrent::run([worker = romanizer, source = std::move(document)] {
+                try {
+                    return makeRomajiDraft(worker, source);
+                } catch (...) {
+                    return std::optional<RomajiDraft>{};
+                }
+            }));
+        } catch (...) {
+            busy = false;
+            notice = LyricsBinding::tr("Não foi possível iniciar o pykakasi.");
+            emit owner.changed();
+            return {};
+        }
+        emit owner.changed();
+        return generation;
+    }
+
     bool current(const QString& expected_token) const {
-        return !expected_token.isEmpty() && expected_token == token && revision == owner.romajiSourceRevision();
+        if (expected_token.isEmpty() || expected_token != token)
+            return false;
+        if (manager_token.isEmpty())
+            return revision == owner.romajiSourceRevision();
+        const auto& variants = *owner.variants_;
+        // The same catalog revision and manager token still identify the selected source.
+        return variants.allowed() && variants.queueCurrent(manager_token) && variants.queue_manager->ready &&
+               revision == manager_token + QLatin1Char(':') + QString::number(variants.queue_manager->revision) +
+                               QLatin1Char(':') + variant_id;
     }
     void reset() {
         token.clear();
         revision.clear();
         notice.clear();
+        manager_token.clear();
+        variant_id.clear();
         draft.reset();
     }
 };
@@ -918,6 +1052,8 @@ bool LyricsBinding::discardInvalidAcquiredLyrics(const std::string& ticket, cons
 }
 QVariantList LyricsBinding::variants() const { return variantRows(variants_->library); }
 QString LyricsBinding::selectedVariantId() const {
+    if (variants_->lyrics_hidden)
+        return QStringLiteral("off");
     return variants_->selected ? QString::number(variants_->selected) : QString{};
 }
 bool LyricsBinding::variantsBusy() const { return variants_->busy; }
@@ -955,7 +1091,8 @@ void LyricsBinding::updateOnlineLyricsCandidates() {
 }
 QVariantList LyricsBinding::onlineLyricsCandidates() const { return online_candidates_; }
 int LyricsBinding::selectedOnlineLyricsCandidate() const {
-    if (variants_->selected || recording_search_->displayed || service_.onlineDocuments().empty())
+    if (variants_->lyrics_hidden || variants_->selected || recording_search_->displayed ||
+        service_.onlineDocuments().empty())
         return -1;
     return online_candidate_context_ == service_.contextRevision() ? online_candidate_ : 0;
 }
@@ -970,7 +1107,7 @@ void LyricsBinding::setJapaneseRomanizer(JapaneseRomanizer romanizer) {
     emit changed();
 }
 bool LyricsBinding::lyricsCopyProtected() const {
-    return !variants_->selected && !recording_search_->displayed &&
+    return !variants_->lyrics_hidden && !variants_->selected && !recording_search_->displayed &&
            service_.source() == QtLyricsService::Source::Online &&
            service_.onlineProvider() == QtLyricsService::OnlineProvider::LyricFind;
 }
@@ -979,7 +1116,8 @@ QString LyricsBinding::lyricsAttribution() const {
 }
 bool LyricsBinding::lyricFindConfigured() const { return service_.lyricFindConfigured(); }
 QString LyricsBinding::romajiSourceRevision() const {
-    if (!variants_->allowed() || !variants_->ready || path_.isEmpty() || lyricsCopyProtected())
+    if (!variants_->allowed() || !variants_->ready || path_.isEmpty() || variants_->lyrics_hidden ||
+        lyricsCopyProtected())
         return {};
     const auto selected = variants_->selected;
     if (!selected && !recording_search_->displayed && service_.status() != QtLyricsService::Status::Ready)
@@ -999,45 +1137,32 @@ QString LyricsBinding::romajiSourceRevision() const {
 bool LyricsBinding::canGenerateRomaji() const {
     return romaji_->romanizer && !romaji_->busy && variants_->editable() && !romajiSourceRevision().isEmpty();
 }
-QString LyricsBinding::romajiStatusText() const {
-    const auto revision = romajiSourceRevision();
-    if (revision.isEmpty())
-        return {};
-    if (!romaji_->romanizer)
-        return tr("Prepare o componente local de romaji e reinicie o RC Music.");
-    if (revision != romaji_->revision)
-        return {};
-    return romaji_->busy ? tr("Gerando romaji…") : romaji_->notice;
-}
+QString LyricsBinding::romajiStatusText() const { return romaji_->status(romajiSourceRevision()); }
 QString LyricsBinding::generateRomaji() {
     if (!canGenerateRomaji())
         return {};
-    auto& state = *romaji_;
-    const auto token = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    state.reset();
-    state.token = token;
-    state.revision = romajiSourceRevision();
-    state.busy = true;
-    try {
-        state.watcher.setFuture(QtConcurrent::run([romanizer = state.romanizer, source = displayedDocument()] {
-            try {
-                return makeRomajiDraft(romanizer, source);
-            } catch (...) {
-                return std::optional<RomajiDraft>{};
-            }
-        }));
-    } catch (...) {
-        state.busy = false;
-        state.notice = tr("Não foi possível iniciar o pykakasi.");
-        emit changed();
+    return romaji_->begin(romajiSourceRevision(), displayedDocument());
+}
+QVariantMap LyricsBinding::queuedRomajiSource(const QString& manager_token, const QString& id) const {
+    const auto revision = romaji_->queuedRevision(manager_token, id);
+    return {{QStringLiteral("revision"), revision},
+            {QStringLiteral("available"),
+             !revision.isEmpty() && romaji_->romanizer && !romaji_->busy && variants_->queueEditable(manager_token)},
+            {QStringLiteral("status"), romaji_->status(revision)}};
+}
+QString LyricsBinding::generateQueuedRomaji(const QString& manager_token, const QString& id) {
+    if (!romaji_->romanizer || romaji_->busy || !variants_->queueEditable(manager_token))
         return {};
-    }
-    emit changed();
-    return token;
+    const auto revision = romaji_->queuedRevision(manager_token, id);
+    if (revision.isEmpty())
+        return {};
+    return romaji_->begin(revision, *romaji_->queued_document, manager_token, id);
 }
 bool LyricsBinding::saveRomaji(const QString& token, const QString& name, const QString& content) {
     auto& state = *romaji_;
-    if (!variants_->editable() || state.busy || !state.current(token) || !state.draft)
+    const auto manager = state.manager_token;
+    if (state.busy || !state.current(token) || !state.draft ||
+        (manager.isEmpty() ? !variants_->editable() : !variants_->queueEditable(manager)))
         return false;
     const auto body =
         content.size() <= static_cast<qsizetype>(lyrics_max_input_bytes) ? utf8(content, false) : std::nullopt;
@@ -1051,8 +1176,14 @@ bool LyricsBinding::saveRomaji(const QString& token, const QString& name, const 
         !std::ranges::equal(state.draft->cues, edited.document.lines, same_cue))
         return false;
     const QPointer<LyricsBinding> guard{this};
-    if (!addVariant(name, QStringLiteral("ja"), QStringLiteral("Latn"), QStringLiteral("pykakasi"),
-                    QStringLiteral("romanized"), content, true))
+    const auto language = QStringLiteral("ja");
+    const auto script = QStringLiteral("Latn");
+    const auto source = QStringLiteral("pykakasi");
+    const auto kind = QStringLiteral("romanized");
+    const bool accepted =
+        manager.isEmpty() ? addVariant(name, language, script, source, kind, content, true)
+                          : variants_->addQueueVariant(manager, name, language, script, source, kind, content, true);
+    if (!accepted)
         return false;
     if (guard && state.token == token)
         state.reset();
@@ -1067,12 +1198,26 @@ void LyricsBinding::discardRomaji(const QString& token) {
 bool LyricsBinding::selectVariant(const QString& value) {
     if (!variants_->editable())
         return false;
-    const auto id = value.isEmpty() ? std::optional<std::uint64_t>{0} : identifier(value);
-    const auto previous = variants_->selected;
+    const bool hidden = value == QStringLiteral("off");
+    const auto id = value.isEmpty() || hidden ? std::optional<std::uint64_t>{0} : identifier(value);
+    const auto previous = selectedVariantId();
     if (!id || !variants_->select(*id))
         return false;
-    if (previous != *id)
+    variants_->lyrics_hidden = hidden;
+    if (previous != value)
         ++selection_revision_;
+    const LyricsSelection choice{hidden            ? LyricsSelectionKind::Hidden
+                                 : value.isEmpty() ? LyricsSelectionKind::Source
+                                                   : LyricsSelectionKind::Variant,
+                                 *id};
+    if (choice != variants_->remembered) {
+        variants_->pending_selection = choice;
+        variants_->pending_path = owned(path_);
+        const QPointer<LyricsBinding> alive{this};
+        static_cast<void>(variants_->saveSelection());
+        if (!alive)
+            return true;
+    }
     updateReaderDocument();
     emit changed();
     return true;
@@ -1117,8 +1262,7 @@ bool LyricsBinding::removeVariant(const QString& value) {
         return false;
     auto candidate = variants_->library;
     std::erase_if(candidate, [&](const auto& item) { return item.id == *id; });
-    const auto fallback =
-        service_.source() != QtLyricsService::Source::Local && !candidate.empty() ? candidate.front().id : 0;
+    const auto fallback = candidate.empty() ? 0 : candidate.front().id;
     variants_->pending = std::move(candidate);
     variants_->pending_path = owned(path_);
     variants_->select_after_save = variants_->selected == *id ? fallback : variants_->selected;
@@ -1225,11 +1369,16 @@ bool LyricsBinding::importVariantLrc(const QUrl& selected_file, const QString& e
     }
     return true;
 }
-bool LyricsBinding::retryVariantsSave() { return variants_->pending ? variants_->save() : variants_->loadAcquired(); }
+bool LyricsBinding::retryVariantsSave() {
+    if (variants_->pending_selection)
+        return variants_->saveSelection();
+    return variants_->pending ? variants_->save() : variants_->loadAcquired();
+}
 bool LyricsBinding::reloadVariants() {
     if (!variants_->allowed() || variants_->busy || !variants_->store || (path_.isEmpty() && !variants_->hasPending()))
         return false;
     variants_->pending.reset();
+    variants_->pending_selection.reset();
     variants_->queued_mutation.reset();
     variants_->recording_save_revision.clear();
     if (variants_->acquired_pending)
@@ -1249,6 +1398,9 @@ bool LyricsBinding::reloadVariants() {
     return variants_->load();
 }
 const LyricsDocument& LyricsBinding::displayedDocument() const {
+    static const LyricsDocument hidden_document;
+    if (variants_->lyrics_hidden)
+        return hidden_document;
     if (variants_->selected)
         return variants_->selected_document;
     if (recording_search_->displayed)
@@ -1337,6 +1489,8 @@ qint64 LyricsBinding::durationMs() const { return duration_ms_; }
 QString LyricsBinding::statusText() const {
     if (variants_->hasPending() && path_.isEmpty())
         return variantsStatusText();
+    if (variants_->lyrics_hidden)
+        return tr("Sem letra");
     if (variants_->selected) {
         const auto found = variants_->find(variants_->selected);
         if (found != variants_->library.end())
@@ -1428,7 +1582,7 @@ void LyricsBinding::finishDirectSearch() {
         status == QtLyricsService::Status::Searching)
         return;
     const auto selection = std::exchange(direct_search_selection_, {});
-    if (status == QtLyricsService::Status::Ready && selection == selection_revision_) {
+    if (status == QtLyricsService::Status::Ready && selection == selection_revision_ && !variants_->lyrics_hidden) {
         variants_->clearSelection();
         recording_search_->displayed.reset();
         ++selection_revision_;

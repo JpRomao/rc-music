@@ -27,12 +27,14 @@ Item {
     readonly property bool searchAvailable: enabled && lyrics !== null && !lyrics.busy && lyrics.canSearch
     readonly property bool protectedLyrics: lyrics !== null && lyrics.lyricsCopyProtected === true
     readonly property string lyricsAttribution: protectedLyrics ? lyrics.lyricsAttribution : ""
+    readonly property bool romajiAvailable: variantsAvailable && !protectedLyrics && (lyrics.romajiSourceRevision ?? "").length > 0
     implicitHeight: protectedLyrics ? 96 + contract.controlTargetMinimum + contract.spacingUnit : 96
     Layout.minimumHeight: implicitHeight
     Layout.maximumHeight: implicitHeight
     signal queuedVariantFormClosed
     signal readerSeekRequested(int timeMs)
     signal readerTextSizeRequested(int size)
+    property bool versionsOpenedForRomaji: false
 
     function openLyricFind() {
         if (root.enabled && root.protectedLyrics)
@@ -107,6 +109,22 @@ Item {
                 color: root.contract.textSecondaryColor
                 Accessible.role: Accessible.StaticText
                 Accessible.name: text
+            }
+            AccessibleTransportButton {
+                id: romajiButton
+                objectName: "lyrics-generate-romaji"
+                contract: root.contract
+                text: qsTr("Gerar romaji")
+                Accessible.description: root.romajiAvailable ? (root.lyrics.romajiStatusText ?? "") : ""
+                visible: root.romajiAvailable
+                enabled: visible && root.enabled
+                onClicked: {
+                    if (!enabled || root.queryOpen)
+                        return;
+                    root.versionsOpenedForRomaji = true;
+                    root.queuedSaveFeedback = false;
+                    variantsPanel.openForRomaji();
+                }
             }
             AccessibleTransportButton {
                 id: versionsButton
@@ -314,12 +332,16 @@ Item {
             root.queuedVariantFormClosed();
         }
         onClosed: {
+            const returnToRomaji = root.versionsOpenedForRomaji;
+            root.versionsOpenedForRomaji = false;
             if (queryDialog.managedTarget)
                 queryDialog.close();
             if (!root.variantsPending)
                 root.queuedSaveFeedback = false;
-            if (root.visible && root.enabled && versionsButton.visible)
-                versionsButton.forceActiveFocus(Qt.TabFocusReason);
+            if (root.visible && root.enabled && versionsButton.visible) {
+                const opener = returnToRomaji && romajiButton.visible ? romajiButton : versionsButton;
+                opener.forceActiveFocus(Qt.TabFocusReason);
+            }
         }
     }
 

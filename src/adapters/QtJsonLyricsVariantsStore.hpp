@@ -26,8 +26,13 @@ class QtJsonLyricsVariantsStore final : public LyricsVariantsStore {
     [[nodiscard]] LyricsVariantsLoadResult load(const std::filesystem::path& track) override;
     [[nodiscard]] LyricsVariantsSaveStatus save(const std::filesystem::path& track,
                                                 const LyricsVariants& variants) override;
+    [[nodiscard]] LyricsVariantsSaveStatus saveSelection(const std::filesystem::path& track,
+                                                         LyricsSelection selection) override;
 
   private:
+    [[nodiscard]] LyricsVariantsSaveStatus saveDocument(const std::filesystem::path& track,
+                                                        const LyricsVariants* updated_variants,
+                                                        std::optional<LyricsSelection> updated_selection);
     QString config_directory_;
     QtJsonLyricsVariantsStoreOptions options_;
 };

@@ -6,7 +6,7 @@ O [ADR-0016](architecture/decisions/0016-lyrics-variants.md) registra a evoluç�
 
 ## Usar as versões
 
-Abra **Versões** junto à letra. Adicione texto, use **Importar .lrc** para carregar um rascunho de um arquivo local ou salve a letra atualmente carregada. Escolha a versão que será exibida acima da barra de progresso. **Arquivo / busca atual** volta à letra do `.lrc` irmão ou da consulta desta sessão.
+Abra **Versões** junto à letra. Adicione texto, use **Importar .lrc** para carregar um rascunho de um arquivo local ou salve a letra atualmente carregada. Ao tocar uma música pela primeira vez, o RC Music usa a primeira versão salva. Se a música ainda não tiver versões salvas, usa a letra do `.lrc` irmão quando disponível. **Arquivo / busca atual** volta à letra do arquivo ou da consulta desta sessão. **Sem letra** oculta a letra. O RC Music lembra a opção escolhida em **Versões** para cada música, inclusive após reiniciar.
 
 Selecione uma versão salva e clique em **Editar**. É possível alterar nome, texto, idioma, escrita e forma, e salvar na mesma versão ou como nova. Para alterar o tempo de um verso, marque **Permitir alterar tempos**. Excluir pede confirmação da versão e da faixa. O áudio, as playlists e o `.lrc` irmão são preservados.
 
@@ -22,7 +22,7 @@ LRC conserva seus tempos quando aceito pelo parser. Texto comum permanece sem si
 
 ### Gerar romaji
 
-Com o [componente local pykakasi preparado](../tools/lyrics-romanizer/README.md), abra uma letra japonesa, selecione **Versões → Gerar romaji** e revise o texto antes de salvar. O player conserva os tempos da versão sincronizada e guarda o romaji como versão separada, identificada como gerada pelo pykakasi. Para uma letra que usa somente kanji, salve primeiro uma versão com idioma `ja` para indicar que o texto é japonês. A leitura de alguns kanji pode precisar de correção. O conversor usa somente o texto e funciona offline.
+Com o [componente local pykakasi preparado](../tools/lyrics-romanizer/README.md), selecione **Gerar romaji** junto de uma letra japonesa em exibição e revise o texto antes de salvar. A ação também está disponível em **Versões** e em **Fila → Gerenciar letras** ao selecionar uma versão japonesa salva. O player conserva os tempos da versão sincronizada e guarda o romaji como uma versão adicional. Para uma letra que usa somente kanji, indique o idioma `ja` na versão salva para distingui-la de outros idiomas que usam caracteres Han. A leitura de alguns kanji pode precisar de correção. O conversor usa somente o texto e funciona offline.
 
 ### Buscar e escolher uma gravação
 
@@ -56,7 +56,7 @@ Se a reprodução avançar para outra ocorrência do mesmo arquivo, uma consulta
 
 ## Salvamento e recuperação
 
-As versões pertencem ao caminho exato do arquivo e ficam na pasta de configuração do RC Music, dentro de `lyrics`. Mover ou renomear o áudio não transfere essas associações automaticamente. Lite e Completa usam os mesmos dados. A escolha exibida é da sessão; as versões salvas sobrevivem ao reinício.
+As versões e a escolha explícita pertencem ao caminho exato do arquivo e ficam na pasta de configuração do RC Music, dentro de `lyrics`. Mover ou renomear o áudio não transfere essas associações automaticamente. Lite e Completa usam os mesmos dados. A escolha **Arquivo / busca atual** persiste, e uma letra usada só para prévia continua disponível durante a sessão. Quando a versão escolhida é excluída, o catálogo volta à seleção automática.
 
 Cada música aceita até **16 versões**, com **256 KiB** por texto/LRC e **4 MiB** de conteúdo somado. O documento JSON é limitado a **10 MiB**. Os demais limites e o backup/lock estão no ADR. Dados malformados ou excessivos são recusados sem truncar ou publicar um catálogo parcial.
 

@@ -26,6 +26,19 @@ TestCase {
         property bool canSearch: true
         property bool lyricsCopyProtected: false
         property bool lyricFindConfigured: false
+        property var variants: []
+        property bool variantsReady: true
+        property bool variantsCanEdit: true
+        property bool variantsBusy: false
+        property string variantsStatusText: ""
+        property bool variantsCanRetrySave: false
+        property bool variantsHasPendingChange: false
+        property string selectedVariantId: ""
+        property string romajiSourceRevision: ""
+        property string romajiStatusText: ""
+        property bool canGenerateRomaji: false
+        property int romajiRequests: 0
+        signal romajiDraftReady(string token, string content)
         property string lyricsAttribution: ""
         property string album: "Disc"
         property int durationMs: 246000
@@ -41,6 +54,12 @@ TestCase {
         property string submittedArtist: ""
         property string submittedAlbum: ""
         property int submittedDuration: 0
+        function generateRomaji() {
+            romajiRequests++;
+            return "focused-romaji";
+        }
+        function discardRomaji(token) {
+        }
         function searchRecordings(title, artist, album, duration) {
             requests++;
             submittedTitle = title;
@@ -87,6 +106,10 @@ TestCase {
         lyrics.lyricsCopyProtected = false;
         lyrics.lyricFindConfigured = false;
         lyrics.lyricsAttribution = "";
+        lyrics.romajiSourceRevision = "";
+        lyrics.romajiStatusText = "";
+        lyrics.canGenerateRomaji = false;
+        lyrics.romajiRequests = 0;
         shell = createTemporaryObject(shellComponent, null);
         verify(shell);
         shell.requestActivate();
@@ -115,6 +138,37 @@ TestCase {
         const progressPosition = progress.mapToItem(shell.contentItem, 0, 0);
         verify(linePosition.y <= progressPosition.y);
         compare(lyrics.requests, 0);
+    }
+    function test_japaneseLyricsOfferRomajiAndReturnFocusAfterReview() {
+        const action = findChild(shell, "lyrics-generate-romaji");
+        verify(action);
+        verify(!action.visible);
+        lyrics.romajiSourceRevision = "jp-12";
+        lyrics.canGenerateRomaji = true;
+        tryVerify(() => action.visible && action.enabled);
+        action.Accessible.pressAction();
+        tryCompare(lyrics, "romajiRequests", 1);
+        lyrics.romajiDraftReady("focused-romaji", "[00:01.000]nihongo");
+        tryCompare(findChild(shell, "lyrics-variant-content-input"), "text", "[00:01.000]nihongo");
+        const manager = findChild(shell, "lyrics-variants-panel");
+        verify(manager.visible);
+        manager.close();
+        tryCompare(action, "activeFocus", true);
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+    }
+
+    function test_japaneseLyricsActionOpensPreparationStatusWithoutRunningConverter() {
+        const action = findChild(shell, "lyrics-generate-romaji");
+        verify(action);
+        lyrics.romajiSourceRevision = "jp-21";
+        lyrics.romajiStatusText = "Prepare o componente local de romaji.";
+        tryVerify(() => action.visible && action.enabled);
+        action.Accessible.pressAction();
+        tryVerify(() => findChild(shell, "lyrics-variants-panel").visible);
+        compare(lyrics.romajiRequests, 0);
+        verify(!findChild(shell, "lyrics-variant-generate-romaji").enabled);
+        lyrics.lyricsCopyProtected = true;
+        tryVerify(() => !action.visible);
     }
     function test_onlineSearchRequiresExplicitConfirmationAndMetadataCanBeCorrected() {
         const button = findChild(shell, "lyrics-search");
