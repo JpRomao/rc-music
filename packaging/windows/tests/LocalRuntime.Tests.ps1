@@ -11,7 +11,7 @@ if (-not $OutputDirectory) {
 $result = & (Join-Path $PSScriptRoot '../New-RcMusicLocalRuntime.ps1') -OutputDirectory $OutputDirectory -BuildDirectory $BuildDirectory
 foreach ($relative in @('RCMusic.exe', 'qt.conf', 'Qt6Core.dll', 'Qt6Gui.dll', 'Qt6Quick.dll',
         'Qt6Multimedia.dll', 'tag.dll', 'avcodec-61.dll', 'avformat-61.dll',
-        'plugins/platforms/qwindows.dll', 'plugins/multimedia/ffmpegmediaplugin.dll',
+        'plugins/platforms/qwindows.dll', 'plugins/multimedia/ffmpegmediaplugin.dll', 'plugins/tls/qschannelbackend.dll',
         'qml/QtQuick/Controls/Basic/qmldir', 'LOCAL-DEVELOPMENT.txt')) {
     if (-not [IO.File]::Exists((Join-Path $result.payload $relative))) { throw "Missing runtime file: $relative" }
 }
@@ -19,9 +19,12 @@ $manifest = Get-Content -LiteralPath $result.manifest -Raw | ConvertFrom-Json
 if ($manifest.build_testing -ne $false -or $manifest.architecture -cne 'x64') { throw 'Not a production-mode x64 payload' }
 $networkPin = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../qt-network-runtime.v1.json') -Raw | ConvertFrom-Json
 $network = @($manifest.files | Where-Object relative_path -CEQ 'Qt6Network.dll')
+$schannel = @($manifest.files | Where-Object relative_path -CEQ 'plugins/tls/qschannelbackend.dll')
 if ($network.Count -ne 1 -or $network[0].sha256 -cne $networkPin.sha256 -or
+    $schannel.Count -ne 1 -or $schannel[0].sha256 -cne $networkPin.schannel.sha256 -or
+    $schannel[0].size_bytes -ne $networkPin.schannel.size_bytes -or
     $manifest.qt_network_runtime.qualified_build_receipt_sha256 -cne $networkPin.qualified_build_receipt_sha256) {
-    throw 'The runtime manifest does not bind the qualified Qt6Network.dll'
+    throw 'The runtime manifest does not bind the qualified Qt6Network.dll and desktop Schannel TLS plugin'
 }
 foreach ($relative in @('notices/ffmpeg/NOTICE.txt', 'notices/ffmpeg/FFmpeg-COPYING.LGPLv2.1.txt',
         'notices/ffmpeg/FFmpeg-LICENSE.txt', 'notices/ffmpeg/FFmpeg-CREDITS.txt',

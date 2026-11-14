@@ -2,5 +2,9 @@
   "schema_version": 1,
   "qualified_build_receipt_sha256": "b8aad24e7bd0a08c764bbfdce418c162b10e5650c214a46ff92836e33cc8bd06",
   "size_bytes": 1728000,
-  "sha256": "2f4fedd0e88cc53ee488b5676b0d0dea89d94933a446fc627c259a29de21a28f"
+  "sha256": "2f4fedd0e88cc53ee488b5676b0d0dea89d94933a446fc627c259a29de21a28f",
+  "schannel": {
+    "size_bytes": 235520,
+    "sha256": "20cf46eade0721b035e3001f99a37af033bd7a92fedf9cd174077923061a7934"
+  }
 }

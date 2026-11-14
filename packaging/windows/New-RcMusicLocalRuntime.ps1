@@ -178,7 +178,7 @@ $ffmpeg = Get-RcMusicFfmpegRuntime -ManifestPath (Join-Path $PSScriptRoot 'ffmpe
     -DllDirectory (Join-Path $multimedia 'bin') `
     -PluginPath (Join-Path $multimedia 'plugins/multimedia/ffmpegmediaplugin.dll') -Destination $payload
 $qtNetwork = Get-RcMusicQtNetworkRuntime -ManifestPath (Join-Path $PSScriptRoot 'qt-network-runtime.v1.json') `
-    -DllDirectory (Join-Path $qt 'bin') -Destination $payload
+    -DllDirectory (Join-Path $qt 'bin') -SchannelPluginDirectory (Join-Path $qt 'plugins/tls') -Destination $payload
 if ($componentEnabled) {
     $workerNetwork = @($downloadComponent.files | Where-Object relative_path -CEQ 'download-tools/network/Qt6Network.dll')
     if ($workerNetwork.Count -ne 1 -or $workerNetwork[0].sha256 -cne $qtNetwork.sha256 -or
@@ -235,6 +235,7 @@ foreach ($plugin in @('platforms/qwindows.dll', 'platforms/qoffscreen.dll', 'ima
         'imageformats/qico.dll', 'imageformats/qsvg.dll', 'iconengines/qsvgicon.dll')) {
     Add-RuntimeFile (Join-Path $qt ('plugins/' + $plugin)) ('plugins/' + $plugin)
 }
+Add-RuntimeFile $qtNetwork.schannel.source $qtNetwork.schannel.relative_path
 Add-RuntimeFile (Join-Path $multimedia 'plugins/multimedia/ffmpegmediaplugin.dll') 'plugins/multimedia/ffmpegmediaplugin.dll'
 # Direct3D shader compiler is supplied by the already provisioned Qt toolchain,
 # never copied from the host Windows SDK/System32. It is loaded dynamically.
@@ -335,7 +336,7 @@ foreach ($notice in $runtimeNotices) {
         throw "Collected runtime notice differs from its recipe: $($notice.path)"
     }
 }
-foreach ($expected in @($ffmpeg.files) + $qtNetwork) {
+foreach ($expected in @($ffmpeg.files) + @($qtNetwork, $qtNetwork.schannel)) {
     $collected = @($plan.files | Where-Object relative_path -CEQ $expected.relative_path)
     if ($collected.Count -ne 1 -or $collected[0].source -cne $expected.source -or
         $collected[0].size_bytes -ne $expected.size_bytes -or $collected[0].sha256 -cne $expected.sha256) {

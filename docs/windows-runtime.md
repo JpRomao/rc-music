@@ -21,6 +21,8 @@ O build é explícito na entrada de produto: somente Release, `BUILD_TESTING=OFF
 
 O snapshot usa o entrypoint validado. Produto verifica `CMakeLists.txt`, `cmake`, `include`, `src`, `tests`, `tools`, `assets` e `packaging/windows`; histórico conserva também seus três inputs M0. Alterações staged, unstaged ou untracked nesses inputs impedem atribuir um runtime ao commit limpo. Não há autenticação de publicador ou proteção contra escritor hostil concorrente.
 
+As duas edições empacotam o backend TLS Schannel do SDK Qt em `plugins/tls/qschannelbackend.dll`. A receita confere o tamanho e SHA-256 do plugin em `qt-network-runtime.v1.json`, inclui seus imports PE e registra o arquivo no inventário do payload. O player usa esse backend para serviços HTTPS como LRCLIB. As ferramentas opcionais de download mantêm seu próprio backend TLS e seus controles de isolamento.
+
 O manifesto mantém schema 1 e campos de compatibilidade, acrescentando `parser_sha256`, `recipe_path_base=repository`, `edition` e `browser_runtime_requirement`. Há cinco paths/hashes de receita na Lite e seis na Completa experimental, que inclui seu aviso próprio; são revalidados antes de publicar o manifesto. O instalador histórico inclui o hash do planejador promovido na identidade/recibo, além das oito chaves anteriores. O builder comparativo identifica seus sete inputs de receita relativamente à raiz. Nenhum manifesto, protocolo, corpus, matriz ou pacote histórico é reescrito ou aprovado retroativamente.
 
 ## Edições e montagem da Completa experimental

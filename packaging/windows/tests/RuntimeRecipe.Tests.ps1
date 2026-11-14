@@ -444,6 +444,33 @@ try {
         Assert-Equal ([IO.File]::ReadAllText((Join-Path $output 'bin/Qt6Network.pdb'))) 'Patched symbols'
         Assert-Equal (Get-TestFilePin (Join-Path $output 'lib/cmake/Qt6/Qt6Config.cmake')).sha256 (Get-TestFilePin $config).sha256
     }
+    Test-Case 'the desktop TLS backend comes from the configured SDK and matches its pin' {
+        $sdk = Join-Path $testRoot 'desktop Qt SDK'
+        $bin = Join-Path $sdk 'bin'
+        $plugins = Join-Path $sdk 'plugins/tls'
+        $null = [IO.Directory]::CreateDirectory($bin)
+        $null = [IO.Directory]::CreateDirectory($plugins)
+        $networkDll = Join-Path $bin 'Qt6Network.dll'
+        $schannelDll = Join-Path $plugins 'qschannelbackend.dll'
+        [IO.File]::WriteAllText($networkDll, 'Qualified Qt Network')
+        [IO.File]::WriteAllText($schannelDll, 'Desktop Schannel')
+        $manifest = Join-Path $testRoot 'desktop-qt-network.json'
+        $pins = [ordered]@{ schema_version = 1; qualified_build_receipt_sha256 = 'b' * 64
+            schannel = Get-TestFilePin $schannelDll } + (Get-TestFilePin $networkDll)
+        [IO.File]::WriteAllText($manifest, ($pins | ConvertTo-Json))
+        $destination = Join-Path $testRoot 'unwritten desktop payload'
+        $parameters = @{ ManifestPath = $manifest; DllDirectory = $bin
+            SchannelPluginDirectory = $plugins; Destination = $destination }
+        $qualified = Get-RcMusicQtNetworkRuntime @parameters
+        Assert-Equal $qualified.schannel.source $schannelDll
+        Assert-Equal $qualified.schannel.relative_path 'plugins/tls/qschannelbackend.dll'
+        Assert-Equal $qualified.schannel.sha256 $pins.schannel.sha256
+        [IO.File]::WriteAllText($schannelDll, 'Changed Schannel')
+        Assert-Rejected { Get-RcMusicQtNetworkRuntime @parameters } 'qschannelbackend\.dll'
+        [IO.File]::Delete($schannelDll)
+        Assert-Rejected { Get-RcMusicQtNetworkRuntime @parameters } 'qschannelbackend\.dll'
+        Assert-Equal (Test-Path -LiteralPath $destination) $false
+    }
 } finally {
     Assert-SafeTestRoot
     Remove-Item -LiteralPath ([IO.Path]::GetFullPath($testRoot)) -Recurse -Force
