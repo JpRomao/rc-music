@@ -66,6 +66,8 @@ As duas edições foram compiladas em Release/x64 na worktree limpa de `8982c602
 
 A inspeção conferiu cada arquivo com seu manifesto, os PEs x64, o subsistema GUI do player, a identidade dos hosts e a ausência do marcador de ativação. Recibos em `out/product/test-runs/windows-candidates-8982c60-20261111/`.
 
+O smoke isolado de cada edição passou com **17 cenários de áudio e 19 passagens Qt**, sem skips. Os cenários cobriram abertura, pausa, seek, metadados e reprodução até o fim com saída silenciada. Incluem os perfis básicos, os aliases MP4 e OGA, extensões neutras e o caso FLAC com prefixo ID3. O executável de produção rejeitou os argumentos reservados de teste e o probe de startup usou configuração própria. Os recibos de `out/product/test-runs/windows-associations-8982c60-20261111/` vinculam os hashes do manifesto, catálogo, fonte e executáveis. [Declarações por edição](windows-installer.md#declarações-e-setups-de-8982c60-com-associações)
+
 ### Runtimes de 6d7ae8b
 
 As duas edições foram compiladas em Release/x64 na worktree limpa de `6d7ae8b39b39dbacee9aeabc9ceea0fc0ee5dce4`, com lint QML aprovado e zero testes registrados nos builds de produção. A Completa experimental requer o WebView2 Evergreen x64 já disponível. Os perfis mantêm desligados o provisionamento AppContainer e o envio pelo navegador integrado. [Setups de 6d7ae8b](windows-installer.md#setups-de-6d7ae8b)
