@@ -1235,11 +1235,14 @@ void DownloadApplicationBinding::refreshProjection() {
                                     impl_->review_operation_id != std::numeric_limits<std::uint64_t>::max());
     if (!guard)
         return;
-    impl_->model.setValidationAvailable(
-        impl_->gate_attached && !impl_->closing && !impl_->validation_unavailable &&
-        impl_->options.recovery_validation && !impl_->reviewBusy() && !impl_->download_service.hasActiveExecution() &&
-        impl_->controller.state() == DownloadAdmissionControllerState::Ready &&
-        (impl_->validation_operation || impl_->validation_operation_id != std::numeric_limits<std::uint64_t>::max()));
+    // Releasing an existing proof must stay possible while a different
+    // download waits for its admission checkpoint.
+    const bool can_start_validation = impl_->controller.state() == DownloadAdmissionControllerState::Ready &&
+                                      impl_->validation_operation_id != std::numeric_limits<std::uint64_t>::max();
+    impl_->model.setValidationAvailable(impl_->gate_attached && !impl_->closing && !impl_->validation_unavailable &&
+                                        impl_->options.recovery_validation && !impl_->reviewBusy() &&
+                                        !impl_->download_service.hasActiveExecution() &&
+                                        (impl_->validation_operation || can_start_validation));
     if (!guard)
         return;
     const bool import_available = impl_->gate_attached && !impl_->closing && !impl_->validation_unavailable &&
