@@ -1043,6 +1043,62 @@ class DownloadApplicationBindingTests final : public QObject {
         QCOMPARE(h.execution.starts, 1);
         QCOMPARE(h.execution.update.job_id, admitted->job_ids.front());
     }
+    void retainedValidationCanBeReleasedWhileAdmissionIsUnconfirmed_data() {
+        QTest::addColumn<bool>("save_failed");
+        QTest::newRow("save pending") << false;
+        QTest::newRow("save failed") << true;
+    }
+    void retainedValidationCanBeReleasedWhileAdmissionIsUnconfirmed() {
+        QFETCH(bool, save_failed);
+        Harness h({}, true, true);
+        QVERIFY(h.heldValidation());
+        const auto recovered = QStringLiteral("old-1");
+
+        auto ready = input();
+        ready.request_id[0] = '1';
+        QCOMPARE(h.controller.begin(ready).state, DownloadAdmissionState::Pending);
+        h.io.saved();
+        h.binding.poll();
+        const auto admitted = h.controller.poll(ready.request_id);
+        QVERIFY(admitted && admitted->error == DownloadSubmissionError::None);
+        QCOMPARE(h.execution.starts, 0);
+
+        auto staged = input();
+        staged.request_id[0] = '2';
+        QCOMPARE(h.controller.begin(staged).state, DownloadAdmissionState::Pending);
+        if (save_failed)
+            h.io.saved(DownloadCheckpointSaveStatus::Failed);
+        h.binding.poll();
+        QCOMPARE(h.controller.state(), save_failed ? DownloadAdmissionControllerState::AdmissionFailed
+                                                   : DownloadAdmissionControllerState::AdmissionPending);
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanImportRecoveredRole).toBool());
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanValidateMediaRole).toBool());
+        QVERIFY(h.reviewValue(DownloadJobsModel::CanReleaseValidationRole).toBool());
+        QVERIFY(h.binding.releaseValidation(recovered));
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 0);
+        h.validation.complete(DownloadRecoveryValidationOutcome::Released);
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 0);
+        QVERIFY(!h.reviewValue(DownloadJobsModel::CanValidateMediaRole).toBool());
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 1);
+        QCOMPARE(h.execution.update.job_id, admitted->job_ids.front());
+
+        h.execution.update.state = DownloadExecutionState::Failed;
+        h.execution.update.error = DownloadFailure::Network;
+        h.binding.poll();
+        h.binding.poll();
+        QCOMPARE(h.execution.starts, 1);
+        if (save_failed)
+            QVERIFY(h.binding.retryAdmission());
+        h.io.saved();
+        h.binding.poll();
+        const auto admitted_after_save = h.controller.poll(staged.request_id);
+        QVERIFY(admitted_after_save && admitted_after_save->error == DownloadSubmissionError::None);
+        QCOMPARE(h.execution.starts, 2);
+        QCOMPARE(h.execution.update.job_id, admitted_after_save->job_ids.front());
+    }
     void recoveredImportRequiresCurrentOneShotConsentAndNativePreparationBeforeHandoff() {
         Harness h({}, true, true);
         QVERIFY(!h.binding.requestRecoveredImport(QStringLiteral("old-1")));
