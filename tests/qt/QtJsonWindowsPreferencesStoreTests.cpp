@@ -6,8 +6,12 @@
 
 #include <QDir>
 #include <QFile>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QtTest>
+
+#define NOMINMAX
+#include <Windows.h>
 
 #include <optional>
 
@@ -69,6 +73,8 @@ class QtJsonWindowsPreferencesStoreTests final : public QObject {
     void blocksFutureBackupUntilReplacementIsExplicit();
     void preservesFutureBackupUntilPrimaryReplacementSucceeds_data();
     void preservesFutureBackupUntilPrimaryReplacementSucceeds();
+    void refusesToWriteWhenAnExistingSlotCannotBeRead_data();
+    void refusesToWriteWhenAnExistingSlotCannotBeRead();
     void injectedFaultBeforeCommitPreservesThePrimary();
     void injectedFaultAfterCommitReportsFailureButLeavesAValidReplacement();
     void retainsExactlyOneBackupAcrossRepeatedSaves();
@@ -293,6 +299,71 @@ void QtJsonWindowsPreferencesStoreTests::preservesFutureBackupUntilPrimaryReplac
     QCOMPARE(retry.save(request), PreferencesSaveStatus::Saved);
     QCOMPARE(retry.load().preferences, request.preferences);
     QCOMPARE(readAll(backupPath(root)), expected_primary);
+}
+
+void QtJsonWindowsPreferencesStoreTests::refusesToWriteWhenAnExistingSlotCannotBeRead_data() {
+    QTest::addColumn<bool>("primary_locked");
+    QTest::addColumn<bool>("replace_future_version");
+    QTest::newRow("primary") << true << false;
+    QTest::newRow("backup") << false << false;
+    QTest::newRow("primary-with-future-replacement") << true << true;
+    QTest::newRow("backup-with-future-replacement") << false << true;
+}
+
+void QtJsonWindowsPreferencesStoreTests::refusesToWriteWhenAnExistingSlotCannotBeRead() {
+    QFETCH(bool, primary_locked);
+    QFETCH(bool, replace_future_version);
+    QTemporaryDir temporary;
+    QVERIFY(temporary.isValid());
+    const QString root = temporary.path();
+    const QString primary = preferencesPath(root);
+    const QString backup = backupPath(root);
+    const QString locked = primary_locked ? primary : backup;
+    const QByteArray supported = PreferencesJsonCodec::encode(Preferences{});
+    const QByteArray future{"{\"schemaVersion\":3,\"future\":true}"};
+    QVERIFY(writeAll(primary, primary_locked ? future : supported));
+    QVERIFY(writeAll(backup, primary_locked ? supported : future));
+
+    HANDLE handle = INVALID_HANDLE_VALUE;
+    const auto release_sharing = [&handle] {
+        if (handle != INVALID_HANDLE_VALUE) {
+            CloseHandle(handle);
+            handle = INVALID_HANDLE_VALUE;
+        }
+    };
+    bool attempted_write = false;
+    QtJsonWindowsPreferencesStore store{root, {.inject_fault = [&](const PreferencesStoreFaultPoint point) {
+                                            attempted_write = true;
+                                            // Another reader can close its handle after inspection but before commit.
+                                            if (primary_locked &&
+                                                point == PreferencesStoreFaultPoint::BeforePrimaryCommit)
+                                                release_sharing();
+                                            return false;
+                                        }}};
+    const Preferences replacement = nonDefaultPreferences();
+    PreferencesSaveStatus status = PreferencesSaveStatus::Saved;
+    {
+        // Replacement is shareable, but inspection through a second handle is refused.
+        handle = CreateFileW(reinterpret_cast<LPCWSTR>(locked.utf16()), GENERIC_READ, FILE_SHARE_DELETE, nullptr,
+                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        QVERIFY(handle != INVALID_HANDLE_VALUE);
+        const auto close = qScopeGuard(release_sharing);
+        QFile unreadable{locked};
+        QVERIFY(!unreadable.open(QIODevice::ReadOnly));
+        const auto loaded = store.load();
+        QCOMPARE(loaded.status,
+                 primary_locked ? PreferencesLoadStatus::RecoveredFromBackup : PreferencesLoadStatus::Loaded);
+        QCOMPARE(loaded.preferences, Preferences{});
+        status = store.save({.preferences = replacement, .replace_future_version = replace_future_version});
+    }
+
+    QCOMPARE(readAll(primary), primary_locked ? future : supported);
+    QCOMPARE(readAll(backup), primary_locked ? supported : future);
+    QCOMPARE(status, PreferencesSaveStatus::Failed);
+    QVERIFY(!attempted_write);
+    QCOMPARE(store.save({.preferences = replacement}), PreferencesSaveStatus::BlockedByFutureVersion);
+    QCOMPARE(store.save({.preferences = replacement, .replace_future_version = true}), PreferencesSaveStatus::Saved);
+    QCOMPARE(store.load().preferences, replacement);
 }
 
 void QtJsonWindowsPreferencesStoreTests::injectedFaultBeforeCommitPreservesThePrimary() {

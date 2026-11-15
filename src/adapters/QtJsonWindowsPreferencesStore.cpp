@@ -17,6 +17,7 @@ enum class InspectedFileStatus {
     Missing,
     Valid,
     Invalid,
+    Unreadable,
     FutureVersion,
 };
 
@@ -44,16 +45,18 @@ enum class AtomicWriteStatus {
     const QFileInfo information{path};
     if (!information.exists())
         return {};
-    if (!information.isFile() || information.size() < 0 ||
-        information.size() > QtJsonWindowsPreferencesStore::maximum_file_size) {
+    if (!information.isFile() || information.size() < 0)
+        return {.status = InspectedFileStatus::Unreadable};
+    if (information.size() > QtJsonWindowsPreferencesStore::maximum_file_size)
         return {.status = InspectedFileStatus::Invalid};
-    }
 
     QFile file{path};
     if (!file.open(QIODevice::ReadOnly))
-        return {.status = InspectedFileStatus::Invalid};
+        return {.status = InspectedFileStatus::Unreadable};
     QByteArray bytes = file.read(QtJsonWindowsPreferencesStore::maximum_file_size + 1);
-    if (bytes.size() > QtJsonWindowsPreferencesStore::maximum_file_size || file.error() != QFileDevice::NoError)
+    if (file.error() != QFileDevice::NoError)
+        return {.status = InspectedFileStatus::Unreadable};
+    if (bytes.size() > QtJsonWindowsPreferencesStore::maximum_file_size)
         return {.status = InspectedFileStatus::Invalid};
 
     PreferencesJsonDecodeResult decoded = PreferencesJsonCodec::decode(bytes);
@@ -130,6 +133,8 @@ PreferencesSaveStatus QtJsonWindowsPreferencesStore::save(const PreferencesSaveR
 
     const InspectedFile primary = inspectFile(primaryPath(config_directory_));
     const InspectedFile backup = inspectFile(backupPath(config_directory_));
+    if (primary.status == InspectedFileStatus::Unreadable || backup.status == InspectedFileStatus::Unreadable)
+        return PreferencesSaveStatus::Failed;
     const bool primary_valid = primary.status == InspectedFileStatus::Valid;
     const bool backup_is_future = backup.status == InspectedFileStatus::FutureVersion;
     if ((primary.status == InspectedFileStatus::FutureVersion || backup_is_future) && !request.replace_future_version) {
