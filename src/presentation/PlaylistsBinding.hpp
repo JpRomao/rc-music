@@ -55,6 +55,8 @@ class PlaylistsBinding final : public QObject {
     Q_INVOKABLE bool addQueueToPlaylist(const QString& id);
     Q_INVOKABLE bool requestAddFiles(const QString& id);
     Q_INVOKABLE bool requestReplaceFile(const QString& playlist_id, const QString& entry_id);
+    // Revokes only the page's pending picker/locator, never an accepted save.
+    Q_INVOKABLE void cancelFileSelection();
     Q_INVOKABLE bool removeEntry(const QString& playlist_id, const QString& entry_id);
     Q_INVOKABLE bool moveEntry(const QString& playlist_id, const QString& entry_id, int destination);
     Q_INVOKABLE bool enqueuePlaylist(const QString& id);

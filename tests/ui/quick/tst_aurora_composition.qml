@@ -223,6 +223,71 @@ TestCase {
         }
         compare(commands(), audio);
     }
+    function test_virtualizedShelfUsesModelOrderForTabAndBacktab() {
+        const sources = [];
+        for (let index = 0; index < 24; ++index)
+            sources.push("C:/Fixture/Virtual " + index + ".mp3");
+        driver.enqueueLocalSelection(sources);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalPlaying();
+        shell.width = 720;
+        shell.height = 520;
+        tryCompare(shell.contentItem, "width", 720);
+        verify(waitForPolish(shell));
+        const list = findChild(shell, "home-queue-list");
+        tryCompare(list, "count", 24);
+        list.cacheBuffer = 0;
+        const ids = [];
+        for (let index = 0; index < list.count; ++index) {
+            list.positionViewAtIndex(index, ListView.Contain);
+            list.forceLayout();
+            tryVerify(() => list.itemAtIndex(index) !== null);
+            ids.push(list.itemAtIndex(index).occurrenceId);
+        }
+        list.positionViewAtIndex(0, ListView.Beginning);
+        list.forceLayout();
+        tryVerify(() => list.itemAtIndex(0) !== null);
+        list.itemAtIndex(0).forceActiveFocus(Qt.TabFocusReason);
+        const audio = commands();
+        function verifyFocused(index) {
+            tryCompare(list, "currentIndex", index);
+            tryVerify(() => list.currentItem !== null && list.currentItem.activeFocus);
+            compare(list.currentItem.occurrenceId, ids[index]);
+            const p = list.currentItem.mapToItem(list, 0, 0);
+            verify(p.x >= -1 && p.x + list.currentItem.width <= list.width + 1);
+        }
+        for (let index = 0; index < ids.length; ++index) {
+            verifyFocused(index);
+            keyClick(Qt.Key_Tab);
+        }
+        verify(!shell.isInside(shell.activeFocusItem, list), "Tab must exit at the model's last occurrence");
+        keyClick(Qt.Key_Backtab);
+        for (let index = ids.length - 1; index >= 0; --index) {
+            verifyFocused(index);
+            keyClick(Qt.Key_Backtab);
+        }
+        tryCompare(findChild(shell, "home-see-queue"), "activeFocus", true);
+        list.positionViewAtIndex(10, ListView.Contain);
+        list.forceLayout();
+        tryVerify(() => list.itemAtIndex(10) !== null);
+        list.itemAtIndex(10).forceActiveFocus(Qt.TabFocusReason);
+        const focusedId = ids[10];
+        const movedId = ids[19];
+        verify(presenter.moveQueueOccurrence(movedId, 5));
+        ids.splice(19, 1);
+        ids.splice(5, 0, movedId);
+        tryVerify(() => list.currentItem !== null && list.currentItem.occurrenceId === focusedId);
+        keyClick(Qt.Key_Tab);
+        verifyFocused(ids.indexOf(focusedId) + 1);
+        const nextId = list.currentItem.occurrenceId;
+        verify(presenter.removeQueueOccurrence(ids[2]));
+        ids.splice(2, 1);
+        tryVerify(() => list.currentItem !== null && list.currentItem.occurrenceId === nextId);
+        keyClick(Qt.Key_Backtab);
+        verifyFocused(ids.indexOf(focusedId));
+        compare(commands(), audio, "Focus, reorder and removal of other occurrences must not play audio");
+    }
     function test_emptyHomeDoesNotInventACollection() {
         const list = findChild(shell, "home-queue-list");
         verify(list);

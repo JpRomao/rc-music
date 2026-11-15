@@ -48,6 +48,12 @@ FocusScope {
             contentItem.width = inlineViewport.width;
             contentItem.height = inlineViewport.contentHeight;
         }
+        Qt.callLater(root.revealCurrentFocus);
+    }
+    function revealCurrentFocus() {
+        const ownerWindow = root.Window.window;
+        if (ownerWindow)
+            root.revealFocusedItem(ownerWindow.activeFocusItem);
     }
     function revealFocusedItem(item) {
         if (!embedded || !visible || !item)

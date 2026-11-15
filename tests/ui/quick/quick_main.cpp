@@ -6,10 +6,12 @@
 #include "m0/ports/LocalSourceDiscovery.hpp"
 #include "m0/ports/MetadataReader.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
+#include "m0/ports/PlaylistStore.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #include "presentation/PlayerPresenterScenarioControl.hpp"
 #include "presentation/PlayerPresenterTestAccess.hpp"
+#include "presentation/PlaylistsBinding.hpp"
 #include "presentation/ShellAppearanceBinding.hpp"
 #include "presentation/ShellUiContract.hpp"
 
@@ -37,10 +39,12 @@
 #include <QtTest/qtestkeyboard.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -452,6 +456,8 @@ class ScenarioDriver final : public QObject {
           local_file_locator_(local_file_locator), local_files_picker_(local_files_picker) {}
     Q_INVOKABLE QObject* createDownloadsScenario();
     Q_INVOKABLE bool releaseDownloadsScenario(QObject* scenario);
+    Q_INVOKABLE QObject* createPlaylistsScenario();
+    Q_INVOKABLE bool releasePlaylistsScenario(QObject* scenario);
     Q_INVOKABLE void setTrayAvailable(const bool available) {
         platform_.tray_available = available;
         presenter_.refreshPlatformAvailability();
@@ -926,6 +932,107 @@ class ScenarioDriver final : public QObject {
     QuickTestAudioFilesPicker& local_files_picker_;
     std::unique_ptr<QMimeData> drag_mime_{};
 };
+
+class PlaylistsQuickScenario final : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QObject* binding READ binding CONSTANT)
+    static std::filesystem::path fixturePath(const char* name) {
+#ifdef Q_OS_WIN
+        return std::filesystem::path("C:/Fixture") / name;
+#else
+        return std::filesystem::path("/Fixture") / name;
+#endif
+    }
+    class Store final : public music_player::m0::PlaylistStore {
+      public:
+        music_player::m0::PlaylistLoadResult load() override {
+            const std::lock_guard lock(mutex_);
+            return {snapshot_, music_player::m0::PlaylistLoadStatus::Loaded};
+        }
+        music_player::m0::PlaylistSaveStatus save(const music_player::m0::PlaylistLibrarySnapshot& snapshot) override {
+            const std::lock_guard lock(mutex_);
+            snapshot_ = snapshot;
+            ++saves;
+            return music_player::m0::PlaylistSaveStatus::Saved;
+        }
+        std::atomic<int> saves{};
+
+      private:
+        std::mutex mutex_;
+        music_player::m0::PlaylistLibrarySnapshot snapshot_{{{7, "Page owner", {{11, fixturePath("original.mp3")}}}}};
+    };
+    class Picker final : public music_player::m0::AudioFilesPicker {
+      public:
+        music_player::m0::AudioFilesSelectionCompletion pending;
+        bool pick(music_player::m0::AudioFilesSelectionCompletion completion) override {
+            if (pending)
+                return false;
+            pending = std::move(completion);
+            return true;
+        }
+        void cancel() noexcept override { pending = {}; }
+    };
+    class Locator final : public music_player::m0::AudioFileLocator {
+      public:
+        music_player::m0::AudioFileLocationCompletion pending;
+        bool locate(const std::filesystem::path&, music_player::m0::AudioFileLocationCompletion completion) override {
+            if (pending)
+                return false;
+            pending = std::move(completion);
+            return true;
+        }
+        void cancel() noexcept override { pending = {}; }
+    };
+
+  public:
+    explicit PlaylistsQuickScenario(QObject* parent)
+        : QObject(parent), store_(std::make_shared<Store>()), binding_(store_, {}, {}, nullptr, &picker_, &locator_) {
+        QQmlEngine::setObjectOwnership(&binding_, QQmlEngine::CppOwnership);
+        static_cast<void>(binding_.retryLoad());
+    }
+    QObject* binding() noexcept { return &binding_; }
+    Q_INVOKABLE int saves() const noexcept { return store_->saves.load(); }
+    Q_INVOKABLE int deliveries() const noexcept { return deliveries_; }
+    Q_INVOKABLE bool holdReply(const bool replacement) {
+        if (replacement) {
+            held_location_ = std::exchange(locator_.pending, {});
+            return static_cast<bool>(held_location_);
+        }
+        held_selection_ = std::exchange(picker_.pending, {});
+        return static_cast<bool>(held_selection_);
+    }
+    Q_INVOKABLE void completeHeldReply(const bool replacement) {
+        if (replacement) {
+            auto completion = std::exchange(held_location_, {});
+            if (completion)
+                completion({music_player::m0::AudioFileLocationStatus::Selected, fixturePath("late.flac")});
+        } else {
+            auto completion = std::exchange(held_selection_, {});
+            if (completion)
+                completion({music_player::m0::AudioFilesSelectionStatus::Selected, {fixturePath("late.flac")}});
+        }
+        // Same-thread queued barrier follows the binding's queued completion.
+        QMetaObject::invokeMethod(this, [this] { ++deliveries_; }, Qt::QueuedConnection);
+    }
+
+  private:
+    std::shared_ptr<Store> store_;
+    Picker picker_;
+    Locator locator_;
+    music_player::m0::PlaylistsBinding binding_;
+    music_player::m0::AudioFilesSelectionCompletion held_selection_;
+    music_player::m0::AudioFileLocationCompletion held_location_;
+    int deliveries_{};
+};
+
+QObject* ScenarioDriver::createPlaylistsScenario() { return new PlaylistsQuickScenario(this); }
+bool ScenarioDriver::releasePlaylistsScenario(QObject* scenario) {
+    auto* const owned = qobject_cast<PlaylistsQuickScenario*>(scenario);
+    if (owned == nullptr || owned->parent() != this)
+        return false;
+    owned->deleteLater();
+    return true;
+}
 
 // Tests that exercise real exit own a fresh presenter and all borrowed fakes.
 // No production lifecycle state is reset.

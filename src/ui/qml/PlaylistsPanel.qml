@@ -14,6 +14,7 @@ PageSurface {
     required property ShellUiContract contract
     required property bool queueHasTracks
     property var playlists: null
+    property var fileSelectionOwner: null
     property string selectedEntryId: ""
     property string nameMode: ""
     property var nameTarget: null
@@ -45,6 +46,19 @@ PageSurface {
     focus: true
     popupType: Popup.Item
     closePolicy: Popup.CloseOnEscape
+    function revokeFileSelection(owner) {
+        if (owner && typeof owner.cancelFileSelection === "function")
+            owner.cancelFileSelection();
+    }
+    onPlaylistsChanged: {
+        const previous = fileSelectionOwner;
+        fileSelectionOwner = playlists;
+        if (previous !== playlists)
+            revokeFileSelection(previous);
+    }
+    onAboutToHide: revokeFileSelection(playlists)
+    Component.onCompleted: fileSelectionOwner = playlists
+    Component.onDestruction: revokeFileSelection(fileSelectionOwner)
     onSelectedPlaylistIdChanged: selectedEntryId = ""
     onAbandonTargetCurrentChanged: {
         if (!abandonTargetCurrent && abandonDialog.visible)

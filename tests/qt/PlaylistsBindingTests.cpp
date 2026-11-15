@@ -202,6 +202,56 @@ class PlaylistsBindingTests final : public QObject {
         QCOMPARE(reads, 0);
         QCOMPARE(appends, 0);
     }
+    void pageCancellationRejectsLateSelectionsButPreservesAnAcceptedSave_data() {
+        QTest::addColumn<bool>("replacement");
+        QTest::newRow("picker") << false;
+        QTest::newRow("locator") << true;
+    }
+    void pageCancellationRejectsLateSelectionsButPreservesAnAcceptedSave() {
+        QFETCH(bool, replacement);
+        auto store = std::make_shared<Store>();
+        const PlaylistLibrarySnapshot confirmed{{{7, "Confirmed", {{11, path("original.mp3")}}}}};
+        store->disk = {confirmed, PlaylistLoadStatus::Loaded};
+        Picker picker;
+        Locator locator;
+        PlaylistsBinding binding(store, {}, {}, nullptr, &picker, &locator);
+        load(binding);
+        QVERIFY(binding.selectPlaylist("7"));
+        const auto before = binding.entries();
+        QVERIFY(replacement ? binding.requestReplaceFile("7", "11") : binding.requestAddFiles("7"));
+        auto stale_add = replacement ? AudioFilesSelectionCompletion{} : picker.takeCompletion();
+        auto stale_location = replacement ? locator.takeCompletion() : AudioFileLocationCompletion{};
+        QVERIFY2(binding.metaObject()->indexOfMethod("cancelFileSelection()") >= 0,
+                 "Page ownership needs a public cancellation boundary that does not discard accepted saves");
+        QVERIFY(QMetaObject::invokeMethod(&binding, "cancelFileSelection", Qt::DirectConnection));
+        QVERIFY(!binding.busy());
+        QCOMPARE(replacement ? locator.cancellations : picker.cancellations, 1);
+        QVERIFY(replacement ? binding.requestReplaceFile("7", "11") : binding.requestAddFiles("7"));
+        if (replacement)
+            stale_location({AudioFileLocationStatus::Selected, path("stale.flac")});
+        else
+            stale_add({AudioFilesSelectionStatus::Selected, {path("stale.flac")}});
+        QCoreApplication::processEvents();
+        QVERIFY(binding.busy());
+        QVERIFY(!binding.hasPendingChange());
+        QCOMPARE(store->saves.load(), 0);
+        QCOMPARE(binding.entries(), before);
+        store->release = false;
+        if (replacement)
+            locator.takeCompletion()({AudioFileLocationStatus::Selected, path("accepted.flac")});
+        else
+            picker.takeCompletion()({AudioFilesSelectionStatus::Selected, {path("accepted.flac")}});
+        QTRY_COMPARE_WITH_TIMEOUT(store->saves.load(), 1, 1000);
+        QVERIFY(binding.hasPendingChange());
+        QVERIFY(QMetaObject::invokeMethod(&binding, "cancelFileSelection", Qt::DirectConnection));
+        QVERIFY(binding.busy());
+        QVERIFY(binding.hasPendingChange());
+        store->release = true;
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QCOMPARE(store->saves.load(), 1);
+        QCOMPARE(binding.entries().size(), replacement ? 1 : 2);
+        QCOMPARE(binding.entries().back().toMap().value("title").toString(), QStringLiteral("accepted.flac"));
+    }
     void cancellingOrInvalidatingASelectionCannotRetargetIt() {
         auto store = std::make_shared<Store>();
         Picker picker;

@@ -108,6 +108,23 @@ TestCase {
         property string discardConsentToken: ""
         property var jobsModel: null
     }
+    QtObject {
+        id: compactLyrics
+        property string title: "Local"
+        property string artist: ""
+        property string album: ""
+        property int durationMs: 180000
+        property string statusText: "Letra local"
+        property string currentLine: "Linha atual"
+        property string previousLine: ""
+        property string nextLine: ""
+        property string plainText: ""
+        property bool hasSyncedLyrics: true
+        property bool busy: false
+        property bool canSearch: false
+        property bool lyricsCopyProtected: false
+        property bool lyricFindConfigured: false
+    }
     Component {
         id: shellComponent
         Main {
@@ -121,6 +138,7 @@ TestCase {
         driver.resetLocalScenario();
         lists.writes = 0;
         lists.hasPendingChange = false;
+        lists.canRetrySave = false;
         shell = createTemporaryObject(shellComponent, null);
         verify(shell);
         shell.width = 1440;
@@ -226,6 +244,63 @@ TestCase {
         }
         verify(escaped, "An empty activity page must not cycle forever between its close button and list");
         verify(page.visible);
+    }
+    function test_pageResizeKeepsTheSameFocusedActionVisible_data() {
+        return [
+            {
+                tag: "playlists",
+                preferences: false,
+                recovery: false,
+                lyrics: false
+            },
+            {
+                tag: "preferences",
+                preferences: true,
+                recovery: false,
+                lyrics: false
+            },
+            {
+                tag: "recovery-with-lyrics",
+                preferences: false,
+                recovery: true,
+                lyrics: true
+            }
+        ];
+    }
+    function test_pageResizeKeepsTheSameFocusedActionVisible(data) {
+        loadQueue();
+        if (data.lyrics)
+            shell.lyrics = compactLyrics;
+        lists.hasPendingChange = data.recovery;
+        lists.canRetrySave = data.recovery;
+        if (data.preferences)
+            shell.openPreferences();
+        else
+            shell.openPlaylists();
+        const page = findChild(shell, data.preferences ? "preferences-panel" : "playlists-panel");
+        tryCompare(page, "opened", true);
+        if (data.preferences)
+            findChild(page, "preferences-playback").Accessible.pressAction();
+        verify(waitForPolish(shell));
+        const action = findChild(page, data.preferences ? "skip-forward-seconds" : (data.recovery ? "playlists-retry-save" : "playlists-close"));
+        verify(action && action.visible && action.enabled);
+        action.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(action, "activeFocus", true);
+        const audio = commands();
+        const identity = presenter.currentOccurrenceId;
+        shell.width = 720;
+        shell.height = 520;
+        tryCompare(shell.contentItem, "height", 520);
+        verify(waitForPolish(shell));
+        const viewport = findChild(page, "page-viewport");
+        tryVerify(() => {
+            const p = action.mapToItem(viewport, 0, 0);
+            return p.x >= 0 && p.y >= 0 && p.x + action.width <= viewport.width + 1 && p.y + action.height <= viewport.height + 1;
+        }, 5000, "Resize must reveal the existing page focus, not require another focus event");
+        compare(shell.activeFocusItem, action);
+        compare(presenter.currentOccurrenceId, identity);
+        compare(presenter.positionMs, 41000);
+        compare(commands(), audio);
     }
     function test_inlinePageDoesNotTrapTabAndEditorsOwnTheirKeys() {
         loadQueue();

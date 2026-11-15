@@ -20,6 +20,43 @@ ColumnLayout {
     NavigationText {
         id: labels
     }
+    function insideCards(item) {
+        while (item && item !== cards)
+            item = item.parent;
+        return item === cards;
+    }
+    function focusCard(index, direction) {
+        if (!root.visible || !root.interactionAllowed)
+            return false;
+        for (let row = index; row >= 0 && row < cards.count; row += direction) {
+            cards.positionViewAtIndex(row, ListView.Contain);
+            cards.forceLayout();
+            const item = cards.itemAtIndex(row);
+            if (item && item.enabled) {
+                cards.currentIndex = row;
+                item.forceActiveFocus(direction > 0 ? Qt.TabFocusReason : Qt.BacktabFocusReason);
+                return true;
+            }
+        }
+        return false;
+    }
+    function leaveCardsForward() {
+        let target = cards.nextItemInFocusChain(true);
+        const visited = [];
+        while (target && insideCards(target) && visited.indexOf(target) < 0) {
+            visited.push(target);
+            target = target.nextItemInFocusChain(true);
+        }
+        if (target && !insideCards(target))
+            target.forceActiveFocus(Qt.TabFocusReason);
+    }
+    function focusCurrentCard() {
+        if (!cards || !cards.activeFocus || !root.visible || !root.interactionAllowed || (cards.currentItem && cards.currentItem.activeFocus))
+            return;
+        const row = Math.max(0, cards.currentIndex);
+        if (!focusCard(row, 1) && !focusCard(row - 1, -1))
+            leaveCardsForward();
+    }
     RowLayout {
         Layout.fillWidth: true
         ColumnLayout {
@@ -41,6 +78,7 @@ ColumnLayout {
             }
         }
         AccessibleTransportButton {
+            id: seeQueue
             objectName: "home-see-queue"
             contract: root.contract
             text: labels.seeQueue
@@ -60,6 +98,15 @@ ColumnLayout {
         spacing: 19
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        activeFocusOnTab: true
+        onActiveFocusChanged: {
+            if (activeFocus)
+                Qt.callLater(root.focusCurrentCard);
+        }
+        onCurrentItemChanged: {
+            if (activeFocus)
+                Qt.callLater(root.focusCurrentCard);
+        }
         ScrollBar.horizontal: AccessibleScrollBar {
             contract: root.contract
         }
@@ -76,7 +123,7 @@ ColumnLayout {
             height: cards.height
             padding: 0
             enabled: root.interactionAllowed && available
-            activeFocusOnTab: true
+            activeFocusOnTab: false
             Accessible.role: Accessible.Button
             Accessible.name: labels.playTrack.arg(displayTitle)
             Accessible.onPressAction: card.clicked()
@@ -89,6 +136,16 @@ ColumnLayout {
             onClicked: {
                 if (enabled)
                     root.playRequested(occurrenceId);
+            }
+            Keys.onTabPressed: event => {
+                if (!root.focusCard(index + 1, 1))
+                    root.leaveCardsForward();
+                event.accepted = true;
+            }
+            Keys.onBacktabPressed: event => {
+                if (!root.focusCard(index - 1, -1))
+                    seeQueue.forceActiveFocus(Qt.BacktabFocusReason);
+                event.accepted = true;
             }
             Keys.onReturnPressed: event => {
                 if (enabled)

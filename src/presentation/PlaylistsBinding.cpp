@@ -403,6 +403,14 @@ bool PlaylistsBinding::requestReplaceFile(const QString& playlist_value, const Q
     emit changed();
     return true;
 }
+void PlaylistsBinding::cancelFileSelection() {
+    if (!impl_->file_selection)
+        return;
+    const QPointer<PlaylistsBinding> alive(this);
+    impl_->cancelFileSelection();
+    if (alive)
+        emit changed();
+}
 bool PlaylistsBinding::removeEntry(const QString& playlist, const QString& entry) {
     const auto id = identifier(playlist), entry_id = identifier(entry);
     return id && entry_id && impl_->mutate([&](auto& candidate) { return candidate.removeEntry(*id, *entry_id); }, *id);

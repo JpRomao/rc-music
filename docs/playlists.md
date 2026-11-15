@@ -30,6 +30,8 @@ O painel mostra a operação de salvamento e só publica a edição nas listas a
 
 O seletor de arquivos abre de forma assíncrona e vincula a seleção à playlist escolhida. Cancelar o diálogo, trocar o alvo ou iniciar a saída invalida a seleção pendente. Após a confirmação dos arquivos, o salvamento segue o mesmo fluxo das outras edições.
 
+Na [composição Aurora nova](superpowers/specs/2026-11-15-aurora-shell-design.md), sair da página ou trocar seu binding também revoga o seletor/localizador pendente, inclusive se a resposta chegar depois e o owner anterior continuar vivo. Isso não descarta nem cancela uma gravação já aceita. O novo contrato foi exercitado no binding real com portas controladas; a interação física com o diálogo nativo e a jornada instalada continuam pendentes.
+
 **Localizar arquivo…** abre um seletor de um único arquivo e vincula o resultado à entrada escolhida. O novo caminho só aparece após a confirmação do salvamento. Use **Adicionar à fila** para incluir as faixas com os caminhos atualizados.
 
 Se o salvamento falhar, **Tentar salvar** submete novamente a mesma edição. **Recarregar do disco** só substitui o catálogo exibido e descarta a edição pendente após uma leitura válida. Se a leitura falhar, a edição continua disponível em memória e o catálogo confirmado permanece visível com a seleção atual. Uma gravação sem confirmação pode já estar no disco e reaparecer após uma recarga bem-sucedida.
