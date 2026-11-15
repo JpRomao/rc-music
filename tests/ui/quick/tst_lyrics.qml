@@ -324,14 +324,32 @@ TestCase {
     function test_lyricsKeepPlayingContentInsideTheMinimumWindow() {
         shell.width = 720;
         shell.height = 520;
-        wait(0);
+        tryCompare(shell.contentItem, "height", 520);
+        verify(waitForPolish(shell));
         const playing = findChild(shell, "playing-state");
         const layer = findChild(shell, "state-layer");
         verify(playing && layer);
-        const contentTop = playing.mapToItem(layer, 0, 0).y;
-        const contentBottom = playing.mapToItem(layer, 0, playing.height).y;
-        verify(contentTop >= 0, "Playing content starts above its area");
-        verify(contentBottom <= layer.height, "Playing content overlaps lyrics");
+        if (shell.inlinePages) {
+            verify(layer.clip && layer.interactive, "The editorial home scrolls inside its clipped viewport");
+            const panel = findChild(shell, "lyrics-panel");
+            verify(layer.mapToItem(shell.contentItem, 0, layer.height).y <= panel.mapToItem(shell.contentItem, 0, 0).y, "The actual home viewport must not overlap lyrics");
+            for (const name of ["open-another-audio", "track-details-playing"]) {
+                const action = findChild(shell, name);
+                action.forceActiveFocus(Qt.TabFocusReason);
+                tryCompare(action, "activeFocus", true);
+                verify(waitForPolish(shell));
+                tryVerify(() => {
+                    const p = action.mapToItem(layer, 0, 0);
+                    return p.y >= 0 && p.y + action.height <= layer.height + 1;
+                }, 5000, name + " must be revealed above lyrics");
+                verify(action.width >= 40 && action.height >= 40);
+            }
+        } else {
+            const contentTop = playing.mapToItem(layer, 0, 0).y;
+            const contentBottom = playing.mapToItem(layer, 0, playing.height).y;
+            verify(contentTop >= 0, "Playing content starts above its area");
+            verify(contentBottom <= layer.height, "Playing content overlaps lyrics");
+        }
     }
     function test_searchDialogDisablesPlayerShortcutsAndClosesOnTrackChange() {
         mouseClick(findChild(shell, "lyrics-search"));

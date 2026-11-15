@@ -95,6 +95,7 @@ ApplicationWindow {
     }
     onActiveFocusItemChanged: {
         sideNavigation.revealFocus(activeFocusItem);
+        revealHomeFocus(activeFocusItem);
         if (activeFocusItem && !isPassiveFocusFallback(activeFocusItem))
             lastActiveFocusItem = activeFocusItem;
     }
@@ -106,6 +107,21 @@ ApplicationWindow {
             item = item.parent;
         }
         return false;
+    }
+
+    function revealHomeFocus(item) {
+        if (!window.inlinePages || window.currentPage !== "home" || !item || !window.isInside(item, stateLayer))
+            return;
+        const point = item.mapToItem(stateLayer.contentItem, 0, 0);
+        if (point.y < stateLayer.contentY)
+            stateLayer.contentY = Math.max(0, point.y);
+        else if (point.y + item.height > stateLayer.contentY + stateLayer.height)
+            stateLayer.contentY = Math.max(0, Math.min(stateLayer.contentHeight - stateLayer.height, point.y + item.height - stateLayer.height));
+    }
+
+    function refreshHomeFocus() {
+        if (window)
+            window.revealHomeFocus(window.activeFocusItem);
     }
 
     function playbackFocusScope(state) {
@@ -354,8 +370,10 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: playerFooter.top
-        width: compact ? 144 : 224
-        compact: window.width < 1000
+        width: window.inlinePages ? (window.width <= 900 ? 68 : (window.width <= 1200 ? 196 : 224)) : (compact ? 144 : 224)
+        compact: window.inlinePages ? window.width <= 900 : window.width < 1000
+        editorial: window.inlinePages
+        themeHost: window.inlinePages ? workspaceHeader.themeHost : null
         contract: window.uiContract
         queueAvailable: window.presenter.queueLoaded
         queueActive: window.queuePageActive
@@ -387,18 +405,31 @@ ApplicationWindow {
                 browserError.open();
         }
     }
+    WorkspaceHeader {
+        id: workspaceHeader
+        anchors.left: sideNavigation.right
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: implicitHeight
+        visible: window.inlinePages
+        contract: window.uiContract
+        compact: window.width <= 900
+        pageTitle: window.currentPage === "home" ? navigationText.home : (window.currentPage === "queue" ? window.uiContract.queueTitle : (window.currentPage === "playlists" ? navigationText.playlists : (window.currentPage === "downloads" ? downloadText.title : window.uiContract.preferencesTitle)))
+    }
     ColumnLayout {
         id: mainLayout
         anchors.left: sideNavigation.right
         anchors.right: parent.right
-        anchors.top: parent.top
+        anchors.top: window.inlinePages ? workspaceHeader.bottom : parent.top
         anchors.bottom: playerFooter.top
-        anchors.margins: window.uiContract.spacingUnit * 6
+        anchors.margins: window.inlinePages ? 30 : window.uiContract.spacingUnit * 6
+        anchors.leftMargin: window.inlinePages ? (window.width <= 900 ? 23 : 38) : window.uiContract.spacingUnit * 6
+        anchors.rightMargin: window.inlinePages ? (window.width <= 900 ? 23 : 38) : window.uiContract.spacingUnit * 6
         Item {
             id: contentArea
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Item {
+            Flickable {
                 id: stateLayer
                 objectName: "state-layer"
                 visible: !window.queuePageActive && (!window.inlinePages || window.currentPage === "home")
@@ -407,11 +438,79 @@ ApplicationWindow {
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
+                contentWidth: width
+                contentHeight: window.inlinePages ? Math.max(height, homeLayout.implicitHeight) : height
+                interactive: window.inlinePages
+                boundsBehavior: Flickable.StopAtBounds
+                flickableDirection: Flickable.VerticalFlick
+                clip: true
+                onHeightChanged: {
+                    if (window)
+                        Qt.callLater(window.refreshHomeFocus);
+                }
+                onContentHeightChanged: {
+                    if (window)
+                        Qt.callLater(window.refreshHomeFocus);
+                }
+                ScrollBar.vertical: AccessibleScrollBar {
+                    contract: window.uiContract
+                }
+                ColumnLayout {
+                    id: homeLayout
+                    width: stateLayer.width
+                    spacing: 28
+                    visible: window.inlinePages
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        Text {
+                            objectName: "home-heading"
+                            Layout.fillWidth: true
+                            text: navigationText.heading
+                            font.family: window.uiContract.headingFontFamily
+                            font.pixelSize: 36
+                            color: window.uiContract.textPrimaryColor
+                            textFormat: Text.PlainText
+                            wrapMode: Text.WordWrap
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: navigationText.pageDescription
+                            font.family: window.uiContract.bodyFontFamily
+                            font.pixelSize: 14
+                            color: window.uiContract.textSecondaryColor
+                            textFormat: Text.PlainText
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                    Rectangle {
+                        id: heroRegion
+                        objectName: "home-hero"
+                        Layout.fillWidth: true
+                        implicitHeight: (window.presenter.playbackState === PlayerPresenter.Unloaded ? emptyState.implicitHeight : (window.presenter.playbackState === PlayerPresenter.Error ? errorState.implicitHeight : nowPlayingState.implicitHeight)) + 44
+                        color: window.uiContract.surfaceColor
+                        radius: window.uiContract.radiusMedium
+                        border.width: 1
+                        border.color: window.uiContract.borderColor
+                    }
+                    QueuePreview {
+                        id: queuePreview
+                        Layout.fillWidth: true
+                        visible: count > 0
+                        contract: window.uiContract
+                        model: window.inlinePages ? window.presenter.queueModel : null
+                        currentOccurrenceId: window.presenter.currentOccurrenceId
+                        currentArtworkSource: window.presenter.currentArtworkSource
+                        interactionAllowed: !window.presenter.exiting && !window.presenter.selectingAudioFiles && window.presenter.locatingOccurrenceId.length === 0
+                        onQueueRequested: window.setQueueOpen(true)
+                        onPlayRequested: occurrenceId => window.presenter.playQueueOccurrence(occurrenceId)
+                    }
+                }
                 Text {
                     anchors.top: parent.top
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    visible: parent.height > 500
+                    visible: !window.inlinePages && parent.height > 500
                     text: navigationText.heading
                     textFormat: Text.PlainText
                     font.family: window.uiContract.headingFontFamily
@@ -421,8 +520,12 @@ ApplicationWindow {
                 }
                 EmptyState {
                     id: emptyState
-                    anchors.centerIn: parent
-                    width: Math.min(parent.width > 0 ? parent.width : 560, 560)
+                    parent: window.inlinePages ? heroRegion : stateLayer.contentItem
+                    anchors.centerIn: window.inlinePages ? undefined : parent
+                    x: window.inlinePages ? 22 : 0
+                    y: window.inlinePages ? 22 : 0
+                    width: window.inlinePages ? Math.max(0, parent.width - 44) : Math.min(parent.width > 0 ? parent.width : 560, 560)
+                    editorial: window.inlinePages
                     compact: stateLayer.height < 400
                     visible: window.presenter.playbackState === PlayerPresenter.Unloaded
                     contract: window.uiContract
@@ -431,8 +534,11 @@ ApplicationWindow {
                 }
                 NowPlayingState {
                     id: nowPlayingState
-                    anchors.centerIn: parent
-                    width: Math.min(parent.width, 560)
+                    parent: window.inlinePages ? heroRegion : stateLayer.contentItem
+                    anchors.centerIn: window.inlinePages ? undefined : parent
+                    x: window.inlinePages ? 22 : 0
+                    y: window.inlinePages ? 22 : 0
+                    width: window.inlinePages ? Math.max(0, parent.width - 44) : Math.min(parent.width, 560)
                     visible: window.presenter.playbackState !== PlayerPresenter.Unloaded && window.presenter.playbackState !== PlayerPresenter.Error
                     contract: window.uiContract
                     presenter: window.presenter
@@ -442,7 +548,11 @@ ApplicationWindow {
                 }
                 ErrorState {
                     id: errorState
-                    anchors.centerIn: parent
+                    parent: window.inlinePages ? heroRegion : stateLayer.contentItem
+                    anchors.centerIn: window.inlinePages ? undefined : parent
+                    x: window.inlinePages ? 22 : 0
+                    y: window.inlinePages ? 22 : 0
+                    width: window.inlinePages ? Math.max(0, parent.width - 44) : implicitWidth
                     visible: window.presenter.playbackState === PlayerPresenter.Error
                     contract: window.uiContract
                     presenter: window.presenter
@@ -502,7 +612,7 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: transport.implicitHeight + footerTitle.implicitHeight + window.uiContract.spacingUnit * 8
+        height: window.inlinePages ? Math.max(transport.implicitHeight, playerIdentity.implicitHeight) + 24 : transport.implicitHeight + footerTitle.implicitHeight + window.uiContract.spacingUnit * 8
         color: window.uiContract.surfaceColor
         Rectangle {
             width: parent.width
@@ -514,27 +624,66 @@ ApplicationWindow {
             id: transport
             objectName: "transport-bar"
             pageReturnFocusItem: window.pageReturnFocusItem
-            anchors.left: parent.left
+            anchors.left: window.inlinePages ? playerIdentity.right : parent.left
             anchors.right: parent.right
-            anchors.bottom: parent.bottom
+            anchors.bottom: window.inlinePages ? undefined : parent.bottom
+            anchors.verticalCenter: window.inlinePages ? parent.verticalCenter : undefined
             anchors.margins: window.uiContract.spacingUnit * 3
+            anchors.leftMargin: window.inlinePages ? 24 : window.uiContract.spacingUnit * 3
+            anchors.rightMargin: window.inlinePages ? (window.width <= 900 ? 18 : 28) : window.uiContract.spacingUnit * 3
             contract: window.uiContract
             presenter: window.presenter
             enabled: !window.presenter.exiting && (playbackEnabled || window.presenter.canGoPrevious || window.presenter.canGoNext)
         }
-        Text {
-            id: footerTitle
-            objectName: "player-track-title"
-            font: window.font
-            anchors.left: transport.left
-            anchors.right: transport.right
-            anchors.top: parent.top
+        Item {
+            id: playerIdentity
+            objectName: "player-identity"
+            anchors.left: parent.left
+            anchors.leftMargin: window.inlinePages ? (window.width <= 900 ? 18 : 28) : window.uiContract.spacingUnit * 3
+            anchors.top: window.inlinePages ? undefined : parent.top
             anchors.topMargin: window.uiContract.spacingUnit * 3
-            text: window.presenter.hasCurrentTrack ? window.presenter.currentTitle + (window.presenter.currentArtist.length > 0 ? " · " + window.presenter.currentArtist : "") : window.uiContract.emptyTitle
-            textFormat: Text.PlainText
-            elide: Text.ElideRight
-            color: window.uiContract.textPrimaryColor
-            Accessible.name: text
+            anchors.verticalCenter: window.inlinePages ? parent.verticalCenter : undefined
+            width: window.inlinePages ? (window.width <= 900 ? 160 : 220) : parent.width - window.uiContract.spacingUnit * 6
+            implicitHeight: window.inlinePages ? (window.width <= 900 ? 44 : 56) : footerTitle.implicitHeight
+            TrackArtwork {
+                id: footerArtwork
+                objectName: "player-artwork"
+                visible: window.inlinePages
+                width: parent.height
+                height: width
+                contract: window.uiContract
+                source: window.presenter.currentArtworkSource
+            }
+            Text {
+                id: footerTitle
+                objectName: "player-track-title"
+                font: window.font
+                anchors.left: window.inlinePages ? footerArtwork.right : parent.left
+                anchors.leftMargin: window.inlinePages ? 12 : 0
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.topMargin: window.inlinePages ? (window.width <= 900 ? 4 : 10) : 0
+                text: window.presenter.hasCurrentTrack ? window.presenter.currentTitle + (!window.inlinePages && window.presenter.currentArtist.length > 0 ? " · " + window.presenter.currentArtist : "") : window.uiContract.emptyTitle
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: window.uiContract.textPrimaryColor
+                Accessible.name: text
+            }
+            Text {
+                objectName: "player-track-artist"
+                anchors.left: footerTitle.left
+                anchors.right: parent.right
+                anchors.top: footerTitle.bottom
+                anchors.topMargin: 4
+                visible: window.inlinePages
+                text: window.presenter.currentArtist.length > 0 ? window.presenter.currentArtist : navigationText.localAudio
+                font.family: window.uiContract.bodyFontFamily
+                font.pixelSize: 12
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: window.uiContract.textSecondaryColor
+                Accessible.name: text
+            }
         }
     }
 

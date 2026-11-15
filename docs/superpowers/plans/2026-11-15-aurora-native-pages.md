@@ -48,15 +48,15 @@
 - [x] **Step 2: Executar o arquivo contra o produto atual** com ambiente real do registro `rc_music.ui.quick`, capturando Red comportamental (páginas ainda modais/ausência de currentPage), não erro de import/compilação.
 - [x] **Step 3: Implementar `PageSurface` e migrar os três hosts**. Preservar o corpo e a lógica de cada formulário; renomear handlers de abertura para `onSurfaceOpened`. Inline não cria o Dialog legado; fechar emite invalidações existentes antes de ocultar. Remover ciclos Tab exclusivos do modal somente no modo inline; transientes continuam iguais. Distinguir bloqueio modal de foco dentro de formulário em Main e proteger restaurações tardias contra a página selecionada.
 - [x] **Step 4: Executar novo arquivo e consumidores** `tst_playlists.qml`, `tst_downloads.qml`, `tst_preferences.qml`, `tst_lifecycle_transitions.qml`, `tst_primary_keyboard.qml`, `tst_audio_file_selection.qml`; atualizar apenas asserts da modalidade deliberadamente alterada, mantendo todos os asserts de dados/ações/consentimentos. Esperado: seleção positiva, zero falhas/warnings.
-- [ ] **Step 5: Revisar diff e commitar** `refactor: integrar as áreas musicais em páginas nativas` com contrato/documentação relacionada; não incluir outputs.
+- [x] **Step 5: Revisar diff e commitar** `refactor: integrar as áreas musicais em páginas nativas` com contrato/documentação relacionada; não incluir outputs. Commit `26e2f0e`.
 
 ### Task 2: Composição editorial Aurora e player compacto persistente
 
 **Files:**
-- Create: `src/ui/qml/TrackArtwork.qml`, `NavigationButton.qml`, `QueuePreview.qml`.
-- Modify: `src/ui/qml/Main.qml`, `SideNavigation.qml`, `NavigationText.qml`, `NowPlayingState.qml`, `EmptyState.qml`, `TransportBar.qml`, `TransportText.qml`.
+- Create: `src/ui/qml/TrackArtwork.qml`, `NavigationButton.qml`, `WorkspaceHeader.qml`, `QueuePreview.qml`.
+- Modify: `src/ui/qml/Main.qml`, `SideNavigation.qml`, `NavigationText.qml`, `NowPlayingState.qml`, `EmptyState.qml`, `TransportBar.qml`, `AccessibleTransportButton.qml`; reutilizar `TransportText.qml`/`QueueText.qml` existentes.
 - Modify: `cmake/RcMusicUi.cmake`.
-- Test: `tests/ui/quick/tst_aurora_navigation.qml`, `tst_aurora_pages.qml` e novo `tst_aurora_composition.qml`.
+- Test: `tests/ui/quick/tst_aurora_navigation.qml`, `tst_aurora_pages.qml`, `tst_metadata_layout.qml`, `tst_lyrics.qml` e novo `tst_aurora_composition.qml`.
 
 **Interfaces:**
 - Consumes: Task1 `Main.currentPage` e páginas inline; dados atuais `currentTitle/Artist/Album/ArtworkSource`, `queueModel` com roles `occurrenceId,title,fileName,artist,album,durationMs,available`, estados do presenter e `playlists.playlists` `{id,name,count}`.
@@ -65,10 +65,10 @@
 - Produces: `QueuePreview` lista horizontal virtualizada de ocorrências reais, `model` e `contract`, `currentOccurrenceId/currentArtworkSource` e sinal `playRequested(string occurrenceId)`; chamada de áudio somente por ação explícita de reprodução, nunca por renderização.
 - Produces: cabeçalho nativo com contexto e tema, início rolável com destaque horizontal e prateleira da fila; `TransportBar` conserva API e lógica de seek/volume, reorganizando controles/tempos/progresso/volume. Rodapé com identidade fixa, capa e artista.
 
-- [ ] **Step 1: Escrever `test_editorialHomeShowsRealQueueAndKeepsIdentity`, `test_headerHeroAndFooterUseSeparateResponsiveRegions`, `test_queueCardsKeepExactOccurrenceIdentity`**. Em 1440×900 exigir cabeçalho, hero horizontal e fila real na mesma inicial; em 720×520 exigir conteúdo rolável e todos os controles alcançáveis ≥40px. Atualizar fila com duplicatas/remoção e afirmar contagem/ordem por ID, sem comandos no render/tema/navegação. Testar Unicode/arte ausente e não duplicar a arte atual em outro cartão.
-- [ ] **Step 2: Executar Red focado antes das mudanças** pelo registro Quick; ausência de cabeçalho/hero/prateleira deve falhar como comportamento ausente.
-- [ ] **Step 3: Implementar composição**. Lateral224px ampla/196px média/68px compacta, cabeçalho78/66px, margens38/23px, títulos Georgia36px; hero capa204/130px e texto à esquerda. Exibir somente prateleiras sustentadas por dados reais. Rodapé próximo de112px em ampla e altura implícita maior em compacta, sem reduzir alvos. Preservar render/layout congelado quando `usesFrozenFixture`.
-- [ ] **Step 4: Executar novos testes e consumidores de navegação/transporte/metadata/HC/lyrics**; capturar claro/escuro/compacto com o próprio Qt Quick e inspecionar as imagens. Esperado: nenhum comando extra de áudio, controles contidos e contraste válido nos fundos reais.
+- [x] **Step 1: Escrever `test_editorialHomeShowsRealQueueAndKeepsIdentity`, `test_headerHeroAndFooterUseSeparateResponsiveRegions`, `test_queueCardsKeepExactOccurrenceIdentity`**. Em 1440×900 exigir cabeçalho, hero horizontal e fila real na mesma inicial; em 720×520 exigir conteúdo rolável e todos os controles alcançáveis ≥40px. Atualizar fila com duplicatas/remoção e afirmar contagem/ordem por ID, sem comandos no render/tema/navegação. Testar Unicode/arte ausente e não duplicar a arte atual em outro cartão.
+- [x] **Step 2: Executar Red focado antes das mudanças** pelo registro Quick; ausência de cabeçalho/hero/prateleira deve falhar como comportamento ausente.
+- [x] **Step 3: Implementar composição**. Lateral224px ampla/196px média/68px compacta, cabeçalho78/66px, margens38/23px, títulos Georgia36px; hero capa204/130px e texto à esquerda. Exibir somente prateleiras sustentadas por dados reais. Rodapé próximo de112px em ampla e altura implícita maior em compacta, sem reduzir alvos. Preservar render/layout congelado quando `usesFrozenFixture`.
+- [x] **Step 4: Executar novos testes e consumidores de navegação/transporte/metadata/HC/lyrics**; capturar claro/escuro/compacto com o próprio Qt Quick e inspecionar as imagens. Esperado: nenhum comando extra de áudio, controles contidos e contraste válido nos fundos reais.
 - [ ] **Step 5: Revisar diff e commitar** `feat: aproximar a composição nativa do Aurora`.
 
 ### Task 3: Integração visual nativa, evidências e revisão independente

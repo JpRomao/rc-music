@@ -88,7 +88,10 @@ TestCase {
         compare(findChild(shell, "current-album").text, "");
         const placeholder = findChild(shell, "cover-track");
         verify(placeholder.visible);
-        tryCompare(placeholder, "status", Image.Ready);
+        compare(placeholder.source.toString(), "");
+        compare(findChild(shell, "embedded-artwork").source.toString(), "");
+        verify(!findChild(shell, "embedded-artwork").visible);
+        verify(placeholder.width > 0 && placeholder.height > 0, "The native placeholder must have real geometry without a fixture image");
         verify(waitForPolish(shell));
         const initial = geometry(shell);
 

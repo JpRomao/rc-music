@@ -3,13 +3,22 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import MusicPlayer.M0
 
-ColumnLayout {
+GridLayout {
     id: root
     objectName: "transport-bar"
     required property ShellUiContract contract
     required property PlayerPresenter presenter
     property alias primaryControl: playPause
     property Item pageReturnFocusItem: null
+    readonly property bool editorial: !presenter.usesFrozenFixture
+    readonly property bool spread: editorial && width >= 680
+    readonly property bool queueModesAvailable: editorial && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    columns: spread ? 2 : 1
+    columnSpacing: editorial ? 24 : 0
+    rowSpacing: editorial ? 4 : 5
+    QueueText {
+        id: queueLabels
+    }
     TransportText {
         id: labels
     }
@@ -52,6 +61,8 @@ ColumnLayout {
     Item {
         id: progressArea
         objectName: "progress-tooltip-area"
+        Layout.row: root.editorial ? 1 : 0
+        Layout.column: 0
         Layout.fillWidth: true
         implicitWidth: progress.implicitWidth
         implicitHeight: progress.implicitHeight
@@ -69,6 +80,8 @@ ColumnLayout {
             id: progress
             objectName: "progress"
             anchors.fill: parent
+            anchors.leftMargin: root.editorial ? 52 : 0
+            anchors.rightMargin: root.editorial ? 52 : 0
             contract: root.contract
             property bool dragStarted: false
             property bool synchronizingValue: false
@@ -146,26 +159,54 @@ ColumnLayout {
             }
         }
     }
-    RowLayout {
+    Item {
+        parent: root.editorial ? progressArea : root
+        implicitWidth: root.editorial ? progressArea.width : timeLabels.implicitWidth
+        implicitHeight: root.editorial ? progressArea.height : timeLabels.implicitHeight
+        Layout.row: 1
+        Layout.column: 0
         Layout.fillWidth: true
-        Text {
-            objectName: "elapsed-time"
-            font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.bodyFontFamily
-            text: root.formattedTime(root.presenter.positionMs)
-            color: root.contract.textSecondaryColor
-        }
-        Item {
-            Layout.fillWidth: true
-        }
-        Text {
-            objectName: "duration-time"
-            font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.bodyFontFamily
-            text: root.formattedTime(root.presenter.durationMs)
-            color: root.contract.textSecondaryColor
+        RowLayout {
+            id: timeLabels
+            anchors.fill: parent
+            Text {
+                objectName: "elapsed-time"
+                font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.bodyFontFamily
+                text: root.formattedTime(root.presenter.positionMs)
+                color: root.contract.textSecondaryColor
+            }
+            Item {
+                Layout.fillWidth: true
+            }
+            Text {
+                objectName: "duration-time"
+                font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.bodyFontFamily
+                text: root.formattedTime(root.presenter.durationMs)
+                color: root.contract.textSecondaryColor
+            }
         }
     }
     RowLayout {
+        id: controlsRow
+        Layout.row: root.editorial ? 0 : 2
+        Layout.column: 0
         Layout.alignment: Qt.AlignHCenter
+        AccessibleTransportButton {
+            objectName: "player-shuffle"
+            visible: root.editorial
+            enabled: root.queueModesAvailable
+            checkable: true
+            checked: root.presenter.shuffleQueueEnabled
+            contract: root.contract
+            text: "⇄"
+            font.family: root.contract.symbolFontFamily
+            accessibleName: queueLabels.shuffle
+            shortcutHint: queueLabels.shortcutShuffle
+            onClicked: {
+                if (enabled)
+                    root.presenter.toggleShuffleQueue();
+            }
+        }
         AccessibleTransportButton {
             id: previousTrack
             objectName: "previous"
@@ -191,6 +232,7 @@ ColumnLayout {
         AccessibleTransportButton {
             id: playPause
             objectName: "play-pause"
+            primary: root.editorial
             KeyNavigation.backtab: null
             Keys.onBacktabPressed: event => {
                 const target = root.pageReturnFocusItem;
@@ -231,6 +273,30 @@ ColumnLayout {
             shortcutHint: labels.nextShortcut
             onClicked: root.presenter.nextTrack()
         }
+        AccessibleTransportButton {
+            objectName: "player-repeat"
+            visible: root.editorial
+            enabled: root.queueModesAvailable
+            checkable: true
+            checked: root.presenter.repeatQueueEnabled
+            contract: root.contract
+            text: "↻"
+            font.family: root.contract.symbolFontFamily
+            accessibleName: queueLabels.repeat
+            shortcutHint: queueLabels.shortcutRepeat
+            onClicked: {
+                if (enabled)
+                    root.presenter.toggleRepeatQueue();
+            }
+        }
+    }
+    RowLayout {
+        id: volumeControls
+        parent: root.editorial ? root : controlsRow
+        Layout.row: root.spread ? 0 : 2
+        Layout.column: root.spread ? 1 : 0
+        Layout.rowSpan: root.spread ? 2 : 1
+        Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
         AccessibleTransportButton {
             objectName: "mute"
             enabled: root.playbackEnabled

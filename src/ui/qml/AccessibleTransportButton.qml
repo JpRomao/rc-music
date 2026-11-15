@@ -9,6 +9,7 @@ Button {
     property string accessibleName: text
     property string shortcutHint: ""
     property string disabledReason: ""
+    property bool primary: false
     readonly property string accessibleDescription: !enabled && disabledReason.length > 0 ? disabledReason : shortcutHint
     readonly property string toolTipText: !enabled && disabledReason.length > 0 ? accessibleName + " — " + disabledReason : accessibleName + (shortcutHint.length > 0 ? " (" + shortcutHint + ")" : "")
     readonly property bool contrastHighlighted: contract.highContrast && enabled && (hovered || down || checked)
@@ -35,10 +36,20 @@ Button {
         event.accepted = true;
     }
     background: Rectangle {
-        color: control.contract.highContrast ? (control.contrastHighlighted ? control.contract.accentColor : control.contract.surfaceColor) : (control.enabled ? (control.checked ? control.contract.surfaceRaisedColor : control.contract.surfaceColor) : "transparent")
-        radius: control.contract.radiusSmall
+        color: control.contract.highContrast ? (control.contrastHighlighted ? control.contract.accentColor : control.contract.surfaceColor) : (control.enabled ? (control.primary ? control.contract.accentColor : (control.checked ? control.contract.surfaceRaisedColor : control.contract.surfaceColor)) : "transparent")
+        radius: control.primary ? height / 2 : control.contract.radiusSmall
         border.width: control.activeFocus ? 3 : (control.checked ? 2 : 1)
-        border.color: control.contract.highContrast ? (!control.enabled ? control.contract.disabledTextColor : (control.contrastHighlighted ? control.contract.accentTextColor : control.contract.focusColor)) : (control.activeFocus ? control.contract.focusColor : (control.checked ? control.contract.accentColor : control.contract.borderColor))
+        border.color: control.contract.highContrast ? (!control.enabled ? control.contract.disabledTextColor : (control.contrastHighlighted ? control.contract.accentTextColor : control.contract.focusColor)) : (control.activeFocus ? (control.primary ? control.contract.accentTextColor : control.contract.focusColor) : (control.checked ? control.contract.accentColor : control.contract.borderColor))
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -5
+            visible: control.primary && control.activeFocus
+            color: "transparent"
+            border.width: 2
+            border.color: control.contract.focusColor
+            radius: height / 2
+            Accessible.ignored: true
+        }
         Rectangle {
             objectName: "hover-feedback"
             anchors.fill: parent
@@ -58,7 +69,7 @@ Button {
     contentItem: Text {
         text: control.text
         font: control.font
-        color: control.contract.highContrast && !control.enabled ? control.contract.disabledTextColor : (control.contrastHighlighted ? control.contract.accentTextColor : control.contract.textPrimaryColor)
+        color: control.contract.highContrast && !control.enabled ? control.contract.disabledTextColor : (control.contrastHighlighted || (control.primary && !control.contract.highContrast && control.enabled) ? control.contract.accentTextColor : control.contract.textPrimaryColor)
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         topPadding: control.down ? 2 : 0

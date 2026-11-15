@@ -8,6 +8,8 @@ Rectangle {
     objectName: "side-navigation"
     required property ShellUiContract contract
     property bool compact: false
+    property bool editorial: false
+    property Item themeHost: null
     property bool queueAvailable: false
     property bool queueActive: false
     property string activePage: ""
@@ -81,15 +83,16 @@ Rectangle {
             id: navigationLayout
             width: navigationFlick.width
             height: navigationFlick.contentHeight
-            spacing: root.contract.spacingUnit * 2
+            spacing: root.editorial ? 5 : root.contract.spacingUnit * 2
             Text {
                 objectName: "navigation-brand"
                 Layout.fillWidth: true
-                text: root.contract.appName
+                text: root.editorial && root.compact ? root.contract.appName.split(" ")[0] : root.contract.appName
+                Accessible.name: root.contract.appName
                 textFormat: Text.PlainText
                 font.family: root.contract.headingFontFamily
-                font.pixelSize: root.compact ? 22 : 28
-                font.bold: true
+                font.pixelSize: root.editorial ? (root.compact ? 22 : 25) : (root.compact ? 22 : 28)
+                font.bold: !root.editorial
                 color: root.contract.textPrimaryColor
                 elide: Text.ElideRight
             }
@@ -105,8 +108,11 @@ Rectangle {
                 font.letterSpacing: 1
                 color: root.contract.textSecondaryColor
             }
-            AccessibleTransportButton {
+            NavigationButton {
                 id: nowAction
+                glyph: "⌂"
+                editorial: root.editorial
+                compact: root.compact
                 objectName: "now"
                 KeyNavigation.tab: null
                 KeyNavigation.backtab: null
@@ -121,7 +127,7 @@ Rectangle {
                 }
                 Layout.fillWidth: true
                 contract: root.contract
-                text: labels.now
+                text: root.editorial ? labels.home : labels.now
                 checkable: true
                 checked: root.activePage.length > 0 ? root.activePage === "home" : !root.queueActive
                 enabled: !root.exiting
@@ -129,8 +135,11 @@ Rectangle {
                 Accessible.checked: checked
                 onClicked: root.nowRequested()
             }
-            AccessibleTransportButton {
+            NavigationButton {
                 id: queueAction
+                glyph: "≡"
+                editorial: root.editorial
+                compact: root.compact
                 objectName: "queue"
                 KeyNavigation.tab: null
                 KeyNavigation.backtab: null
@@ -144,8 +153,11 @@ Rectangle {
                 Accessible.checked: checked
                 onClicked: root.queueRequested()
             }
-            AccessibleTransportButton {
+            NavigationButton {
                 id: playlistsAction
+                glyph: "▤"
+                editorial: root.editorial
+                compact: root.compact
                 objectName: "playlists"
                 KeyNavigation.tab: null
                 KeyNavigation.backtab: null
@@ -158,8 +170,11 @@ Rectangle {
                 enabled: visible && !root.exiting
                 onClicked: root.playlistsRequested()
             }
-            AccessibleTransportButton {
+            NavigationButton {
                 id: downloadsAction
+                glyph: "↓"
+                editorial: root.editorial
+                compact: root.compact
                 objectName: "downloads"
                 KeyNavigation.tab: null
                 KeyNavigation.backtab: null
@@ -172,8 +187,11 @@ Rectangle {
                 enabled: visible && (!root.exiting || root.downloadsExitRecovery)
                 onClicked: root.downloadsRequested()
             }
-            AccessibleTransportButton {
+            NavigationButton {
                 id: browserAction
+                glyph: "↗"
+                editorial: root.editorial
+                compact: root.compact
                 objectName: "embedded-browser"
                 KeyNavigation.tab: null
                 KeyNavigation.backtab: null
@@ -187,20 +205,29 @@ Rectangle {
             Item {
                 Layout.fillHeight: true
             }
-            AccessibleTransportButton {
-                id: themeAction
-                objectName: "theme-toggle"
-                KeyNavigation.tab: null
-                KeyNavigation.backtab: null
+            Item {
+                parent: root.themeHost !== null ? root.themeHost : navigationLayout
+                implicitWidth: root.themeHost !== null ? root.themeHost.width : themeAction.implicitWidth
+                implicitHeight: root.themeHost !== null ? root.themeHost.height : themeAction.implicitHeight
                 Layout.fillWidth: true
-                contract: root.contract
-                text: root.contract.darkTheme ? root.contract.themeLight : root.contract.themeDark
-                accessibleName: root.contract.darkTheme ? labels.themeLight : labels.themeDark
-                enabled: !root.exiting
-                onClicked: root.themeRequested()
+                AccessibleTransportButton {
+                    id: themeAction
+                    objectName: "theme-toggle"
+                    anchors.fill: parent
+                    KeyNavigation.tab: null
+                    KeyNavigation.backtab: null
+                    contract: root.contract
+                    text: root.contract.darkTheme ? root.contract.themeLight : root.contract.themeDark
+                    accessibleName: root.contract.darkTheme ? labels.themeLight : labels.themeDark
+                    enabled: !root.exiting
+                    onClicked: root.themeRequested()
+                }
             }
-            AccessibleTransportButton {
+            NavigationButton {
                 id: preferencesAction
+                glyph: "⚙"
+                editorial: root.editorial
+                compact: root.compact
                 objectName: "preferences"
                 KeyNavigation.tab: null
                 KeyNavigation.backtab: null
