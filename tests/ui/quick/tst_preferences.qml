@@ -115,6 +115,29 @@ TestCase {
         verify(point.y + control.height <= shell.height + 0.5);
     }
     function verifyFocusCycle(items) {
+        const page = findChild(shell, "preferences-panel");
+        if (page.embedded) {
+            const close = findChild(shell, "preferences-close");
+            const ordered = items.filter(item => item !== close);
+            ordered[0].forceActiveFocus(Qt.TabFocusReason);
+            for (let index = 1; index < ordered.length; ++index) {
+                keyClick(Qt.Key_Tab);
+                tryCompare(ordered[index], "activeFocus", true);
+            }
+            keyClick(Qt.Key_Tab);
+            tryVerify(() => !shell.isInside(shell.activeFocusItem, page.contentItem), 5000, "The page must release Tab to the persistent shell");
+            keyClick(Qt.Key_Backtab);
+            tryCompare(ordered[ordered.length - 1], "activeFocus", true);
+            for (let index = ordered.length - 2; index >= 0; --index) {
+                keyClick(Qt.Key_Backtab);
+                tryCompare(ordered[index], "activeFocus", true);
+            }
+            keyClick(Qt.Key_Backtab);
+            tryCompare(close, "activeFocus", true);
+            keyClick(Qt.Key_Backtab);
+            tryVerify(() => !shell.isInside(shell.activeFocusItem, page.contentItem));
+            return;
+        }
         items[0].forceActiveFocus(Qt.TabFocusReason);
         for (let index = 1; index <= items.length; ++index) {
             keyClick(Qt.Key_Tab);

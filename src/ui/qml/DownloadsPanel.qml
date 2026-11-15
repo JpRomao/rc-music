@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import MusicPlayer.M0
 
-Popup {
+PageSurface {
     id: root
 
     readonly property bool archiveAvailable: downloads !== null && downloads.canArchiveSettled === true
@@ -242,7 +242,7 @@ Popup {
     }
     function firstRowControl() {
         const controls = rowControls(jobsList.currentItem);
-        return controls.length > 0 ? controls[0] : closeButton;
+        return controls.length > 0 ? controls[0] : (embedded ? nextFocusItem : closeButton);
     }
     function invalidateCloseConsent() {
         closeConsentOwner = null;
@@ -266,13 +266,13 @@ Popup {
         const index = controls.indexOf(item);
         if (backwards)
             return index > 0 ? controls[index - 1] : row;
-        return index >= 0 && index + 1 < controls.length ? controls[index + 1] : closeButton;
+        return index >= 0 && index + 1 < controls.length ? controls[index + 1] : (embedded ? nextFocusItem : closeButton);
     }
     function nextTopControl(item, backwards) {
         const controls = topControls();
         const index = controls.indexOf(item);
         if (backwards)
-            return index > 0 ? controls[index - 1] : lastRowControl();
+            return index > 0 ? controls[index - 1] : (embedded ? previousFocusItem : lastRowControl());
         return index >= 0 && index + 1 < controls.length ? controls[index + 1] : (jobsList.currentItem || jobsList);
     }
     function lastTopControl() {
@@ -306,7 +306,7 @@ Popup {
     closePolicy: Popup.CloseOnEscape
     dim: false
     focus: true
-    modal: true
+    modal: !embedded
     objectName: "downloads-panel"
     padding: contract.spacingUnit * 3
     popupType: Popup.Item
@@ -319,7 +319,7 @@ Popup {
     }
     contentItem: ColumnLayout {
         Accessible.name: labels.title
-        Accessible.role: Accessible.Dialog
+        Accessible.role: root.embedded ? Accessible.Pane : Accessible.Dialog
         spacing: root.contract.spacingUnit * 2
 
         RowLayout {
@@ -543,7 +543,7 @@ Popup {
             KeyNavigation.tab: root.firstRowControl()
             Layout.fillHeight: true
             Layout.fillWidth: true
-            Layout.minimumHeight: 0
+            Layout.minimumHeight: root.embedded ? 120 : 0
             activeFocusOnTab: true
             clip: true
             keyNavigationWraps: true
@@ -1002,7 +1002,8 @@ Popup {
         if (downloads === null)
             close();
     }
-    onOpened: closeButton.forceActiveFocus(Qt.TabFocusReason)
+    blockingUiOpen: archiveConfirmation.visible || discardConfirmation.visible || importConfirmation.visible || exitConfirmation.visible || informationDialog.visible || lyricsDialog.visible
+    onSurfaceOpened: closeButton.forceActiveFocus(Qt.TabFocusReason)
     onWarningChanged: invalidateCloseConsent()
 
     DownloadText {

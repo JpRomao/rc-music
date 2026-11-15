@@ -189,10 +189,22 @@ TestCase {
             verify(scenarioFactory.releaseDownloadsScenario(scenario));
         scenario = null;
     }
+    function clickVisible(item) {
+        const page = findChild(shell, "playlists-panel");
+        if (page && page.embedded) {
+            page.revealFocusedItem(item);
+            verify(waitForPolish(shell));
+            const point = item.mapToItem(shell.contentItem, 0, 0);
+            verify(point.x >= 0 && point.y >= 0);
+            verify(point.x + item.width <= shell.width + 1);
+            verify(point.y + item.height <= findChild(shell, "player-footer").y + 1 || !shell.isInside(item, page.contentItem));
+        }
+        mouseClick(item);
+    }
     function openPanel() {
         const opener = findChild(shell, "playlists");
         verify(opener && opener.visible);
-        mouseClick(opener);
+        clickVisible(opener);
         tryCompare(findChild(shell, "playlists-panel"), "visible", true);
         verify(waitForPolish(shell));
     }
@@ -210,7 +222,7 @@ TestCase {
         const field = findChild(shell, "playlist-name");
         verify(field);
         field.text = value;
-        mouseClick(findChild(shell, "playlist-name-submit"));
+        clickVisible(findChild(shell, "playlist-name-submit"));
     }
     function lastCall(action) {
         verify(backend.calls.length > 0);
@@ -232,18 +244,18 @@ TestCase {
     }
     function test_createAndSaveQueueHaveSeparateExplicitActions() {
         openPanel();
-        mouseClick(findChild(shell, "playlist-create"));
+        clickVisible(findChild(shell, "playlist-create"));
         compare(backend.calls.length, 0);
         submitName("Nova 日本");
         compare(lastCall("create").args[0], "Nova 日本");
-        mouseClick(findChild(shell, "playlist-save-queue"));
+        clickVisible(findChild(shell, "playlist-save-queue"));
         compare(backend.calls.length, 1);
         submitName("Fila favorita");
         compare(lastCall("saveQueue").args[0], "Fila favorita");
     }
     function test_renameCapturesPlaylistAndDoesNotRetargetChangedSelection() {
         openPanel();
-        mouseClick(findChild(shell, "playlist-rename"));
+        clickVisible(findChild(shell, "playlist-rename"));
         findChild(shell, "playlist-name").text = "Renomeada";
         backend.selectedPlaylistId = "2";
         wait(0);
@@ -254,19 +266,19 @@ TestCase {
     }
     function test_deleteRequiresConfirmationForTheCapturedList() {
         openPanel();
-        mouseClick(findChild(shell, "playlist-delete"));
+        clickVisible(findChild(shell, "playlist-delete"));
         compare(backend.calls.length, 0);
         const dialog = findChild(shell, "playlist-delete-dialog");
         tryCompare(dialog, "visible", true);
         const label = findChild(shell, "playlist-delete-name");
         compare(label.text, "<b>Favoritas 日本</b>");
         compare(label.textFormat, Text.PlainText);
-        mouseClick(findChild(shell, "playlist-delete-submit"));
+        clickVisible(findChild(shell, "playlist-delete-submit"));
         compare(lastCall("delete").args[0], "1");
     }
     function test_deletedOrChangedPlaylistCannotReuseAConfirmation() {
         openPanel();
-        mouseClick(findChild(shell, "playlist-delete"));
+        clickVisible(findChild(shell, "playlist-delete"));
         backend.playlists = [
             {
                 id: "2",
@@ -282,13 +294,13 @@ TestCase {
     }
     function test_duplicateEntriesUseStableIdentityForMoveAndRemove() {
         openPanel();
-        mouseClick(rowAt("playlist-entries", 1));
-        mouseClick(findChild(shell, "playlist-move-up"));
+        clickVisible(rowAt("playlist-entries", 1));
+        clickVisible(findChild(shell, "playlist-move-up"));
         const move = lastCall("moveEntry");
         compare(move.args[0], "1");
         compare(move.args[1], "12");
         compare(move.args[2], 0);
-        mouseClick(findChild(shell, "playlist-remove-entry"));
+        clickVisible(findChild(shell, "playlist-remove-entry"));
         const remove = lastCall("removeEntry");
         compare(remove.args[0], "1");
         compare(remove.args[1], "12");
@@ -299,7 +311,7 @@ TestCase {
         verify(addQueue && addQueue.visible);
         verify(!presenter.queueLoaded);
         verify(!addQueue.enabled);
-        mouseClick(rowAt("playlists-list", 1));
+        clickVisible(rowAt("playlists-list", 1));
         compare(lastCall("select").args[0], "2");
         compare(backend.calls.filter(function (call) {
             return call.action === "enqueue";
@@ -310,12 +322,14 @@ TestCase {
         verify(presenter.openAudio());
         tryCompare(presenter, "queueLoaded", true);
         tryCompare(addQueue, "enabled", true);
-        mouseClick(addQueue);
+        clickVisible(addQueue);
         compare(lastCall("addQueue").args[0], "1");
 
         verify(presenter.clearQueue());
         tryCompare(addQueue, "enabled", false);
-        mouseClick(findChild(shell, "playlist-enqueue"));
+        const page = findChild(shell, "playlists-panel");
+        tryCompare(page, "opened", true, 5000, "Emptying the queue must not navigate away from playlists");
+        clickVisible(findChild(shell, "playlist-enqueue"));
         compare(lastCall("enqueue").args[0], "1");
     }
     function test_statusAnnouncesChangedResultsWithoutTakingFocus() {
@@ -370,7 +384,7 @@ TestCase {
     }
     function test_addFilesTargetsSelectedEmptyPlaylistWithoutQueueActions() {
         openPanel();
-        mouseClick(rowAt("playlists-list", 1));
+        clickVisible(rowAt("playlists-list", 1));
         compare(lastCall("select").args[0], "2");
         backend.entries = [];
         const addFiles = findChild(shell, "playlist-add-files");
@@ -399,7 +413,7 @@ TestCase {
         const locate = findChild(shell, "playlist-locate-file");
         verify(locate && locate.visible, "The playlist panel exposes Localizar arquivo");
         verify(!locate.enabled);
-        mouseClick(rowAt("playlist-entries", 1));
+        clickVisible(rowAt("playlist-entries", 1));
         verify(locate.enabled);
         compare(locate.Accessible.name, "Localizar arquivo…");
         verify(locate.width >= 40 && locate.height >= 40);
@@ -448,9 +462,9 @@ TestCase {
             return retry.width > 0 && reload.width > 0 && reloadLeft >= retryRight;
         });
         compare(backend.calls.length, 0);
-        mouseClick(retry);
+        clickVisible(retry);
         lastCall("retrySave");
-        mouseClick(reload);
+        clickVisible(reload);
         lastCall("discardPending");
     }
     function openAbandonDialog() {
@@ -460,7 +474,7 @@ TestCase {
             return opener.visible && opener.enabled;
         });
         verify(waitForPolish(shell));
-        mouseClick(opener);
+        clickVisible(opener);
         const dialog = findChild(shell, "playlist-abandon-dialog");
         tryCompare(dialog, "opened", true);
         return dialog;
@@ -489,13 +503,13 @@ TestCase {
         compare(backend.calls.length, 0);
 
         openAbandonDialog();
-        mouseClick(cancel);
+        clickVisible(cancel);
         tryCompare(dialog, "visible", false);
         verify(backend.hasPendingChange);
         compare(backend.calls.length, 0);
 
         openAbandonDialog();
-        mouseClick(confirm);
+        clickVisible(confirm);
         tryCompare(dialog, "visible", false);
         lastCall("discardUnsavedChange");
         compare(backend.calls.length, 1);
@@ -610,7 +624,7 @@ TestCase {
         backend.ready = false;
         backend.statusText = "Não foi possível abrir as playlists.";
         verify(!findChild(shell, "playlist-create").enabled);
-        mouseClick(findChild(shell, "playlists-retry-load"));
+        clickVisible(findChild(shell, "playlists-retry-load"));
         lastCall("retryLoad");
         compare(backend.calls.length, 1);
     }
@@ -618,7 +632,7 @@ TestCase {
         openPanel();
         compare(shell.windowShortcutsEnabled, false);
         const muted = presenter.muted;
-        mouseClick(findChild(shell, "playlist-create"));
+        clickVisible(findChild(shell, "playlist-create"));
         findChild(shell, "playlist-name").forceActiveFocus();
         keyClick(Qt.Key_M);
         compare(presenter.muted, muted);
@@ -723,7 +737,7 @@ TestCase {
             }
         ];
         for (const scenario of cases) {
-            mouseClick(findChild(shell, scenario.button));
+            clickVisible(findChild(shell, scenario.button));
             const dialog = findChild(shell, "playlist-name-dialog");
             tryCompare(dialog, "visible", true);
             compare(dialog.contentItem.Accessible.role, Accessible.Dialog);
@@ -739,7 +753,7 @@ TestCase {
     }
     function test_deleteDialogHasAccessibleNameAndEscapeCancelsBeforeExplicitMouseConfirmation() {
         openPanel();
-        mouseClick(findChild(shell, "playlist-delete"));
+        clickVisible(findChild(shell, "playlist-delete"));
         const dialog = findChild(shell, "playlist-delete-dialog");
         tryCompare(dialog, "visible", true);
         compare(dialog.contentItem.Accessible.role, Accessible.Dialog);
@@ -747,9 +761,9 @@ TestCase {
         keyClick(Qt.Key_Escape);
         tryCompare(dialog, "visible", false);
         compare(backend.calls.length, 0);
-        mouseClick(findChild(shell, "playlist-delete"));
+        clickVisible(findChild(shell, "playlist-delete"));
         tryCompare(dialog, "visible", true);
-        mouseClick(findChild(shell, "playlist-delete-submit"));
+        clickVisible(findChild(shell, "playlist-delete-submit"));
         compare(lastCall("delete").args[0], "1");
         tryCompare(dialog, "visible", false);
     }

@@ -5,7 +5,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import MusicPlayer.M0
 
-Dialog {
+PageSurface {
     id: root
     PlaylistsText {
         id: playlistsText
@@ -37,11 +37,11 @@ Dialog {
     readonly property bool abandonTargetCurrent: abandonOwner !== null && abandonOwner === playlists && canAbandonPending
     readonly property string nameDialogTitle: nameMode === "rename" ? playlistsText.renameTitle : (nameMode === "saveQueue" ? playlistsText.saveQueueTitle : playlistsText.create)
     parent: Overlay.overlay
-    anchors.centerIn: parent
+    anchors.centerIn: embedded ? undefined : parent
     width: Math.min(920, parent ? parent.width - contract.spacingUnit * 8 : 920)
     height: Math.min(680, parent ? parent.height - contract.spacingUnit * 8 : 680)
     padding: contract.spacingUnit * 3
-    modal: true
+    modal: !embedded
     focus: true
     popupType: Popup.Item
     closePolicy: Popup.CloseOnEscape
@@ -58,7 +58,8 @@ Dialog {
                 close();
         }
     }
-    onOpened: {
+    blockingUiOpen: nameDialog.visible || deleteDialog.visible || abandonDialog.visible
+    onSurfaceOpened: {
         if (focusSaveRecovery())
             return;
         if (retryLoadButton.visible && retryLoadButton.enabled)
@@ -268,7 +269,7 @@ Dialog {
     }
     contentItem: ColumnLayout {
         spacing: root.contract.spacingUnit * 2
-        Accessible.role: Accessible.Dialog
+        Accessible.role: root.embedded ? Accessible.Pane : Accessible.Dialog
         Accessible.name: playlistsText.title
         Text {
             Layout.fillWidth: true
@@ -303,7 +304,7 @@ Dialog {
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumHeight: 100
+            Layout.minimumHeight: root.embedded ? 224 : 100
             spacing: root.contract.spacingUnit * 3
             ColumnLayout {
                 Layout.preferredWidth: 190
@@ -407,8 +408,9 @@ Dialog {
                         color: root.contract.textSecondaryColor
                     }
                 }
-                RowLayout {
+                Flow {
                     Layout.fillWidth: true
+                    spacing: root.contract.spacingUnit * 2
                     AccessibleTransportButton {
                         objectName: "playlist-move-up"
                         contract: root.contract
@@ -450,8 +452,9 @@ Dialog {
                 }
             }
         }
-        RowLayout {
+        Flow {
             Layout.fillWidth: true
+            spacing: root.contract.spacingUnit * 2
             AccessibleTransportButton {
                 objectName: "playlist-add-files"
                 contract: root.contract
@@ -498,8 +501,9 @@ Dialog {
                     Qt.callLater(announceResult);
             }
         }
-        RowLayout {
+        Flow {
             Layout.fillWidth: true
+            spacing: root.contract.spacingUnit * 2
             AccessibleTransportButton {
                 id: retrySaveButton
                 objectName: "playlists-retry-save"

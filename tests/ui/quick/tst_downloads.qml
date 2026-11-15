@@ -89,6 +89,18 @@ TestCase {
         }
         return false;
     }
+    function clickVisible(item) {
+        const page = findChild(shell, "downloads-panel");
+        if (page && page.embedded) {
+            page.revealFocusedItem(item);
+            verify(waitForPolish(shell));
+            const point = item.mapToItem(shell.contentItem, 0, 0);
+            verify(point.x >= 0 && point.y >= 0);
+            verify(point.x + item.width <= shell.width + 1);
+            verify(point.y + item.height <= findChild(shell, "player-footer").y + 1 || !inside(item, page.contentItem));
+        }
+        mouseClick(item);
+    }
     function openDownloads() {
         verify(shell.downloads !== undefined, "Main must expose an optional downloads binding");
         shell.downloads = downloads;
@@ -185,7 +197,7 @@ TestCase {
         openDownloads();
         const information = findChild(rowAt(0), "download-information");
         verify(information);
-        mouseClick(information);
+        clickVisible(information);
         const dialog = findChild(shell, "download-information-dialog");
         const copy = findChild(shell, "download-copy-information");
         tryCompare(dialog, "opened", true);
@@ -200,7 +212,7 @@ TestCase {
         const replacementInformation = findChild(replacementRow, "download-information");
         verify(replacementInformation.enabled, "New history must enable information");
         verifyTarget(replacementInformation);
-        mouseClick(replacementInformation);
+        clickVisible(replacementInformation);
         tryCompare(dialog, "opened", true);
         const old = downloads;
         shell.downloads = createTemporaryObject(bindingComponent, testCase);
@@ -331,11 +343,11 @@ TestCase {
             return !confirmation.visible;
         });
         compare(downloads.archives, 0);
-        mouseClick(action);
+        clickVisible(action);
         tryVerify(function () {
             return confirmation.opened;
         });
-        mouseClick(confirm);
+        clickVisible(confirm);
         compare(downloads.archives, 1);
         tryVerify(function () {
             return !confirmation.visible && !action.visible;
@@ -348,7 +360,7 @@ TestCase {
         verifyTarget(action);
         verify(action.visible && action.enabled);
         verify(action.text.includes("novamente"));
-        mouseClick(action);
+        clickVisible(action);
         compare(downloads.archiveRetries, 1);
         compare(downloads.archives, 0);
         compare(downloads.finalSaveRetries, 0);
@@ -361,7 +373,7 @@ TestCase {
         downloads.onArchiveRequest = function () {
             panel.close();
         };
-        mouseClick(findChild(shell, "downloads-archive"));
+        clickVisible(findChild(shell, "downloads-archive"));
         tryVerify(function () {
             return !panel.visible;
         });
@@ -375,7 +387,7 @@ TestCase {
         openDownloads();
         const leave = findChild(shell, "downloads-close-without-save");
         verifyTarget(leave);
-        mouseClick(leave);
+        clickVisible(leave);
         compare(downloads.unsafeCloses, 0, "Opening the consent dialog is not consent");
         verify(!presenter.exiting, "Opening the consent dialog must not request exit");
         verify(!presenter.exitCommitted);
@@ -397,13 +409,13 @@ TestCase {
         tryVerify(function () {
             return leave.activeFocus;
         });
-        mouseClick(leave);
+        clickVisible(leave);
         tryVerify(function () {
             return confirmation.opened;
         });
         const confirm = findChild(shell, "downloads-confirm-close-without-save");
         verifyTarget(confirm);
-        mouseClick(confirm);
+        clickVisible(confirm);
         compare(downloads.unsafeCloses, 1);
         verify(!downloads.exitObservedDuringAbandonment, "The owner must accept abandonment before a new exit intent");
         compare(downloads.exitCallsObservedDuringAbandonment, 0);
@@ -415,12 +427,12 @@ TestCase {
         downloads.acceptHistoryAbandonment = false;
         downloads.canCloseAfterFinalSaveFailure = true;
         openDownloads();
-        mouseClick(findChild(shell, "downloads-close-without-save"));
+        clickVisible(findChild(shell, "downloads-close-without-save"));
         const confirmation = findChild(shell, "downloads-exit-confirmation");
         tryVerify(function () {
             return confirmation.opened;
         });
-        mouseClick(findChild(shell, "downloads-confirm-close-without-save"));
+        clickVisible(findChild(shell, "downloads-confirm-close-without-save"));
         compare(downloads.unsafeCloses, 1);
         verify(!downloads.exitObservedDuringAbandonment);
         compare(downloads.exitCallsObservedDuringAbandonment, 0);
@@ -472,7 +484,7 @@ TestCase {
         tryCompare(row.informationControl, "activeFocus", true);
         keyClick(Qt.Key_Tab);
         tryVerify(function () {
-            return findChild(shell, "downloads-close").activeFocus;
+            return !inside(shell.activeFocusItem, findChild(shell, "downloads-panel").contentItem);
         });
     }
     function test_partialDiscardRequiresSeparateConsentAndPreservesFinalAdvice() {
@@ -507,7 +519,7 @@ TestCase {
         });
         compare(downloads.discardedIds.length, 0);
         compare(downloads.discardConsentToken, "");
-        mouseClick(discard);
+        clickVisible(discard);
         tryVerify(function () {
             return popup.opened;
         });
@@ -515,7 +527,7 @@ TestCase {
         verifyTarget(confirm);
         compare(confirm.text, "Encerrar recuperação");
         compare(confirm.Accessible.name, confirm.text);
-        mouseClick(confirm);
+        clickVisible(confirm);
         compare(downloads.discardedIds.length, 1);
         compare(downloads.discardedIds[0], "partials-a");
         compare(presenter.playbackState, PlayerPresenter.Unloaded);
@@ -561,7 +573,7 @@ TestCase {
                 panel.close();
             }
         };
-        mouseClick(findChild(rowAt(0), "download-discard-partials"));
+        clickVisible(findChild(rowAt(0), "download-discard-partials"));
         verify(!findChild(shell, "downloads-discard-confirmation").visible);
         compare(original.discardConsentToken, "");
         compare(original.discardedIds.length, 0);
@@ -586,7 +598,7 @@ TestCase {
         addJob("partials-a", "interrupted", "Interrompido", false, false, false, 0);
         jobs.setProperty(0, "canDiscardPartials", true);
         openDownloads();
-        mouseClick(findChild(rowAt(0), "download-discard-partials"));
+        clickVisible(findChild(rowAt(0), "download-discard-partials"));
         const popup = findChild(shell, "downloads-discard-confirmation");
         tryVerify(function () {
             return popup.opened;
@@ -597,7 +609,7 @@ TestCase {
             return !popup.visible;
         });
         compare(previous.discardedIds.length, 0);
-        mouseClick(findChild(rowAt(0), "download-discard-partials"));
+        clickVisible(findChild(rowAt(0), "download-discard-partials"));
         tryVerify(function () {
             return popup.opened;
         });
@@ -622,14 +634,14 @@ TestCase {
         const cancel = findChild(first, "download-cancel");
         verifyTarget(cancel);
         verify(cancel.enabled);
-        mouseClick(cancel);
+        clickVisible(cancel);
         compare(jobs.cancelledIds.length, 1);
         compare(jobs.cancelledIds[0], "cancel-a");
         jobs.remove(0);
         const second = rowAt(0);
         const retry = findChild(second, "download-retry-import");
         verifyTarget(retry);
-        mouseClick(retry);
+        clickVisible(retry);
         compare(jobs.retriedIds.length, 1);
         compare(jobs.retriedIds[0], "retry-b");
         jobs.setProperty(0, "canRetryImport", false);
@@ -637,7 +649,7 @@ TestCase {
             return !retry.visible || !retry.enabled;
         });
     }
-    function test_modalFocusKeyboardAndReturnDoNotAffectPlayback() {
+    function test_pageFocusKeyboardAndReturnDoNotAffectPlayback() {
         driver.enqueueLocalSelection(["C:/Music/A.mp3", "C:/Music/B.mp3"]);
         findChild(shell, "open-audio").Accessible.pressAction();
         tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
@@ -645,8 +657,8 @@ TestCase {
         tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
         addJob("active", "downloading", "Baixando", true, false, true, 0);
         const panel = openDownloads();
-        verify(panel.modal);
-        compare(panel.contentItem.Accessible.role, Accessible.Dialog);
+        verify(!panel.modal);
+        compare(panel.contentItem.Accessible.role, Accessible.Pane);
         verify(!shell.windowShortcutsEnabled);
         verify(!findChild(shell, "source-drop-area").enabled);
         const close = findChild(shell, "downloads-close");
@@ -654,16 +666,23 @@ TestCase {
             return close.activeFocus;
         });
         verify(close.background.border.width >= 3);
-        for (let index = 0; index < 8; ++index) {
+        let leftPage = false;
+        for (let index = 0; index < 40; ++index) {
             keyClick(Qt.Key_Tab);
-            verify(inside(shell.activeFocusItem, panel.contentItem), "Tab must stay within the modal panel");
+            if (!inside(shell.activeFocusItem, panel.contentItem)) {
+                leftPage = true;
+                break;
+            }
         }
-        for (let index = 0; index < 8; ++index) {
-            keyClick(Qt.Key_Backtab);
-            verify(inside(shell.activeFocusItem, panel.contentItem), "Backtab must stay within the modal panel");
-        }
+        verify(leftPage, "Tab must reach the persistent player instead of looping in a page");
+        close.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Backtab);
+        tryCompare(findChild(shell, "downloads"), "activeFocus", true);
         const list = findChild(shell, "downloads-list");
-        list.forceActiveFocus(Qt.TabFocusReason);
+        // ListView is a focus scope; re-enter its navigation item rather than
+        // restoring the last focused row action (the same target as the header).
+        (list.currentItem || list).forceActiveFocus(Qt.TabFocusReason);
+        tryVerify(() => shell.activeFocusItem === list || shell.activeFocusItem === list.currentItem);
         const pauses = driver.localPauseCount();
         const seeks = driver.localSeekCount();
         const loads = driver.localLoadCount();
@@ -772,9 +791,9 @@ TestCase {
         verifyTarget(startup);
         verifyTarget(admission);
         verifyTarget(finalSave);
-        mouseClick(startup);
-        mouseClick(admission);
-        mouseClick(finalSave);
+        clickVisible(startup);
+        clickVisible(admission);
+        clickVisible(finalSave);
         compare(downloads.startupRetries, 1);
         compare(downloads.admissionRetries, 1);
         compare(downloads.finalSaveRetries, 1);
@@ -803,7 +822,7 @@ TestCase {
         compare(recover.Accessible.name, recover.text);
         compare(findChild(shell, "downloads-retry-startup").visible, false);
         compare(downloads.namespaceRenewals, 0);
-        mouseClick(recover);
+        clickVisible(recover);
         compare(downloads.namespaceRenewals, 1);
         compare(downloads.startupRetries, 0);
         compare(presenter.playbackState, playback);
@@ -862,7 +881,7 @@ TestCase {
     function test_revokedCloseCapabilityCannotReuseConsent() {
         downloads.canCloseAfterFinalSaveFailure = true;
         openDownloads();
-        mouseClick(findChild(shell, "downloads-close-without-save"));
+        clickVisible(findChild(shell, "downloads-close-without-save"));
         const confirmation = findChild(shell, "downloads-exit-confirmation");
         tryVerify(function () {
             return confirmation.opened;
@@ -982,7 +1001,7 @@ TestCase {
         compare(findChild(row, "download-status").text, "Interrompido; revisão necessária");
         verify(!visibleText(row).includes("never-show-me"));
         verify(!visibleText(row).includes("token=secret"));
-        mouseClick(release);
+        clickVisible(release);
         compare(downloads.releasedIds.length, 1);
         compare(downloads.releasedIds[0], "final-a");
         compare(jobs.retriedIds.length, 0);
@@ -1021,7 +1040,7 @@ TestCase {
         keyClick(Qt.Key_Tab);
         tryCompare(row.informationControl, "activeFocus", true);
         keyClick(Qt.Key_Tab);
-        tryCompare(close, "activeFocus", true);
+        tryVerify(() => !inside(shell.activeFocusItem, findChild(shell, "downloads-panel").contentItem));
         keyClick(Qt.Key_Backtab);
         tryCompare(row.informationControl, "activeFocus", true);
         keyClick(Qt.Key_Backtab);
@@ -1043,7 +1062,7 @@ TestCase {
         keyClick(Qt.Key_Tab);
         tryCompare(row.informationControl, "activeFocus", true);
         keyClick(Qt.Key_Tab);
-        tryCompare(close, "activeFocus", true);
+        tryVerify(() => !inside(shell.activeFocusItem, findChild(shell, "downloads-panel").contentItem));
         keyClick(Qt.Key_Backtab);
         tryCompare(row.informationControl, "activeFocus", true);
         keyClick(Qt.Key_Backtab);
@@ -1108,7 +1127,7 @@ TestCase {
         }
         const close = findChild(shell, "downloads-close");
         keyClick(Qt.Key_Tab);
-        tryCompare(close, "activeFocus", true);
+        tryVerify(() => !inside(shell.activeFocusItem, findChild(shell, "downloads-panel").contentItem));
         for (let index = controls.length - 1; index >= 0; --index) {
             keyClick(Qt.Key_Backtab);
             tryCompare(controls[index], "activeFocus", true);
@@ -1130,7 +1149,7 @@ TestCase {
         compare(action.text, "Adicionar à fila");
         compare(action.Accessible.name, "Adicionar à fila");
         compare(downloads.importedIds.length, 0);
-        mouseClick(action);
+        clickVisible(action);
         const popup = findChild(shell, "download-import-confirmation");
         verify(popup);
         tryVerify(function () {
@@ -1158,13 +1177,13 @@ TestCase {
         compare(downloads.importedIds.length, 0);
         compare(downloads.releasedIds.length, 0, "Cancelling consent keeps the validation retained");
         tryCompare(action, "activeFocus", true);
-        mouseClick(action);
+        clickVisible(action);
         tryVerify(function () {
             return popup.opened;
         });
         const token = downloads.importConsentToken;
         verify(token.length > 0);
-        mouseClick(confirm);
+        clickVisible(confirm);
         compare(downloads.importedIds.length, 1);
         compare(downloads.importedIds[0], "final-a");
         compare(downloads.importConsentToken, "");
@@ -1182,7 +1201,7 @@ TestCase {
         openDownloads();
         const action = rowAt(0).importRecoveredControl;
         verifyTarget(action);
-        mouseClick(action);
+        clickVisible(action);
         const popup = findChild(shell, "download-import-confirmation");
         verify(popup);
         tryVerify(function () {
@@ -1198,7 +1217,7 @@ TestCase {
         action.clicked();
         compare(downloads.importedIds.length, 0);
         jobs.setProperty(0, "canImportRecovered", true);
-        mouseClick(action);
+        clickVisible(action);
         tryVerify(function () {
             return popup.opened;
         });
@@ -1210,7 +1229,7 @@ TestCase {
         action.clicked();
         compare(downloads.importedIds.length, 0);
         jobs.setProperty(0, "jobId", "final-a");
-        mouseClick(action);
+        clickVisible(action);
         tryVerify(function () {
             return popup.opened;
         });
@@ -1218,7 +1237,7 @@ TestCase {
         tryVerify(function () {
             return !popup.visible;
         });
-        mouseClick(action);
+        clickVisible(action);
         tryVerify(function () {
             return popup.opened;
         });
@@ -1266,7 +1285,7 @@ TestCase {
         downloads.warningText = "Não foi possível salvar o histórico.";
         const panel = openDownloads();
         const row = rowAt(0);
-        mouseClick(row.importRecoveredControl);
+        clickVisible(row.importRecoveredControl);
         const popup = findChild(shell, "download-import-confirmation");
         verify(popup);
         tryVerify(function () {
@@ -1280,7 +1299,7 @@ TestCase {
         tryVerify(function () {
             return !popup.visible;
         });
-        mouseClick(row.discardControl);
+        clickVisible(row.discardControl);
         const discardPopup = findChild(shell, "downloads-discard-confirmation");
         tryVerify(function () {
             return discardPopup.opened;

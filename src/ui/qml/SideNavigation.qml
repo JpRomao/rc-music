@@ -10,6 +10,8 @@ Rectangle {
     property bool compact: false
     property bool queueAvailable: false
     property bool queueActive: false
+    property string activePage: ""
+    property Item pageReturnFocusItem: null
     property bool exiting: false
     property bool hasPlaylists: false
     property bool hasDownloads: false
@@ -106,11 +108,22 @@ Rectangle {
             AccessibleTransportButton {
                 id: nowAction
                 objectName: "now"
+                KeyNavigation.tab: null
+                KeyNavigation.backtab: null
+                Keys.onBacktabPressed: event => {
+                    const target = root.pageReturnFocusItem;
+                    if (target && target.visible && target.enabled) {
+                        target.forceActiveFocus(Qt.BacktabFocusReason);
+                        event.accepted = true;
+                    } else {
+                        event.accepted = false;
+                    }
+                }
                 Layout.fillWidth: true
                 contract: root.contract
                 text: labels.now
                 checkable: true
-                checked: !root.queueActive
+                checked: root.activePage.length > 0 ? root.activePage === "home" : !root.queueActive
                 enabled: !root.exiting
                 Accessible.checkable: true
                 Accessible.checked: checked
@@ -119,6 +132,8 @@ Rectangle {
             AccessibleTransportButton {
                 id: queueAction
                 objectName: "queue"
+                KeyNavigation.tab: null
+                KeyNavigation.backtab: null
                 Layout.fillWidth: true
                 contract: root.contract
                 text: root.contract.queueTitle
@@ -132,9 +147,13 @@ Rectangle {
             AccessibleTransportButton {
                 id: playlistsAction
                 objectName: "playlists"
+                KeyNavigation.tab: null
+                KeyNavigation.backtab: null
                 Layout.fillWidth: true
                 contract: root.contract
                 text: labels.playlists
+                checkable: true
+                checked: root.activePage === "playlists"
                 visible: root.hasPlaylists
                 enabled: visible && !root.exiting
                 onClicked: root.playlistsRequested()
@@ -142,9 +161,13 @@ Rectangle {
             AccessibleTransportButton {
                 id: downloadsAction
                 objectName: "downloads"
+                KeyNavigation.tab: null
+                KeyNavigation.backtab: null
                 Layout.fillWidth: true
                 contract: root.contract
                 text: downloadLabels.title
+                checkable: true
+                checked: root.activePage === "downloads"
                 visible: root.hasDownloads
                 enabled: visible && (!root.exiting || root.downloadsExitRecovery)
                 onClicked: root.downloadsRequested()
@@ -152,6 +175,8 @@ Rectangle {
             AccessibleTransportButton {
                 id: browserAction
                 objectName: "embedded-browser"
+                KeyNavigation.tab: null
+                KeyNavigation.backtab: null
                 Layout.fillWidth: true
                 contract: root.contract
                 text: browserLabels.navigate
@@ -165,6 +190,8 @@ Rectangle {
             AccessibleTransportButton {
                 id: themeAction
                 objectName: "theme-toggle"
+                KeyNavigation.tab: null
+                KeyNavigation.backtab: null
                 Layout.fillWidth: true
                 contract: root.contract
                 text: root.contract.darkTheme ? root.contract.themeLight : root.contract.themeDark
@@ -175,9 +202,12 @@ Rectangle {
             AccessibleTransportButton {
                 id: preferencesAction
                 objectName: "preferences"
+                KeyNavigation.tab: null
+                KeyNavigation.backtab: null
                 Layout.fillWidth: true
                 contract: root.contract
                 text: root.contract.preferencesTitle
+                checkable: true
                 checked: root.preferencesOpen
                 enabled: !root.exiting
                 onClicked: root.preferencesRequested()

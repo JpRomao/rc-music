@@ -4,7 +4,7 @@ import QtQuick.Dialogs as NativeDialogs
 import QtQuick.Layouts
 import MusicPlayer.M0
 
-Popup {
+PageSurface {
     id: root
     objectName: "preferences-panel"
     required property ShellUiContract contract
@@ -23,7 +23,7 @@ Popup {
         const index = audioOutputDevices.findIndex(device => device.id === id);
         return index < 0 ? -1 : index + 1;
     }
-    modal: true
+    modal: !embedded
     dim: false
     focus: true
     clip: true
@@ -89,7 +89,8 @@ Popup {
         backwardField.resetDraft();
         forwardField.resetDraft();
     }
-    onOpened: focusFirst()
+    blockingUiOpen: downloadDirectoryPicker.visible
+    onSurfaceOpened: focusFirst()
     onAboutToHide: cancelDownloadDirectoryChoice()
     onDownloadsChanged: cancelDownloadDirectoryChoice()
     onSectionChanged: {
@@ -147,7 +148,7 @@ Popup {
     }
     contentItem: ColumnLayout {
         spacing: root.contract.spacingUnit * 2
-        Accessible.role: Accessible.Dialog
+        Accessible.role: root.embedded ? Accessible.Pane : Accessible.Dialog
         Accessible.name: root.contract.preferencesTitle
         RowLayout {
             Layout.fillWidth: true

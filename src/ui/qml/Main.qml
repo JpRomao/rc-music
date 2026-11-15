@@ -41,6 +41,9 @@ ApplicationWindow {
     visible: startupReady
     signal openAudioRequested
     property bool queueOpen: false
+    readonly property bool inlinePages: !presenter.usesFrozenFixture
+    readonly property string currentPage: preferencesPanel.visible ? "preferences" : (playlistsPanel.visible ? "playlists" : (downloadsPanel.visible ? "downloads" : (queuePageActive ? "queue" : "home")))
+    readonly property Item pageReturnFocusItem: inlinePages ? (currentPage === "preferences" ? preferencesPanel.lastFocusItem : (currentPage === "playlists" ? playlistsPanel.lastFocusItem : (currentPage === "downloads" ? downloadsPanel.lastFocusItem : null))) : null
     readonly property bool queuePageActive: queueOpen && presenter.queueLoaded
     property alias queueButton: sideNavigation.queueButton
     property alias preferencesButton: sideNavigation.preferencesButton
@@ -68,13 +71,14 @@ ApplicationWindow {
         errorLabels: errorText
     }
     readonly property bool downloadFinalSaveDecisionRequired: downloads !== null && (downloads.canRetryFinalSave || downloads.canCloseAfterFinalSaveFailure)
-    readonly property bool windowShortcutsEnabled: !playlistsPanel.visible && !lyricsPanel.queryOpen && !downloadsPanel.visible && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
-    readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
+    readonly property bool windowShortcutsEnabled: (!playlistsPanel.visible || (inlinePages && !isInside(activeFocusItem, playlistsPanel.contentItem))) && !lyricsPanel.queryOpen && (!downloadsPanel.visible || (inlinePages && !isInside(activeFocusItem, downloadsPanel.contentItem))) && !playlistsPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && transport.enabled
     readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
-    readonly property bool primaryKeysEnabled: windowShortcutsEnabled && !preferencesPanel.visible && !focusOwnsTextInput()
+    readonly property bool primaryKeysEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && !focusOwnsTextInput()
     readonly property bool spaceShortcutEnabled: primaryKeysEnabled
     readonly property bool arrowShortcutsEnabled: primaryKeysEnabled
     readonly property bool seekShortcutsEnabled: arrowShortcutsEnabled && transportShortcutsEnabled && presenter.seekable && !presenter.seekPreviewActive && !presenter.seekPending
+    readonly property bool inlinePageClosingAllowed: inlinePages && currentPage !== "home" && currentPage !== "queue" && !playlistsPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !lyricsPanel.queryOpen && !browserError.visible && !windowNotice.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     property int previousPlaybackState: -1
     property int playbackFocusRepairGeneration: 0
     property Item lastActiveFocusItem: null
@@ -121,6 +125,12 @@ ApplicationWindow {
     }
 
     function focusPlaybackPrimary(state) {
+        if (window.inlinePages && window.currentPage !== "home" && window.currentPage !== "queue") {
+            const button = window.currentPage === "playlists" ? playlistsButton : (window.currentPage === "downloads" ? downloadsButton : preferencesButton);
+            if (button.visible && button.enabled)
+                button.forceActiveFocus(Qt.TabFocusReason);
+            return;
+        }
         if (window.queuePageActive) {
             queuePanel.focusCurrent();
             return;
@@ -231,6 +241,11 @@ ApplicationWindow {
     function setQueueOpen(open) {
         if (open && !presenter.queueLoaded)
             return;
+        if (window.inlinePages && open) {
+            playlistsPanel.close();
+            downloadsPanel.close();
+            preferencesPanel.close();
+        }
         queueOpen = open;
         Qt.callLater(function () {
             if (!window.active || !window.windowShortcutsEnabled || preferencesPanel.visible)
@@ -271,9 +286,14 @@ ApplicationWindow {
         presenter.setVolume(Math.max(0, Math.min(100, percent + percentagePoints)) / 100);
     }
     function openPreferences() {
-        if (playlistsPanel.visible || downloadsPanel.visible || presenter.exiting)
+        if ((!window.inlinePages && (playlistsPanel.visible || downloadsPanel.visible)) || presenter.exiting)
             return;
         queueOpen = false;
+        if (window.inlinePages) {
+            playlistsPanel.close();
+            downloadsPanel.close();
+            trackDetailsPanel.close();
+        }
         if (preferencesPanel.opened)
             preferencesPanel.focusFirst();
         else
@@ -339,6 +359,8 @@ ApplicationWindow {
         contract: window.uiContract
         queueAvailable: window.presenter.queueLoaded
         queueActive: window.queuePageActive
+        activePage: window.currentPage
+        pageReturnFocusItem: window.pageReturnFocusItem
         exiting: window.presenter.exiting
         hasPlaylists: window.playlists !== null
         hasDownloads: window.downloads !== null
@@ -346,6 +368,11 @@ ApplicationWindow {
         downloadsExitRecovery: window.downloadFinalSaveDecisionRequired
         preferencesOpen: preferencesPanel.visible
         onNowRequested: {
+            if (window.inlinePages) {
+                playlistsPanel.close();
+                downloadsPanel.close();
+                preferencesPanel.close();
+            }
             window.queueOpen = false;
             nowButton.forceActiveFocus(Qt.TabFocusReason);
         }
@@ -374,7 +401,7 @@ ApplicationWindow {
             Item {
                 id: stateLayer
                 objectName: "state-layer"
-                visible: !window.queuePageActive
+                visible: !window.queuePageActive && (!window.inlinePages || window.currentPage === "home")
                 enabled: !window.presenter.exiting
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
@@ -486,6 +513,7 @@ ApplicationWindow {
         TransportBar {
             id: transport
             objectName: "transport-bar"
+            pageReturnFocusItem: window.pageReturnFocusItem
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
@@ -562,9 +590,12 @@ ApplicationWindow {
     PreferencesPanel {
         id: preferencesPanel
         parent: window.contentItem
-        width: Math.min(window.width - window.uiContract.spacingUnit * 12, 600)
-        height: Math.min(contentArea.height, 400)
-        x: (window.width - width) / 2
+        embedded: window.inlinePages
+        previousFocusItem: preferencesButton
+        nextFocusItem: transport.primaryControl.enabled ? transport.primaryControl : (sideNavigation.nowButton.enabled ? sideNavigation.nowButton : downloadsButton)
+        width: embedded ? contentArea.width : Math.min(window.width - window.uiContract.spacingUnit * 12, 600)
+        height: embedded ? contentArea.height : Math.min(contentArea.height, 400)
+        x: embedded ? mainLayout.x + contentArea.x : (window.width - width) / 2
         y: mainLayout.y + contentArea.y
         contract: window.uiContract
         presenter: window.presenter
@@ -603,14 +634,17 @@ ApplicationWindow {
     DownloadsPanel {
         id: downloadsPanel
         parent: window.contentItem
-        width: Math.min(window.width - window.uiContract.spacingUnit * 12, 760)
-        height: Math.min(window.height - window.uiContract.spacingUnit * 12, 640)
-        x: (window.width - width) / 2
-        y: (window.height - height) / 2
+        embedded: window.inlinePages
+        previousFocusItem: downloadsButton
+        nextFocusItem: transport.primaryControl.enabled ? transport.primaryControl : (sideNavigation.nowButton.enabled ? sideNavigation.nowButton : downloadsButton)
+        width: embedded ? contentArea.width : Math.min(window.width - window.uiContract.spacingUnit * 12, 760)
+        height: embedded ? contentArea.height : Math.min(window.height - window.uiContract.spacingUnit * 12, 640)
+        x: embedded ? mainLayout.x + contentArea.x : (window.width - width) / 2
+        y: embedded ? mainLayout.y + contentArea.y : (window.height - height) / 2
         contract: window.uiContract
         downloads: window.downloads
         fallbackFocusItem: downloadsButton
-        focusRestoreAllowed: window.active && (!window.presenter.exiting || window.downloadFinalSaveDecisionRequired)
+        focusRestoreAllowed: window.active && (!window.inlinePages || window.currentPage === "home") && (!window.presenter.exiting || window.downloadFinalSaveDecisionRequired)
         onExitRequested: window.presenter.requestExit()
     }
 
@@ -623,6 +657,14 @@ ApplicationWindow {
     }
     PlaylistsPanel {
         id: playlistsPanel
+        embedded: window.inlinePages
+        previousFocusItem: playlistsButton
+        nextFocusItem: transport.primaryControl.enabled ? transport.primaryControl : (sideNavigation.nowButton.enabled ? sideNavigation.nowButton : downloadsButton)
+        parent: embedded ? window.contentItem : Overlay.overlay
+        x: embedded ? mainLayout.x + contentArea.x : (parent.width - width) / 2
+        y: embedded ? mainLayout.y + contentArea.y : (parent.height - height) / 2
+        width: embedded ? contentArea.width : Math.min(920, parent ? parent.width - contract.spacingUnit * 8 : 920)
+        height: embedded ? contentArea.height : Math.min(680, parent ? parent.height - contract.spacingUnit * 8 : 680)
         contract: window.uiContract
         queueHasTracks: !window.presenter.usesFrozenFixture && window.presenter.queueLoaded
         playlists: window.playlists
@@ -890,8 +932,16 @@ ApplicationWindow {
         sequence: "Esc"
         context: Qt.WindowShortcut
         autoRepeat: false
-        enabled: window.windowShortcutsEnabled && window.queueOpen && !preferencesPanel.visible
-        onActivated: window.setQueueOpen(false)
+        enabled: window.inlinePageClosingAllowed || (window.windowShortcutsEnabled && window.queueOpen && !preferencesPanel.visible)
+        onActivated: {
+            if (window.inlinePageClosingAllowed) {
+                preferencesPanel.close();
+                playlistsPanel.close();
+                downloadsPanel.close();
+            } else {
+                window.setQueueOpen(false);
+            }
+        }
     }
     Shortcut {
         sequence: "Ctrl+,"

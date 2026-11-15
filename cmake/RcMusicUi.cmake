@@ -32,6 +32,7 @@ function(rc_music_add_ui target support qml_output)
     set(qml_files)
     foreach(qml_file IN ITEMS
             Main.qml
+            PageSurface.qml
             SideNavigation.qml
             NavigationText.qml
             EmptyState.qml

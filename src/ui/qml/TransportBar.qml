@@ -8,6 +8,8 @@ ColumnLayout {
     objectName: "transport-bar"
     required property ShellUiContract contract
     required property PlayerPresenter presenter
+    property alias primaryControl: playPause
+    property Item pageReturnFocusItem: null
     TransportText {
         id: labels
     }
@@ -189,6 +191,16 @@ ColumnLayout {
         AccessibleTransportButton {
             id: playPause
             objectName: "play-pause"
+            KeyNavigation.backtab: null
+            Keys.onBacktabPressed: event => {
+                const target = root.pageReturnFocusItem;
+                if (target && target.visible && target.enabled) {
+                    target.forceActiveFocus(Qt.BacktabFocusReason);
+                    event.accepted = true;
+                } else {
+                    event.accepted = false;
+                }
+            }
             font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
             enabled: root.playbackEnabled
             contract: root.contract

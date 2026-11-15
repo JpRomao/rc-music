@@ -8,6 +8,12 @@ Referência apresentada: `out/product/uiux-planning-4efd8ba/visual-v2/Aurora-Cla
 
 Este aceite permite prosseguir incrementalmente com a UI Aurora no produto existente. Não aprova APIs de catálogo/pesquisa ainda não desenhadas, um provedor remoto, migração pessoal, instalação, publicação ou retirada de recursos além do Lidarr já solicitado.
 
+### Retomada após a primeira fundação nativa
+
+O mantenedor avaliou o checkpoint: **“Ainda está longe do projeto apresentado no protótipo (C:\Users\Joao\Documents\ChatGPT\music-player\out\product\brave-letras\out\product\uiux-planning-4efd8ba\visual-v1\content), mas já deixou o visual melhor”**. Isso não é aceite de fidelidade visual nem conclusão do redesenho. A composição musical do Aurora de `visual-v1/content/aurora-v3.html`, com o refinamento de cores já aprovado em `visual-v2`, continua sendo o alvo; trocar apenas cores não satisfaz essa direção.
+
+Autorização e condição posteriores: **“Pode continuar com a refatoração. Gere o instalador apenas quando tiver terminado completamente o redesenho da aplicação”**. Prosseguir com o redesenho nativo, preservando paridade e dados; builds, testes e capturas isoladas são permitidos, mas não gerar instaladores intermediários. O setup anterior permanece histórico, sem requalificação. Provider remoto, persistência nova, instalação pessoal e publicação conservam seus gates específicos.
+
 ## Intenção
 
 Transformar o player em um aplicativo musical completo, com navegação lateral e reprodução persistente, mantendo as capacidades e os dados existentes. Busca interna deve se tornar a jornada principal sem depender da extensão. A biblioteca futura será permanente e independente da fila, playlists e histórico.
