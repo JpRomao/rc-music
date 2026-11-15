@@ -23,7 +23,7 @@ Este arquivo é um índice do estado vigente, não um diário de desenvolvimento
 
 ## 2. Prioridade atual: fundação Aurora sem Lidarr
 
-Consolidar o checkpoint Aurora já implementado e seu instalador privado autorizado, sem instalar. A capacidade Lidarr foi retirada, não apenas seu botão. Reprodução, dados e os demais recursos existentes, incluindo Qt Network, letras, downloads opcionais, playlists e stores, foram preservados no recorte exercitado. A [decisão vigente](architecture/decisions/0018-aurora-and-lidarr-removal.md) separa esse recorte de provider de pesquisa, biblioteca permanente, instalação e gates de produção ainda não aprovados.
+O checkpoint Aurora foi consolidado no commit de código `d4137db`, com [instalador privado gerado e auditado](windows-installer.md#setup-aurora-de-d4137db), sem instalação. A capacidade Lidarr foi retirada, não apenas seu botão. Reprodução, dados e os demais recursos existentes, incluindo Qt Network, letras, downloads opcionais, playlists e stores, foram preservados no recorte exercitado. A [decisão vigente](architecture/decisions/0018-aurora-and-lidarr-removal.md) separa esse recorte de provider de pesquisa, biblioteca permanente, instalação e gates de produção ainda não aprovados.
 
 ### Continuidade preservada: navegador → aplicativo
 

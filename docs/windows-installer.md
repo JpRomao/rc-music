@@ -1,6 +1,6 @@
 # Instalador Windows — receita de produto
 
-O setup privado mais recente da edição Completa experimental inclui a extensão YouTube 0.1.4, a detecção do vídeo de Number One no Letras e nomes de MP3 definidos por música e artista. [Setup de 4e879e1](#setup-completa-experimental-de-4e879e1)
+O setup privado Aurora de `d4137db` é o candidato mais recente da edição Completa experimental, com a extensão YouTube 0.1.5 e o gate i18n corrigido. Foi compilado e inspecionado sem executar ou instalar. [Setup Aurora](#setup-aurora-de-d4137db)
 
 Os setups privados Lite e Completa experimental de `f8a593b` foram compilados em 2026-11-11, com associações e sem assinatura. Instalação, atualização, remoção e gates de distribuição permanecem pendentes. [Setups de f8a593b](#setups-de-f8a593b)
 
@@ -14,6 +14,16 @@ A [entrega anterior de `2144cfd`](local-delivery-2144cfd-20261104.md) documenta 
 A [entrega Lite de `4125f46`](local-delivery-4125f46-20261104.md) registra o setup de 38.064.587 bytes, inventário/hashes, checks e limpeza posterior. As receitas de edição abaixo e os registros históricos preservam seus próprios limites.
 
 A [entrega Completa experimental de `51cd067`](local-delivery-complete-51cd067-20261104.md) registra o setup de **38.139.221 bytes**, SHA-256 `9a59e347ae8564669780e3a03be1d289019d3f3d370f1d19fbaa8e22910657e9`, com manifesto/receipt e notices conferidos. O setup não inclui/instala Evergreen, não foi executado e mantém integração externa e downloads OFF.
+
+## Setup Aurora de d4137db
+
+Gerado da worktree `brave-letras` em 2026-11-15: `out/product/aurora-installer-d4137db89c99/installer/RCMusic-Setup.exe`, 93.052.834 bytes, SHA-256 `30ca2923f1b28f3abec2c42ef76b94ccde976756dbf0381c6276688fa1d12804`. Código e receita correspondem a `d4137db89c99dbfbd8f226301977be077e28b2d0`, Release/x64, testes OFF e fontes limpas na geração. O runtime válido é `runtime-r2`, com 718 arquivos; o diretório parcial da primeira tentativa foi preservado sem ser qualificado.
+
+A montagem mantém o perfil corrente de `setup-youtube-speed-4efd8ba`, Main 0.1.0 e YouTube 0.1.5, com novos recibos dos dois hosts. Associações ficam OFF, sem matriz de formatos; ferramentas e preparação das extensões são opções independentes, desmarcadas por padrão. O lint de produção passou sem warnings, a fronteira conferiu 502 comandos/5 QRCs/46 recursos sem Lidarr/cenários, e o CTest de produção lista zero testes. O smoke isolado passou na recusa de hooks, startup relocado e nos 17 cenários de áudio (19 casos Qt, zero skips).
+
+A inspeção estática listou e extraiu 739 membros e conferiu SHA-256 dos 735 arquivos de payload, além do marcador gerado. Recibo do setup SHA-256 `5237b8cb82a43c46de37f5b28815ca46b9cb453df2f3049cbc942f343ba2050e`; manifesto do runtime `ce41f38b74172d8e9232848a1a340a24340b79fa580da71ed4f75be6a0aae4c7`. `package-verification.json` e `QUALIFICACAO.md` ficam na raiz dessa entrega. [Relatório da fundação e limites](delivery/aurora-native-foundation-20261115.md).
+
+O setup é privado e sem assinatura. Não foi executado/instalado e não altera o app pessoal por sua geração. Instalação/upgrade/uninstall, Brave/WebView2 reais, associações, segurança/licenças/SBOM completos, máquina limpa e release continuam em seus gates. O smoke mutado não comprova audição ou qualificação universal de formatos.
 
 ## Setup Completa experimental de 4e879e1
 
