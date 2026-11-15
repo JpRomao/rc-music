@@ -40,6 +40,7 @@ TestCase {
         property bool interactionAllowed: true
         property string serverAddress: "http://localhost:8686"
         property string statusText: "Lidarr desconectado"
+        property bool albumActivityAvailable: false
         property var results: []
         property string tracksKey: ""
         property bool tracksReady: false
@@ -60,6 +61,7 @@ TestCase {
         property int connects: 0
         property int searches: 0
         property int downloads: 0
+        property int activityChecks: 0
         property int cancels: 0
         property string browsedArtist: ""
         property string browsedAlbum: ""
@@ -94,6 +96,10 @@ TestCase {
             };
             return true;
         }
+        function checkAlbumActivity() {
+            activityChecks++;
+            return true;
+        }
         function listArtistAlbums(key) {
             browsedArtist = key;
             return true;
@@ -124,6 +130,8 @@ TestCase {
         backend.connects = 0;
         backend.searches = 0;
         backend.downloads = 0;
+        backend.activityChecks = 0;
+        backend.albumActivityAvailable = false;
         backend.cancels = 0;
         backend.results = [];
         backend.tracksKey = "";
@@ -216,6 +224,28 @@ TestCase {
         keyClick(Qt.Key_Space);
         compare(backend.browsedArtist, "artist-library");
         compare(backend.downloads, 0);
+    }
+
+    function test_albumActivityRequiresAnExplicitReadAndNeverRequestsAnotherDownload() {
+        showResults([]);
+        const check = findChild(shell, "lidarr-album-activity");
+        verify(check !== null);
+        verify(!check.visible);
+        backend.albumActivityAvailable = true;
+        tryCompare(check, "visible", true);
+        compare(backend.activityChecks, 0);
+        check.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Space);
+        compare(backend.activityChecks, 1);
+        compare(backend.downloads, 0);
+        backend.busy = true;
+        tryCompare(check, "enabled", false);
+        const status = findChild(shell, "lidarr-status");
+        backend.statusText = "Fila de <Álbum>: Baixando (42%)";
+        tryCompare(status, "text", backend.statusText);
+        compare(status.textFormat, Text.PlainText);
+        backend.connected = false;
+        tryCompare(check, "visible", false);
     }
 
     function test_registeredAlbumTracksCanBeFilteredAndAreRevokedWithTheResult() {

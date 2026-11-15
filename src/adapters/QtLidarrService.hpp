@@ -18,7 +18,10 @@ class QtLidarrService final : public QObject {
     Q_OBJECT
   public:
     enum class Kind { Album, Artist };
-    enum class Status { Disconnected, Connecting, Ready, Searching, NoResults, Requesting, Requested, Error };
+    enum class Status {
+        Disconnected, Connecting, Ready, Searching, NoResults, Requesting, Requested, CheckingActivity, AlbumActivity, Error
+    };
+    enum class TransferStatus { Queued, Paused, Downloading, TransferComplete, Failed, Warning, Other };
     enum class Error {
         None,
         Configuration,
@@ -57,6 +60,11 @@ class QtLidarrService final : public QObject {
         bool has_file{};
         friend bool operator==(const TrackItem&, const TrackItem&) = default;
     };
+    struct Transfer final {
+        TransferStatus status{TransferStatus::Other};
+        int percent{-1};
+        friend bool operator==(const Transfer&, const Transfer&) = default;
+    };
     static constexpr qint64 maximum_response_bytes = 4 * 1024 * 1024;
     static constexpr qsizetype maximum_results = 500;
 
@@ -76,6 +84,9 @@ class QtLidarrService final : public QObject {
     // album uses AlbumSearch; a new one is added with explicit server choices.
     [[nodiscard]] bool requestAlbum(const QString& result_key, const QString& root_folder, int quality_profile_id,
                                     int metadata_profile_id);
+    [[nodiscard]] bool checkAlbumActivity();
+    [[nodiscard]] QString requestedAlbumTitle() const;
+    [[nodiscard]] const QVector<Transfer>& albumTransfers() const noexcept;
     void cancel();
     void beginShutdown();
     [[nodiscard]] bool drained() const noexcept;

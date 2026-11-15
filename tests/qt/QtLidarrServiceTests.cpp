@@ -469,6 +469,71 @@ class QtLidarrServiceTests final : public QObject {
         QVERIFY(!service.requestAlbum(old_key, {}, 0, 0));
         QCOMPARE(service.status(), Service::Status::Disconnected);
     }
+    void checksTheRequestedAlbumsQueueWithoutRepeatingTheMutation_data() {
+        QTest::addColumn<bool>("already_registered");
+        QTest::newRow("existing album") << true;
+        QTest::newRow("added album") << false;
+    }
+    void checksTheRequestedAlbumsQueueWithoutRepeatingTheMutation() {
+        QFETCH(bool, already_registered);
+        Network network;
+        Service service(&network);
+        QVERIFY(ready(service, network, "https://music.example.test/lidarr/"));
+        const auto key = lookup(service, network, already_registered ? 23 : 0);
+        QVERIFY(!key.isEmpty());
+        QVERIFY(!service.checkAlbumActivity());
+        QVERIFY(service.requestAlbum(key, "D:/Music", 2, 4));
+        QVERIFY(!service.checkAlbumActivity());
+        network.replies.back()->finish(201, already_registered ? QByteArray{"{\"id\":91}"} : json(album(23)));
+        QCOMPARE(service.status(), Service::Status::Requested);
+        QCOMPARE(network.requests.size(), 6);
+        QCOMPARE(service.requestedAlbumTitle(), "Album & 日本");
+        QVERIFY(service.checkAlbumActivity());
+        QCOMPARE(service.status(), Service::Status::CheckingActivity);
+        QVERIFY(service.busy());
+        const auto request = network.requests.back();
+        QCOMPARE(request.operation, QNetworkAccessManager::GetOperation);
+        QCOMPARE(request.request.url().path(), "/lidarr/api/v1/queue/details");
+        const QUrlQuery query(request.request.url());
+        QCOMPARE(query.queryItemValue("albumIds"), "23");
+        QCOMPARE(query.queryItemValue("includeAlbum"), "false");
+        QCOMPARE(request.request.rawHeader("X-Api-Key"), api_key.toUtf8());
+        QVERIFY(request.body.isEmpty());
+        network.replies.back()->finish(200,
+            R"([{"albumId":23,"status":"downloading","size":400,"sizeleft":232,"outputPath":"C:/private"},)"
+            R"({"albumId":23,"status":"completed","size":20,"sizeleft":0},)"
+            R"({"albumId":23,"status":"pending","size":0,"sizeleft":0}])");
+        QCOMPARE(service.status(), Service::Status::AlbumActivity);
+        const QVector<Service::Transfer> transfers{{Service::TransferStatus::Downloading, 42},
+                                                   {Service::TransferStatus::TransferComplete, 100},
+                                                   {Service::TransferStatus::Other, -1}};
+        QCOMPARE(service.albumTransfers(), transfers);
+        QVERIFY(service.checkAlbumActivity());
+        network.replies.back()->finish(200, "[]");
+        QCOMPARE(service.status(), Service::Status::AlbumActivity);
+        QVERIFY(service.albumTransfers().isEmpty());
+        QCOMPARE(network.requests.size(), 8);
+        QVERIFY(!service.requestAlbum(key, "D:/Music", 2, 4));
+    }
+    void rejectsAnotherAlbumsActivityAndRevokesAccessAfterAuthenticationFailure() {
+        Network network;
+        Service service(&network);
+        QVERIFY(ready(service, network));
+        const auto key = lookup(service, network, 23);
+        QVERIFY(service.requestAlbum(key, {}, 0, 0));
+        network.replies.back()->finish(201, "{\"id\":91}");
+        QVERIFY(service.checkAlbumActivity());
+        network.replies.back()->finish(200, R"([{"albumId":24,"status":"downloading"}])");
+        QCOMPARE(service.error(), Service::Error::Response);
+        QVERIFY(service.albumTransfers().isEmpty());
+        QVERIFY(service.checkAlbumActivity());
+        network.replies.back()->finish(401, "{}");
+        QCOMPARE(service.error(), Service::Error::Authentication);
+        QVERIFY(service.requestedAlbumTitle().isEmpty());
+        QVERIFY(!service.checkAlbumActivity());
+        QVERIFY(ready(service, network));
+        QVERIFY(!service.checkAlbumActivity());
+    }
     void oldSelectionIsInvalidAsSoonAsAnotherLookupStarts() {
         Network network;
         Service service(&network);

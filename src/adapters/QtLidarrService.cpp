@@ -25,6 +25,7 @@ using Service = QtLidarrService;
 using Status = Service::Status;
 using Error = Service::Error;
 using Kind = Service::Kind;
+using TransferStatus = Service::TransferStatus;
 QString owned(const QString& value) { return QString(value.constData(), value.size()); }
 bool validText(const QString& value, const qsizetype maximum = 512, const bool empty_allowed = false) {
     if ((!empty_allowed && value.trimmed().isEmpty()) || value.size() > maximum ||
@@ -80,10 +81,32 @@ bool containsProfile(const QVector<Service::Profile>& profiles, const int id) {
     return id > 0 &&
            std::any_of(profiles.begin(), profiles.end(), [id](const auto& profile) { return profile.id == id; });
 }
+TransferStatus transferStatus(const QString& status) {
+    if (status == QStringLiteral("queued") || status == QStringLiteral("delay"))
+        return TransferStatus::Queued;
+    if (status == QStringLiteral("paused"))
+        return TransferStatus::Paused;
+    if (status == QStringLiteral("downloading"))
+        return TransferStatus::Downloading;
+    if (status == QStringLiteral("completed"))
+        return TransferStatus::TransferComplete;
+    if (status == QStringLiteral("failed"))
+        return TransferStatus::Failed;
+    if (status == QStringLiteral("warning") || status == QStringLiteral("downloadClientUnavailable"))
+        return TransferStatus::Warning;
+    return TransferStatus::Other;
+}
+int transferPercent(const QJsonObject& item) {
+    const auto size = item.value(QStringLiteral("size")).toDouble(-1);
+    const auto remaining = item.value(QStringLiteral("sizeleft")).toDouble(-1);
+    if (!std::isfinite(size) || !std::isfinite(remaining) || size <= 0 || remaining < 0 || remaining > size)
+        return -1;
+    return static_cast<int>(std::lround(100 * ((size - remaining) / size)));
+}
 } // namespace
 
 struct QtLidarrService::Impl final {
-    enum class Step { Status, Roots, Quality, Metadata, Lookup, ArtistAlbums, AlbumTracks, Mutation };
+    enum class Step { Status, Roots, Quality, Metadata, Lookup, ArtistAlbums, AlbumTracks, Mutation, AlbumActivity };
     struct Lookup final {
         ResultItem item;
         QString foreign_id;
@@ -95,6 +118,11 @@ struct QtLidarrService::Impl final {
         bool ready{};
         QVector<TrackItem> items;
     };
+    struct RequestedAlbum final {
+        int id{};
+        QString title;
+        QVector<Transfer> transfers;
+    };
     QtLidarrService& owner;
     QPointer<QNetworkAccessManager> network;
     QPointer<QNetworkReply> reply;
@@ -105,6 +133,8 @@ struct QtLidarrService::Impl final {
     QVector<ResultItem> results;
     QVector<Lookup> lookups;
     std::optional<Lookup> library_artist;
+    std::optional<Lookup> pending_album;
+    RequestedAlbum requested_album;
     TrackList track_list;
     QStringList roots;
     QVector<Profile> quality;
@@ -115,8 +145,7 @@ struct QtLidarrService::Impl final {
     Step step{Step::Status};
     quint64 generation{};
     quint64 selection_generation{};
-    bool connected{}, stopping{}, mutation_is_add{};
-    QString mutation_foreign_id;
+    bool connected{}, stopping{};
 
     Impl(QtLidarrService& q, QNetworkAccessManager* borrowed, const int timeout_ms) : owner(q), network(borrowed) {
         if (!network)
@@ -131,7 +160,8 @@ struct QtLidarrService::Impl final {
     }
     ~Impl() { cancelReply(); }
     bool busy() const {
-        return status == Status::Connecting || status == Status::Searching || status == Status::Requesting;
+        return status == Status::Connecting || status == Status::Searching || status == Status::Requesting ||
+               status == Status::CheckingActivity;
     }
     void cancelReply() {
         timeout.stop();
@@ -158,6 +188,7 @@ struct QtLidarrService::Impl final {
     }
     void discardPendingDetails() {
         library_artist.reset();
+        pending_album.reset();
         if (!track_list.ready)
             track_list = {};
     }
@@ -184,6 +215,7 @@ struct QtLidarrService::Impl final {
             connected = false;
             api_key.clear();
             clearResults();
+            requested_album = {};
         }
         if (!connected) {
             roots.clear();
@@ -404,6 +436,40 @@ struct QtLidarrService::Impl final {
         track_list.ready = true;
         return true;
     }
+    bool acceptAlbumRequest(const QJsonDocument& document) {
+        if (!pending_album || !document.isObject())
+            return false;
+        const auto object = document.object();
+        const auto id = integer(object.value(QStringLiteral("id")));
+        if (!id || *id == 0)
+            return false;
+        const auto existing_id = pending_album->item.existing_id;
+        if (existing_id == 0 && object.value(QStringLiteral("foreignAlbumId")).toString() != pending_album->foreign_id)
+            return false;
+        requested_album = {existing_id == 0 ? *id : existing_id, std::move(pending_album->item.title), {}};
+        pending_album.reset();
+        return true;
+    }
+    bool parseAlbumActivity(const QJsonDocument& document) {
+        if (!document.isArray() || requested_album.id == 0)
+            return false;
+        const auto array = document.array();
+        if (array.size() > maximum_results) {
+            error = Error::Limit;
+            return false;
+        }
+        QVector<Transfer> transfers;
+        transfers.reserve(array.size());
+        for (const auto& entry : array) {
+            const auto item = entry.toObject();
+            const auto remote_status = item.value(QStringLiteral("status")).toString();
+            if (integer(item.value(QStringLiteral("albumId"))) != requested_album.id || !validText(remote_status, 64))
+                return false;
+            transfers.push_back({transferStatus(remote_status), transferPercent(item)});
+        }
+        requested_album.transfers = std::move(transfers);
+        return true;
+    }
     void finish(const quint64 operation_generation, QNetworkReply* expected_reply) {
         if (!matches(operation_generation, expected_reply) || !consume())
             return;
@@ -454,14 +520,12 @@ struct QtLidarrService::Impl final {
         case Step::AlbumTracks:
             valid = parseTracks(document);
             break;
-        case Step::Mutation: {
-            const auto object = document.object();
-            const auto id = integer(object.value(QStringLiteral("id")));
-            valid = document.isObject() && id && *id > 0;
-            if (valid && mutation_is_add)
-                valid = object.value(QStringLiteral("foreignAlbumId")).toString() == mutation_foreign_id;
+        case Step::Mutation:
+            valid = acceptAlbumRequest(document);
             break;
-        }
+        case Step::AlbumActivity:
+            valid = parseAlbumActivity(document);
+            break;
         }
         if (!valid) {
             fail(error == Error::Limit ? Error::Limit : Error::Response);
@@ -478,6 +542,8 @@ struct QtLidarrService::Impl final {
             status = Status::Ready;
         } else if (completed == Step::Mutation) {
             status = Status::Requested;
+        } else if (completed == Step::AlbumActivity) {
+            status = Status::AlbumActivity;
         }
         if (!notify(operation_generation))
             return;
@@ -509,6 +575,8 @@ bool QtLidarrService::connectServer(QString address, QString key) {
     const auto detached_key = key_valid ? key.toUtf8() : QByteArray{};
     value.revoke();
     value.clearResults();
+    value.pending_album.reset();
+    value.requested_album = {};
     value.connected = false;
     value.base = {};
     value.api_key.clear();
@@ -532,6 +600,8 @@ void QtLidarrService::disconnectServer() {
     auto& value = *impl_;
     value.revoke();
     value.clearResults();
+    value.pending_album.reset();
+    value.requested_album = {};
     value.connected = false;
     value.base = {};
     value.api_key.clear();
@@ -593,7 +663,7 @@ bool QtLidarrService::requestAlbum(const QString& result_key, const QString& roo
     });
     if (found == value.lookups.end())
         return false;
-    const auto selected = *found;
+    auto selected = *found;
     const bool existing = selected.item.existing_id > 0;
     if (!existing && (!value.roots.contains(root_folder) || !containsProfile(value.quality, quality_id) ||
                       !containsProfile(value.metadata, metadata_id)))
@@ -626,8 +696,8 @@ bool QtLidarrService::requestAlbum(const QString& result_key, const QString& roo
     if (value.track_list.key == selected.item.key)
         value.track_list = {};
     value.revoke();
-    value.mutation_is_add = !existing;
-    value.mutation_foreign_id = selected.foreign_id;
+    value.pending_album = std::move(selected);
+    value.requested_album = {};
     value.error = Error::None;
     value.status = Status::Requesting;
     const auto generation = value.generation;
@@ -635,6 +705,24 @@ bool QtLidarrService::requestAlbum(const QString& result_key, const QString& roo
         return false;
     return value.request(Impl::Step::Mutation, existing ? QStringLiteral("command") : QStringLiteral("album"), {},
                          QJsonDocument(body).toJson(QJsonDocument::Compact));
+}
+bool QtLidarrService::checkAlbumActivity() {
+    auto& value = *impl_;
+    if (value.stopping || !value.connected || value.busy() || value.requested_album.id == 0)
+        return false;
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("albumIds"), QString::number(value.requested_album.id));
+    query.addQueryItem(QStringLiteral("includeAlbum"), QStringLiteral("false"));
+    value.revoke();
+    value.requested_album.transfers.clear();
+    value.error = Error::None;
+    value.status = Status::CheckingActivity;
+    const auto generation = value.generation;
+    return value.notify(generation) && value.request(Impl::Step::AlbumActivity, QStringLiteral("queue/details"), query);
+}
+QString QtLidarrService::requestedAlbumTitle() const { return impl_->requested_album.title; }
+const QVector<QtLidarrService::Transfer>& QtLidarrService::albumTransfers() const noexcept {
+    return impl_->requested_album.transfers;
 }
 void QtLidarrService::cancel() {
     auto& value = *impl_;
