@@ -1,0 +1,16 @@
+# Build-time consistency pin for this test-only parent/helper pair. It is not
+# publisher authentication or authorization to execute the contextual mode.
+if(NOT DEFINED HELPER OR NOT DEFINED OUTPUT OR NOT EXISTS "${HELPER}")
+    message(FATAL_ERROR "Expected the built Registry-location helper and output header")
+endif()
+get_filename_component(helper_leaf "${HELPER}" NAME)
+if(NOT helper_leaf STREQUAL "rc_music_registry_location_helper.exe")
+    message(FATAL_ERROR "Unexpected Registry-location helper image")
+endif()
+file(SHA256 "${HELPER}" helper_sha256)
+file(TO_CMAKE_PATH "${HELPER}" helper_path)
+string(REPLACE "\\" "\\\\" helper_path "${helper_path}")
+string(REPLACE "\"" "\\\"" helper_path "${helper_path}")
+get_filename_component(header_parent "${OUTPUT}" DIRECTORY)
+file(MAKE_DIRECTORY "${header_parent}")
+file(WRITE "${OUTPUT}" "#pragma once\n#define RC_MUSIC_CONTEXT_HELPER_PATH \"${helper_path}\"\n#define RC_MUSIC_CONTEXT_HELPER_SHA256 \"${helper_sha256}\"\n")

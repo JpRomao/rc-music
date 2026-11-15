@@ -43,6 +43,25 @@ if(BUILD_TESTING)
     add_test(NAME rc_music.registry-location.HelperSelfTest COMMAND rc_music_registry_location_helper --self-test)
     set_tests_properties(rc_music.registry-location.HelperSelfTest PROPERTIES
         LABELS "registry-location;security;parser;windows" TIMEOUT 15)
+    set(registry_helper_identity "${CMAKE_CURRENT_BINARY_DIR}/registry-location-generated/RegistryLocationHelperIdentity.hpp")
+    add_custom_command(OUTPUT "${registry_helper_identity}"
+        COMMAND "${CMAKE_COMMAND}" "-DHELPER=$<TARGET_FILE:rc_music_registry_location_helper>"
+            "-DOUTPUT=${registry_helper_identity}" -P "${RC_MUSIC_SOURCE_ROOT}/cmake/WriteRegistryLocationHelperIdentity.cmake"
+        DEPENDS rc_music_registry_location_helper "${RC_MUSIC_SOURCE_ROOT}/cmake/WriteRegistryLocationHelperIdentity.cmake"
+        VERBATIM)
+    add_executable(rc_music_registry_location_probe
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerRegistryLocationProbe.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/windows/sandbox/AppContainerStorageProbeOptions.cpp"
+        "${registry_helper_identity}")
+    target_include_directories(rc_music_registry_location_probe PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/registry-location-generated")
+    target_link_libraries(rc_music_registry_location_probe PRIVATE Qt6::Core)
+    target_compile_definitions(rc_music_registry_location_probe PRIVATE RC_MUSIC_SANDBOX_WORKSPACE_ROOT="${RC_MUSIC_SOURCE_ROOT}")
+    rc_music_configure_cpp(rc_music_registry_location_probe)
+    add_test(NAME rc_music.registry-location.ContextProbeSelfTest COMMAND rc_music_registry_location_probe --self-test)
+    set_tests_properties(rc_music.registry-location.ContextProbeSelfTest PROPERTIES
+        LABELS "registry-location;security;parser;windows" TIMEOUT 15
+        ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     # The context-query helper is a test-only diagnostic. Neither this protocol
     # nor its fake-call query tests belong to the production worker or player.
     foreach(unit IN ITEMS AppContainerRegistryLocationProtocol AppContainerRegistryLocationQuery)
