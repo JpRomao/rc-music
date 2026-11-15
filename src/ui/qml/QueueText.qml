@@ -1,6 +1,7 @@
 import QtQuick
 
 QtObject {
+    readonly property string manageLyrics: qsTr("Gerenciar letras")
     readonly property string add: qsTr("Adicionar arquivos")
     readonly property string moveUp: qsTr("Mover para cima")
     readonly property string moveDown: qsTr("Mover para baixo")

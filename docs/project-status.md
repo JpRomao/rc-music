@@ -1,6 +1,6 @@
 # Estado do projeto — RC Music
 
-**Revisado em:** 2026-11-13.
+**Revisado em:** 2026-11-15.
 
 Este arquivo é um índice do estado vigente, não um diário de desenvolvimento. A sequência de trabalho e as evidências de cada incremento ficam na [seção 17 do plano](development-plan.md#17-próxima-sequência-segura). Relatos históricos não substituem esse checkpoint. Requisitos e decisões continuam nas suas fontes de verdade, conforme [agents.md](../agents.md).
 
@@ -10,17 +10,22 @@ Este arquivo é um índice do estado vigente, não um diário de desenvolvimento
 - **Unidade de produto existente:** núcleo, aplicação gráfica, testes e receitas Windows estão na raiz. Não é necessário promover novamente o experimento ou reimplementar o player. Consulte o [build desktop](desktop-build.md), o [núcleo independente](core-build.md) e os [comandos locais](development-commands.md).
 - **Identidade preservada:** RC Music é o nome aceito; identificadores e dados locais `MusicPlayer` permanecem conforme [ADR-0004](architecture/decisions/0004-rc-music-identity.md).
 - **Prontidão:** implementação, teste automatizado, validação nativa, instalação e aprovação de distribuição são estados distintos. M1 e a release 0.1 continuam abertos pelos seus gates residuais; isso não torna ausentes as funcionalidades já implementadas.
+- **Decisão vigente:** [ADR-0018](architecture/decisions/0018-aurora-and-lidarr-removal.md): retirada integral do Lidarr do app e migração incremental para o visual Aurora aprovado. A primeira fundação nativa está implementada e exercitada: lateral Agora/Fila, player persistente, temas Aurora e retirada do Lidarr. O gate legado de centralização de textos foi corrigido; [resultado, evidências e limites](delivery/aurora-native-foundation-20261115.md). Aceite humano Qt, pacote instalado e release permanecem separados.
 
 | Área | Implementação existente | Aceitação ainda separada |
 | --- | --- | --- |
 | Player local | Reprodução, fila, seek, metadados/capas, temas, preferências, sessão pausada, bandeja e integrações Windows. [Manual](user-guide.md) | Jornadas nativas/empacotadas, acessibilidade final e cenários físicos aplicáveis. |
 | Organização e letras | Playlists persistentes, LRC local, consulta explícita ao LRCLIB e versões de letras. [Playlists](playlists.md) · [Versões](lyrics-variants.md) | Aceitação nativa e cobertura de provedores; Letras.mus.br automático não está qualificado. |
-| Lidarr | Cliente, confirmação de pedidos e consulta de álbuns/faixas cadastrados. [Integração](lidarr-integration.md) | Aceitação autenticada; pedido aceito não significa mídia baixada ou importada no RC Music. |
+| Lidarr | Retirado do escopo do aplicativo. FR-055 permanece **fora de escopo**, em R1.11; [histórico preservado](lidarr-integration.md). | Não há aceitação autenticada ou download real a continuar. Reintrodução exige nova decisão; servidores e dados pessoais ficam intactos. |
 | Extensões Chromium | Clientes MV3 principal e YouTube, identidades/canais separados, seleção explícita e reenvio consentido após incerteza. [Principal](browser-extension.md) · [YouTube](youtube-audio-and-lyrics.md) | Instalação e jornada real no Brave; detecção não comprova aquisição. |
 | Ponte e aquisição | Hosts Native Messaging, IPC, admissão durável, workers, conversão, publicação, recuperação e importação sem autoplay existem em composição opcional. [Bootstrap](player-downloads-bootstrap.md) · [Jobs](download-jobs.md) | Ativação instalada coerente, qualificação de isolamento e aquisição pública. Fixtures não comprovam esses gates. |
 | Edições e pacotes | Lite sem engine interna, Completa com navegação WebView2 experimental e setups privados de ambas já gerados. [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) · [Instalador](windows-installer.md) | Navegação real, instalação/upgrade/uninstall, assinatura e distribuição. O guia do instalador identifica os candidatos atuais e seus checks. |
 
-## 2. Prioridade atual: navegador → aplicativo
+## 2. Prioridade atual: fundação Aurora sem Lidarr
+
+Consolidar o checkpoint Aurora já implementado e seu instalador privado autorizado, sem instalar. A capacidade Lidarr foi retirada, não apenas seu botão. Reprodução, dados e os demais recursos existentes, incluindo Qt Network, letras, downloads opcionais, playlists e stores, foram preservados no recorte exercitado. A [decisão vigente](architecture/decisions/0018-aurora-and-lidarr-removal.md) separa esse recorte de provider de pesquisa, biblioteca permanente, instalação e gates de produção ainda não aprovados.
+
+### Continuidade preservada: navegador → aplicativo
 
 O objetivo do mantenedor é navegar no Brave/Chromium, selecionar a mídia da página pela extensão e acompanhar sua aquisição no RC Music, com entrega final em MP3. Quando a fonte for MP4, extrair e converter seu áudio; não salvar o vídeo como resultado alternativo. O exemplo indicado é a [página de Bleach no Letras](https://www.letras.mus.br/bleach/1222774/). A aceitação deve exercitar a jornada completa, não apenas o popup simulado ou o recebimento de um pedido.
 

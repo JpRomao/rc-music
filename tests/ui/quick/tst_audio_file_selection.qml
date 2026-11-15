@@ -260,9 +260,10 @@ TestCase {
     function test_deferredQueueOpeningDoesNotMoveFocusIntoThePendingPickerOwner() {
         selectInitialTrack();
         shell.setQueueOpen(true);
-        const opener = findChild(shell, "open-another-audio");
+        const opener = findChild(shell, "queue-add");
+        verify(opener.visible && opener.enabled);
         opener.forceActiveFocus(Qt.TabFocusReason);
-        shell.openAudio(opener);
+        opener.Accessible.pressAction();
         tryCompare(presenter, "selectingAudioFiles", true);
         wait(0);
         verify(!findChild(shell, "queue-list").activeFocus, "A queued focus transfer must recheck whether a file picker has opened");

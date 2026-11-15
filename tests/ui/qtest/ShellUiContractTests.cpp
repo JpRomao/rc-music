@@ -14,8 +14,11 @@
 #include <QGuiApplication>
 #include <QIcon>
 #include <QImage>
+#include <QJSValue>
 #include <QMetaMethod>
 #include <QMetaProperty>
+#include <QQmlComponent>
+#include <QQmlEngine>
 #include <QRegularExpression>
 #include <QScopeGuard>
 #include <QSignalSpy>
@@ -26,8 +29,10 @@
 #include <QWindow>
 #include <QtQml/qqml.h>
 
+#include <memory>
 #include <optional>
 #include <stdexcept>
+#include <tuple>
 
 namespace music_player::m0::test {
 namespace {
@@ -53,6 +58,18 @@ QStringList highContrastColors(const HighContrastPalette& palette) {
     const QString text = palette.window_text.name();
     return {window, window, window, text, text, palette.highlight.name(), palette.highlighted_text.name(),
             text,   text,   text,   text, text};
+}
+
+QStringList auroraColors(bool dark) {
+    if (dark) {
+        return {QStringLiteral("#1B1917"), QStringLiteral("#24211D"), QStringLiteral("#2D2923"),
+                QStringLiteral("#F2EADD"), QStringLiteral("#BFB09D"), QStringLiteral("#D6A27E"),
+                QStringLiteral("#2D1C13"), QStringLiteral("#D6A27E"), QStringLiteral("#89715A"),
+                QStringLiteral("#F2ADA0"), QStringLiteral("#E2C78B"), QStringLiteral("#6DDA9B")};
+    }
+    return {QStringLiteral("#F5F1E9"), QStringLiteral("#FFFCF6"), QStringLiteral("#EEE8DD"), QStringLiteral("#302D28"),
+            QStringLiteral("#726557"), QStringLiteral("#934B32"), QStringLiteral("#FFFAF4"), QStringLiteral("#934B32"),
+            QStringLiteral("#A58C73"), QStringLiteral("#9B3C32"), QStringLiteral("#795A21"), QStringLiteral("#167344")};
 }
 
 HighContrastPalette lightHighContrastPalette() {
@@ -93,6 +110,47 @@ class PrefixTranslator final : public QTranslator {
            trimmed.startsWith(QStringLiteral("case ")) || line.contains(QStringLiteral("typeof "));
 }
 
+[[nodiscard]] bool isTechnicalQmlLiteral(const QString& line, qsizetype literal_start) {
+    if (isTechnicalQmlContext(line))
+        return true;
+    const QString prefix = line.left(literal_start);
+    const QString literal = line.mid(literal_start + 1).section(QLatin1Char{'"'}, 0, 0);
+    // Classify individual data literals, never exempt the whole mixed expression:
+    // a mode comparison must not conceal an untranslated label in its next branch.
+    const auto matches = [&](const char* pattern) {
+        return QRegularExpression{QString::fromLatin1(pattern)}.match(prefix).hasMatch();
+    };
+    if (matches(R"((?:===|!==|==|!=)\s*$)") || matches(R"(^\s*(?:textRole|valueRole|primaryObjectName)\s*:\s*$)") ||
+        matches(R"(\bQt\.openUrlExternally\(\s*$)")) {
+        return true;
+    }
+    const QStringList kinds{QStringLiteral("original"), QStringLiteral("romanized"), QStringLiteral("translation")};
+    if (kinds.contains(literal) &&
+        (matches(R"(^\s*value\s*:\s*$)") || matches(R"(^\s*readonly\s+property\s+var\s+versionKinds\s*:\s*\[.*$)"))) {
+        return true;
+    }
+    if (literal == QStringLiteral("off") && matches(R"(^\s*readonly\s+property\s+string\s+noLyricsId\s*:\s*$)")) {
+        return true;
+    }
+    if (QStringList{QStringLiteral("add"), QStringLiteral("queued"), QStringLiteral("romaji"), QStringLiteral("edit"),
+                    QStringLiteral("current")}
+            .contains(literal) &&
+        matches(R"(\b(?:startForm|openForm)\(\s*$)")) {
+        return true;
+    }
+    if (QStringList{QStringLiteral("create"), QStringLiteral("saveQueue"), QStringLiteral("rename")}.contains(
+            literal) &&
+        matches(R"(\bopenName\(\s*$)")) {
+        return true;
+    }
+    if (QStringList{QStringLiteral("remove"), QStringLiteral("reload")}.contains(literal) &&
+        matches(R"(^\s*confirmMode\s*=\s*$)")) {
+        return true;
+    }
+    return (literal == QStringLiteral("ja") && matches(R"(^\s*languageField\.text\s*=.*\bromaji\s*\?\s*$)")) ||
+           (literal == QStringLiteral("Latn") && matches(R"(^\s*scriptField\.text\s*=.*\bromaji\s*\?\s*$)"));
+}
+
 } // namespace
 
 class ShellUiContractTests final : public QObject {
@@ -102,8 +160,8 @@ class ShellUiContractTests final : public QObject {
     void configuresQtDisplayNameWithoutMovingStoredData();
     void configuresTheExistingArtworkAsTheApplicationAndWindowIcon();
     void exposesFrozenConstantsAndAuthenticatedResources();
-    void productDefaultsMatchTheFrozenHistoricalContract();
-    void productAppearanceMatchesTheHistoricalContract();
+    void productConstantsRetainFrozenBehaviorWithAuroraColors();
+    void productAppearanceUsesAuroraWhileHistoricalPalettesStayFrozen();
     void productTextRetainsTheHistoricalTranslationContract();
     void historicalConstructorRetainsAcceptedVisualOverrides();
     void rejectsUnknownAssetMappings();
@@ -113,6 +171,9 @@ class ShellUiContractTests final : public QObject {
     void distinguishesTechnicalBooleanSelectorsFromVisibleText();
     void distinguishesShortcutSequencesFromVisibleText_data();
     void distinguishesShortcutSequencesFromVisibleText();
+    void distinguishesTechnicalDataFromVisibleText_data();
+    void distinguishesTechnicalDataFromVisibleText();
+    void lyricsAndPlaylistCatalogsTranslateWithoutChangingStoredKinds();
     void classifiesSingleInstanceFailuresThroughTheTextCatalog();
     void invalidSourcePathsHaveActionableFeedbackWithoutExternalDetails();
     void shellTextCanBeTranslatedWithoutChangingTheFixture();
@@ -269,6 +330,7 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
     QCOMPARE(contract.feedbackTransitionMs(), 120);
     QCOMPARE(contract.placeholderSource(), QUrl(QStringLiteral("qrc:/m0/assets/cover-placeholder.svg")));
     QCOMPARE(contract.trackSource(), QUrl(QStringLiteral("qrc:/m0/assets/cover-track.svg")));
+    QCOMPARE(contract.navigationColor(), contract.surfaceColor());
     const QMetaObject* meta = contract.metaObject();
     const QStringList expected_properties = {
         QStringLiteral("clientWidth"),
@@ -283,6 +345,10 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("radiusSmall"),
         QStringLiteral("spacingUnit"),
         QStringLiteral("appName"),
+        QStringLiteral("headingFontFamily"),
+        QStringLiteral("bodyFontFamily"),
+        QStringLiteral("symbolFontFamily"),
+        QStringLiteral("applicationFont"),
         QStringLiteral("openAudioText"),
         QStringLiteral("emptyTitle"),
         QStringLiteral("emptyHint"),
@@ -316,6 +382,7 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("motionReduced"),
         QStringLiteral("canvasColor"),
         QStringLiteral("surfaceColor"),
+        QStringLiteral("navigationColor"),
         QStringLiteral("surfaceRaisedColor"),
         QStringLiteral("textPrimaryColor"),
         QStringLiteral("textSecondaryColor"),
@@ -336,15 +403,16 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("trackSource"),
     };
     const QStringList appearance_properties = {
-        QStringLiteral("canvasColor"),        QStringLiteral("surfaceColor"),
-        QStringLiteral("surfaceRaisedColor"), QStringLiteral("textPrimaryColor"),
-        QStringLiteral("textSecondaryColor"), QStringLiteral("accentColor"),
-        QStringLiteral("accentTextColor"),    QStringLiteral("focusColor"),
-        QStringLiteral("borderColor"),        QStringLiteral("errorColor"),
-        QStringLiteral("warningColor"),       QStringLiteral("successColor"),
-        QStringLiteral("disabledTextColor"),  QStringLiteral("highContrast"),
-        QStringLiteral("darkTheme"),          QStringLiteral("reducedMotion"),
-        QStringLiteral("panelTransitionMs"),  QStringLiteral("feedbackTransitionMs"),
+        QStringLiteral("navigationColor"),      QStringLiteral("canvasColor"),
+        QStringLiteral("surfaceColor"),         QStringLiteral("surfaceRaisedColor"),
+        QStringLiteral("textPrimaryColor"),     QStringLiteral("textSecondaryColor"),
+        QStringLiteral("accentColor"),          QStringLiteral("accentTextColor"),
+        QStringLiteral("focusColor"),           QStringLiteral("borderColor"),
+        QStringLiteral("errorColor"),           QStringLiteral("warningColor"),
+        QStringLiteral("successColor"),         QStringLiteral("disabledTextColor"),
+        QStringLiteral("highContrast"),         QStringLiteral("darkTheme"),
+        QStringLiteral("reducedMotion"),        QStringLiteral("panelTransitionMs"),
+        QStringLiteral("feedbackTransitionMs"),
     };
     QStringList actual_properties;
     for (int index = meta->propertyOffset(); index < meta->propertyCount(); ++index) {
@@ -405,7 +473,7 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
     QVERIFY(!QFile::exists(QStringLiteral(":/m0/data/assets/cover-placeholder.svg")));
 }
 
-void ShellUiContractTests::productDefaultsMatchTheFrozenHistoricalContract() {
+void ShellUiContractTests::productConstantsRetainFrozenBehaviorWithAuroraColors() {
     QObject owner;
     ShellUiContract product(&owner);
     QCOMPARE(product.parent(), &owner);
@@ -416,11 +484,15 @@ void ShellUiContractTests::productDefaultsMatchTheFrozenHistoricalContract() {
         const QMetaProperty property = meta->property(index);
         const QVariant expected = property.read(&historical);
         QVERIFY2(expected.isValid(), property.name());
-        QVERIFY2(property.read(&product) == expected, property.name());
+        if (!QString::fromLatin1(property.name()).endsWith(QStringLiteral("Color")))
+            QVERIFY2(property.read(&product) == expected, property.name());
     }
+    QCOMPARE(appearanceColors(product), auroraColors(false));
+    QCOMPARE(product.disabledTextColor(), product.textPrimaryColor());
+    QCOMPARE(appearanceColors(historical), paletteColors(bundle.themes.light));
 }
 
-void ShellUiContractTests::productAppearanceMatchesTheHistoricalContract() {
+void ShellUiContractTests::productAppearanceUsesAuroraWhileHistoricalPalettesStayFrozen() {
     ShellUiContract product(nullptr);
     const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
     ShellUiContract historical(bundle);
@@ -440,8 +512,14 @@ void ShellUiContractTests::productAppearanceMatchesTheHistoricalContract() {
                         for (int repetition = 0; repetition < 2; ++repetition) {
                             product.updateAppearance(theme, motion, system_dark, system_reduced, high_contrast);
                             historical.updateAppearance(theme, motion, system_dark, system_reduced, high_contrast);
-                            QCOMPARE(appearanceColors(product), appearanceColors(historical));
-                            QCOMPARE(product.disabledTextColor(), historical.disabledTextColor());
+                            const bool dark = theme == ThemeMode::Dark || (theme == ThemeMode::System && system_dark);
+                            QCOMPARE(appearanceColors(product),
+                                     high_contrast ? highContrastColors(*high_contrast) : auroraColors(dark));
+                            QCOMPARE(appearanceColors(historical),
+                                     high_contrast ? highContrastColors(*high_contrast)
+                                                   : paletteColors(dark ? bundle.themes.dark : bundle.themes.light));
+                            QCOMPARE(product.disabledTextColor(),
+                                     high_contrast ? high_contrast->disabled_text.name() : product.textPrimaryColor());
                             QCOMPARE(product.highContrast(), historical.highContrast());
                             QCOMPARE(product.darkTheme(), historical.darkTheme());
                             QCOMPARE(product.reducedMotion(), historical.reducedMotion());
@@ -456,7 +534,8 @@ void ShellUiContractTests::productAppearanceMatchesTheHistoricalContract() {
     }
     product.updateAppearance(ThemeMode::System, MotionMode::System, false, false);
     historical.updateAppearance(ThemeMode::System, MotionMode::System, false, false);
-    QCOMPARE(appearanceColors(product), paletteColors(bundle.themes.light));
+    QCOMPARE(appearanceColors(product), auroraColors(false));
+    QCOMPARE(appearanceColors(historical), paletteColors(bundle.themes.light));
     QCOMPARE(product.panelTransitionMs(), bundle.motion.normal.panel_transition_ms);
     QCOMPARE(product.feedbackTransitionMs(), bundle.motion.normal.feedback_transition_ms);
     QCOMPARE(product_changed.count(), historical_changed.count());
@@ -472,7 +551,8 @@ void ShellUiContractTests::productTextRetainsTheHistoricalTranslationContract() 
     const QMetaObject* meta = product.metaObject();
     for (int index = meta->propertyOffset(); index < meta->propertyCount(); ++index) {
         const QMetaProperty property = meta->property(index);
-        if (property.metaType() != QMetaType::fromType<QString>())
+        if (property.metaType() != QMetaType::fromType<QString>() ||
+            QString::fromLatin1(property.name()).endsWith(QStringLiteral("Color")))
             continue;
         QVERIFY2(property.read(&product) == property.read(&historical), property.name());
     }
@@ -595,7 +675,7 @@ void ShellUiContractTests::essentialQmlTextIsCentralizedAndExtractable() {
             while (match_iterator.hasNext()) {
                 const auto match = match_iterator.next();
                 const QString literal = match.captured(1);
-                if (!isUserFacingLiteral(literal) || isTechnicalQmlContext(line))
+                if (!isUserFacingLiteral(literal) || isTechnicalQmlLiteral(line, match.capturedStart()))
                     continue;
                 if (catalog && line.contains(QStringLiteral("qsTr("), Qt::CaseSensitive))
                     continue;
@@ -607,6 +687,97 @@ void ShellUiContractTests::essentialQmlTextIsCentralizedAndExtractable() {
         }
     }
     QVERIFY2(violations.isEmpty(), qPrintable(violations.join(QLatin1Char{'\n'})));
+}
+
+void ShellUiContractTests::distinguishesTechnicalDataFromVisibleText_data() {
+    QTest::addColumn<QString>("line");
+    QTest::addColumn<QString>("literal");
+    QTest::addColumn<bool>("technical");
+    QTest::newRow("model-role") << QStringLiteral("textRole: \"label\"") << QStringLiteral("label") << true;
+    QTest::newRow("model-value-role") << QStringLiteral("valueRole: \"value\"") << QStringLiteral("value") << true;
+    QTest::newRow("child-object-name") << QStringLiteral("primaryObjectName: \"playlist-row-name\"")
+                                       << QStringLiteral("playlist-row-name") << true;
+    QTest::newRow("state-comparison") << QStringLiteral("visible: row.jobState === \"failed\"")
+                                      << QStringLiteral("failed") << true;
+    QTest::newRow("mixed-state") << QStringLiteral("text: mode === \"romaji\" ? \"Revisar romaji\" : other")
+                                 << QStringLiteral("romaji") << true;
+    QTest::newRow("mixed-visible") << QStringLiteral("text: mode === \"romaji\" ? \"Revisar romaji\" : other")
+                                   << QStringLiteral("Revisar romaji") << false;
+    QTest::newRow("external-url") << QStringLiteral("Qt.openUrlExternally(\"https://www.lyricfind.com/\");")
+                                  << QStringLiteral("https://www.lyricfind.com/") << true;
+    QTest::newRow("visible-url") << QStringLiteral("text: \"https://www.lyricfind.com/\"")
+                                 << QStringLiteral("https://www.lyricfind.com/") << false;
+    QTest::newRow("kind-codes") << QStringLiteral("readonly property var versionKinds: [\"original\", \"romanized\"]")
+                                << QStringLiteral("original") << true;
+    QTest::newRow("kind-value") << QStringLiteral("value: \"translation\"") << QStringLiteral("translation") << true;
+    QTest::newRow("kind-label") << QStringLiteral("label: \"Original\"") << QStringLiteral("Original") << false;
+    QTest::newRow("off-id") << QStringLiteral("readonly property string noLyricsId: \"off\"") << QStringLiteral("off")
+                            << true;
+    QTest::newRow("form-mode") << QStringLiteral("root.startForm(\"romaji\", content);") << QStringLiteral("romaji")
+                               << true;
+    QTest::newRow("form-visible-argument")
+        << QStringLiteral("root.startForm(\"Revisar romaji\", content);") << QStringLiteral("Revisar romaji") << false;
+    QTest::newRow("playlist-mode") << QStringLiteral("onClicked: root.openName(\"saveQueue\")")
+                                   << QStringLiteral("saveQueue") << true;
+    QTest::newRow("confirmation-mode") << QStringLiteral("confirmMode = \"reload\";") << QStringLiteral("reload")
+                                       << true;
+    QTest::newRow("language-code") << QStringLiteral(
+                                          "languageField.text = draft ? draft.language : (romaji ? \"ja\" : \"\");")
+                                   << QStringLiteral("ja") << true;
+    QTest::newRow("script-code") << QStringLiteral(
+                                        "scriptField.text = draft ? draft.script : (romaji ? \"Latn\" : \"\");")
+                                 << QStringLiteral("Latn") << true;
+    QTest::newRow("visible-language") << QStringLiteral("text: \"ja\"") << QStringLiteral("ja") << false;
+    QTest::newRow("visible-property") << QStringLiteral("readonly property string statusText: \"Falha ao salvar\"")
+                                      << QStringLiteral("Falha ao salvar") << false;
+}
+
+void ShellUiContractTests::distinguishesTechnicalDataFromVisibleText() {
+    QFETCH(QString, line);
+    QFETCH(QString, literal);
+    QFETCH(bool, technical);
+    const qsizetype start = line.indexOf(QLatin1Char{'"'} + literal + QLatin1Char{'"'});
+    QVERIFY(start >= 0);
+    QCOMPARE(isTechnicalQmlLiteral(line, start), technical);
+}
+
+void ShellUiContractTests::lyricsAndPlaylistCatalogsTranslateWithoutChangingStoredKinds() {
+    PrefixTranslator translator;
+    QVERIFY(QCoreApplication::installTranslator(&translator));
+    const auto remove_translator = qScopeGuard([&] { QCoreApplication::removeTranslator(&translator); });
+    QQmlEngine engine;
+    for (const auto& [type, property, expected] : {std::tuple{"LyricsText", "search", "⟦Buscar letra⟧"},
+                                                   std::tuple{"PlaylistsText", "create", "⟦Nova playlist⟧"}}) {
+        QQmlComponent component{&engine};
+        component.loadFromModule(QStringLiteral("MusicPlayer.M0"), QString::fromUtf8(type));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        const std::unique_ptr<QObject> catalog{component.create()};
+        QVERIFY(catalog != nullptr);
+        QCOMPARE(catalog->property(property).toString(), QString::fromUtf8(expected));
+    }
+    ShellUiContract contract{nullptr};
+    for (const QString& type : {QStringLiteral("LyricsVariantsPanel"), QStringLiteral("DownloadLyricsPanel")}) {
+        QQmlComponent component{&engine};
+        component.loadFromModule(QStringLiteral("MusicPlayer.M0"), type);
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        const std::unique_ptr<QObject> panel{
+            component.createWithInitialProperties({{QStringLiteral("contract"), QVariant::fromValue(&contract)}})};
+        QVERIFY2(panel != nullptr, qPrintable(component.errorString()));
+        const QVariantList kinds = panel->property("versionKinds").value<QJSValue>().toVariant().toList();
+        QCOMPARE(kinds.size(), 3);
+        for (int index = 0; index < kinds.size(); ++index) {
+            const QString expected =
+                QStringList{QStringLiteral("original"), QStringLiteral("romanized"), QStringLiteral("translation")}.at(
+                    index);
+            if (type == QStringLiteral("LyricsVariantsPanel")) {
+                QCOMPARE(kinds.at(index).toMap().value(QStringLiteral("value")).toString(), expected);
+                QVERIFY(
+                    kinds.at(index).toMap().value(QStringLiteral("label")).toString().startsWith(QStringLiteral("⟦")));
+            } else {
+                QCOMPARE(kinds.at(index).toString(), expected);
+            }
+        }
+    }
 }
 
 void ShellUiContractTests::classifiesSingleInstanceFailuresThroughTheTextCatalog() {

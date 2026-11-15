@@ -10,6 +10,8 @@ ColumnLayout {
     property string hintText: contract.emptyHint
     property string actionText: contract.openAudioText
     property bool openingEnabled: true
+    property bool compact: false
+    readonly property real coverExtent: compact && parent ? Math.max(0, Math.min(128, parent.height - titleLabel.implicitHeight - hintLabel.implicitHeight - openAudioButton.implicitHeight - spacing * 3 - 4)) : 192
     signal openAudioRequested(Item opener)
     spacing: contract.spacingUnit * 4
 
@@ -19,6 +21,8 @@ ColumnLayout {
 
     Image {
         objectName: "cover-placeholder"
+        Layout.preferredWidth: root.coverExtent
+        Layout.preferredHeight: root.coverExtent
         source: root.contract.placeholderSource
         sourceSize.width: 192
         sourceSize.height: 192
@@ -26,6 +30,7 @@ ColumnLayout {
         Accessible.ignored: true
     }
     Text {
+        id: titleLabel
         objectName: "empty-title"
         text: root.titleText
         textFormat: Text.PlainText
@@ -36,6 +41,7 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
     }
     Text {
+        id: hintLabel
         objectName: "empty-hint"
         text: root.hintText
         textFormat: Text.PlainText

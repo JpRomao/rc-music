@@ -1,8 +1,10 @@
 # Integração opcional com Lidarr
 
-**Estado:** prioridade de desenvolvimento confirmada pelo mantenedor em 2026-11-04; implementação e validação em andamento.
+**Estado:** histórico; integração retirada do escopo do aplicativo por decisão do mantenedor em 2026-11-15. FR-055 permanece **fora de escopo** conforme o [ADR-0018](architecture/decisions/0018-aurora-and-lidarr-removal.md), que substitui o ADR-0014.
 
-O [ADR-0014](architecture/decisions/0014-lidarr-integration.md) registra o escopo aceito. A integração será compartilhada pelas edições Lite e Completa, conectando o RC Music a uma instância Lidarr configurada pelo usuário. O player não instala nem inicia o servidor.
+**Aviso de preservação:** as seções e âncoras abaixo descrevem exclusivamente o fluxo anterior e suas evidências. Não são instruções de uso ou validação da versão sem Lidarr, não representam Green atual e não deixam pesquisa autenticada/download real como próxima tarefa. Nenhuma chave, servidor, pedido remoto ou arquivo pessoal precisa ser lido, alterado ou removido. Outros consumidores de Qt Network e os fluxos de letras/downloads/playlists permanecem independentes.
+
+O [ADR-0014](architecture/decisions/0014-lidarr-integration.md) registra o escopo originalmente aceito. A integração era compartilhada pelas edições Lite e Completa, conectando o RC Music a uma instância Lidarr configurada pelo usuário. O player não instalava nem iniciava o servidor. Runtimes/setups antigos conservam sua própria identidade; este registro não os atualiza ou requalifica.
 
 ## Fluxo de produto
 
@@ -12,7 +14,7 @@ O [ADR-0014](architecture/decisions/0014-lidarr-integration.md) registra o escop
 4. Selecionar um álbum e confirmar separadamente o pedido no Lidarr. Se ele ainda não estiver cadastrado, escolher diretório e perfis existentes no servidor para adicionar e buscar somente esse álbum; se já existir, solicitar sua busca pelo ID.
 5. Acompanhar o resultado sem interromper a reprodução local ou interpretar comando aceito como download concluído.
 
-Esse fluxo descreve a integração em desenvolvimento, sem alegação de validação com servidor real. **Busca solicitada no Lidarr** confirma a aceitação de um pedido, sem afirmar que houve resultado, download ou importação. A primeira integração não transfere o áudio para o RC Music nem altera a fila ou inicia reprodução.
+Esse fluxo descreve a integração histórica, sem alegação de validação autenticada com servidor real. **Busca solicitada no Lidarr** confirmava a aceitação de um pedido, sem afirmar que houve resultado, download ou importação. A primeira integração não transferia o áudio para o RC Music nem alterava a fila ou iniciava reprodução.
 
 Uma consulta concluída sem correspondências exibe **Nenhum resultado para esta busca** e permite outra pesquisa. O painel identifica álbuns de catálogo e álbuns já cadastrados, inclusive no nome acessível do resultado. A confirmação explica se o Lidarr vai cadastrar o álbum ou buscar o cadastro existente. Se a consulta ou a conexão mudar enquanto a confirmação estiver aberta, escolha o álbum novamente.
 
@@ -51,6 +53,8 @@ Perfis, diretório de biblioteca, indexadores e clientes pertencem à configura�
 
 ## Evidência de implementação
 
+**Evidência histórica anterior à retirada.** As contagens, falhas e recibos seguintes não foram reexecutados nem promovidos a qualificação do app sem Lidarr. Os testes exclusivos foram retirados com a capacidade; FR-055 possui verificação documental e decisão explícita, sem vínculos a arquivos de teste removidos.
+
 Evidências em `out/product/test-runs/lidarr-integration-20261104/`. Red inicial do serviço **3 passagens/30 falhas**, binding **3/3** e UI recusada por propriedade ainda ausente; os stubs foram substituídos depois dessas execuções. A regressão da seleção pública consumida teve **32/1 → 33/33 Qt**. O teste de timeout expôs um erro no oráculo: o reply já havia recebido DeferredDelete; o teste passou a observar o abort por um registro que sobrevive ao objeto, conservando as exigências de timeout e ausência de retry. O binding terminou **8/8 Qt**, incluindo serviço real sobre QNAM falso, projeção e POST exato.
 
 A UI terminou **12/12 Qt Quick** no arquivo dedicado: confirmação, seleção obsoleta, campos mascarados, texto simples também nas opções do servidor, header com opcionais e geometria mínima **720 × 520**. O primeiro teste de opções falhou por TextFormat ausente; a troca por conteúdo/delegates PlainText corrigiu o caso. O teste de seleção obsoleta encontrou um binding loop; a confirmação agora conserva seu snapshot e desabilita o envio com aviso, sem mutar o snapshot durante o cálculo. Ajustes de espera de delegates corrigiram o harness sem enfraquecer os contratos.
@@ -59,15 +63,15 @@ O fechamento passou **263/263 CTest**, sem falhas/skips, em **63,69 s**: **254 t
 
 Builds Release Lite com testes ON/OFF e Completa experimental OFF passaram; `all_qmllint` terminou sem warnings. Formato de **7 C++ alterados e todos os 67 QML** passou, preservando os seis arquivos AppContainer preexistentes. Os grafos Lite ON/OFF têm **304/275 comandos**, com cliente/binding/painel Lidarr e sem engine; Completa OFF tem **309**, incluindo sua engine existente. Ambos os builds OFF registram zero CTest. Os novos componentes não puxam testes, helpers de Registro ou WFP para o produto e não adicionam um runtime Lidarr.
 
-A conferência real separada enviou somente `GET http://localhost:8686/api/v1/system/status`, sem chave: o servidor respondeu **401**. Isso comprova alcance do endpoint e exigência de autenticação, sem comprovar versão, catálogo, configuração ou downloads. Nenhuma chave foi extraída de arquivos pessoais; não houve POST no servidor real, importação, mudança da fila pessoal, instalação ou regeneração de instaladores. A chave deve ser informada no próprio app para a aceitação autenticada.
+A conferência real separada enviou somente `GET http://localhost:8686/api/v1/system/status`, sem chave: o servidor respondeu **401**. Isso comprova alcance do endpoint e exigência de autenticação, sem comprovar versão, catálogo, configuração ou downloads. Nenhuma chave foi extraída de arquivos pessoais; não houve POST no servidor real, importação, mudança da fila pessoal, instalação ou regeneração de instaladores. Naquele marco, a aceitação autenticada dependeria de chave informada no próprio app; não foi demonstrada por esse GET e não é etapa a continuar após a retirada.
 
-Os testes automáticos devem usar respostas próprias e transporte falso, sem internet ou instância pessoal. O smoke com servidor real deve registrar versão, ações e resultados, mantendo credenciais fora da evidência. Instalação, alteração de configuração no servidor e download real exigem seus próprios escopos; não decorrem da simples validação do cliente.
+O contrato anterior exigia respostas próprias e transporte falso nos testes automáticos, sem internet ou instância pessoal. O smoke autenticado previsto não foi concluído e deixa de ser tarefa vigente com a retirada. Instalação, alteração de configuração no servidor e download real não foram autorizados por uma simples validação do cliente.
 
-Em 2026-11-11, os testes reproduziram a mensagem genérica para busca vazia, a falta de distinção nos resultados e o envio indevido de uma confirmação a um serviço substituto. Passaram **34 casos do serviço, 9 do binding e 13 Qt Quick** do painel, além do build Release e lint QML. Os casos usam respostas sintéticas. A instância local respondeu 401 sem chave e a aceitação autenticada continua pendente. Logs em `out/product/test-runs/playlist-keyboard-lidarr-results-20261111/`.
+Em 2026-11-11, os testes reproduziram a mensagem genérica para busca vazia, a falta de distinção nos resultados e o envio indevido de uma confirmação a um serviço substituto. Passaram **34 casos do serviço, 9 do binding e 13 Qt Quick** do painel, além do build Release e lint QML. Os casos usam respostas sintéticas. A instância local respondeu 401 sem chave e a aceitação autenticada continuou não demonstrada naquele marco. Logs em `out/product/test-runs/playlist-keyboard-lidarr-results-20261111/`.
 
 Cinco regressões reproduziram recusas de acesso durante busca ou pedido de álbum, incluindo um 403 com resposta acima do limite. Após a correção, passaram **40 casos Qt do serviço**, o binding e **13 casos Qt Quick** do painel. Logs em `out/product/test-runs/lidarr-auth-recovery-20261111/`.
 
-Na regressão de teclado, End deixou o cursor no segundo de 40 resultados. O Green passou em **14/14 Qt Quick** do Lidarr, incluindo navegação até uma linha fora da área visível, preservação do cursor pela chave após reordenação, seleção por teclado e passagem de foco para o botão de solicitação. O build Release do alvo Quick, o lint e o formato dos QML alterados passaram. Os testes usam um serviço simulado. Logs em `out/product/test-runs/lidarr-keyboard-results-20261111/`. [Controles no manual](user-guide.md#pesquisar-e-solicitar-álbuns-no-lidarr)
+Na regressão de teclado, End deixou o cursor no segundo de 40 resultados. O Green passou em **14/14 Qt Quick** do Lidarr, incluindo navegação até uma linha fora da área visível, preservação do cursor pela chave após reordenação, seleção por teclado e passagem de foco para o botão de solicitação. O build Release do alvo Quick, o lint e o formato dos QML alterados passaram. Os testes usam um serviço simulado. Logs em `out/product/test-runs/lidarr-keyboard-results-20261111/`. [Aviso da retirada no manual](user-guide.md#pesquisar-e-solicitar-álbuns-no-lidarr)
 
 A navegação da biblioteca passou em **43 casos Qt do serviço**, **9 do binding** e **16 Qt Quick**. A resposta precisa corresponder ao artista ou álbum selecionado. Os testes verificaram a revogação após mudança de contexto, a ausência de caminhos de arquivos na projeção e a confirmação separada do álbum após consultar suas faixas. Logs em `out/product/test-runs/lidarr-library-tracks-20261111/`.
 

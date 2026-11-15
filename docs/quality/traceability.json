@@ -2425,20 +2425,21 @@
     {
       "id": "FR-055",
       "plan": "R1.11",
-      "status": "em andamento",
-      "verification": "mixed",
-      "tests": [
-        { "path": "tests/qt/QtLidarrServiceTests.cpp", "marker": "explicitConnectionLoadsOnlyStatusAndConfiguredChoices" },
-        { "path": "tests/qt/LidarrBindingTests.cpp", "marker": "exitHasObservablePreparationAndBlocksEveryNewOperation" },
-        { "path": "tests/ui/quick/tst_lidarr.qml", "marker": "name: \"LidarrPanel\"" }
-      ],
+      "status": "fora de escopo",
+      "verification": "documentary",
+      "tests": [],
       "evidence": [
-        { "path": "docs/architecture/decisions/0014-lidarr-integration.md", "marker": "## Decisão" },
+        { "path": "docs/architecture/decisions/0018-aurora-and-lidarr-removal.md", "marker": "### FR-055 — fora de escopo por retirada do Lidarr" },
+        { "path": "docs/architecture/decisions/0014-lidarr-integration.md", "marker": "**Estado:** Substituído" },
         { "path": "docs/lidarr-integration.md", "marker": "## Evidência de implementação" }
       ],
       "remaining": [
-        "Cliente, binding e UI têm Red/Green e builds Lite/Completa conferidos; validar pesquisa e solicitação na instância real com chave fornecida no app. O GET real sem chave retornou 401, sem POST. Testes falsos não comprovam catálogo/indexadores/download concluído, aceitação nativa ou empacotamento atualizado."
-      ]
+        "Integração retirada do escopo do aplicativo por decisão explícita do mantenedor em 2026-11-15, conforme ADR-0018; ID P1 e destino R1.11 preservados para histórico. Não há continuidade de aceitação autenticada/download real nem alegação de requisito comprovado. Reintrodução exige novo pedido/decisão; evidências anteriores não qualificam o snapshot sem Lidarr, e a retirada não altera servidores, credenciais ou dados pessoais."
+      ],
+      "decision": {
+        "path": "docs/architecture/decisions/0018-aurora-and-lidarr-removal.md",
+        "marker": "### FR-055 — fora de escopo por retirada do Lidarr"
+      }
     },
     {
       "id": "FR-056",

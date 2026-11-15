@@ -7,6 +7,9 @@ import MusicPlayer.M0
 
 Dialog {
     id: root
+    LyricsText {
+        id: lyricsText
+    }
     objectName: "lyrics-reader"
     required property ShellUiContract contract
     property var verses: []
@@ -76,14 +79,14 @@ Dialog {
         spacing: root.contract.spacingUnit
         Accessible.role: Accessible.Dialog
         Accessible.id: root.objectName
-        Accessible.name: qsTr("Letra completa")
+        Accessible.name: lyricsText.fullLyrics
 
         RowLayout {
             Layout.fillWidth: true
             spacing: root.contract.spacingUnit
             Text {
                 Layout.fillWidth: true
-                text: root.synchronizedLyrics ? qsTr("Letra completa") : qsTr("Letra sem sincronização")
+                text: root.synchronizedLyrics ? lyricsText.fullLyrics : lyricsText.unsynchronized
                 textFormat: Text.PlainText
                 font.bold: true
                 elide: Text.ElideRight
@@ -94,8 +97,8 @@ Dialog {
             AccessibleTransportButton {
                 objectName: "lyrics-reader-smaller"
                 contract: root.contract
-                text: qsTr("A−")
-                accessibleName: qsTr("Diminuir tamanho da letra")
+                text: lyricsText.smaller
+                accessibleName: lyricsText.smallerName
                 enabled: root.textSize > 14
                 onClicked: if (enabled)
                     root.textSizeRequested(Math.max(14, root.textSize - 2))
@@ -103,8 +106,8 @@ Dialog {
             AccessibleTransportButton {
                 objectName: "lyrics-reader-larger"
                 contract: root.contract
-                text: qsTr("A+")
-                accessibleName: qsTr("Aumentar tamanho da letra")
+                text: lyricsText.larger
+                accessibleName: lyricsText.largerName
                 enabled: root.textSize < 30
                 onClicked: if (enabled)
                     root.textSizeRequested(Math.min(30, root.textSize + 2))
@@ -112,8 +115,8 @@ Dialog {
             AccessibleTransportButton {
                 objectName: "lyrics-reader-close"
                 contract: root.contract
-                text: qsTr("Fechar")
-                accessibleName: qsTr("Fechar letra completa")
+                text: lyricsText.close
+                accessibleName: lyricsText.closeReader
                 onClicked: root.close()
             }
         }
@@ -132,7 +135,7 @@ Dialog {
             keyNavigationEnabled: false
             activeFocusOnTab: visible
             Accessible.role: Accessible.List
-            Accessible.name: qsTr("Versos sincronizados")
+            Accessible.name: lyricsText.synchronizedVerses
             Accessible.focusable: visible
             Accessible.focused: activeFocus
 
@@ -262,7 +265,7 @@ Dialog {
                 selectionColor: root.contract.accentColor
                 selectedTextColor: root.contract.accentTextColor
                 Accessible.id: objectName
-                Accessible.name: qsTr("Letra sem sincronização")
+                Accessible.name: lyricsText.unsynchronized
                 background: Rectangle {
                     color: "transparent"
                     radius: root.contract.radiusSmall
@@ -285,7 +288,7 @@ Dialog {
                 contract: root.contract
             }
             Accessible.id: objectName
-            Accessible.name: qsTr("Letra sem sincronização")
+            Accessible.name: lyricsText.unsynchronized
             Accessible.focusable: visible
             Accessible.focused: activeFocus
             Keys.onUpPressed: event => {
@@ -319,7 +322,7 @@ Dialog {
             objectName: "lyrics-reader-follow"
             Layout.alignment: Qt.AlignRight
             contract: root.contract
-            text: qsTr("Voltar ao verso atual")
+            text: lyricsText.followCurrentVerse
             visible: root.synchronizedLyrics
             enabled: !root.followingPlayback && root.activeVerse >= 0
             onClicked: {
@@ -355,8 +358,8 @@ Dialog {
             }
             AccessibleTransportButton {
                 contract: root.contract
-                text: qsTr("LyricFind")
-                accessibleName: qsTr("Abrir site do LyricFind")
+                text: lyricsText.lyricFind
+                accessibleName: lyricsText.openLyricFind
                 onClicked: root.attributionRequested()
             }
         }

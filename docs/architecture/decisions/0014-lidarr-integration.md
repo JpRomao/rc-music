@@ -1,8 +1,10 @@
 # ADR-0014: integração opcional com Lidarr
 
-**Estado:** Aceito
+**Estado:** Substituído
 
 **Data:** 2026-11-04
+
+**Substituído em 2026-11-15 pelo [ADR-0018](0018-aurora-and-lidarr-removal.md).** O mantenedor pediu a retirada do Lidarr e de todas as suas integrações do aplicativo. FR-055 permanece fora de escopo, não como próxima integração ou aceitação pendente. O texto abaixo conserva a decisão original e seus limites como histórico; não autoriza conexões, testes no servidor ou reintrodução do cliente.
 
 **Decisão de escopo:** o mantenedor pediu uma integração com Lidarr, colocou-a como prioridade e confirmou pesquisa e solicitação de downloads. Indicou sua instância `http://localhost:8686/`. A aceitação corresponde ao escopo e à ordem de desenvolvimento; implementação, checks e conexão com a instância real têm evidências próprias.
 

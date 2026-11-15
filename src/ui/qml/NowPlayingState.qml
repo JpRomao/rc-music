@@ -44,6 +44,10 @@ ColumnLayout {
     Text {
         id: titleLabel
         objectName: "current-title"
+        font: root.presenter.usesFrozenFixture ? root.contract.applicationFont : Qt.font({
+            family: root.contract.headingFontFamily,
+            pixelSize: 26
+        })
         text: root.presenter.currentTitle
         textFormat: Text.PlainText
         elide: Text.ElideRight

@@ -104,15 +104,6 @@ set_target_properties(rc_music_playlists_binding_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_playlists_restart_tests rc_music.playlists.restart
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/PlaylistsRestartTests.cpp" rc_music_playlists)
 set_target_properties(rc_music_playlists_restart_tests PROPERTIES AUTOMOC ON)
-add_ui_test(rc_music_lidarr_service_tests rc_music.lidarr.service
-    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtLidarrServiceTests.cpp" rc_music_lidarr)
-set_target_properties(rc_music_lidarr_service_tests PROPERTIES AUTOMOC ON)
-add_ui_test(rc_music_lidarr_binding_tests rc_music.lidarr.binding
-    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/LidarrBindingTests.cpp" rc_music_lidarr)
-target_sources(rc_music_lidarr_binding_tests PRIVATE
-    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LidarrBinding.hpp"
-    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LidarrBinding.cpp")
-set_target_properties(rc_music_lidarr_binding_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_lyrics_binding_tests rc_music.lyrics.binding
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/LyricsBindingTests.cpp" rc_music_lyrics)
 target_sources(rc_music_lyrics_binding_tests PRIVATE
@@ -272,7 +263,7 @@ foreach(target IN ITEMS rc_music_ui_fixture_tests rc_music_ui_presenter_tests)
 endforeach()
 
 add_ui_test(rc_music_ui_contract_tests rc_music.ui.contract
-    qtest/ShellUiContractTests.cpp rc_music_test_ui rc_music_test_uiplugin m0_qt_fixture_data Qt6::Gui)
+    qtest/ShellUiContractTests.cpp rc_music_test_ui rc_music_test_uiplugin m0_qt_fixture_data Qt6::Gui Qt6::Qml)
 foreach(input IN ITEMS FIXTURE QUEUE PLACEHOLDER TRACK)
     target_compile_definitions(rc_music_ui_contract_tests PRIVATE
         M0_${input}_SHA256="${RC_MUSIC_UI_${input}_SHA256}"

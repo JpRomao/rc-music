@@ -16,14 +16,6 @@ target_link_libraries(rc_music_lyrics PUBLIC rc_music_core Qt6::Core Qt6::Networ
 set_target_properties(rc_music_lyrics PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_lyrics)
 
-add_library(rc_music_lidarr STATIC
-    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtLidarrService.hpp"
-    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtLidarrService.cpp")
-target_include_directories(rc_music_lidarr PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
-target_link_libraries(rc_music_lidarr PUBLIC Qt6::Core Qt6::Network)
-set_target_properties(rc_music_lidarr PROPERTIES AUTOMOC ON)
-rc_music_configure_cpp(rc_music_lidarr)
-
 add_library(rc_music_playlists STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.cpp"
@@ -40,6 +32,8 @@ function(rc_music_add_ui target support qml_output)
     set(qml_files)
     foreach(qml_file IN ITEMS
             Main.qml
+            SideNavigation.qml
+            NavigationText.qml
             EmptyState.qml
             AccessibleActionButton.qml
             AccessibleTransportButton.qml
@@ -52,10 +46,11 @@ function(rc_music_add_ui target support qml_output)
             TransportBar.qml
             TransportText.qml
             TransportSlider.qml
+            LyricsText.qml
             LyricsPanel.qml
             LyricsReader.qml
             LyricsVariantsPanel.qml
-            LidarrPanel.qml
+            PlaylistsText.qml
             PlaylistsPanel.qml
             QueuePanel.qml
             QueueText.qml
@@ -99,8 +94,6 @@ function(rc_music_add_ui target support qml_output)
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/DownloadLyricsBinding.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/DownloadLyricsBinding.cpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LidarrBinding.hpp"
-            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LidarrBinding.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerDownloadImport.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerDownloadImport.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/SystemMediaControlsBinding.hpp"
@@ -129,7 +122,6 @@ function(rc_music_add_ui target support qml_output)
         Qt6::QuickControls2
         Qt6::QuickLayouts
         rc_music_lyrics
-        rc_music_lidarr
         rc_music_playlists
     )
     if(TARGET rc_music_browser_integration AND TARGET rc_music_downloads)

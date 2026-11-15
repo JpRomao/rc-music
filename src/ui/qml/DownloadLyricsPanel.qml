@@ -7,6 +7,9 @@ import MusicPlayer.M0
 
 Dialog {
     id: root
+    LyricsText {
+        id: lyricsText
+    }
     required property ShellUiContract contract
     property var backend: null
     property Item restoreFocusItem: null
@@ -131,7 +134,7 @@ Dialog {
             parts.push("%1:%2".arg(Math.floor(seconds / 60)).arg(("0" + (seconds % 60)).slice(-2)));
         }
         if (candidate.instrumental)
-            parts.push(qsTr("Instrumental"));
+            parts.push(lyricsText.instrumental);
         return parts.join(" · ");
     }
     function togglePaste() {
@@ -339,7 +342,7 @@ Dialog {
             border.color: choice.activeFocus ? root.contract.focusColor : root.contract.borderColor
         }
     }
-    component LyricsText: TextArea {
+    component LyricsInput: TextArea {
         id: input
         Layout.fillWidth: true
         Layout.preferredHeight: 180
@@ -368,9 +371,9 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: root.contract.spacingUnit * 2
         Accessible.role: Accessible.Dialog
-        Accessible.name: qsTr("Letra do áudio baixado")
+        Accessible.name: lyricsText.downloadedTitle
         FieldLabel {
-            text: qsTr("Letra do áudio baixado")
+            text: lyricsText.downloadedTitle
             font.bold: true
             font.pixelSize: 20
         }
@@ -398,7 +401,7 @@ Dialog {
                 width: formScroll.availableWidth
                 spacing: root.contract.spacingUnit * 2
                 FieldLabel {
-                    text: qsTr("Título da música")
+                    text: lyricsText.trackTitle
                     visible: !root.pasteMode
                 }
                 FormInput {
@@ -406,11 +409,11 @@ Dialog {
                     objectName: "download-lyrics-title"
                     maximumLength: 512
                     visible: !root.pasteMode
-                    Accessible.name: qsTr("Título da música")
+                    Accessible.name: lyricsText.trackTitle
                     KeyNavigation.tab: artistField
                 }
                 FieldLabel {
-                    text: qsTr("Artista")
+                    text: lyricsText.artist
                     visible: !root.pasteMode
                 }
                 FormInput {
@@ -418,7 +421,7 @@ Dialog {
                     objectName: "download-lyrics-artist"
                     maximumLength: 512
                     visible: !root.pasteMode
-                    Accessible.name: qsTr("Artista")
+                    Accessible.name: lyricsText.artist
                     KeyNavigation.tab: searchButton.enabled ? searchButton : pasteButton.enabled ? pasteButton : pageButton.enabled ? pageButton : root.afterPageLink
                 }
                 RowLayout {
@@ -428,7 +431,7 @@ Dialog {
                         id: searchButton
                         objectName: "download-lyrics-search"
                         contract: root.contract
-                        text: qsTr("Buscar letra")
+                        text: lyricsText.search
                         visible: !root.pasteMode
                         enabled: visible && root.actionsCurrent && !root.requestOwner.busy && root.requestOwner.canRetry && titleField.text.trim().length > 0 && artistField.text.trim().length > 0
                         KeyNavigation.tab: pasteButton.enabled ? pasteButton : pageButton.enabled ? pageButton : root.afterPageLink
@@ -438,7 +441,7 @@ Dialog {
                         id: pasteButton
                         objectName: "download-lyrics-paste"
                         contract: root.contract
-                        text: root.pasteMode ? qsTr("Voltar à busca") : qsTr("Colar letra")
+                        text: root.pasteMode ? lyricsText.backToSearch : lyricsText.paste
                         visible: root.pasteMode || root.pasteAvailable
                         enabled: visible && root.actionsCurrent && root.stagedVersions.length === 0
                         KeyNavigation.tab: pageButton.enabled ? pageButton : root.afterPageLink
@@ -448,7 +451,7 @@ Dialog {
                         id: pageButton
                         objectName: "download-lyrics-open-letras-page"
                         contract: root.contract
-                        text: qsTr("Abrir no Letras.mus.br")
+                        text: lyricsText.openLetras
                         visible: root.hasLyricsPage
                         enabled: visible && root.actionsCurrent
                         KeyNavigation.tab: root.afterPageLink
@@ -460,7 +463,7 @@ Dialog {
                 }
                 FieldLabel {
                     visible: !root.pasteMode && root.recordingSearchSupported
-                    text: root.recordingSearchSupported && root.requestOwner.album ? qsTr("A busca no LRCLIB envia título, artista e álbum (%1).").arg(root.requestOwner.album) : qsTr("A busca no LRCLIB envia título e artista, quando informado.")
+                    text: root.recordingSearchSupported && root.requestOwner.album ? lyricsText.lookupWithAlbumPrivacy.arg(root.requestOwner.album) : lyricsText.lookupPrivacy
                 }
                 RowLayout {
                     visible: !root.pasteMode && root.recordingSearchSupported
@@ -469,7 +472,7 @@ Dialog {
                         id: recordingButton
                         objectName: "download-lyrics-search-recordings"
                         contract: root.contract
-                        text: qsTr("Ver outras correspondências")
+                        text: lyricsText.otherMatches
                         enabled: visible && root.actionsCurrent && root.requestOwner.canRetry && titleField.text.trim().length > 0
                         KeyNavigation.tab: closeRecordingButton.enabled ? closeRecordingButton : recordingField.enabled ? recordingField : candidateField
                         onClicked: root.searchRecordings()
@@ -478,7 +481,7 @@ Dialog {
                         id: closeRecordingButton
                         objectName: "download-lyrics-close-recording-search"
                         contract: root.contract
-                        text: root.recordingBusy ? qsTr("Cancelar busca") : qsTr("Voltar à busca direta")
+                        text: root.recordingBusy ? lyricsText.cancelSearch : lyricsText.backToDirect
                         visible: root.recordingMode
                         enabled: visible && root.actionsCurrent
                         KeyNavigation.tab: recordingField.enabled ? recordingField : titleField
@@ -488,12 +491,12 @@ Dialog {
                 FormChoice {
                     id: recordingField
                     objectName: "download-lyrics-recordings"
-                    model: [qsTr("Escolha a gravação")].concat(root.recordingRows.map(candidate => root.recordingLabel(candidate)))
+                    model: [lyricsText.selectRecording].concat(root.recordingRows.map(candidate => root.recordingLabel(candidate)))
                     currentIndex: root.recordingRows.findIndex(candidate => candidate.id === root.selectedRecordingId) + 1
-                    displayText: root.selectedRecording === null ? qsTr("Escolha a gravação") : root.recordingLabel(root.selectedRecording)
+                    displayText: root.selectedRecording === null ? lyricsText.selectRecording : root.recordingLabel(root.selectedRecording)
                     visible: !root.pasteMode && root.recordingMode && root.recordingRows.length > 0
                     enabled: visible && root.actionsCurrent && !root.recordingBusy
-                    Accessible.name: qsTr("Gravação encontrada")
+                    Accessible.name: lyricsText.foundRecording
                     KeyNavigation.tab: recordingFormatField.enabled ? recordingFormatField : closeRecordingButton
                     onActivated: index => {
                         if (root.actionsCurrent && index >= 0 && index <= root.recordingRows.length) {
@@ -505,12 +508,12 @@ Dialog {
                 FormChoice {
                     id: recordingFormatField
                     objectName: "download-lyrics-recording-formats"
-                    model: [qsTr("Escolha o formato")].concat(root.selectedRecording !== null ? root.selectedRecording.formats.map(format => format.label) : [])
+                    model: [lyricsText.selectFormat].concat(root.selectedRecording !== null ? root.selectedRecording.formats.map(format => format.label) : [])
                     currentIndex: root.selectedRecordingFormat + 1
-                    displayText: root.selectedRecordingFormat < 0 ? qsTr("Escolha o formato") : currentText
+                    displayText: root.selectedRecordingFormat < 0 ? lyricsText.selectFormat : currentText
                     visible: !root.pasteMode && root.recordingMode && count > 1
                     enabled: visible && root.actionsCurrent
-                    Accessible.name: qsTr("Formato da letra")
+                    Accessible.name: lyricsText.format
                     KeyNavigation.tab: previewField
                     onActivated: index => {
                         if (root.actionsCurrent && index >= 0 && index < count)
@@ -518,7 +521,7 @@ Dialog {
                     }
                 }
                 FieldLabel {
-                    text: qsTr("Versão encontrada")
+                    text: lyricsText.foundVersion
                     visible: !root.pasteMode && !root.recordingMode
                 }
                 FormChoice {
@@ -528,20 +531,20 @@ Dialog {
                     textRole: "label"
                     visible: !root.pasteMode && !root.recordingMode
                     enabled: visible && root.actionsCurrent && count > 0
-                    Accessible.name: qsTr("Versão encontrada")
+                    Accessible.name: lyricsText.foundVersion
                     KeyNavigation.tab: root.protectedLyrics ? providerLink : previewField
                     onCountChanged: {
                         if (count > 0 && currentIndex < 0)
                             currentIndex = 0;
                     }
                 }
-                LyricsText {
+                LyricsInput {
                     id: previewField
                     objectName: "download-lyrics-preview"
                     visible: !root.pasteMode && (root.recordingMode ? root.selectedRecordingFormat >= 0 : !root.protectedLyrics)
                     text: root.recordingMode ? (root.recordingSelectionReady ? root.requestOwner.previewRecordingCandidate(root.previewToken, root.recordingResultToken, root.selectedRecordingId, root.selectedRecordingFormat) : "") : (!root.protectedLyrics && root.selectedCandidate !== null ? root.selectedCandidate.text : "")
                     readOnly: true
-                    Accessible.name: qsTr("Prévia da letra")
+                    Accessible.name: lyricsText.preview
                     KeyNavigation.tab: nameField
                 }
                 RowLayout {
@@ -561,7 +564,7 @@ Dialog {
                         id: providerLink
                         objectName: "download-lyrics-provider-link"
                         contract: root.contract
-                        text: qsTr("LyricFind")
+                        text: lyricsText.lyricFind
                         KeyNavigation.tab: dismissButton
                         onClicked: {
                             if (root.actionsCurrent && root.protectedLyrics)
@@ -581,17 +584,17 @@ Dialog {
                     Accessible.name: text
                 }
                 FieldLabel {
-                    text: qsTr("Letra em texto ou LRC")
+                    text: lyricsText.pastedLyricsOrLrc
                     visible: root.pasteMode
                 }
-                LyricsText {
+                LyricsInput {
                     id: pastedField
                     objectName: "download-lyrics-pasted-content"
                     visible: root.pasteMode
                     enabled: root.actionsCurrent
                     readOnly: !root.pasteAvailable
-                    placeholderText: qsTr("Cole a letra aqui")
-                    Accessible.name: qsTr("Letra em texto ou LRC")
+                    placeholderText: lyricsText.pasteHint
+                    Accessible.name: lyricsText.pastedLyricsOrLrc
                     KeyNavigation.priority: KeyNavigation.BeforeItem
                     KeyNavigation.tab: pageSource.enabled ? pageSource : nameField
                 }
@@ -600,7 +603,7 @@ Dialog {
                     Layout.fillWidth: true
                     contract: root.contract
                     controlId: "download-lyrics-pasted-letras-source"
-                    text: qsTr("Usar página do Letras como origem")
+                    text: lyricsText.useLetrasOrigin
                     value: root.pasteFromLetras
                     visible: root.pasteMode && root.hasLyricsPage
                     enabled: visible && root.versionFieldsEditable && root.stagedVersions.length === 0
@@ -609,14 +612,14 @@ Dialog {
                 }
                 FieldLabel {
                     visible: root.pasteMode || root.recordingMode || !root.protectedLyrics
-                    text: qsTr("Nome da versão")
+                    text: lyricsText.versionName
                 }
                 FormInput {
                     id: nameField
                     visible: root.pasteMode || root.recordingMode || !root.protectedLyrics
                     objectName: "download-lyrics-version-name"
-                    Accessible.name: qsTr("Nome da versão")
-                    placeholderText: qsTr("Ex.: Japonês original ou Romaji")
+                    Accessible.name: lyricsText.versionName
+                    placeholderText: lyricsText.versionNameHint
                     KeyNavigation.tab: languageField
                 }
                 GridLayout {
@@ -625,46 +628,46 @@ Dialog {
                     columns: 2
                     columnSpacing: root.contract.spacingUnit * 2
                     FieldLabel {
-                        text: qsTr("Idioma (opcional)")
+                        text: lyricsText.optionalLanguage
                     }
                     FieldLabel {
-                        text: qsTr("Escrita (opcional)")
+                        text: lyricsText.optionalScript
                     }
                     FormInput {
                         id: languageField
                         objectName: "download-lyrics-language"
                         maximumLength: 64
-                        Accessible.name: qsTr("Idioma da letra")
-                        placeholderText: qsTr("Ex.: ja")
+                        Accessible.name: lyricsText.language
+                        placeholderText: lyricsText.languageHint
                         KeyNavigation.tab: scriptField
                     }
                     FormInput {
                         id: scriptField
                         objectName: "download-lyrics-script"
                         maximumLength: 64
-                        Accessible.name: qsTr("Escrita da letra")
-                        placeholderText: qsTr("Ex.: Jpan ou Latn")
+                        Accessible.name: lyricsText.script
+                        placeholderText: lyricsText.scriptHint
                         KeyNavigation.tab: kindField
                     }
                 }
                 FieldLabel {
                     visible: root.pasteMode || root.recordingMode || !root.protectedLyrics
-                    text: qsTr("Forma da versão")
+                    text: lyricsText.versionKind
                 }
                 FormChoice {
                     id: kindField
                     visible: root.pasteMode || root.recordingMode || !root.protectedLyrics
                     objectName: "download-lyrics-kind"
-                    model: [qsTr("Original"), qsTr("Romanizada"), qsTr("Tradução")]
+                    model: [lyricsText.original, lyricsText.romanized, lyricsText.translation]
                     currentIndex: -1
-                    displayText: currentIndex < 0 ? qsTr("Escolha a forma") : currentText
+                    displayText: currentIndex < 0 ? lyricsText.selectKind : currentText
                     enabled: root.versionFieldsEditable
-                    Accessible.name: qsTr("Forma da versão")
+                    Accessible.name: lyricsText.versionKind
                     KeyNavigation.tab: stageButton.enabled ? stageButton : undoStageButton.enabled ? undoStageButton : saveButton
                 }
                 FieldLabel {
                     visible: root.pasteMode && root.stagedVersions.length > 0
-                    text: qsTr("A guardar: %1").arg(root.stagedVersions.map(version => version.name).join(", "))
+                    text: lyricsText.stagedVersions.arg(root.stagedVersions.map(version => version.name).join(", "))
                 }
                 RowLayout {
                     visible: root.pasteMode && root.hasLyricsPage && root.pasteFromLetras
@@ -674,7 +677,7 @@ Dialog {
                         id: stageButton
                         objectName: "download-lyrics-stage-version"
                         contract: root.contract
-                        text: qsTr("Colar outra versão")
+                        text: lyricsText.pasteAnother
                         enabled: visible && root.versionFieldsEditable && root.draftReady && root.stagedVersions.length < 15
                         KeyNavigation.tab: undoStageButton.enabled ? undoStageButton : saveButton
                         onClicked: root.stageVersion()
@@ -683,7 +686,7 @@ Dialog {
                         id: undoStageButton
                         objectName: "download-lyrics-undo-staged-version"
                         contract: root.contract
-                        text: qsTr("Editar a última adicionada")
+                        text: lyricsText.editLastAdded
                         visible: root.stagedVersions.length > 0
                         enabled: visible && root.versionFieldsEditable && root.draftEmpty
                         KeyNavigation.tab: saveButton
@@ -708,7 +711,7 @@ Dialog {
                 id: retrySaveButton
                 objectName: "download-lyrics-retry-save"
                 contract: root.contract
-                text: qsTr("Tentar guardar novamente")
+                text: lyricsText.retryKeep
                 visible: root.requestCurrent && root.requestOwner.canRetrySave
                 enabled: root.actionsCurrent && !root.requestOwner.busy && root.requestOwner.canRetrySave
                 KeyNavigation.tab: discardButton.enabled ? discardButton : dismissButton
@@ -721,7 +724,7 @@ Dialog {
                 id: discardButton
                 objectName: "download-lyrics-discard"
                 contract: root.contract
-                text: qsTr("Descartar tentativa")
+                text: lyricsText.discardAttempt
                 visible: root.pendingDiscardToken.length > 0
                 enabled: visible && root.actionsCurrent
                 KeyNavigation.tab: dismissButton
@@ -734,7 +737,7 @@ Dialog {
                 id: dismissButton
                 objectName: "download-lyrics-dismiss"
                 contract: root.contract
-                text: qsTr("Concluir revisão")
+                text: lyricsText.finishReview
                 enabled: root.actionsCurrent && root.requestOwner.canDismiss && root.stagedVersions.length === 0
                 KeyNavigation.tab: closeButton
                 onClicked: {
@@ -750,7 +753,7 @@ Dialog {
                 id: closeButton
                 objectName: "download-lyrics-close"
                 contract: root.contract
-                text: qsTr("Fechar")
+                text: lyricsText.close
                 KeyNavigation.tab: root.pasteMode ? pasteButton : titleField
                 onClicked: root.close()
             }
@@ -761,7 +764,7 @@ Dialog {
                 id: saveButton
                 controlId: "download-lyrics-save"
                 contract: root.contract
-                text: root.pasteMode && root.stagedVersions.length > 0 ? qsTr("Guardar versões") : qsTr("Guardar como nova versão")
+                text: root.pasteMode && root.stagedVersions.length > 0 ? lyricsText.keepVersions : lyricsText.keepAsNew
                 enabled: root.versionFieldsEditable && (root.pasteMode ? root.draftReady || (root.stagedVersions.length > 0 && root.draftEmpty) : root.versionKind.length > 0 && nameField.text.trim().length > 0 && (root.recordingMode ? root.recordingSaveReady : root.metadataCurrent && root.requestOwner.canSave && root.selectedCandidate !== null))
                 KeyNavigation.tab: retrySaveButton.enabled ? retrySaveButton : discardButton.enabled ? discardButton : dismissButton
                 onClicked: root.saveVersion()
@@ -803,14 +806,14 @@ Dialog {
             id: discardContent
             spacing: root.contract.spacingUnit * 2
             Accessible.role: Accessible.Dialog
-            Accessible.name: qsTr("Descartar tentativa de guardar letra")
+            Accessible.name: lyricsText.discardAttemptTitle
             FieldLabel {
-                text: qsTr("Descartar tentativa de guardar letra?")
+                text: lyricsText.confirmDiscardAttempt
                 font.bold: true
             }
             Text {
                 Layout.fillWidth: true
-                text: qsTr("O áudio e as versões já guardadas serão preservados. Você pode continuar esta revisão.")
+                text: lyricsText.discardAttemptAdvice
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.contract.textPrimaryColor
@@ -826,7 +829,7 @@ Dialog {
                     id: cancelDiscardButton
                     objectName: "download-lyrics-discard-cancel"
                     contract: root.contract
-                    text: qsTr("Cancelar")
+                    text: lyricsText.cancel
                     KeyNavigation.tab: confirmDiscardButton
                     KeyNavigation.backtab: confirmDiscardButton
                     onClicked: discardConfirmation.close()
@@ -835,7 +838,7 @@ Dialog {
                     id: confirmDiscardButton
                     objectName: "download-lyrics-discard-confirm"
                     contract: root.contract
-                    text: qsTr("Descartar tentativa")
+                    text: lyricsText.discardAttempt
                     enabled: root.discardTargetCurrent && !root.discardRevoked
                     KeyNavigation.tab: cancelDiscardButton
                     KeyNavigation.backtab: cancelDiscardButton

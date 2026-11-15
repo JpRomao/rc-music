@@ -37,14 +37,18 @@ TestCase {
         signalName: "playRequested"
     }
     function verifyInsideWindow(item) {
+        tryCompare(shell.contentItem, "width", shell.width);
+        tryCompare(shell.contentItem, "height", shell.height);
+        verify(waitForPolish(shell));
         const position = item.mapToItem(shell.contentItem, 0, 0);
-        verify(item.visible);
+        verify(item.visible, item.objectName + " parent=" + item.parent.objectName + " parentVisible=" + item.parent.visible + " queue=" + shell.queuePageActive + " playback=" + shell.presenter.playbackState + " focus=" + (shell.activeFocusItem ? shell.activeFocusItem.objectName : "none"));
         verify(item.width > 0);
         verify(item.height > 0);
-        verify(position.x >= 0);
-        verify(position.y >= 0);
-        verify(position.x + item.width <= shell.contentItem.width + 0.5);
-        verify(position.y + item.height <= shell.contentItem.height + 0.5);
+        const geometry = item.objectName + ": x=" + position.x + " y=" + position.y + " width=" + item.width + " height=" + item.height + " window=" + shell.contentItem.width + "x" + shell.contentItem.height;
+        verify(position.x >= 0, geometry);
+        verify(position.y >= 0, geometry);
+        verify(position.x + item.width <= shell.contentItem.width + 0.5, geometry);
+        verify(position.y + item.height <= shell.contentItem.height + 0.5, geometry);
     }
     function verifyHorizontalNonOverlap(items) {
         for (let index = 1; index < items.length; ++index) {
@@ -239,8 +243,9 @@ TestCase {
             return queuePanel.visible;
         });
         verifyInsideWindow(queuePanel);
-        compare(queuePanel.width, testShellUiContract.queuePanelMinimumWidth); // qmllint disable unqualified
-        compare(queuePanel.overlayMode, true);
+        compare(queuePanel.width, stateLayer.width);
+        compare(queuePanel.overlayMode, false);
+        verify(!stateLayer.visible);
         compare(queueList.count, 1000);
         compare(queueList.reuseItems, true);
         compare(queueList.cacheBuffer, 0);
@@ -263,7 +268,7 @@ TestCase {
         verify(currentQueueRow.Accessible.name.indexOf("Canção nº 17 — São João, ação e café ☕") >= 0);
         verify(instantiatedQueueRows(queueList) > 0);
         verify(instantiatedQueueRows(queueList) < 64);
-        const queueOpenFocusOrder = [queueButton, findChild(shell, "preferences"), openAnotherAudio, findChild(shell, "track-details-playing"), progress, previous, skipBackward, playPause, skipForward, next, mute, volume, queueList];
+        const queueOpenFocusOrder = [queueButton, findChild(shell, "theme-toggle"), findChild(shell, "preferences"), progress, previous, skipBackward, playPause, skipForward, next, mute, volume, queueList];
         queueButton.forceActiveFocus(Qt.TabFocusReason);
         for (let focusIndex = 1; focusIndex < queueOpenFocusOrder.length; ++focusIndex) {
             keyClick(Qt.Key_Tab);
@@ -309,11 +314,12 @@ TestCase {
         verify(instantiatedQueueRows(queueList) < 64);
         shell.width = 960;
         tryCompare(shell, "width", 960);
-        tryCompare(queuePanel, "width", testShellUiContract.queuePanelMaximumWidth); // qmllint disable unqualified
+        tryVerify(() => queuePanel.width === stateLayer.width && queuePanel.width > testShellUiContract.queuePanelMaximumWidth); // qmllint disable unqualified
         compare(queuePanel.overlayMode, false);
-        const stateRight = stateLayer.mapToItem(shell.contentItem, stateLayer.width, 0).x;
         const panelLeft = queuePanel.mapToItem(shell.contentItem, 0, 0).x;
-        verify(stateRight <= panelLeft + 0.5);
+        const navigation = findChild(shell, "side-navigation");
+        verify(panelLeft >= navigation.width);
+        verify(!stateLayer.visible);
         shell.width = shell.minimumWidth;
         tryCompare(shell, "width", 720);
         keyClick(Qt.Key_Escape);
@@ -557,7 +563,7 @@ TestCase {
         const selectedUnavailableQueueRow = revealQueueRow(queueList, 998);
         compare(selectedUnavailableQueueRow.occurrenceId, "queue-0999");
         compare(selectedUnavailableQueueRow.Accessible.selected, true);
-        const errorQueueFocusOrder = [queueButton, findChild(shell, "preferences"), errorSkip, findChild(shell, "track-details-error"), queueList];
+        const errorQueueFocusOrder = [queueButton, findChild(shell, "theme-toggle"), findChild(shell, "preferences"), queueList];
         queueButton.forceActiveFocus(Qt.TabFocusReason);
         for (let focusIndex = 1; focusIndex < errorQueueFocusOrder.length; ++focusIndex) {
             keyClick(Qt.Key_Tab);
@@ -631,6 +637,15 @@ TestCase {
         compare(testPlayerPresenter.currentOccurrenceId, "queue-0512"); // qmllint disable unqualified
         compare(currentTitle.textFormat, Text.PlainText);
         compare(currentTitle.text, testPlayerPresenter.currentTitle); // qmllint disable unqualified
+        const persistentTitle = findChild(shell, "player-track-title");
+        compare(persistentTitle.textFormat, Text.PlainText);
+        verify(persistentTitle.text.indexOf(testPlayerPresenter.currentTitle) === 0); // qmllint disable unqualified
+        verifyInsideWindow(persistentTitle);
+        verify(next.activeFocus);
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !queuePanel.visible && queueButton.activeFocus;
+        });
         const currentTitleLeft = currentTitle.mapToItem(shell.contentItem, 0, 0).x;
         const currentTitleRight = currentTitle.mapToItem(shell.contentItem, currentTitle.width, 0).x;
         const currentStateLeft = stateLayer.mapToItem(shell.contentItem, 0, 0).x;
@@ -638,10 +653,5 @@ TestCase {
         verify(currentTitleLeft >= currentStateLeft - 0.5);
         verify(currentTitleRight <= currentStateRight + 0.5);
         verifyInsideWindow(currentTitle);
-        verify(next.activeFocus);
-        keyClick(Qt.Key_Escape);
-        tryVerify(function () {
-            return !queuePanel.visible && queueButton.activeFocus;
-        });
     }
 }

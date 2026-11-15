@@ -8897,6 +8897,7 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
                                     "toggleMute",
                                     "setThemePreference",
                                     "setMotionPreference",
+                                    "setLyricsTextSize",
                                     "setSkipBackwardSeconds",
                                     "setSkipForwardSeconds",
                                     "setClosePreference",

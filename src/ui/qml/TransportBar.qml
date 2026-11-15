@@ -148,6 +148,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Text {
             objectName: "elapsed-time"
+            font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.bodyFontFamily
             text: root.formattedTime(root.presenter.positionMs)
             color: root.contract.textSecondaryColor
         }
@@ -156,6 +157,7 @@ ColumnLayout {
         }
         Text {
             objectName: "duration-time"
+            font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.bodyFontFamily
             text: root.formattedTime(root.presenter.durationMs)
             color: root.contract.textSecondaryColor
         }
@@ -165,6 +167,7 @@ ColumnLayout {
         AccessibleTransportButton {
             id: previousTrack
             objectName: "previous"
+            font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
             enabled: root.presenter.canGoPrevious
             contract: root.contract
             text: "⏮"
@@ -186,6 +189,7 @@ ColumnLayout {
         AccessibleTransportButton {
             id: playPause
             objectName: "play-pause"
+            font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
             enabled: root.playbackEnabled
             contract: root.contract
             text: root.presenter.playbackState === PlayerPresenter.Playing ? "⏸" : "▶"
@@ -207,6 +211,7 @@ ColumnLayout {
         AccessibleTransportButton {
             id: nextTrack
             objectName: "next"
+            font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
             enabled: root.presenter.canGoNext
             contract: root.contract
             text: "⏭"

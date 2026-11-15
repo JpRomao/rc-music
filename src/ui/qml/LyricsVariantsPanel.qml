@@ -8,6 +8,9 @@ import MusicPlayer.M0
 
 Dialog {
     id: root
+    LyricsText {
+        id: lyricsText
+    }
     objectName: "lyrics-variants-panel"
     required property ShellUiContract contract
     property var lyrics: null
@@ -63,15 +66,15 @@ Dialog {
     readonly property var rows: variantRows()
     readonly property var versionKinds: [
         {
-            label: qsTr("Original"),
+            label: lyricsText.original,
             value: "original"
         },
         {
-            label: qsTr("Romanizada"),
+            label: lyricsText.romanized,
             value: "romanized"
         },
         {
-            label: qsTr("Tradução"),
+            label: lyricsText.translation,
             value: "translation"
         }
     ]
@@ -209,7 +212,7 @@ Dialog {
         const result = [
             {
                 id: "",
-                name: qsTr("Arquivo / busca atual"),
+                name: lyricsText.currentFile,
                 language: "",
                 script: "",
                 source: "",
@@ -221,7 +224,7 @@ Dialog {
             result.push(variant);
         result.push({
             id: noLyricsId,
-            name: qsTr("Sem letra"),
+            name: lyricsText.noLyrics,
             language: "",
             script: "",
             source: "",
@@ -256,7 +259,7 @@ Dialog {
         if (row.script.length > 0)
             pieces.push(row.script);
         if (row.generated)
-            pieces.push(qsTr("Gerada por ferramenta"));
+            pieces.push(lyricsText.generatedByTool);
         if (row.source.length > 0)
             pieces.push(row.source);
         return pieces.join(" · ");
@@ -306,7 +309,7 @@ Dialog {
         formRejected = false;
         lrcImportRejected = false;
         const romaji = mode === "romaji";
-        nameField.text = draft ? draft.name : (romaji ? qsTr("Romaji") : "");
+        nameField.text = draft ? draft.name : (romaji ? lyricsText.romaji : "");
         languageField.text = draft ? draft.language : (romaji ? "ja" : "");
         scriptField.text = draft ? draft.script : (romaji ? "Latn" : "");
         sourceField.text = draft ? draft.source : (romaji ? "pykakasi" : "");
@@ -496,10 +499,10 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: root.contract.spacingUnit * 2
         Accessible.role: Accessible.Dialog
-        Accessible.name: qsTr("Versões da letra")
+        Accessible.name: lyricsText.versionsTitle
         Text {
             Layout.fillWidth: true
-            text: root.managingQueue ? qsTr("Versões da letra · %1").arg(root.managerTitle) : qsTr("Versões da letra")
+            text: root.managingQueue ? lyricsText.trackVersions.arg(root.managerTitle) : lyricsText.versionsTitle
             textFormat: Text.PlainText
             color: root.contract.textPrimaryColor
             font.bold: true
@@ -520,7 +523,7 @@ Dialog {
             Layout.fillWidth: true
             visible: root.showOnlineCandidates
             Text {
-                text: qsTr("Resultado da busca")
+                text: lyricsText.searchResult
                 textFormat: Text.PlainText
                 color: root.contract.textPrimaryColor
                 Accessible.ignored: true
@@ -535,7 +538,7 @@ Dialog {
                 textRole: "label"
                 currentIndex: root.onlineCandidates.findIndex(candidate => candidate.index === root.selectedOnlineCandidate)
                 activeFocusOnTab: true
-                Accessible.name: qsTr("Resultado da busca")
+                Accessible.name: lyricsText.searchResult
                 Accessible.id: objectName
                 Accessible.focusable: enabled
                 Accessible.focused: activeFocus
@@ -577,7 +580,7 @@ Dialog {
                 id: recordingSearchButton
                 objectName: "lyrics-variant-search-lrclib"
                 contract: root.contract
-                text: qsTr("Buscar no LRCLIB")
+                text: lyricsText.searchLrclib
                 visible: root.recordingSearchSupported
                 enabled: root.recordingSearchAvailable && !root.childDialogOpen
                 onClicked: {
@@ -595,7 +598,7 @@ Dialog {
                 id: addButton
                 objectName: "lyrics-variant-add"
                 contract: root.contract
-                text: qsTr("Adicionar versão")
+                text: lyricsText.addVersion
                 enabled: root.canEdit
                 onClicked: root.openForm("add")
             }
@@ -603,7 +606,7 @@ Dialog {
                 id: saveCurrentButton
                 objectName: "lyrics-variant-save-current"
                 contract: root.contract
-                text: qsTr("Salvar letra atual")
+                text: lyricsText.saveCurrent
                 visible: !root.managingQueue
                 enabled: root.canSaveCurrent
                 onClicked: root.openForm("current")
@@ -612,7 +615,7 @@ Dialog {
                 id: generateRomajiButton
                 objectName: "lyrics-variant-generate-romaji"
                 contract: root.contract
-                text: qsTr("Gerar romaji")
+                text: lyricsText.generateRomaji
                 visible: root.romajiSourceRevision.length > 0
                 enabled: root.canGenerateRomaji
                 onClicked: root.requestRomaji()
@@ -631,7 +634,7 @@ Dialog {
         Text {
             Layout.fillWidth: true
             visible: !root.managingQueue && root.selectedVariant !== null
-            text: qsTr("Selecione Arquivo / busca atual para salvar a letra carregada.")
+            text: lyricsText.selectCurrentToSave
             textFormat: Text.PlainText
             color: root.contract.textSecondaryColor
             wrapMode: Text.WordWrap
@@ -652,7 +655,7 @@ Dialog {
             activeFocusOnTab: root.canSelect && count > 0
             keyNavigationEnabled: false
             Accessible.role: Accessible.List
-            Accessible.name: qsTr("Versões da letra")
+            Accessible.name: lyricsText.versionsTitle
             Accessible.focusable: activeFocusOnTab
             Accessible.focused: activeFocus
 
@@ -775,7 +778,7 @@ Dialog {
                 id: editButton
                 objectName: "lyrics-variant-edit"
                 contract: root.contract
-                text: qsTr("Editar versão")
+                text: lyricsText.editVersion
                 visible: root.supported && typeof root.lyrics.prepareVariantEdit === "function"
                 enabled: root.canEditSelected
                 onClicked: root.requestEdit()
@@ -783,7 +786,7 @@ Dialog {
             AccessibleTransportButton {
                 objectName: "lyrics-variant-remove"
                 contract: root.contract
-                text: qsTr("Excluir versão")
+                text: lyricsText.deleteVersion
                 enabled: root.canEdit && root.selectedVariant !== null
                 onClicked: root.requestRemoval()
             }
@@ -794,7 +797,7 @@ Dialog {
                 id: closeButton
                 objectName: "lyrics-variant-close"
                 contract: root.contract
-                text: qsTr("Fechar")
+                text: lyricsText.close
                 onClicked: root.close()
             }
         }
@@ -804,7 +807,7 @@ Dialog {
             AccessibleTransportButton {
                 objectName: "lyrics-variant-retry"
                 contract: root.contract
-                text: qsTr("Tentar salvar")
+                text: lyricsText.trySave
                 visible: root.supported && root.lyrics.variantsCanRetrySave
                 enabled: visible && root.visible && root.enabled && !root.busy
                 onClicked: {
@@ -815,7 +818,7 @@ Dialog {
             AccessibleTransportButton {
                 objectName: "lyrics-variant-reload"
                 contract: root.contract
-                text: root.noTrackToReload ? qsTr("Abandonar alteração") : qsTr("Recarregar do disco")
+                text: root.noTrackToReload ? lyricsText.abandonChange : lyricsText.reloadFromDisk
                 enabled: root.canReload
                 onClicked: root.requestReload()
             }
@@ -890,7 +893,7 @@ Dialog {
                 Text {
                     id: formHeading
                     Layout.fillWidth: true
-                    text: root.editing ? qsTr("Editar versão da letra") : root.formMode === "romaji" ? qsTr("Revisar romaji") : root.formMode === "current" ? qsTr("Salvar letra atual") : qsTr("Adicionar versão da letra")
+                    text: root.editing ? lyricsText.editVersionTitle : root.formMode === "romaji" ? lyricsText.reviewRomaji : root.formMode === "current" ? lyricsText.saveCurrent : lyricsText.addVersionTitle
                     textFormat: Text.PlainText
                     color: root.contract.textPrimaryColor
                     font.bold: true
@@ -902,7 +905,7 @@ Dialog {
                     id: importLrcButton
                     objectName: "lyrics-variant-import-lrc"
                     contract: root.contract
-                    text: root.lrcImportToken.length > 0 ? qsTr("Lendo LRC…") : qsTr("Importar .lrc")
+                    text: root.lrcImportToken.length > 0 ? lyricsText.readingLrc : lyricsText.importLrc
                     visible: root.lrcImportAvailable
                     enabled: visible && root.formCurrent && !root.lrcPickerArmed && root.lrcImportToken.length === 0
                     onClicked: root.chooseLrcFile()
@@ -933,13 +936,13 @@ Dialog {
                     width: formScroll.availableWidth
                     spacing: root.contract.spacingUnit * 2
                     FieldLabel {
-                        text: qsTr("Nome da versão")
+                        text: lyricsText.versionName
                     }
                     VersionInput {
                         id: nameField
                         objectName: "lyrics-variant-name-input"
-                        Accessible.name: qsTr("Nome da versão")
-                        placeholderText: qsTr("Ex.: Japonês original ou Romaji")
+                        Accessible.name: lyricsText.versionName
+                        placeholderText: lyricsText.versionNameHint
                         KeyNavigation.tab: root.formMode === "romaji" ? contentField : languageField
                     }
                     GridLayout {
@@ -947,17 +950,17 @@ Dialog {
                         columns: 2
                         columnSpacing: root.contract.spacingUnit * 2
                         FieldLabel {
-                            text: qsTr("Idioma (opcional)")
+                            text: lyricsText.optionalLanguage
                         }
                         FieldLabel {
-                            text: qsTr("Escrita (opcional)")
+                            text: lyricsText.optionalScript
                         }
                         VersionInput {
                             id: languageField
                             objectName: "lyrics-variant-language-input"
                             maximumLength: 64
-                            Accessible.name: qsTr("Idioma da letra")
-                            placeholderText: qsTr("Ex.: ja")
+                            Accessible.name: lyricsText.language
+                            placeholderText: lyricsText.languageHint
                             readOnly: root.formMode === "romaji"
                             KeyNavigation.tab: scriptField
                         }
@@ -965,14 +968,14 @@ Dialog {
                             id: scriptField
                             objectName: "lyrics-variant-script-input"
                             maximumLength: 64
-                            Accessible.name: qsTr("Escrita da letra")
-                            placeholderText: qsTr("Ex.: Jpan ou Latn")
+                            Accessible.name: lyricsText.script
+                            placeholderText: lyricsText.scriptHint
                             readOnly: root.formMode === "romaji"
                             KeyNavigation.tab: kindField
                         }
                     }
                     FieldLabel {
-                        text: qsTr("Tipo de versão")
+                        text: lyricsText.versionType
                     }
                     ComboBox {
                         id: kindField
@@ -983,7 +986,7 @@ Dialog {
                         textRole: "label"
                         valueRole: "value"
                         model: root.versionKinds
-                        Accessible.name: qsTr("Tipo de versão")
+                        Accessible.name: lyricsText.versionType
                         KeyNavigation.tab: root.textEntryMode ? sourceField : formSubmit
                         contentItem: Text {
                             text: kindField.displayText
@@ -1000,7 +1003,7 @@ Dialog {
                     }
                     FieldLabel {
                         visible: root.textEntryMode
-                        text: qsTr("Origem (opcional; não é acessada pelo app)")
+                        text: lyricsText.optionalOrigin
                     }
                     VersionInput {
                         id: sourceField
@@ -1008,12 +1011,12 @@ Dialog {
                         visible: root.textEntryMode
                         maximumLength: 2048
                         readOnly: root.formMode === "romaji" || root.editing
-                        Accessible.name: qsTr("Origem da letra")
+                        Accessible.name: lyricsText.origin
                         KeyNavigation.tab: contentField
                     }
                     FieldLabel {
                         visible: root.textEntryMode
-                        text: root.editing ? qsTr("Edite a letra. Os tempos ficam protegidos até você permitir alterações.") : root.formMode === "romaji" ? qsTr("Revise a romanização e mantenha os tempos da letra.") : qsTr("Cole a letra ou o conteúdo LRC. Tempos existentes são preservados; texto sem tempos não é sincronizado automaticamente.")
+                        text: root.editing ? lyricsText.editingAdvice : root.formMode === "romaji" ? lyricsText.romajiAdvice : lyricsText.pasteAdvice
                     }
                     TextArea {
                         id: contentField
@@ -1030,7 +1033,7 @@ Dialog {
                         selectionColor: root.contract.accentColor
                         selectedTextColor: root.contract.accentTextColor
                         Accessible.role: Accessible.EditableText
-                        Accessible.name: qsTr("Texto da letra ou LRC")
+                        Accessible.name: lyricsText.lyricsOrLrc
                         KeyNavigation.tab: root.editing ? timingField : (root.formMode === "romaji" ? formSubmit : generatedField)
                         background: Rectangle {
                             color: root.contract.surfaceColor
@@ -1045,7 +1048,7 @@ Dialog {
                         Layout.fillWidth: true
                         visible: root.textEntryMode
                         enabled: root.formCurrent && root.formMode !== "romaji" && !root.editing
-                        text: qsTr("Texto gerado por ferramenta")
+                        text: lyricsText.generatedText
                         Accessible.name: text
                         KeyNavigation.tab: formSubmit
                         contentItem: Text {
@@ -1063,7 +1066,7 @@ Dialog {
                         Layout.fillWidth: true
                         visible: root.editing
                         enabled: root.formCurrent
-                        text: qsTr("Permitir alterar os tempos do LRC")
+                        text: lyricsText.allowTimingChanges
                         Accessible.name: text
                         KeyNavigation.tab: formSubmit
                         contentItem: Text {
@@ -1079,7 +1082,7 @@ Dialog {
             Text {
                 Layout.fillWidth: true
                 visible: root.formRejected
-                text: root.lrcImportRejected ? qsTr("Não foi possível preencher a versão com o arquivo LRC. Confira o arquivo ou cole a letra.") : root.editing ? qsTr("Confira o texto, os tempos ou reabra a versão se ela mudou.") : root.formMode === "romaji" ? qsTr("Confira o texto e mantenha os tempos da letra original.") : root.formMode === "queued" ? qsTr("Confira o conteúdo e os limites. Se a faixa mudou na fila, abra o formulário novamente.") : qsTr("Não foi possível adicionar a versão. Confira o conteúdo e os limites informados.")
+                text: root.lrcImportRejected ? lyricsText.lrcImportRejected : root.editing ? lyricsText.editRejected : root.formMode === "romaji" ? lyricsText.romajiRejected : root.formMode === "queued" ? lyricsText.queuedRejected : lyricsText.addRejected
                 textFormat: Text.PlainText
                 color: root.contract.textSecondaryColor
                 wrapMode: Text.WordWrap
@@ -1093,13 +1096,13 @@ Dialog {
                 }
                 AccessibleTransportButton {
                     contract: root.contract
-                    text: qsTr("Cancelar")
+                    text: lyricsText.cancel
                     onClicked: formDialog.reject()
                 }
                 AccessibleTransportButton {
                     objectName: "lyrics-variant-save-copy"
                     contract: root.contract
-                    text: qsTr("Salvar como nova versão")
+                    text: lyricsText.saveAsNew
                     visible: root.editing
                     enabled: visible && formSubmit.enabled
                     onClicked: if (enabled)
@@ -1109,7 +1112,7 @@ Dialog {
                     id: formSubmit
                     controlId: "lyrics-variant-submit"
                     contract: root.contract
-                    text: root.editing ? qsTr("Salvar alterações") : qsTr("Salvar")
+                    text: root.editing ? lyricsText.saveChanges : lyricsText.save
                     enabled: root.formCurrent && !root.lrcPickerArmed && root.lrcImportToken.length === 0 && (root.formMode !== "queued" || root.queuedFormAvailable) && nameField.text.trim().length > 0 && (root.formMode === "current" || contentField.text.trim().length > 0)
                     KeyNavigation.tab: nameField
                     onClicked: root.submitForm(false)
@@ -1120,12 +1123,12 @@ Dialog {
     NativeDialogs.FileDialog {
         id: lrcPicker
         objectName: "lyrics-variant-lrc-picker"
-        title: qsTr("Selecionar arquivo de letra LRC")
+        title: lyricsText.selectLrc
         modality: Qt.WindowModal
         parentWindow: root.parent ? root.parent.Window.window : null
         popupType: Popup.Item
         fileMode: NativeDialogs.FileDialog.OpenFile
-        nameFilters: [qsTr("Letras sincronizadas (*.lrc)")]
+        nameFilters: [lyricsText.lrcFilter]
         onAccepted: root.startLrcImport(selectedFile)
         onRejected: {
             root.lrcPickerArmed = false;
@@ -1157,16 +1160,16 @@ Dialog {
         contentItem: ColumnLayout {
             spacing: root.contract.spacingUnit * 2
             Accessible.role: Accessible.Dialog
-            Accessible.name: root.confirmMode === "reload" ? (root.noTrackToReload ? qsTr("Abandonar alteração pendente") : qsTr("Recarregar letras do disco")) : qsTr("Excluir versão da letra")
+            Accessible.name: root.confirmMode === "reload" ? (root.noTrackToReload ? lyricsText.abandonPending : lyricsText.reloadLyrics) : lyricsText.deleteVersionTitle
             Text {
                 objectName: "lyrics-variant-confirm-text"
                 Layout.fillWidth: true
                 text: {
                     if (root.confirmMode === "reload")
-                        return root.noTrackToReload ? qsTr("Abandonar a tentativa em memória? Não há faixa selecionada para recarregar. Uma gravação sem confirmação pode já ter sido efetivada; abandonar a tentativa não desfaz os arquivos gravados.") : qsTr("Abandonar a tentativa em memória e recarregar do disco? Uma gravação sem confirmação pode já ter sido efetivada; recarregar não promete desfazê-la.");
+                        return root.noTrackToReload ? lyricsText.abandonWithoutTrackAdvice : lyricsText.reloadAdvice;
                     if (root.confirmTarget === null)
                         return "";
-                    return root.confirmTarget.title.length > 0 ? qsTr("Excluir a versão “%1” de “%2”? O áudio e as outras versões serão preservados.").arg(root.confirmTarget.name).arg(root.confirmTarget.title) : qsTr("Excluir a versão “%1”? O áudio e as outras versões serão preservados.").arg(root.confirmTarget.name);
+                    return root.confirmTarget.title.length > 0 ? lyricsText.deleteTrackVersionAdvice.arg(root.confirmTarget.name).arg(root.confirmTarget.title) : lyricsText.deleteVersionAdvice.arg(root.confirmTarget.name);
                 }
                 textFormat: Text.PlainText
                 color: root.contract.textPrimaryColor
@@ -1181,13 +1184,13 @@ Dialog {
                 }
                 AccessibleTransportButton {
                     contract: root.contract
-                    text: qsTr("Cancelar")
+                    text: lyricsText.cancel
                     onClicked: confirmation.reject()
                 }
                 AccessibleActionButton {
                     controlId: "lyrics-variant-confirm-submit"
                     contract: root.contract
-                    text: root.confirmMode === "reload" ? (root.noTrackToReload ? qsTr("Abandonar") : qsTr("Recarregar")) : qsTr("Excluir")
+                    text: root.confirmMode === "reload" ? (root.noTrackToReload ? lyricsText.abandon : lyricsText.reload) : lyricsText.deleteAction
                     enabled: root.confirmCurrent
                     onClicked: {
                         if (!enabled || !root.confirmCurrent)

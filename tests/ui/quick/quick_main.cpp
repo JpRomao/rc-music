@@ -16,10 +16,12 @@
 #include <QAccessible>
 #include <QClipboard>
 #include <QCoreApplication>
+#include <QDir>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QMimeData>
 #include <QPointer>
@@ -507,6 +509,12 @@ class ScenarioDriver final : public QObject {
     Q_INVOKABLE int localUnloadCount() const noexcept { return local_backend_.unload_calls; }
     Q_INVOKABLE int localPlayCount() const noexcept { return local_backend_.play_calls; }
     Q_INVOKABLE int localPauseCount() const noexcept { return local_backend_.pause_calls; }
+    Q_INVOKABLE QString artifactPath(const QString& name) const {
+        const QString root = qEnvironmentVariable("RC_MUSIC_UI_ARTIFACT_DIR");
+        if (root.isEmpty() || QFileInfo{name}.fileName() != name)
+            return {};
+        return QDir{root}.filePath(name);
+    }
     Q_INVOKABLE void deferLocalAudioSelection(const bool deferred) { local_files_picker_.deferred = deferred; }
     Q_INVOKABLE int localAudioSelectionCount() const noexcept { return local_files_picker_.requests; }
     Q_INVOKABLE void rebindLocalAudioPicker() {
@@ -1064,7 +1072,10 @@ class EmptyShellQuickTestSetup final : public QObject {
         auto* appearance =
             new music_player::m0::QtSystemAppearance([appearance_state] { return *appearance_state; }, engine);
         music_player::m0::bindShellAppearance(*presenter, *contract, *appearance);
+        auto* product_contract = new music_player::m0::ShellUiContract(engine);
+        music_player::m0::bindShellAppearance(*local_presenter, *product_contract, *appearance);
         engine->rootContext()->setContextProperty(QStringLiteral("testShellUiContract"), contract);
+        engine->rootContext()->setContextProperty(QStringLiteral("testProductUiContract"), product_contract);
         engine->rootContext()->setContextProperty(QStringLiteral("testPlayerPresenter"), presenter);
         engine->rootContext()->setContextProperty(QStringLiteral("testDetailsFixturePresenter"), details_presenter);
         engine->rootContext()->setContextProperty(QStringLiteral("testPendingExitPresenter"), pending_exit_presenter);

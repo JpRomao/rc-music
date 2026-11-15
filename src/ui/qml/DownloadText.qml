@@ -37,5 +37,7 @@ QtObject {
     readonly property string closeInformation: qsTr("Voltar aos downloads")
     readonly property string retryStartup: qsTr("Tentar carregar o histórico novamente")
     readonly property string recoverHistory: qsTr("Recuperar histórico")
+    readonly property string lyricsBusy: qsTr("Buscando letra…")
+    readonly property string reviewLyrics: qsTr("Revisar letras")
     readonly property string title: qsTr("Downloads")
 }

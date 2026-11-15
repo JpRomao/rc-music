@@ -119,18 +119,6 @@ TestCase {
         function open() {
         }
     }
-    QtObject {
-        id: optionalLidarr
-        property bool connected: false
-        property bool busy: false
-        property bool interactionAllowed: true
-        property string serverAddress: "http://localhost:8686"
-        property string statusText: "Lidarr"
-        property var results: []
-        property var rootFolders: []
-        property var qualityProfiles: []
-        property var metadataProfiles: []
-    }
     Component {
         id: shellComponent
         Main {
@@ -777,19 +765,27 @@ TestCase {
             verify(point.y + item.height <= panel.contentItem.height + 1);
         }
     }
-    function test_sixOptionalHeaderActionsFitTogether() {
+    function test_remainingOptionalNavigationActionsFitTogether() {
         shell.downloads = optionalDownloads;
         shell.embeddedBrowser = optionalBrowser;
-        shell.lidarr = optionalLidarr;
         wait(0);
-        let previousRight = -1;
-        for (const name of ["playlists", "lidarr", "embedded-browser", "downloads", "queue", "preferences"]) {
+        verify(waitForPolish(shell));
+        const viewport = findChild(shell, "navigation-viewport");
+        verify(viewport);
+        let previousBottom = -1;
+        for (const name of ["now", "queue", "playlists", "downloads", "embedded-browser", "theme-toggle", "preferences"]) {
             const button = findChild(shell, name);
             verify(button && button.visible);
-            const point = button.mapToItem(shell.contentItem, 0, 0);
-            verify(point.x >= previousRight);
-            verify(point.x + button.width <= shell.width);
-            previousRight = point.x + button.width;
+            if (button.enabled) {
+                button.forceActiveFocus(Qt.TabFocusReason);
+                tryVerify(() => button.activeFocus);
+            }
+            tryVerify(() => {
+                const point = button.mapToItem(viewport, 0, 0);
+                return point.x >= 0 && point.y >= 0 && point.x + button.width <= viewport.width && point.y + button.height <= viewport.height;
+            }, 5000, name + " must be reachable inside the clipped navigation viewport");
+            verify(button.y >= previousBottom, name + " y=" + button.y + " previousBottom=" + previousBottom);
+            previousBottom = button.y + button.height;
         }
     }
 }

@@ -4,6 +4,8 @@
 #endif
 #include "presentation/ApplicationIdentity.hpp"
 
+#include <QGuiApplication>
+
 #include <stdexcept>
 #include <utility>
 
@@ -84,7 +86,8 @@ ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent) :
     const auto convert_palette = [](const FixturePalette& source) {
         return Palette{source.canvas,         source.surface, source.surface_raised, source.text_primary,
                        source.text_secondary, source.accent,  source.on_accent,      source.border,
-                       source.focus,          source.error,   source.warning,        source.success};
+                       source.focus,          source.error,   source.warning,        source.success,
+                       source.surface};
     };
     light_palette_ = convert_palette(themes.light);
     dark_palette_ = convert_palette(themes.dark);
@@ -148,6 +151,12 @@ int ShellUiContract::radiusMedium() const noexcept { return layout_.radius_mediu
 int ShellUiContract::radiusSmall() const noexcept { return layout_.radius_small_px; }
 int ShellUiContract::spacingUnit() const noexcept { return layout_.spacing_unit_px; }
 QString ShellUiContract::appName() const { return ApplicationIdentity::displayName(); }
+QString ShellUiContract::headingFontFamily() const { return QStringLiteral("Georgia"); }
+QString ShellUiContract::bodyFontFamily() const { return QStringLiteral("Segoe UI"); }
+QString ShellUiContract::symbolFontFamily() const { return QStringLiteral("Segoe UI Symbol"); }
+QFont ShellUiContract::applicationFont() const {
+    return qobject_cast<QGuiApplication*>(QCoreApplication::instance()) ? QGuiApplication::font() : QFont{};
+}
 QString ShellUiContract::openAudioText() const { return tr("Abrir áudio"); }
 QString ShellUiContract::emptyTitle() const { return tr("Abra um áudio para começar"); }
 QString ShellUiContract::emptyHint() const { return tr("ou arraste arquivos para esta janela"); }
@@ -187,6 +196,9 @@ QString ShellUiContract::canvasColor() const {
 }
 QString ShellUiContract::surfaceColor() const {
     return high_contrast_ ? high_contrast_->window.name() : palette().surface;
+}
+QString ShellUiContract::navigationColor() const {
+    return high_contrast_ ? high_contrast_->window.name() : palette().navigation;
 }
 QString ShellUiContract::surfaceRaisedColor() const {
     return high_contrast_ ? high_contrast_->window.name() : palette().surface_raised;

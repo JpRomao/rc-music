@@ -999,7 +999,10 @@ TestCase {
         timing.checked = true;
         const content = findChild(shell, "lyrics-variant-content-input");
         content.text = "[00:02.00]Saved verse";
-        mouseClick(findChild(shell, "lyrics-variant-save-copy"));
+        compare(timing.checked, true);
+        const copyButton = findChild(shell, "lyrics-variant-save-copy");
+        verify(waitForPolish(shell));
+        mouseClick(copyButton);
         compare(lastCall("saveEdit").args.slice(5), ["[00:02.00]Saved verse", true, true]);
         tryCompare(form, "visible", false);
 

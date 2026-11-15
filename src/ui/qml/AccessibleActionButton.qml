@@ -35,6 +35,7 @@ Button {
     contentItem: Text {
         id: label
         text: control.text
+        font: control.font
         color: control.contract.accentTextColor
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter

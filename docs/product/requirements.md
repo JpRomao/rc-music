@@ -3,7 +3,7 @@
 **Estado:** baseline vigente; stack Windows aceita no ADR-0005
 
 **Versão alvo:** MVP 0.1  
-**Última revisão:** 2026-11-04
+**Última revisão:** 2026-11-15
 
 **Nome do produto:** RC Music, confirmado pelo mantenedor em 2026-09-05; [ADR-0004](../architecture/decisions/0004-rc-music-identity.md). A confirmação não altera os requisitos ou as prioridades abaixo.
 
@@ -140,13 +140,13 @@ Extensão solicitada pelo mantenedor em 2026-11-04: guardar várias versões da 
 
 Refinamento posterior explícito: no fluxo YouTube → MP3, usar Letras.mus.br como fonte preferencial e LRCLIB como fallback, com origem informada e associação à gravação correta. O pedido de produto é aceito; a integração técnica Letras continua pendente de acesso/contrato compatível, conforme [ADR-0017](../architecture/decisions/0017-youtube-audio-and-lyrics-acquisition.md), sem fingir suporte por fixtures HTML inventadas. O [fluxo opcional implementado](../download-lyrics.md) consulta LRCLIB quando o primário está indisponível, após publicação reconhecida e pedido explícito; mostra os conteúdos distintos retornados e guarda a versão somente depois de nome/forma informados e Saved. O mesmo writer preserva versões existentes, escolha atual e áudio; retry de gravação usa o candidato original sem HTTP, e retry de busca não repete o MP3. Não inferir idioma/escrita, romanização ou tempos. A busca direta do player permanece independente; downloads normais de produção e acesso Letras continuam nos seus gates.
 
-### 2.8 Integração opcional com Lidarr
+### 2.8 Lidarr — retirado do escopo vigente
 
 | ID | Prioridade | Origem | Requisito e critério principal |
 |---|---:|---|---|
-| FR-055 | P1 | Confirmado | Integrar uma instância Lidarr configurada pelo usuário, em Lite e Completa, para pesquisar artistas/álbuns e solicitar downloads de álbuns mediante seleção e confirmação explícitas. Informar endereço e chave no app; usar as pastas e perfis reais do servidor, sem instalar ou configurar o Lidarr automaticamente. Separar pedido aceito de download concluído e manter fila/reprodução local independentes da conexão. |
+| FR-055 | P1 | Confirmado | **Fora de escopo vigente por decisão explícita de 2026-11-15:** retirar a integração Lidarr do aplicativo, em Lite e Completa, incluindo cliente, apresentação, composição e dependências/testes exclusivos. O ID e sua prioridade histórica P1 permanecem rastreáveis em R1.11; a integração anteriormente pedida não é considerada comprovada nem adiada para aceitação autenticada. Preservar demais recursos, servidores externos e dados pessoais. [ADR-0018](../architecture/decisions/0018-aurora-and-lidarr-removal.md). |
 
-Pedido prioritário confirmado em 2026-11-04, com instância indicada `http://localhost:8686/`. O [ADR-0014](../architecture/decisions/0014-lidarr-integration.md) delimita esta integração específica. O lookup do Lidarr pesquisa artistas/álbuns, sem busca global por título de faixa: para uma música, procurar seu artista ou álbum. Solicitar um álbum pode cadastrar o artista necessário no servidor; a confirmação explica esse efeito e a busca do álbum completo. Chave somente em memória nesta versão, envio em `X-Api-Key`, HTTP com aviso de ausência de criptografia e HTTPS sem ignorar certificados. Abrir o painel não envia pedidos; timeout de escrita exige conferência no Lidarr, sem retry automático. Resultados e caminhos do servidor não autorizam importação, autoplay ou operações em arquivos locais.
+**Histórico substituído, não fluxo atual:** pedido prioritário confirmado em 2026-11-04, com instância indicada `http://localhost:8686/`. O [ADR-0014](../architecture/decisions/0014-lidarr-integration.md) delimitava conexão, pesquisa de artistas/álbuns e solicitação de álbuns confirmada, com chave somente em memória, limites de rede e independência da fila/reprodução local. O [guia histórico](../lidarr-integration.md) conserva os detalhes e recibos. A decisão posterior cancela essa continuidade no app sem autorizar conexão ao servidor, leitura/revogação de credenciais, cancelamento remoto ou exclusão de áudios; Qt Network, letras, downloads opcionais, playlists e stores continuam preservados.
 
 ### 2.9 Playlists nomeadas
 

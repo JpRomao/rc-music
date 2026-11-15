@@ -10,7 +10,6 @@
 #endif
 #include "adapters/QtJsonLyricsVariantsStore.hpp"
 #include "adapters/QtJsonPlaylistStore.hpp"
-#include "adapters/QtLidarrService.hpp"
 #include "adapters/QtLyricsRomanizer.hpp"
 #include "adapters/QtLyricsService.hpp"
 #include "adapters/QtShellPlatform.hpp"
@@ -42,7 +41,6 @@
 #include "presentation/ApplicationIdentity.hpp"
 #include "presentation/ApplicationText.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
-#include "presentation/LidarrBinding.hpp"
 #include "presentation/LifecycleText.hpp"
 #include "presentation/LyricsBinding.hpp"
 #include "presentation/PlayerPresenter.hpp"
@@ -471,8 +469,6 @@ int main(int argc, char* argv[]) {
         music_player::m0::LyricsBinding lyrics_binding(
             lyrics_service, std::make_shared<music_player::m0::QtJsonLyricsVariantsStore>(lyrics_config_root));
         lyrics_binding.setJapaneseRomanizer(music_player::m0::makeQtLyricsRomanizer(lyrics_config_root));
-        music_player::m0::QtLidarrService lidarr_service;
-        music_player::m0::LidarrBinding lidarr_binding(lidarr_service);
 #ifdef M0_QT_COMBINED_AUDIO
         music_player::m0::QtAudioFilesPicker playlist_audio_picker(
             music_player::m0::ApplicationText::playlistAudioDialogTitle(), localAudioDialogFilter());
@@ -569,11 +565,10 @@ int main(int argc, char* argv[]) {
             constexpr bool downloads_component_drained = true;
 #endif
             const bool lyrics_drained = lyrics_binding.prepareExit();
-            const bool lidarr_drained = lidarr_binding.prepareExit();
             const bool playlists_drained = !playlists_binding || playlists_binding->prepareExit();
             return !retained_source_command.has_value() && single_instance.pendingCommandCount() == 0 &&
-                   source_dispatcher.hasDrainedAcceptedWork() && lyrics_drained && lidarr_drained &&
-                   playlists_drained && downloads_component_drained;
+                   source_dispatcher.hasDrainedAcceptedWork() && lyrics_drained && playlists_drained &&
+                   downloads_component_drained;
         });
         QObject::connect(&single_instance, &music_player::m0::QtSingleInstanceCoordinator::commandAvailable,
                          &source_ipc_context, pump_source_commands, Qt::DirectConnection);
@@ -782,7 +777,9 @@ int main(int argc, char* argv[]) {
         });
         QObject::connect(&application, &QCoreApplication::aboutToQuit, playlists_binding.get(),
                          &music_player::m0::PlaylistsBinding::beginShutdown);
+#ifdef M0_QT_COMBINED_AUDIO
         lyrics_binding.setQueuedLyricsMetadataExtractor(std::make_shared<music_player::m0::TagLibMetadataExtractor>());
+#endif
         lyrics_binding.setQueueLyricsSource(
             [guarded_presenter = QPointer<PlayerPresenter>{&presenter}](const QString& occurrence_id) {
                 return guarded_presenter ? guarded_presenter->queuedLyricsSource(occurrence_id) : QString{};
@@ -816,18 +813,9 @@ int main(int argc, char* argv[]) {
         QObject::connect(&application, &QCoreApplication::aboutToQuit, &lyrics_binding,
                          &music_player::m0::LyricsBinding::beginShutdown);
         update_lyrics();
-        QObject::connect(&presenter, &PlayerPresenter::lifecycleChanged, &lidarr_binding, [&] {
-            if (presenter.exiting())
-                static_cast<void>(lidarr_binding.prepareExit());
-            else
-                lidarr_binding.resume();
-        });
-        QObject::connect(&application, &QCoreApplication::aboutToQuit, &lidarr_binding,
-                         &music_player::m0::LidarrBinding::beginShutdown);
         QVariantMap initial_properties{{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
                                        {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
                                        {QStringLiteral("lyrics"), QVariant::fromValue(&lyrics_binding)},
-                                       {QStringLiteral("lidarr"), QVariant::fromValue(&lidarr_binding)},
                                        {QStringLiteral("playlists"), QVariant::fromValue(playlists_binding.get())},
                                        {QStringLiteral("startupReady"), false}};
 #ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE

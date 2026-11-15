@@ -371,7 +371,7 @@ Popup {
             Layout.fillWidth: true
             contract: root.contract
             objectName: "downloads-lyrics"
-            text: root.lyricsBackend !== null && root.lyricsBackend.busy ? qsTr("Buscando letra…") : qsTr("Revisar letras")
+            text: root.lyricsBackend !== null && root.lyricsBackend.busy ? labels.lyricsBusy : labels.reviewLyrics
             accessibleName: text
             visible: root.lyricsAvailable
             enabled: root.lyricsAvailable

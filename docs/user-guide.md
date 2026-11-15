@@ -30,15 +30,9 @@ Na barra de volume, a porcentagem atual de **0 a 100%** aparece ao passar o mous
 
 ## Pesquisar e solicitar álbuns no Lidarr
 
-Clique em **Lidarr**, informe o endereço da sua instância (inicialmente `http://localhost:8686`) e a chave de API obtida nas configurações do Lidarr, depois escolha **Conectar**. A chave é mascarada, fica somente em memória e precisa ser informada novamente ao reiniciar o player. Se o Lidarr recusar o acesso durante o uso, confira a chave e conecte novamente. O painel mantém o endereço. Abrir o painel não se conecta automaticamente. HTTP não criptografa a conexão; prefira HTTPS fora deste computador.
+**Recurso retirado do aplicativo por decisão do mantenedor em 2026-11-15.** O botão, o cliente e o painel Lidarr deixam de fazer parte do fluxo vigente; não há etapa de informar chave, conectar ou solicitar álbuns no RC Music. FR-055 permanece fora de escopo conforme o [ADR-0018](architecture/decisions/0018-aurora-and-lidarr-removal.md).
 
-Digite o artista ou álbum, escolha o tipo de pesquisa e clique em **Buscar**. Os resultados aparecem como **No catálogo do Lidarr** ou **Já cadastrado no Lidarr**. Em um artista cadastrado, **Ver álbuns cadastrados** abre sua lista. Em um álbum cadastrado, **Ver faixas** mostra os títulos e quais faixas têm arquivo no Lidarr. Use o filtro para localizar uma música pelo título dentro desse álbum.
-
-Selecione um álbum e use **Solicitar download**. Para um álbum novo, escolha uma pasta e perfis configurados no servidor. A confirmação explica o que será cadastrado ou buscado. Só **Solicitar** envia o pedido do álbum completo.
-
-Use **Tab** para entrar nos resultados, **↑/↓** para mover o cursor e **Home/End** para chegar ao início ou ao fim da lista. **Enter** ou **Espaço** selecionam o resultado. Depois, vá até **Solicitar download** para abrir a confirmação.
-
-**Busca solicitada no Lidarr** indica que o pedido foi aceito, sem garantir resultado ou download concluído. Indexadores e cliente de download precisam estar configurados no Lidarr; acompanhe a busca nele. Se cancelar ou ocorrer timeout após o envio, confira no Lidarr antes de repetir. A integração não importa os arquivos baixados automaticamente nem altera a fila atual. **Desconectar** encerra a conexão e descarta as credenciais da sessão. Consulte os [limites da integração](lidarr-integration.md).
+A retirada se limita à integração do app: não desinstala ou altera o servidor, seus pedidos ou arquivos de áudio. Letras, playlists e downloads opcionais continuam com seus fluxos próprios. Esta seção mantém a âncora de referências antigas; o [guia histórico Lidarr](lidarr-integration.md) conserva o comportamento e as evidências anteriores, sem recomendar sua retomada. Artefatos antigos podem ainda conter aquela interface e não são atualizados por este aviso.
 
 ## Abrir música e organizar a fila
 

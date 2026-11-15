@@ -12,15 +12,17 @@ O checkpoint Windows mais recente é a [entrega local atualizada](../experiments
 
 **Estado:** stack aceita; sequência de promoção e conclusão Windows, sem compromisso de datas
 
-**Última revisão:** 2026-11-05
+**Última revisão:** 2026-11-15
 
-**Próxima frente solicitada:** [aquisição YouTube em MP3 e letra](youtube-audio-and-lyrics.md), com extensão separada e preferência Letras → LRCLIB. Ingresso primeiro, depois resolver/transferência/conversão/importação e associação de letra, com falhas independentes. Nenhum suporte de produção, acesso Letras ou ferramenta externa é aprovado por esse pedido; os gates do ADR-0017 permanecem explícitos.
+**Frente vigente (2026-11-15):** retirada integral do Lidarr do app e fundação visual Aurora incremental, conforme [ADR-0018](architecture/decisions/0018-aurora-and-lidarr-removal.md). FR-055/P1 e R1.11 permanecem rastreáveis como **fora de escopo**, sem integração ou smoke autenticado a continuar. Qt Network, letras, downloads opcionais, playlists, stores e dados pessoais são preservados. A primeira fundação Qt/QML está implementada e exercitada, com o gate i18n corrigido; [checkpoint delimitado](delivery/aurora-native-foundation-20261115.md). O instalador privado foi autorizado para teste, sem instalação. Isso não aprova aceite humano nativo, novo provider ou produção remota.
+
+**Continuidade preservada:** [aquisição YouTube em MP3 e letra](youtube-audio-and-lyrics.md), com extensão separada e preferência Letras → LRCLIB. Ingresso primeiro, depois resolver/transferência/conversão/importação e associação de letra, com falhas independentes. Nenhum suporte de produção, acesso Letras ou ferramenta externa é aprovado por esse pedido; os gates do ADR-0017 permanecem explícitos.
 
 O incremento de 2026-11-05 implementa resolver/sessão, rede por capability e handoff no worker da aquisição existente. Os testes locais exercitam essas fronteiras; runtime autêntico/descendentes EJS, host instalado, integração Letras/fallback e download real no app continuam pendentes. Os gates de segurança, licenças e distribuição permanecem separados desse avanço de código.
 
 **Continuidade funcional:** [versões de letras por música](lyrics-variants.md), como extensão de FR-054/M3.9: guardar original/romanizada quando disponíveis, adicionar texto depois e escolher a forma exibida, com persistência explícita independente de áudio/fila. O recorte automatizado está implementado, com **295/295 CTest**, restart em dois processos e builds Lite/Completa; aceitação nativa/pacote continuam pendentes. Letras.mus.br como provedor, MP3 remoto, LLM e tradução não são habilitados por esse armazenamento.
 
-**Prioridade antecipada em 2026-11-04:** [playlists locais nomeadas e persistentes](playlists.md), FR-056/M6.6. O recorte automatizado implementa criar/renomear/excluir listas, salvar a fila atual, organizar faixas, persistir e acrescentar à fila sem autoplay. Aceitação Windows nativa e pacote atualizado continuam pendentes. A [integração Lidarr](lidarr-integration.md), seus gates e o trabalho AppContainer ficam preservados para continuidade posterior.
+**Prioridade antecipada em 2026-11-04:** [playlists locais nomeadas e persistentes](playlists.md), FR-056/M6.6. O recorte automatizado implementa criar/renomear/excluir listas, salvar a fila atual, organizar faixas, persistir e acrescentar à fila sem autoplay. Aceitação Windows nativa e pacote atualizado continuam pendentes. A [integração Lidarr](lidarr-integration.md) fica preservada somente como histórico após sua retirada, não para continuidade posterior; o trabalho AppContainer e seus limites permanecem inalterados.
 
 ## 1. Como ler
 

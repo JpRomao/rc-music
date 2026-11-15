@@ -11,7 +11,6 @@ ApplicationWindow {
     property var downloads: null
     property var embeddedBrowser: null
     property var lyrics: null
-    property var lidarr: null
     property var playlists: null
     property bool startupReady: true
     width: uiContract.clientWidth
@@ -20,6 +19,10 @@ ApplicationWindow {
     minimumHeight: uiContract.minimumHeight
     title: uiContract.appName
     color: uiContract.canvasColor
+    font: presenter.usesFrozenFixture ? uiContract.applicationFont : Qt.font({
+        family: uiContract.bodyFontFamily,
+        pixelSize: 14
+    })
     palette.window: uiContract.canvasColor
     palette.base: uiContract.surfaceColor
     palette.alternateBase: uiContract.surfaceRaisedColor
@@ -38,6 +41,15 @@ ApplicationWindow {
     visible: startupReady
     signal openAudioRequested
     property bool queueOpen: false
+    readonly property bool queuePageActive: queueOpen && presenter.queueLoaded
+    property alias queueButton: sideNavigation.queueButton
+    property alias preferencesButton: sideNavigation.preferencesButton
+    property alias playlistsButton: sideNavigation.playlistsButton
+    property alias downloadsButton: sideNavigation.downloadsButton
+    property alias browserButton: sideNavigation.browserButton
+    NavigationText {
+        id: navigationText
+    }
     ErrorText {
         id: errorText
     }
@@ -56,7 +68,7 @@ ApplicationWindow {
         errorLabels: errorText
     }
     readonly property bool downloadFinalSaveDecisionRequired: downloads !== null && (downloads.canRetryFinalSave || downloads.canCloseAfterFinalSaveFailure)
-    readonly property bool windowShortcutsEnabled: !playlistsPanel.visible && !lidarrPanel.visible && !lyricsPanel.queryOpen && !downloadsPanel.visible && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool windowShortcutsEnabled: !playlistsPanel.visible && !lyricsPanel.queryOpen && !downloadsPanel.visible && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && !preferencesPanel.visible && transport.enabled
     readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
     readonly property bool primaryKeysEnabled: windowShortcutsEnabled && !preferencesPanel.visible && !focusOwnsTextInput()
@@ -78,6 +90,7 @@ ApplicationWindow {
         revealDownloadFinalSaveFailure();
     }
     onActiveFocusItemChanged: {
+        sideNavigation.revealFocus(activeFocusItem);
         if (activeFocusItem && !isPassiveFocusFallback(activeFocusItem))
             lastActiveFocusItem = activeFocusItem;
     }
@@ -108,6 +121,10 @@ ApplicationWindow {
     }
 
     function focusPlaybackPrimary(state) {
+        if (window.queuePageActive) {
+            queuePanel.focusCurrent();
+            return;
+        }
         if (state === PlayerPresenter.Unloaded)
             emptyState.focusPrimary();
         else if (state === PlayerPresenter.Error)
@@ -254,7 +271,7 @@ ApplicationWindow {
         presenter.setVolume(Math.max(0, Math.min(100, percent + percentagePoints)) / 100);
     }
     function openPreferences() {
-        if (playlistsPanel.visible || lidarrPanel.visible || downloadsPanel.visible || presenter.exiting)
+        if (playlistsPanel.visible || downloadsPanel.visible || presenter.exiting)
             return;
         queueOpen = false;
         if (preferencesPanel.opened)
@@ -263,7 +280,7 @@ ApplicationWindow {
             preferencesPanel.open();
     }
     function openTrackDetails(opener) {
-        if (playlistsPanel.visible || lidarrPanel.visible || downloadsPanel.visible || presenter.exiting)
+        if (playlistsPanel.visible || downloadsPanel.visible || presenter.exiting)
             return;
         queueOpen = false;
         trackDetailsPanel.openFrom(opener);
@@ -273,20 +290,9 @@ ApplicationWindow {
             return;
         queueOpen = false;
         playlistsPanel.close();
-        lidarrPanel.close();
         preferencesPanel.close();
         trackDetailsPanel.close();
         downloadsPanel.openFrom(downloadsButton);
-    }
-    function openLidarr() {
-        if (lidarr === null || presenter.exiting || presenter.selectingAudioFiles || presenter.locatingOccurrenceId.length > 0)
-            return;
-        queueOpen = false;
-        playlistsPanel.close();
-        preferencesPanel.close();
-        trackDetailsPanel.close();
-        downloadsPanel.close();
-        lidarrPanel.open();
     }
     function openPlaylists() {
         if (!playlistsOpeningAllowed)
@@ -295,7 +301,6 @@ ApplicationWindow {
         preferencesPanel.close();
         trackDetailsPanel.close();
         downloadsPanel.close();
-        lidarrPanel.close();
         playlistsPanel.open();
     }
     function revealPlaylistExitRecovery() {
@@ -324,113 +329,74 @@ ApplicationWindow {
             emptyState.focusPrimary();
     }
 
+    SideNavigation {
+        id: sideNavigation
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: playerFooter.top
+        width: compact ? 144 : 224
+        compact: window.width < 1000
+        contract: window.uiContract
+        queueAvailable: window.presenter.queueLoaded
+        queueActive: window.queuePageActive
+        exiting: window.presenter.exiting
+        hasPlaylists: window.playlists !== null
+        hasDownloads: window.downloads !== null
+        hasBrowser: window.embeddedBrowser !== null
+        downloadsExitRecovery: window.downloadFinalSaveDecisionRequired
+        preferencesOpen: preferencesPanel.visible
+        onNowRequested: {
+            window.queueOpen = false;
+            nowButton.forceActiveFocus(Qt.TabFocusReason);
+        }
+        onQueueRequested: window.toggleQueue()
+        onPreferencesRequested: window.openPreferences()
+        onPlaylistsRequested: window.openPlaylists()
+        onDownloadsRequested: window.openDownloads()
+        onThemeRequested: window.presenter.setThemePreference(window.uiContract.darkTheme ? PlayerPresenter.LightTheme : PlayerPresenter.DarkTheme)
+        onBrowserRequested: {
+            window.embeddedBrowser.open();
+            if (window.embeddedBrowser !== null && window.embeddedBrowser.errorText.length > 0)
+                browserError.open();
+        }
+    }
     ColumnLayout {
         id: mainLayout
-        anchors.fill: parent
+        anchors.left: sideNavigation.right
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: playerFooter.top
         anchors.margins: window.uiContract.spacingUnit * 6
         Item {
             id: contentArea
             Layout.fillWidth: true
             Layout.fillHeight: true
-            AccessibleTransportButton {
-                id: queueButton
-                objectName: "queue"
-                anchors.top: parent.top
-                anchors.right: preferencesButton.left
-                anchors.rightMargin: window.uiContract.spacingUnit * 2
-                z: 20
-                contract: window.uiContract
-                text: window.uiContract.queueTitle
-                accessibleName: window.uiContract.queueTitle
-                enabled: window.presenter.queueLoaded && !window.presenter.exiting
-                checkable: true
-                checked: window.queueOpen
-                Accessible.checkable: true
-                Accessible.checked: checked
-                onClicked: window.toggleQueue()
-            }
-            AccessibleTransportButton {
-                id: preferencesButton
-                objectName: "preferences"
-                anchors.top: parent.top
-                anchors.right: parent.right
-                z: 20
-                contract: window.uiContract
-                text: window.uiContract.preferencesTitle
-                accessibleName: window.uiContract.preferencesTitle
-                enabled: !window.presenter.exiting
-                onClicked: window.openPreferences()
-            }
-            AccessibleTransportButton {
-                id: downloadsButton
-                objectName: "downloads"
-                anchors.top: parent.top
-                anchors.right: queueButton.left
-                anchors.rightMargin: window.uiContract.spacingUnit * 2
-                z: 20
-                contract: window.uiContract
-                text: downloadText.title
-                visible: window.downloads !== null
-                enabled: visible && (!window.presenter.exiting || window.downloadFinalSaveDecisionRequired)
-                onClicked: window.openDownloads()
-            }
-            AccessibleTransportButton {
-                id: playlistsButton
-                objectName: "playlists"
-                anchors.top: parent.top
-                anchors.right: lidarrButton.visible ? lidarrButton.left : (browserButton.visible ? browserButton.left : (downloadsButton.visible ? downloadsButton.left : queueButton.left))
-                anchors.rightMargin: window.uiContract.spacingUnit * 2
-                z: 20
-                contract: window.uiContract
-                text: qsTr("Playlists")
-                visible: window.playlists !== null
-                enabled: visible && !window.presenter.exiting
-                onClicked: window.openPlaylists()
-            }
-            AccessibleTransportButton {
-                id: lidarrButton
-                objectName: "lidarr"
-                anchors.top: parent.top
-                anchors.right: browserButton.visible ? browserButton.left : (downloadsButton.visible ? downloadsButton.left : queueButton.left)
-                anchors.rightMargin: window.uiContract.spacingUnit * 2
-                z: 20
-                contract: window.uiContract
-                text: qsTr("Lidarr")
-                visible: window.lidarr !== null
-                enabled: visible && !window.presenter.exiting
-                onClicked: window.openLidarr()
-            }
-            AccessibleTransportButton {
-                id: browserButton
-                objectName: "embedded-browser"
-                anchors.top: parent.top
-                anchors.right: downloadsButton.visible ? downloadsButton.left : queueButton.left
-                anchors.rightMargin: window.uiContract.spacingUnit * 2
-                z: 20
-                contract: window.uiContract
-                text: browserText.navigate
-                accessibleName: text
-                visible: window.embeddedBrowser !== null
-                enabled: visible && !window.presenter.exiting
-                onClicked: {
-                    window.embeddedBrowser.open();
-                    if (window.embeddedBrowser !== null && window.embeddedBrowser.errorText.length > 0)
-                        browserError.open();
-                }
-            }
             Item {
                 id: stateLayer
                 objectName: "state-layer"
+                visible: !window.queuePageActive
                 enabled: !window.presenter.exiting
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.rightMargin: queuePanel.visible && !queuePanel.overlayMode ? queuePanel.width + window.uiContract.spacingUnit * 4 : 0
+                Text {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    visible: parent.height > 500
+                    text: navigationText.heading
+                    textFormat: Text.PlainText
+                    font.family: window.uiContract.headingFontFamily
+                    font.pixelSize: 30
+                    color: window.uiContract.textPrimaryColor
+                    elide: Text.ElideRight
+                }
                 EmptyState {
                     id: emptyState
                     anchors.centerIn: parent
                     width: Math.min(parent.width > 0 ? parent.width : 560, 560)
+                    compact: stateLayer.height < 400
                     visible: window.presenter.playbackState === PlayerPresenter.Unloaded
                     contract: window.uiContract
                     openingEnabled: !window.presenter.exiting && !window.presenter.selectingAudioFiles && window.presenter.locatingOccurrenceId.length === 0
@@ -443,7 +409,7 @@ ApplicationWindow {
                     visible: window.presenter.playbackState !== PlayerPresenter.Unloaded && window.presenter.playbackState !== PlayerPresenter.Error
                     contract: window.uiContract
                     presenter: window.presenter
-                    compact: lyricsPanel.visible
+                    compact: lyricsPanel.visible || stateLayer.height < 400
                     onOpenAudioRequested: opener => window.openAudio(opener)
                     onDetailsRequested: opener => window.openTrackDetails(opener)
                 }
@@ -492,7 +458,7 @@ ApplicationWindow {
             lyrics: window.lyrics
             trackIdentity: window.presenter.currentOccurrenceId
             readerCanSeek: window.presenter.seekable
-            readerBottomInset: transport.height + window.uiContract.spacingUnit * 2
+            readerBottomInset: playerFooter.height
             readerTextSize: window.presenter.lyricsTextSize
             enabled: !window.presenter.exiting
             onReaderSeekRequested: timeMs => transport.commitImmediateSeek(timeMs)
@@ -502,25 +468,57 @@ ApplicationWindow {
                     queuePanel.listView.forceActiveFocus(Qt.TabFocusReason);
             })
         }
+    }
+    Rectangle {
+        id: playerFooter
+        objectName: "player-footer"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: transport.implicitHeight + footerTitle.implicitHeight + window.uiContract.spacingUnit * 8
+        color: window.uiContract.surfaceColor
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: window.uiContract.borderColor
+            opacity: window.uiContract.highContrast ? 1 : 0.4
+        }
         TransportBar {
             id: transport
             objectName: "transport-bar"
-            Layout.fillWidth: true
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: window.uiContract.spacingUnit * 3
             contract: window.uiContract
             presenter: window.presenter
             enabled: !window.presenter.exiting && (playbackEnabled || window.presenter.canGoPrevious || window.presenter.canGoNext)
+        }
+        Text {
+            id: footerTitle
+            objectName: "player-track-title"
+            font: window.font
+            anchors.left: transport.left
+            anchors.right: transport.right
+            anchors.top: parent.top
+            anchors.topMargin: window.uiContract.spacingUnit * 3
+            text: window.presenter.hasCurrentTrack ? window.presenter.currentTitle + (window.presenter.currentArtist.length > 0 ? " · " + window.presenter.currentArtist : "") : window.uiContract.emptyTitle
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+            color: window.uiContract.textPrimaryColor
+            Accessible.name: text
         }
     }
 
     QueuePanel {
         id: queuePanel
         x: mainLayout.x + contentArea.x + contentArea.width - width
-        y: mainLayout.y + contentArea.y + queueButton.height + window.uiContract.spacingUnit * 2
-        height: contentArea.height - queueButton.height - window.uiContract.spacingUnit * 2
-        width: overlayMode ? window.uiContract.queuePanelMinimumWidth : window.uiContract.queuePanelMaximumWidth
+        y: mainLayout.y + contentArea.y
+        height: contentArea.height
+        width: contentArea.width
         z: 10
-        visible: window.queueOpen && window.presenter.queueLoaded
-        overlayMode: window.width < 900
+        visible: window.queuePageActive
+        overlayMode: false
         contract: window.uiContract
         presenter: window.presenter
         lyricVariantActionSupported: lyricsPanel.queueVariantActionSupported
@@ -534,7 +532,7 @@ ApplicationWindow {
         id: sourceImportStatus
         parent: window.contentItem
         x: mainLayout.x
-        y: Math.max(mainLayout.y, mainLayout.y + (audioSelectionStatus.visible ? audioSelectionStatus.y : transport.y) - height - window.uiContract.spacingUnit * 2)
+        y: Math.max(mainLayout.y, (audioSelectionStatus.visible ? mainLayout.y + audioSelectionStatus.y : playerFooter.y) - height - window.uiContract.spacingUnit * 2)
         width: mainLayout.width
         z: 30
         contract: window.uiContract
@@ -630,18 +628,8 @@ ApplicationWindow {
         playlists: window.playlists
         enabled: !window.presenter.exiting
         onClosed: {
-            if (window.active && !window.presenter.exiting && !downloadsPanel.visible && !lidarrPanel.visible)
-                playlistsButton.forceActiveFocus(Qt.TabFocusReason);
-        }
-    }
-    LidarrPanel {
-        id: lidarrPanel
-        contract: window.uiContract
-        lidarr: window.lidarr
-        enabled: !window.presenter.exiting
-        onClosed: {
             if (window.active && !window.presenter.exiting && !downloadsPanel.visible)
-                lidarrButton.forceActiveFocus(Qt.TabFocusReason);
+                playlistsButton.forceActiveFocus(Qt.TabFocusReason);
         }
     }
     Dialog {
@@ -665,7 +653,7 @@ ApplicationWindow {
         objectName: "source-drop-area"
         anchors.fill: parent
         z: 100
-        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !window.presenter.sourceImportActive && !playlistsPanel.visible && !lidarrPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
+        enabled: !window.presenter.usesFrozenFixture && !window.presenter.exiting && !window.presenter.selectingAudioFiles && !window.presenter.sourceImportActive && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !windowNotice.visible && !queuePanel.clearConfirmationOpen
         property bool dragActive: false
         property bool overQueue: false
         property int acceptedDropAction: Qt.IgnoreAction

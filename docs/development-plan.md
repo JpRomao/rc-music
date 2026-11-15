@@ -2,10 +2,14 @@
 
 **Estado:** baseline para execução e acompanhamento
 **Versão alvo:** MVP 0.1, seguido de incrementos opcionais 0.2 e pesquisa R1
-**Última revisão:** 2026-11-05
+**Última revisão:** 2026-11-15
 **Marco atual:** produto Windows C++20 + Qt Quick/QML + Qt Multimedia/FFmpeg + TagLib promovido para a raiz, conforme [ADR-0005](architecture/decisions/0005-windows-product-stack.md), com M1 e gates globais ainda abertos. A seção 17 registra reservas cooperativa/nativa do owner, host binário/IPC opcional e jornada instrumentada até o painel comum, mantendo produção sem workflow remoto ativo, Lite sem engine e Completa/navegação interna pendentes; isso não conclui corpus, segurança, acessibilidade, integração instalada, distribuição ou desempenho. M0.10 preserva a escolha explícita sem vitória A/B ou aprovação dos budgets.
 
 Este documento transforma o [roadmap](roadmap.md) em uma sequência executável. Ele incorpora o produto, UX, arquitetura, TDD, corpus, segurança e distribuição, preservando a comparação C++/Qt versus Rust/Tauri como histórico experimental, não como pré-requisito do produto aceito. Não substitui os [requisitos](product/requirements.md), os [ADRs](architecture/decisions/README.md) nem os [gates de qualidade](quality/quality-gates.md); detalha a ordem, os checks e a evidência necessária para cumpri-los.
+
+**Decisão vigente (2026-11-15):** retirada integral do Lidarr do aplicativo e migração incremental para Aurora, conforme [ADR-0018](architecture/decisions/0018-aurora-and-lidarr-removal.md). FR-055 permanece P1 histórico, **fora de escopo**, com destino R1.11 e verificação documental; não há aceitação autenticada a continuar. Qt Network, letras, downloads opcionais, playlists, stores e dados pessoais permanecem preservados. A primeira frente nativa ainda exige sua própria qualificação; aceite visual não aprova provider, instalação ou gates globais. Os checkpoints anteriores abaixo não são Green atual do app sem Lidarr.
+
+**Fundação Aurora exercitada:** a primeira casca Qt/QML e a retirada Lidarr estão implementadas; o gate i18n legado recebeu correção causal e passou, com contrato Qt 56/56, Quick 432/432 e os consumidores selecionados. O [relatório do checkpoint](delivery/aurora-native-foundation-20261115.md) registra comandos, Reds/Greens, preservação, evidência histórica e limites. A continuidade imediata é consolidar o commit local e gerar o instalador privado autorizado, sem instalar; biblioteca permanente, provider de busca e demais superfícies mantêm seus planos/gates próprios.
 
 Pedido de UX de 2026-11-04: [letras originais locais e busca online explícita](architecture/decisions/0013-lyrics-and-online-lookup.md), acima da barra de progresso, acrescentam FR-054/M3.9. O volume mostra 0–100% em hover/arraste. Esse incremento é independente da investigação AppContainer pausada; seus arquivos em andamento permanecem preservados e as autorizações físicas anteriores continuam consumidas.
 
@@ -25,7 +29,7 @@ Incremento posterior: o [leitor de Registro e a factory das quatro raízes](medi
 
 Preparação em `c840fe1`: o [probe separado do inventário](media-profile-lifecycle.md#probe-separado-do-inventário-de-storage) compôs esse leitor com o owner vivo e recibos privados em executável próprio. Naquele fechamento, somente modos inertes e testes com perfil falso tinham sido executados. O fechamento proporcional passou **14/14 CTest, 538 Qt + 33 casos puros**, sem falhas/skips, formato **473 C++/62 QML**, build Lite e fronteira de **255 comandos**. A execução posterior recebeu autorização própria e está no checkpoint atual; não promove política/MIC ou produção.
 
-**Prioridade em desenvolvimento (2026-11-04):** playlists locais nomeadas e persistentes no app, conforme FR-056/M6.6. O incremento possui domínio, store, binding e painel implementados, com seus checks abaixo. Avança antes de continuar Lidarr, outras fontes de download ou AppContainer. A integração Lidarr, seus gates pendentes e os seis arquivos AppContainer em andamento permanecem preservados. Essa mudança de ordem não retoma autorizações físicas anteriores.
+**Prioridade histórica (2026-11-04):** playlists locais nomeadas e persistentes no app, conforme FR-056/M6.6. O incremento possui domínio, store, binding e painel implementados, com seus checks abaixo. Naquele marco, playlists antecederam a continuidade de Lidarr, outras fontes de download ou AppContainer. A retirada posterior do Lidarr cancela sua continuidade funcional, preservando o histórico; os seis arquivos AppContainer em andamento e os limites de autorização dos demais recortes permanecem preservados.
 
 **Continuidade funcional solicitada:** FR-054/M3.9 agora permite guardar várias versões de letra por música e adicioná-las posteriormente, conforme [ADR-0016](architecture/decisions/0016-lyrics-variants.md). Armazenamento local e seleção preservam áudio/fila; o fechamento passou **295/295 CTest**, **336 Quick**, core sem Qt **283/283**, builds Lite/Completa e lint/formato. O [checkpoint delimitado](lyrics-variants.md#evidência-de-implementação) registra Reds, restart em dois processos e recuperação. Letras.mus.br/MP3, LLM, tradução, aceitação nativa e instalador atualizado permanecem separados; M3.9/gates globais não são encerrados por esse recorte.
 
@@ -682,7 +686,7 @@ FR-025, edição de tags/capa, permanece backlog intencional sem marco. Só entr
 | R1.8 | Serviço comum de download/conversão MP3 e importação de arquivo finalizado, isolado do playback — [composição opcional no player](download-jobs.md#composição-opcional-do-player-windows), qualificação instalada e aquisição pública pendentes | FR-051–053 | `CHK-TDD`, `CHK-SEC`, `CHK-E2E`, `CHK-CLOSE` | progresso/cancelamento/limites e falhas sem afetar o player |
 | R1.9 | Composições Lite/Completa: decidir engine e adicionar navegação interna isolada somente à Completa | FR-051–053, NFR-MAINT-002 | `CHK-DOC`, `CHK-TDD`, `CHK-SEC`, `CHK-UI`, `CHK-CLOSE` | mesma base e integração externa, engine ausente na Lite |
 | R1.10 | Opcionais no instalador, identidades/ponte, upgrade entre edições e separação de YouTube | FR-050–053 | `CHK-TDD`, `CHK-PACKAGE`, `CHK-SEC`, `CHK-CLOSE` | seleção independente e remoção por proprietário, sem instalação compulsória |
-| R1.11 | Integração opcional Lidarr — incremento implementado, com aceitação autenticada/instalada pendente: conexão, pesquisa e confirmação de busca/download | FR-055, NFR-PRIV-004 | `CHK-TDD`, `CHK-UI`, `CHK-SEC`, `CHK-DOC`, `CHK-CLOSE` | cliente assíncrono em Lite/Completa; chave em memória; pedido aceito separado de download concluído; fila local preservada |
+| R1.11 | Lidarr retirado do escopo do aplicativo por decisão explícita; ID preservado para histórico, sem continuidade de integração | FR-055 | `CHK-DOC`, `CHK-TRACE`, `CHK-CLOSE` | FR-055 fora de escopo por ADR-0018; verificação documental, sem testes exclusivos ou smoke autenticado pendente; regressões da retirada pertencem à frente nativa |
 
 Sequência prioritária: threat model R1.2 e avaliação específica de downloader/conversor/ponte por FR-052, implementar R1.7/R1.8 com fakes e fixtures locais, validar R1.9 e depois as composições/opcionais R1.10. A principal não depende da comparação de engines de streaming R1.4 nem da retomada de `CHK-PERF`. R1.3/FR-050 trata YouTube separadamente, sem virar pré-requisito da principal. A navegação interna usa os mesmos serviços de seleção/download; não presumir execução literal da extensão do Brave dentro da engine embarcada. Critérios e limites de instalação/privacidade estão no ADR-0006. Nenhuma dessas novas etapas está concluída; benchmarks permanecem adiados.
 
@@ -708,10 +712,10 @@ Repetição entre marcos é intencional: M0 prova viabilidade, M1 cria contratos
 | M2 | FR-001–002, FR-005–006, FR-010–015, FR-020–024; UX-001–003, UX-008–009 e NFRs locais aplicáveis | adapters reais, corpus e E2E principal |
 | M3 | FR-003, FR-011, FR-013, FR-016–017, FR-020–023, FR-040, FR-042, FR-044; UX-001–010; NFR-PERF-004, NFR-PERF-006 | fila, preferências, UX e acessibilidade |
 | M4 | FR-004, FR-030–038, FR-042–045; NFR-REL-003–006; NFR-LIMIT-004; NFR-PRIV-001–003 | lifecycle, persistência e pacote real |
-| M5 | todos os P0/P1 e NFRs do MVP | matriz individual teste/evidência e RC |
+| M5 | todos os P0/P1 vigentes e NFRs do MVP; FR-055 retirado por ADR-0018 | matriz individual teste/evidência e RC, respeitando decisões explícitas de escopo |
 | M6 | FR-018–019, FR-041 e novos requisitos autorizados | incrementos independentes |
 | Backlog | FR-025 | exclusão intencional documentada |
-| R1 | FR-050–053, FR-055, NFR-PRIV-004 | threat model, política, harness, integração Lidarr e ADR |
+| R1 | FR-050–053, FR-055, NFR-PRIV-004 | threat model, política e harness; FR-055/R1.11 fora de escopo pela retirada Lidarr no ADR-0018 |
 
 ### 15.1 Destino individual dos 86 requisitos
 
@@ -761,7 +765,7 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 | `FR-052` | R1.2–R1.4, R1.6, R1.9–R1.10 | fontes oficiais, engine/ferramentas, licença/distribuição por artefato e ADR |
 | `FR-053` | R1.2, R1.4–R1.10 | harness remoto, timeout/cancelamento, arquivos finais seguros e zero concatenação shell |
 | `FR-054` | M3.9 | letras locais/online acima do progresso, confirmação dos metadados, sincronização e falhas isoladas |
-| `FR-055` | R1.11 | conexão Lidarr explícita, catálogo, seleção e confirmação do álbum, limites e erros sem alterar fila local |
+| `FR-055` | R1.11 | fora de escopo por retirada integral do Lidarr do app; decisão documental no ADR-0018, sem apagar histórico ou promover checks antigos |
 | `FR-056` | M6.6 | playlists nomeadas persistentes, CRUD/ordem/duplicatas, ingresso explícito na fila e proteção contra perda de dados |
 | `UX-001` | M0.2–M0.4, M1.10, M2.7, M3.8 | estado vazio e jornada de uma interação |
 | `UX-002` | M0.2–M0.4, M1.10, M2.7, M3.8 | controles principais sempre visíveis |
@@ -826,7 +830,13 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 
 ## 17. Próxima sequência segura
 
-### Checkpoint atual — candidatos Windows atualizados
+### Checkpoint atual — retirada Lidarr e fundação Aurora
+
+O mantenedor pediu retirar Lidarr e todas as suas integrações do app e aprovou as cores Aurora para prosseguir com a migração nativa. O [ADR-0018](architecture/decisions/0018-aurora-and-lidarr-removal.md) substitui o ADR-0014; FR-055 fica fora de escopo em R1.11, não aguardando chave, pesquisa ou download real. A retirada inclui capacidade, composição e dependências exclusivas, não apenas ocultação do botão. O [contrato visual aceito](superpowers/specs/2026-11-15-aurora-shell-design.md) delimita a fundação e os recortes seguintes, sem qualificar automaticamente Qt/QML.
+
+Preservar Qt Network e os demais recursos/dados existentes; não contatar ou alterar servidor Lidarr, credenciais, pedidos remotos ou áudios. Não ativar provider, instalar componentes, retomar ensaios físicos ou promover gates de produção por consequência do redesign. O delta documental valida conteúdo, links e FR-055/matriz/manifesto; build, regressões e comparação visual nativa pertencem à frente de implementação e não são alegados por esta atualização. Setups e recibos antigos continuam históricos e não são requalificados.
+
+### Checkpoint anterior — candidatos Windows atualizados
 
 Os setups privados Lite e Completa experimental de `dbf9e19` incluem o Node.js 24.22.3 LTS no resolvedor opcional, as novas extensões com reenvio do mesmo ID e as correções locais de recuperação. As duas edições passaram na validação do pacote sem instalação. [Setups e evidências](windows-installer.md#setups-privados-de-dbf9e19)
 
@@ -842,7 +852,7 @@ Em M5.7, `7.1.5-rcmusic2` agrega as correções de RASC e IAMF às de ADX, VobSu
 
 O build Windows também exige TagLib 2.3.2, com os avisos do TagLib e do utf8cpp incluídos na receita de runtime. A atualização passou em 52 casos de metadados e uma jornada de áudio com a nova DLL. [Proveniência e checks](desktop-build.md#taglib-no-runtime-windows)
 
-As requisições de letras e Lidarr agora desabilitam HTTP/2 no Qt Network 6.11.2, conforme a mitigação do CVE-2026-96432. As três assertions falharam antes da mudança em uma consulta de letras, um GET do Lidarr e um POST do Lidarr. Depois da mudança passaram 6/6 CTest, com 166 casos Qt usando respostas simuladas, e o build Release Windows. Logs em `out/product/r9/out/product/http2-*.log`. [Aviso do Qt](https://www.qt.io/blog/security-advisory-cve-2026-96432) · [Protocolo do Lidarr](lidarr-integration.md#conexão-e-api)
+Histórico da mitigação anterior à retirada: as requisições de letras e Lidarr passaram a desabilitar HTTP/2 no Qt Network 6.11.2, conforme a mitigação do CVE-2026-96432. As três assertions falharam antes da mudança em uma consulta de letras, um GET do Lidarr e um POST do Lidarr. Depois da mudança passaram 6/6 CTest, com 166 casos Qt usando respostas simuladas, e o build Release Windows. Logs em `out/product/r9/out/product/http2-*.log`. Qt Network e seus consumidores compartilhados permanecem; a retirada Lidarr não transfere esse Green histórico para o snapshot atual. [Aviso do Qt](https://www.qt.io/blog/security-advisory-cve-2026-96432) · [Protocolo histórico Lidarr](lidarr-integration.md#conexão-e-api)
 
 O build Windows de Qt Network 6.11.2 incorpora os dois patches da CVE-2026-116337 e o backport da CVE-2026-96432. A ABI passou na comparação com o runtime atual e o teste HTTP/1.1 local confirmou o carregamento e as respostas GET/POST. A receita e o runner exigem a nova DLL pelo hash. [Proveniência e checks do Qt Network](desktop-build.md#qt-network-no-sdk-windows)
 
@@ -858,9 +868,9 @@ A navegação por Tab e Shift+Tab da Completa agora mantém a direção entre a 
 
 Os setups privados com a receita de `cea27cf` incluem os avisos de Qt Declarative e SVG nas duas edições e a correção de foco na Completa. O áudio offscreen, a leitura dos setups e a validação offline dos SBOMs passaram. [Setups e evidências](windows-installer.md#setups-privados-com-a-receita-de-cea27cf)
 
-Em R1.11, a lista de resultados do Lidarr agora permite alcançar e selecionar por teclado linhas fora da área visível. A solicitação mantém confirmação explícita. O recorte passou em 14/14 casos Qt Quick com serviço simulado. A aceitação autenticada permanece pendente. [Evidência do Lidarr](lidarr-integration.md#evidência-de-implementação)
+Histórico de R1.11: a lista de resultados Lidarr permitia alcançar e selecionar por teclado linhas fora da área visível, com confirmação explícita da solicitação. O recorte passou em 14/14 casos Qt Quick com serviço simulado. A aceitação autenticada não foi concluída naquele marco e deixa de ser próxima tarefa após a retirada. [Evidência histórica Lidarr](lidarr-integration.md#evidência-de-implementação)
 
-Em R1.11, resultados cadastrados no Lidarr permitem abrir os álbuns de um artista e filtrar pelo título as faixas de um álbum. O pedido continua sujeito à confirmação do álbum completo. [Rotas e evidência](lidarr-integration.md#conexão-e-api)
+Histórico de R1.11: resultados cadastrados no Lidarr permitiam abrir os álbuns de um artista e filtrar pelo título as faixas de um álbum. O pedido permanecia sujeito à confirmação do álbum completo. Esse cliente não integra o escopo vigente. [Rotas e evidência históricas](lidarr-integration.md#conexão-e-api)
 
 Em M3.9, a lista de versões da letra passou a navegar até itens fora da área visível e preservar o cursor pelo ID textual após reordenação. Passaram 22/22 casos Qt Quick do painel. A montagem Lite de `0107bf2` reúne a mudança, o teclado do Lidarr e a licença Expat no componente opcional. [Evidência das versões](lyrics-variants.md#navegação-nas-versões-por-teclado) · [Runtime e planejamento](desktop-build.md#runtime-lite-com-teclado-e-aviso-expat)
 
@@ -1012,15 +1022,17 @@ O player aguarda a confirmação do salvamento da playlist antes de preparar a s
 
 **Descartar edição…** oferece recuperação quando a leitura continua inacessível. Após confirmação, remove a edição em memória e exige um novo pedido de saída. O catálogo precisa ser recarregado antes de novas edições. [Descarte de edição pendente](playlists.md#descarte-de-edição-pendente)
 
-Lidarr e as demais integrações continuam registrados com seus limites e pendências. Os seis arquivos de integração AppContainer em andamento permanecem preservados; não executar novos ensaios físicos ou instalar componentes por consequência desta mudança de prioridade.
+Lidarr permanece somente como histórico, fora do escopo vigente conforme o ADR-0018; as demais integrações conservam seus limites e pendências. Os seis arquivos de integração AppContainer em andamento permanecem preservados; não executar novos ensaios físicos ou instalar componentes por consequência desta mudança de prioridade.
 
 ### Checkpoint anterior — integração Lidarr
 
-O incremento implementado passou **263/263 CTest**, incluindo **33 casos Qt do serviço, 8 do binding e 12 Quick dedicados**; a suíte Quick completa ficou **303/303**. Builds Lite ON/OFF e Completa OFF, lint sem warnings, formato dos 7 C++ alterados/67 QML e fronteiras dos grafos passaram. O [guia](lidarr-integration.md#evidência-de-implementação) registra Reds, limites e recibos. A instância indicada respondeu 401 ao GET sem chave; pesquisa autenticada e solicitação real aguardam chave informada no app, sem POST automático. Nenhum gate global foi promovido e os instaladores existentes não foram regenerados.
+**Histórico encerrado para continuidade funcional:** substituído pelo ADR-0018, sem nova execução ou requalificação desses resultados.
 
-O mantenedor priorizou [R1.11/FR-055](lidarr-integration.md): conectar à instância indicada, pesquisar artistas/álbuns e solicitar downloads após confirmação. Cliente, projeção, painel e checks automatizados estão implementados; a próxima conferência é autenticada na instância real, com chave informada no app, seguida de aceitação nativa/empacotamento atualizados. Nenhuma busca/download é disparada apenas por abrir o player ou o painel. A API pesquisa artistas/álbuns e solicita álbuns completos; não promete lookup global de faixas. Os seis arquivos pendentes de integração AppContainer ficam preservados enquanto esta prioridade avança.
+O incremento implementado passou **263/263 CTest**, incluindo **33 casos Qt do serviço, 8 do binding e 12 Quick dedicados**; a suíte Quick completa ficou **303/303**. Builds Lite ON/OFF e Completa OFF, lint sem warnings, formato dos 7 C++ alterados/67 QML e fronteiras dos grafos passaram. O [guia histórico](lidarr-integration.md#evidência-de-implementação) registra Reds, limites e recibos. A instância indicada respondeu 401 ao GET sem chave; pesquisa autenticada e solicitação real não foram demonstradas por essa evidência. Nenhum gate global foi promovido e os instaladores existentes não foram regenerados.
 
-O painel agora distingue uma busca vazia, um álbum de catálogo e um álbum já cadastrado. O pedido confirmado fica vinculado à conexão e ao álbum selecionados. [Fluxo Lidarr](lidarr-integration.md#fluxo-de-produto)
+O mantenedor havia priorizado [R1.11/FR-055](lidarr-integration.md): conectar à instância indicada, pesquisar artistas/álbuns e solicitar downloads após confirmação. Cliente, projeção, painel e checks automatizados estavam implementados naquele snapshot. A conferência autenticada e a aceitação nativa/empacotamento previstos deixam de ser tarefas vigentes com a retirada. Abrir o player ou o painel não disparava busca/download; a API pesquisava artistas/álbuns e solicitava álbuns completos, sem lookup global de faixas. Os seis arquivos pendentes de integração AppContainer permanecem preservados, sem nova autorização física.
+
+O painel histórico distinguia uma busca vazia, um álbum de catálogo e um álbum já cadastrado. O pedido confirmado ficava vinculado à conexão e ao álbum selecionados. [Fluxo Lidarr histórico](lidarr-integration.md#fluxo-de-produto)
 
 **Decisão atual:** [ADR-0005](architecture/decisions/0005-windows-product-stack.md) aceito pelo mantenedor em 2026-09-05. A/B não bloqueia mais o desenvolvimento do produto Windows; benchmarks e Linux permanecem adiados.
 

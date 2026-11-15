@@ -3,6 +3,7 @@
 #include "m0/domain/PlaybackTypes.hpp"
 #include "presentation/HighContrastPalette.hpp"
 
+#include <QFont>
 #include <QObject>
 #include <QString>
 #include <QUrl>
@@ -32,6 +33,10 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(int radiusSmall READ radiusSmall CONSTANT)
     Q_PROPERTY(int spacingUnit READ spacingUnit CONSTANT)
     Q_PROPERTY(QString appName READ appName CONSTANT)
+    Q_PROPERTY(QString headingFontFamily READ headingFontFamily CONSTANT)
+    Q_PROPERTY(QString bodyFontFamily READ bodyFontFamily CONSTANT)
+    Q_PROPERTY(QString symbolFontFamily READ symbolFontFamily CONSTANT)
+    Q_PROPERTY(QFont applicationFont READ applicationFont CONSTANT)
     Q_PROPERTY(QString openAudioText READ openAudioText CONSTANT)
     Q_PROPERTY(QString emptyTitle READ emptyTitle CONSTANT)
     Q_PROPERTY(QString emptyHint READ emptyHint CONSTANT)
@@ -65,6 +70,7 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(QString motionReduced READ motionReduced CONSTANT)
     Q_PROPERTY(QString canvasColor READ canvasColor NOTIFY appearanceChanged)
     Q_PROPERTY(QString surfaceColor READ surfaceColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString navigationColor READ navigationColor NOTIFY appearanceChanged)
     Q_PROPERTY(QString surfaceRaisedColor READ surfaceRaisedColor NOTIFY appearanceChanged)
     Q_PROPERTY(QString textPrimaryColor READ textPrimaryColor NOTIFY appearanceChanged)
     Q_PROPERTY(QString textSecondaryColor READ textSecondaryColor NOTIFY appearanceChanged)
@@ -103,6 +109,10 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] int radiusSmall() const noexcept;
     [[nodiscard]] int spacingUnit() const noexcept;
     [[nodiscard]] QString appName() const;
+    [[nodiscard]] QString headingFontFamily() const;
+    [[nodiscard]] QString bodyFontFamily() const;
+    [[nodiscard]] QString symbolFontFamily() const;
+    [[nodiscard]] QFont applicationFont() const;
     [[nodiscard]] QString openAudioText() const;
     [[nodiscard]] QString emptyTitle() const;
     [[nodiscard]] QString emptyHint() const;
@@ -136,6 +146,7 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] QString motionReduced() const;
     [[nodiscard]] QString canvasColor() const;
     [[nodiscard]] QString surfaceColor() const;
+    [[nodiscard]] QString navigationColor() const;
     [[nodiscard]] QString surfaceRaisedColor() const;
     [[nodiscard]] QString textPrimaryColor() const;
     [[nodiscard]] QString textSecondaryColor() const;
@@ -187,6 +198,7 @@ class ShellUiContract final : public QObject {
         QString error;
         QString warning;
         QString success;
+        QString navigation;
     };
     struct MotionTimings final {
         int panel_transition_ms;
@@ -197,14 +209,18 @@ class ShellUiContract final : public QObject {
 
     Window window_{960, 640, 720, 520};
     LayoutTokens layout_{320, 380, 40, 44, 8, 12, 4};
-    Palette light_palette_{QStringLiteral("#F6F7F9"), QStringLiteral("#FFFFFF"), QStringLiteral("#FFFFFF"),
-                           QStringLiteral("#15171A"), QStringLiteral("#4F5660"), QStringLiteral("#4F46E5"),
-                           QStringLiteral("#FFFFFF"), QStringLiteral("#8A929E"), QStringLiteral("#2457D6"),
-                           QStringLiteral("#B42318"), QStringLiteral("#8A4B08"), QStringLiteral("#167344")};
-    Palette dark_palette_{QStringLiteral("#111318"), QStringLiteral("#181B21"), QStringLiteral("#21252D"),
-                          QStringLiteral("#F5F7FA"), QStringLiteral("#BBC2CC"), QStringLiteral("#8B83FF"),
-                          QStringLiteral("#0B0C10"), QStringLiteral("#69717D"), QStringLiteral("#A9C2FF"),
-                          QStringLiteral("#FF8A80"), QStringLiteral("#FFC46B"), QStringLiteral("#6DDA9B")};
+    // Production uses Aurora. The fixture constructor restores authenticated
+    // historical palettes independently; do not recolor the frozen M0 inputs.
+    Palette light_palette_{QStringLiteral("#F5F1E9"), QStringLiteral("#FFFCF6"), QStringLiteral("#EEE8DD"),
+                           QStringLiteral("#302D28"), QStringLiteral("#726557"), QStringLiteral("#934B32"),
+                           QStringLiteral("#FFFAF4"), QStringLiteral("#A58C73"), QStringLiteral("#934B32"),
+                           QStringLiteral("#9B3C32"), QStringLiteral("#795A21"), QStringLiteral("#167344"),
+                           QStringLiteral("#EEE8DD")};
+    Palette dark_palette_{QStringLiteral("#1B1917"), QStringLiteral("#24211D"), QStringLiteral("#2D2923"),
+                          QStringLiteral("#F2EADD"), QStringLiteral("#BFB09D"), QStringLiteral("#D6A27E"),
+                          QStringLiteral("#2D1C13"), QStringLiteral("#89715A"), QStringLiteral("#D6A27E"),
+                          QStringLiteral("#F2ADA0"), QStringLiteral("#E2C78B"), QStringLiteral("#6DDA9B"),
+                          QStringLiteral("#1E1C19")};
     MotionTimings normal_motion_{160, 120};
     MotionTimings reduced_motion_timings_{0, 0};
     std::optional<HighContrastPalette> high_contrast_;

@@ -57,6 +57,7 @@ Button {
     }
     contentItem: Text {
         text: control.text
+        font: control.font
         color: control.contract.highContrast && !control.enabled ? control.contract.disabledTextColor : (control.contrastHighlighted ? control.contract.accentTextColor : control.contract.textPrimaryColor)
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter

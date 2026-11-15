@@ -7,6 +7,9 @@ import MusicPlayer.M0
 
 Dialog {
     id: root
+    PlaylistsText {
+        id: playlistsText
+    }
     objectName: "playlists-panel"
     required property ShellUiContract contract
     required property bool queueHasTracks
@@ -32,7 +35,7 @@ Dialog {
     readonly property bool nameTargetCurrent: nameOwner === playlists && canEdit && (nameMode === "create" || nameMode === "saveQueue" || (nameMode === "rename" && snapshotCurrent(nameTarget)))
     readonly property bool deleteTargetCurrent: deleteOwner === playlists && canEdit && snapshotCurrent(deleteTarget)
     readonly property bool abandonTargetCurrent: abandonOwner !== null && abandonOwner === playlists && canAbandonPending
-    readonly property string nameDialogTitle: nameMode === "rename" ? qsTr("Renomear playlist") : (nameMode === "saveQueue" ? qsTr("Salvar fila como playlist") : qsTr("Nova playlist"))
+    readonly property string nameDialogTitle: nameMode === "rename" ? playlistsText.renameTitle : (nameMode === "saveQueue" ? playlistsText.saveQueueTitle : playlistsText.create)
     parent: Overlay.overlay
     anchors.centerIn: parent
     width: Math.min(920, parent ? parent.width - contract.spacingUnit * 8 : 920)
@@ -266,10 +269,10 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: root.contract.spacingUnit * 2
         Accessible.role: Accessible.Dialog
-        Accessible.name: qsTr("Playlists")
+        Accessible.name: playlistsText.title
         Text {
             Layout.fillWidth: true
-            text: qsTr("Playlists")
+            text: playlistsText.title
             textFormat: Text.PlainText
             color: root.contract.textPrimaryColor
             font.bold: true
@@ -282,14 +285,14 @@ Dialog {
                 id: createButton
                 objectName: "playlist-create"
                 contract: root.contract
-                text: qsTr("Nova playlist")
+                text: playlistsText.create
                 enabled: root.canEdit
                 onClicked: root.openName("create")
             }
             AccessibleTransportButton {
                 objectName: "playlist-save-queue"
                 contract: root.contract
-                text: qsTr("Salvar fila como…")
+                text: playlistsText.saveQueue
                 enabled: root.canEdit
                 onClicked: root.openName("saveQueue")
             }
@@ -314,7 +317,7 @@ Dialog {
                     model: root.playlists !== null ? root.playlists.playlists : []
                     selectionAllowed: root.canEdit
                     selectedId: root.selectedPlaylistId
-                    Accessible.name: qsTr("Playlists salvas")
+                    Accessible.name: playlistsText.savedPlaylists
                     onRowActivated: rowId => root.playlists.selectPlaylist(rowId)
                     ScrollBar.vertical: AccessibleScrollBar {
                         contract: root.contract
@@ -324,7 +327,7 @@ Dialog {
                         width: playlistList.width
                         contract: root.contract
                         primaryText: modelData.name
-                        secondaryText: qsTr("%1 faixas").arg(modelData.count)
+                        secondaryText: playlistsText.trackCount.arg(modelData.count)
                         primaryObjectName: "playlist-row-name"
                         highlighted: root.selectedPlaylistId === modelData.id
                         cursorFocused: playlistList.activeFocus && ListView.isCurrentItem
@@ -335,7 +338,7 @@ Dialog {
                         anchors.centerIn: parent
                         width: parent.width
                         visible: playlistList.count === 0
-                        text: qsTr("Suas playlists aparecerão aqui.")
+                        text: playlistsText.empty
                         textFormat: Text.PlainText
                         wrapMode: Text.WordWrap
                         horizontalAlignment: Text.AlignHCenter
@@ -347,14 +350,14 @@ Dialog {
                     AccessibleTransportButton {
                         objectName: "playlist-rename"
                         contract: root.contract
-                        text: qsTr("Renomear")
+                        text: playlistsText.rename
                         enabled: root.canEdit && root.selectedPlaylist !== null
                         onClicked: root.openName("rename")
                     }
                     AccessibleTransportButton {
                         objectName: "playlist-delete"
                         contract: root.contract
-                        text: qsTr("Excluir")
+                        text: playlistsText.deleteAction
                         enabled: root.canEdit && root.selectedPlaylist !== null
                         onClicked: root.requestDelete()
                     }
@@ -376,7 +379,7 @@ Dialog {
                     model: root.playlists !== null ? root.playlists.entries : []
                     selectionAllowed: root.canEdit
                     selectedId: root.selectedEntryId
-                    Accessible.name: qsTr("Faixas da playlist")
+                    Accessible.name: playlistsText.tracks
                     onRowActivated: rowId => root.selectedEntryId = rowId
                     ScrollBar.vertical: AccessibleScrollBar {
                         contract: root.contract
@@ -397,7 +400,7 @@ Dialog {
                         anchors.centerIn: parent
                         width: parent.width
                         visible: entryList.count === 0
-                        text: root.selectedPlaylist === null ? qsTr("Selecione uma playlist.") : qsTr("Esta playlist está vazia.")
+                        text: root.selectedPlaylist === null ? playlistsText.selectPlaylist : playlistsText.emptyPlaylist
                         textFormat: Text.PlainText
                         wrapMode: Text.WordWrap
                         horizontalAlignment: Text.AlignHCenter
@@ -410,7 +413,7 @@ Dialog {
                         objectName: "playlist-move-up"
                         contract: root.contract
                         text: "↑"
-                        accessibleName: qsTr("Mover faixa para cima")
+                        accessibleName: playlistsText.moveTrackUp
                         enabled: root.canEdit && root.selectedEntry !== null && root.selectedEntryIndex > 0
                         onClicked: root.playlists.moveEntry(root.selectedPlaylistId, root.selectedEntryId, root.selectedEntryIndex - 1)
                     }
@@ -418,22 +421,22 @@ Dialog {
                         objectName: "playlist-move-down"
                         contract: root.contract
                         text: "↓"
-                        accessibleName: qsTr("Mover faixa para baixo")
+                        accessibleName: playlistsText.moveTrackDown
                         enabled: root.canEdit && root.selectedEntry !== null && root.selectedEntryIndex + 1 < entryList.count
                         onClicked: root.playlists.moveEntry(root.selectedPlaylistId, root.selectedEntryId, root.selectedEntryIndex + 1)
                     }
                     AccessibleTransportButton {
                         objectName: "playlist-remove-entry"
                         contract: root.contract
-                        text: qsTr("Remover")
-                        accessibleName: qsTr("Remover faixa da playlist")
+                        text: playlistsText.remove
+                        accessibleName: playlistsText.removeTrack
                         enabled: root.canEdit && root.selectedEntry !== null
                         onClicked: root.playlists.removeEntry(root.selectedPlaylistId, root.selectedEntryId)
                     }
                     AccessibleTransportButton {
                         objectName: "playlist-locate-file"
                         contract: root.contract
-                        text: qsTr("Localizar arquivo…")
+                        text: playlistsText.locate
                         enabled: root.canEdit && root.selectedPlaylist !== null && root.selectedEntry !== null && root.playlists.canReplaceFile === true
                         onClicked: {
                             if (!enabled || !root.opened || nameDialog.visible || deleteDialog.visible || abandonDialog.visible)
@@ -452,21 +455,21 @@ Dialog {
             AccessibleTransportButton {
                 objectName: "playlist-add-files"
                 contract: root.contract
-                text: qsTr("Adicionar arquivos…")
+                text: playlistsText.addFiles
                 enabled: root.canEdit && root.selectedPlaylist !== null && root.playlists.canAddFiles
                 onClicked: root.playlists.requestAddFiles(root.selectedPlaylistId)
             }
             AccessibleTransportButton {
                 objectName: "playlist-add-queue"
                 contract: root.contract
-                text: qsTr("Adicionar fila atual")
+                text: playlistsText.addCurrentQueue
                 enabled: root.canEdit && root.selectedPlaylist !== null && root.queueHasTracks
                 onClicked: root.playlists.addQueueToPlaylist(root.selectedPlaylistId)
             }
             AccessibleTransportButton {
                 objectName: "playlist-enqueue"
                 contract: root.contract
-                text: qsTr("Adicionar à fila")
+                text: playlistsText.addToQueue
                 enabled: root.canEdit && root.selectedPlaylist !== null && root.selectedPlaylist.count > 0
                 onClicked: root.playlists.enqueuePlaylist(root.selectedPlaylistId)
             }
@@ -501,7 +504,7 @@ Dialog {
                 id: retrySaveButton
                 objectName: "playlists-retry-save"
                 contract: root.contract
-                text: qsTr("Tentar salvar")
+                text: playlistsText.retrySave
                 visible: root.playlists !== null && root.playlists.canRetrySave
                 enabled: root.interactionAllowed && !root.busy
                 onClicked: root.playlists.retrySave()
@@ -509,7 +512,7 @@ Dialog {
             AccessibleTransportButton {
                 objectName: "playlists-discard-pending"
                 contract: root.contract
-                text: qsTr("Recarregar do disco")
+                text: playlistsText.reloadFromDisk
                 visible: root.playlists !== null && root.playlists.hasPendingChange
                 enabled: root.interactionAllowed && !root.busy
                 onClicked: root.playlists.discardPending()
@@ -518,7 +521,7 @@ Dialog {
                 id: abandonButton
                 objectName: "playlists-abandon-pending"
                 contract: root.contract
-                text: qsTr("Descartar edição…")
+                text: playlistsText.discardEdit
                 visible: root.playlists !== null && root.playlists.hasPendingChange
                 enabled: root.canAbandonPending
                 onClicked: {
@@ -532,7 +535,7 @@ Dialog {
                 id: retryLoadButton
                 objectName: "playlists-retry-load"
                 contract: root.contract
-                text: qsTr("Tentar abrir novamente")
+                text: playlistsText.retryLoad
                 visible: !root.ready && !root.busy
                 enabled: root.interactionAllowed && !root.busy
                 onClicked: root.playlists.retryLoad()
@@ -543,7 +546,7 @@ Dialog {
             AccessibleTransportButton {
                 objectName: "playlists-close"
                 contract: root.contract
-                text: qsTr("Fechar")
+                text: playlistsText.close
                 onClicked: root.close()
             }
         }
@@ -584,7 +587,7 @@ Dialog {
                 objectName: "playlist-name"
                 Layout.fillWidth: true
                 implicitHeight: root.contract.controlTargetPreferred
-                placeholderText: qsTr("Nome da playlist")
+                placeholderText: playlistsText.name
                 maximumLength: 256
                 selectByMouse: true
                 Accessible.name: placeholderText
@@ -593,7 +596,7 @@ Dialog {
             Text {
                 Layout.fillWidth: true
                 visible: root.nameRejected || !root.nameTargetCurrent
-                text: !root.nameTargetCurrent ? qsTr("A seleção mudou. Cancele e escolha a playlist novamente.") : qsTr("Não foi possível aceitar esta alteração. Confira o nome e o estado das playlists.")
+                text: !root.nameTargetCurrent ? playlistsText.selectionChanged : playlistsText.editRejected
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.contract.textPrimaryColor
@@ -605,14 +608,14 @@ Dialog {
                 }
                 AccessibleTransportButton {
                     contract: root.contract
-                    text: qsTr("Cancelar")
+                    text: playlistsText.cancel
                     onClicked: nameDialog.reject()
                 }
                 AccessibleActionButton {
                     id: nameSubmit
                     controlId: "playlist-name-submit"
                     contract: root.contract
-                    text: qsTr("Salvar")
+                    text: playlistsText.save
                     enabled: root.nameTargetCurrent && nameField.text.trim().length > 0
                     onClicked: {
                         if (!enabled || root.nameOwner === null)
@@ -647,10 +650,10 @@ Dialog {
         contentItem: ColumnLayout {
             spacing: root.contract.spacingUnit * 2
             Accessible.role: Accessible.Dialog
-            Accessible.name: qsTr("Excluir playlist")
+            Accessible.name: playlistsText.deletePlaylist
             Text {
                 Layout.fillWidth: true
-                text: qsTr("Excluir playlist?")
+                text: playlistsText.confirmDelete
                 textFormat: Text.PlainText
                 color: root.contract.textPrimaryColor
                 font.bold: true
@@ -667,7 +670,7 @@ Dialog {
             }
             Text {
                 Layout.fillWidth: true
-                text: qsTr("Somente a lista será excluída. Os arquivos de áudio e a fila atual serão mantidos.")
+                text: playlistsText.deleteAdvice
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.contract.textSecondaryColor
@@ -675,7 +678,7 @@ Dialog {
             Text {
                 Layout.fillWidth: true
                 visible: root.deleteRejected || !root.deleteTargetCurrent
-                text: !root.deleteTargetCurrent ? qsTr("A seleção mudou. Cancele e escolha a playlist novamente.") : qsTr("Não foi possível aceitar a exclusão. Confira o estado das playlists.")
+                text: !root.deleteTargetCurrent ? playlistsText.selectionChanged : playlistsText.deleteRejected
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.contract.textPrimaryColor
@@ -687,14 +690,14 @@ Dialog {
                 }
                 AccessibleTransportButton {
                     contract: root.contract
-                    text: qsTr("Cancelar")
+                    text: playlistsText.cancel
                     onClicked: deleteDialog.reject()
                 }
                 AccessibleActionButton {
                     id: deleteSubmit
                     controlId: "playlist-delete-submit"
                     contract: root.contract
-                    text: qsTr("Excluir playlist")
+                    text: playlistsText.deletePlaylist
                     enabled: root.deleteTargetCurrent
                     onClicked: {
                         if (!enabled || root.deleteOwner === null)
@@ -736,17 +739,17 @@ Dialog {
         contentItem: ColumnLayout {
             spacing: root.contract.spacingUnit * 2
             Accessible.role: Accessible.Dialog
-            Accessible.name: qsTr("Descartar edição pendente")
+            Accessible.name: playlistsText.discardTitle
             Text {
                 Layout.fillWidth: true
-                text: qsTr("Descartar edição pendente?")
+                text: playlistsText.confirmDiscard
                 textFormat: Text.PlainText
                 color: root.contract.textPrimaryColor
                 font.bold: true
             }
             Text {
                 Layout.fillWidth: true
-                text: qsTr("A edição em memória será descartada. Uma tentativa de salvamento anterior pode já ter gravado a edição no disco.")
+                text: playlistsText.discardAdvice
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.contract.textSecondaryColor
@@ -760,13 +763,13 @@ Dialog {
                     id: abandonCancel
                     objectName: "playlist-abandon-cancel"
                     contract: root.contract
-                    text: qsTr("Cancelar")
+                    text: playlistsText.cancel
                     onClicked: abandonDialog.reject()
                 }
                 AccessibleTransportButton {
                     objectName: "playlist-abandon-confirm"
                     contract: root.contract
-                    text: qsTr("Descartar edição")
+                    text: playlistsText.confirmDiscardAction
                     enabled: root.abandonTargetCurrent
                     onClicked: {
                         if (abandonDialog.opened && root.abandonTargetCurrent)

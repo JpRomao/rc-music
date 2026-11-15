@@ -7,6 +7,9 @@ import MusicPlayer.M0
 
 Item {
     id: root
+    LyricsText {
+        id: lyricsText
+    }
     objectName: "lyrics-panel"
     required property ShellUiContract contract
     property var lyrics: null
@@ -102,7 +105,7 @@ Item {
                         return root.queuedFeedbackText;
                     if (root.variantsPending && root.lyrics.variantsStatusText.length > 0)
                         return root.lyrics.variantsStatusText;
-                    return root.lyrics && root.lyrics.statusText.length > 0 ? root.lyrics.statusText : qsTr("Letra");
+                    return root.lyrics && root.lyrics.statusText.length > 0 ? root.lyrics.statusText : lyricsText.title;
                 }
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
@@ -114,7 +117,7 @@ Item {
                 id: romajiButton
                 objectName: "lyrics-generate-romaji"
                 contract: root.contract
-                text: qsTr("Gerar romaji")
+                text: lyricsText.generateRomaji
                 Accessible.description: root.romajiAvailable ? (root.lyrics.romajiStatusText ?? "") : ""
                 visible: root.romajiAvailable
                 enabled: visible && root.enabled
@@ -130,8 +133,8 @@ Item {
                 id: versionsButton
                 objectName: "lyrics-versions"
                 contract: root.contract
-                text: root.reviewSaveAvailable ? qsTr("Revisar salvamento") : qsTr("Versões")
-                accessibleName: root.reviewSaveAvailable ? qsTr("Revisar salvamento da letra") : qsTr("Versões da letra")
+                text: root.reviewSaveAvailable ? lyricsText.reviewSave : lyricsText.versions
+                accessibleName: root.reviewSaveAvailable ? lyricsText.reviewLyricsSave : lyricsText.versionsTitle
                 Layout.preferredHeight: root.contract.controlTargetMinimum
                 visible: root.variantsAvailable
                 enabled: visible && root.enabled
@@ -148,7 +151,7 @@ Item {
                 id: openReader
                 objectName: "lyrics-open-reader"
                 contract: root.contract
-                text: qsTr("Abrir letra")
+                text: lyricsText.open
                 visible: root.synchronizedLyrics || root.plainLyrics
                 enabled: visible && root.enabled
                 onClicked: {
@@ -160,8 +163,8 @@ Item {
                 id: searchButton
                 objectName: "lyrics-search"
                 contract: root.contract
-                text: qsTr("Buscar letra")
-                accessibleName: qsTr("Buscar letra online")
+                text: lyricsText.search
+                accessibleName: lyricsText.searchOnline
                 Layout.preferredHeight: root.contract.controlTargetMinimum
                 enabled: root.searchAvailable
                 onClicked: {
@@ -226,7 +229,7 @@ Item {
                 selectionColor: root.contract.accentColor
                 selectedTextColor: root.contract.accentTextColor
                 Accessible.id: objectName
-                Accessible.name: qsTr("Letra sem sincronização")
+                Accessible.name: lyricsText.unsynchronized
                 background: Rectangle {
                     color: "transparent"
                     radius: root.contract.radiusSmall
@@ -289,7 +292,7 @@ Item {
             AccessibleTransportButton {
                 objectName: "lyrics-provider-link"
                 contract: root.contract
-                text: qsTr("LyricFind")
+                text: lyricsText.lyricFind
                 Layout.preferredHeight: root.contract.controlTargetMinimum
                 onClicked: root.openLyricFind()
             }
@@ -378,8 +381,8 @@ Item {
         readonly property bool savePending: current && saveRequested && backend.pendingRecordingSaveRevision === choiceRevision
         readonly property bool canRetrySave: savePending && backend.variantsCanRetrySave === true
         readonly property string writerStatus: current ? (queuedTarget ? backend.queuedManagerStatus : backend.variantsStatusText ?? "") : ""
-        readonly property string saveStatus: !current || !saveAttempted ? "" : saveRequested ? (completedSaveStatus || writerStatus) : qsTr("Não foi possível salvar a versão. Confira o nome e tente novamente.")
-        readonly property string dialogHeading: managedTarget ? qsTr("Buscar no LRCLIB") : qsTr("Buscar letra online")
+        readonly property string saveStatus: !current || !saveAttempted ? "" : saveRequested ? (completedSaveStatus || writerStatus) : lyricsText.saveRejected
+        readonly property string dialogHeading: managedTarget ? lyricsText.searchLrclib : lyricsText.searchOnline
         readonly property int queryDuration: durationField.text.length ? Number(durationField.text) : 0
         readonly property bool canSubmit: current && (queuedTarget || root.searchAvailable) && !searching && titleField.text.trim().length > 0 && (durationField.text.length === 0 || durationField.acceptableInput && queryDuration <= 86400)
 
@@ -470,12 +473,12 @@ Item {
             const parts = [recording.title, recording.artist, recording.album].filter(value => !!value);
             const seconds = Math.round((recording.durationMs ?? 0) / 1000);
             if (seconds > 0) {
-                parts.push(qsTr("%1:%2").arg(Math.floor(seconds / 60)).arg(String(seconds % 60).padStart(2, "0")));
+                parts.push(lyricsText.recordingTime.arg(Math.floor(seconds / 60)).arg(String(seconds % 60).padStart(2, "0")));
                 if (queryDuration > 0 && Math.abs(seconds - queryDuration) > 3)
-                    parts.push(qsTr("duração diferente"));
+                    parts.push(lyricsText.differentDuration);
             }
             if (recording.instrumental)
-                parts.push(qsTr("Instrumental"));
+                parts.push(lyricsText.instrumental);
             return parts.join(" · ");
         }
 
@@ -502,7 +505,7 @@ Item {
             Text {
                 Layout.fillWidth: true
                 visible: queryDialog.managedTarget && queryDialog.targetTitle.length > 0
-                text: qsTr("Salvar letra em %1").arg(queryDialog.targetTitle)
+                text: lyricsText.saveForTrack.arg(queryDialog.targetTitle)
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
                 color: root.contract.textPrimaryColor
@@ -513,7 +516,7 @@ Item {
                 objectName: "lyrics-query-notice"
                 Layout.fillWidth: true
                 visible: !queryDialog.showingResults
-                text: qsTr("O LRCLIB recebe título, artista e álbum. A duração ajuda a ordenar os resultados no RC Music.")
+                text: lyricsText.recordingPrivacy
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.contract.textSecondaryColor
@@ -523,7 +526,7 @@ Item {
             Text {
                 Layout.fillWidth: true
                 visible: queryDialog.configuredLookup && !queryDialog.showingResults
-                text: qsTr("A consulta exata usa o título e o artista do formulário e o álbum e a duração da faixa atual. Pode consultar o LyricFind configurado.")
+                text: lyricsText.exactPrivacy
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: root.contract.textSecondaryColor
@@ -542,8 +545,8 @@ Item {
                 QueryMetadataField {
                     id: titleField
                     objectName: "lyrics-query-title"
-                    Accessible.name: qsTr("Título da música")
-                    placeholderText: qsTr("Informe o título se estiver em branco")
+                    Accessible.name: lyricsText.trackTitle
+                    placeholderText: lyricsText.titleHint
                     onAccepted: artistField.forceActiveFocus(Qt.TabFocusReason)
                 }
                 QueryLabel {
@@ -552,8 +555,8 @@ Item {
                 QueryMetadataField {
                     id: artistField
                     objectName: "lyrics-query-artist"
-                    Accessible.name: qsTr("Artista")
-                    placeholderText: qsTr("Informe o artista se estiver em branco")
+                    Accessible.name: lyricsText.artist
+                    placeholderText: lyricsText.artistHint
                     onAccepted: albumField.forceActiveFocus(Qt.TabFocusReason)
                 }
                 QueryLabel {
@@ -562,7 +565,7 @@ Item {
                 QueryMetadataField {
                     id: albumField
                     objectName: "lyrics-query-album"
-                    Accessible.name: qsTr("Álbum")
+                    Accessible.name: lyricsText.album
                     onAccepted: durationField.forceActiveFocus(Qt.TabFocusReason)
                 }
                 QueryLabel {
@@ -571,7 +574,7 @@ Item {
                 QueryMetadataField {
                     id: durationField
                     objectName: "lyrics-query-duration"
-                    Accessible.name: qsTr("Duração em segundos")
+                    Accessible.name: lyricsText.durationSeconds
                     inputMethodHints: Qt.ImhDigitsOnly
                     maximumLength: 5
                     validator: RegularExpressionValidator {
@@ -595,9 +598,9 @@ Item {
                 objectName: "lyrics-recording-choice"
                 visible: queryDialog.showingResults && queryDialog.recordings.length > 0
                 enabled: !queryDialog.savePending
-                model: [qsTr("Escolher gravação")].concat(queryDialog.recordings.map(recording => queryDialog.recordingLabel(recording)))
+                model: [lyricsText.chooseRecording].concat(queryDialog.recordings.map(recording => queryDialog.recordingLabel(recording)))
                 currentIndex: queryDialog.recordingIndex + 1
-                Accessible.name: qsTr("Gravações do LRCLIB")
+                Accessible.name: lyricsText.recordings
                 onActivated: index => {
                     if (!enabled)
                         return;
@@ -617,9 +620,9 @@ Item {
                 objectName: "lyrics-recording-format"
                 visible: queryDialog.showingResults && model.length > 2
                 enabled: !queryDialog.savePending
-                model: [qsTr("Escolher formato")].concat(queryDialog.selected?.formats.map(format => format.label) ?? [])
+                model: [lyricsText.chooseFormat].concat(queryDialog.selected?.formats.map(format => format.label) ?? [])
                 currentIndex: queryDialog.formatIndex + 1
-                Accessible.name: qsTr("Formato da letra")
+                Accessible.name: lyricsText.format
                 onActivated: index => {
                     if (!enabled || queryDialog.formatIndex === index - 1)
                         return;
@@ -647,7 +650,7 @@ Item {
                     color: root.contract.textPrimaryColor
                     selectionColor: root.contract.accentColor
                     selectedTextColor: root.contract.accentTextColor
-                    Accessible.name: qsTr("Prévia da letra do LRCLIB")
+                    Accessible.name: lyricsText.recordingPreview
                     Accessible.focusable: true
                 }
             }
@@ -655,7 +658,7 @@ Item {
                 id: versionName
                 visible: queryDialog.showingResults && queryDialog.canApply && queryDialog.formatIndex >= 0 && (queryDialog.canSave || queryDialog.saveRequested)
                 readOnly: queryDialog.saveRequested
-                Accessible.name: qsTr("Nome da versão")
+                Accessible.name: lyricsText.versionName
                 placeholderText: Accessible.name
                 maximumLength: 128
             }
@@ -674,7 +677,7 @@ Item {
                     contract: root.contract
                     visible: !queryDialog.showingResults && queryDialog.configuredLookup
                     enabled: visible && queryDialog.canSubmit && artistField.text.trim().length > 0
-                    text: qsTr("Consulta por metadados exatos")
+                    text: lyricsText.exactLookup
                     onClicked: {
                         if (enabled && queryDialog.backend.search(titleField.text.trim(), artistField.text.trim()))
                             queryDialog.accept();
@@ -684,7 +687,7 @@ Item {
                     contract: root.contract
                     visible: queryDialog.showingResults
                     enabled: queryDialog.current && !queryDialog.savePending
-                    text: qsTr("Editar busca")
+                    text: lyricsText.editSearch
                     onClicked: {
                         if (!enabled)
                             return;
@@ -701,14 +704,14 @@ Item {
                     id: cancelButton
                     objectName: "lyrics-query-cancel"
                     contract: root.contract
-                    text: queryDialog.showingResults && !queryDialog.searching ? qsTr("Fechar") : qsTr("Cancelar")
+                    text: queryDialog.showingResults && !queryDialog.searching ? lyricsText.close : lyricsText.cancel
                     onClicked: queryDialog.reject()
                 }
                 AccessibleActionButton {
                     id: submitButton
                     controlId: "lyrics-query-submit"
                     contract: root.contract
-                    text: qsTr("Buscar")
+                    text: lyricsText.searchAction
                     visible: !queryDialog.showingResults
                     enabled: visible && queryDialog.canSubmit
                     onClicked: {
@@ -730,7 +733,7 @@ Item {
                 AccessibleTransportButton {
                     objectName: "lyrics-recording-save"
                     contract: root.contract
-                    text: qsTr("Salvar versão")
+                    text: lyricsText.saveVersion
                     visible: versionName.visible
                     enabled: visible && queryDialog.canSave && versionName.text.trim().length > 0 && !queryDialog.saveRequested
                     onClicked: {
@@ -752,7 +755,7 @@ Item {
                 AccessibleTransportButton {
                     objectName: "lyrics-recording-retry-save"
                     contract: root.contract
-                    text: qsTr("Tentar salvar novamente")
+                    text: lyricsText.retrySave
                     visible: queryDialog.canRetrySave
                     enabled: visible
                     onClicked: {
@@ -763,7 +766,7 @@ Item {
                 AccessibleActionButton {
                     controlId: "lyrics-recording-use"
                     contract: root.contract
-                    text: queryDialog.selected?.instrumental ? qsTr("Marcar como instrumental") : qsTr("Usar nesta sessão")
+                    text: queryDialog.selected?.instrumental ? lyricsText.markInstrumental : lyricsText.useForSession
                     visible: !queryDialog.managedTarget && queryDialog.showingResults && queryDialog.recordings.length > 0
                     enabled: visible && queryDialog.canApply && queryDialog.backend.variantsBusy !== true && queryDialog.backend.variantsHasPendingChange !== true
                     onClicked: {

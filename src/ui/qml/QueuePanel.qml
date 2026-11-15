@@ -559,7 +559,7 @@ FocusScope {
         MenuItem {
             id: queuedVariantMenuItem
             objectName: "queue-menu-add-lyrics-variant"
-            text: qsTr("Gerenciar letras")
+            text: queueText.manageLyrics
             visible: root.lyricVariantActionSupported && !root.presenter.usesFrozenFixture
             enabled: visible && root.lyricVariantActionAvailable && root.queueModesAvailable && root.menuTargetSelected && root.selectedAvailable
             onTriggered: {
