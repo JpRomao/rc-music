@@ -101,8 +101,8 @@ class PrefixTranslator final : public QTranslator {
 }
 
 [[nodiscard]] bool isTechnicalQmlContext(const QString& line) {
-    static const QRegularExpression technical_property{
-        QStringLiteral(R"(\b(?:objectName|controlId|Accessible\.id|sequences?|property|color|source)\s*:)")};
+    static const QRegularExpression technical_property{QStringLiteral(
+        R"(\b(?:objectName|fallbackObjectName|imageObjectName|controlId|Accessible\.id|sequences?|property|color|source)\s*:)")};
     static const QRegularExpression boolean_selector{
         QStringLiteral(R"(^\s*(?:readonly\s+)?property\s+bool\s+[A-Za-z_][A-Za-z0-9_]*\s*:)")};
     const QString trimmed = line.trimmed();
@@ -125,6 +125,12 @@ class PrefixTranslator final : public QTranslator {
         return true;
     }
     const QStringList kinds{QStringLiteral("original"), QStringLiteral("romanized"), QStringLiteral("translation")};
+    if (QStringList{QStringLiteral("home"), QStringLiteral("queue"), QStringLiteral("playlists"),
+                    QStringLiteral("downloads"), QStringLiteral("preferences")}
+            .contains(literal) &&
+        matches(R"(^\s*(?:readonly\s+)?property\s+string\s+currentPage\s*:)")) {
+        return true;
+    }
     if (kinds.contains(literal) &&
         (matches(R"(^\s*value\s*:\s*$)") || matches(R"(^\s*readonly\s+property\s+var\s+versionKinds\s*:\s*\[.*$)"))) {
         return true;
@@ -730,6 +736,23 @@ void ShellUiContractTests::distinguishesTechnicalDataFromVisibleText_data() {
     QTest::newRow("visible-language") << QStringLiteral("text: \"ja\"") << QStringLiteral("ja") << false;
     QTest::newRow("visible-property") << QStringLiteral("readonly property string statusText: \"Falha ao salvar\"")
                                       << QStringLiteral("Falha ao salvar") << false;
+    QTest::newRow("artwork-fallback-id") << QStringLiteral(
+                                                "fallbackObjectName: root.editorial ? \"\" : \"cover-track\"")
+                                         << QStringLiteral("cover-track") << true;
+    QTest::newRow("artwork-image-id") << QStringLiteral("imageObjectName: \"embedded-artwork\"")
+                                      << QStringLiteral("embedded-artwork") << true;
+    QTest::newRow("workspace-first-code")
+        << QStringLiteral("readonly property string currentPage: opened ? \"queue\" : \"home\"")
+        << QStringLiteral("queue") << true;
+    QTest::newRow("workspace-last-code") << QStringLiteral(
+                                                "readonly property string currentPage: opened ? \"queue\" : \"home\"")
+                                         << QStringLiteral("home") << true;
+    QTest::newRow("workspace-visible-copy")
+        << QStringLiteral("readonly property string currentPage: opened ? \"queue\" : \"Início\"")
+        << QStringLiteral("Início") << false;
+    QTest::newRow("visible-workspace-code") << QStringLiteral("text: \"home\"") << QStringLiteral("home") << false;
+    QTest::newRow("visible-artwork-code")
+        << QStringLiteral("text: \"cover-track\"") << QStringLiteral("cover-track") << false;
 }
 
 void ShellUiContractTests::distinguishesTechnicalDataFromVisibleText() {

@@ -789,17 +789,21 @@ TestCase {
         let previousBottom = -1;
         for (const name of ["now", "queue", "playlists", "downloads", "embedded-browser", "theme-toggle", "preferences"]) {
             const button = findChild(shell, name);
+            const boundary = name === "theme-toggle" && shell.inlinePages ? findChild(shell, "workspace-header") : viewport;
             verify(button && button.visible);
             if (button.enabled) {
                 button.forceActiveFocus(Qt.TabFocusReason);
                 tryVerify(() => button.activeFocus);
             }
             tryVerify(() => {
-                const point = button.mapToItem(viewport, 0, 0);
-                return point.x >= 0 && point.y >= 0 && point.x + button.width <= viewport.width && point.y + button.height <= viewport.height;
-            }, 5000, name + " must be reachable inside the clipped navigation viewport");
-            verify(button.y >= previousBottom, name + " y=" + button.y + " previousBottom=" + previousBottom);
-            previousBottom = button.y + button.height;
+                const point = button.mapToItem(boundary, 0, 0);
+                return point.x >= 0 && point.y >= 0 && point.x + button.width <= boundary.width && point.y + button.height <= boundary.height;
+            }, 5000, name + " must be reachable inside its actual clipped viewport or header");
+            if (boundary === viewport) {
+                const y = button.mapToItem(viewport.contentItem, 0, 0).y;
+                verify(y >= previousBottom, name + " y=" + y + " previousBottom=" + previousBottom);
+                previousBottom = y + button.height;
+            }
         }
     }
 }

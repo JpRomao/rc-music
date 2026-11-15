@@ -73,6 +73,7 @@ TestCase {
 
     function enterInvalidMediaError() {
         testScenarioDriver.enqueueLocalSelection(["C:/Música/Falha contextual 日本語.mp3"]); // qmllint disable unqualified
+        verify(waitForPolish(shell));
         const openAudio = findChild(shell, "open-audio");
         verify(openAudio && openAudio.visible && openAudio.enabled);
         verify(openAudio.width > 0 && openAudio.height > 0);
