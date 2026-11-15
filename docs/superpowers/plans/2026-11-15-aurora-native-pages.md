@@ -69,7 +69,7 @@
 - [x] **Step 2: Executar Red focado antes das mudanças** pelo registro Quick; ausência de cabeçalho/hero/prateleira deve falhar como comportamento ausente.
 - [x] **Step 3: Implementar composição**. Lateral224px ampla/196px média/68px compacta, cabeçalho78/66px, margens38/23px, títulos Georgia36px; hero capa204/130px e texto à esquerda. Exibir somente prateleiras sustentadas por dados reais. Rodapé próximo de112px em ampla e altura implícita maior em compacta, sem reduzir alvos. Preservar render/layout congelado quando `usesFrozenFixture`.
 - [x] **Step 4: Executar novos testes e consumidores de navegação/transporte/metadata/HC/lyrics**; capturar claro/escuro/compacto com o próprio Qt Quick e inspecionar as imagens. Esperado: nenhum comando extra de áudio, controles contidos e contraste válido nos fundos reais.
-- [ ] **Step 5: Revisar diff e commitar** `feat: aproximar a composição nativa do Aurora`.
+- [x] **Step 5: Revisar diff e commitar** `feat: aproximar a composição nativa do Aurora`. Commit `86e37c6`.
 
 ### Task 3: Integração visual nativa, evidências e revisão independente
 
@@ -81,10 +81,10 @@
 - Consumes: fontes e testes das Tasks1–2; build ON existente `out/product/dl-settings-tests` e build OFF próprio já existente, ambos da mesma worktree; tokens e fixtures originais intactos.
 - Produces: capturas Qt e recibos identificados por fontes, comando/ambiente/exit/contagem, revisão independente do snapshot, documentação do alcance e dos gates ainda abertos. Não produz runtime/setup.
 
-- [ ] **Step 1: Justificar e executar uma regressão agrupada de UI**: navegação, transientes e teclado atravessam todas as páginas; focados isolados não cobrem todas as combinações. Build `rc_music_ui_quick_tests`, `rc_music_ui_contract_tests`, `m0_qt_shell`, shells de processo e lints de ambos os módulos; seleção CTest `rc_music.ui.quick`, `rc_music.ui.contract`, `rc_music.ui.build-boundary`, `rc_music.process.combined-startup`, `rc_music.process.tray-lifecycle`. Esperado: seleção positiva e Green, logs completos preservados.
-- [ ] **Step 2: Formato dirigido, links/documentação e diff**. Conferir que assets/fixtures/stores/modelos não mudaram e que não foi gerado instalador. Não confundir capturas offscreen com NVDA/DPI físico ou aceite humano.
-- [ ] **Step 3: Revisão independente somente-leitura** do delta desde af8bef7 com manifesto de fontes/evidências. Corrigir Critical/Important com Red→Green e consumidores afetados, sem repetir suíte já compatível; preservar veredicto original e registrar minors/decisões.
-- [ ] **Step 4: Atualizar status, registrar evidências/limites e commitar** `docs: registrar a migração das páginas Aurora`. Informar checks executados e pendentes separadamente. Não declarar todo o redesenho concluído ou emitir instalador se biblioteca/provider, paridade ou aceite visual ainda estiverem abertos.
+- [x] **Step 1: Justificar e executar uma regressão agrupada de UI**: navegação, transientes e teclado atravessam todas as páginas; focados isolados não cobrem todas as combinações. Build `rc_music_ui_quick_tests`, `rc_music_ui_contract_tests`, `m0_qt_shell`, shells de processo e lints de ambos os módulos; seleção CTest `rc_music.ui.quick`, `rc_music.ui.contract`, `rc_music.ui.build-boundary`, `rc_music.process.combined-startup`, `rc_music.process.tray-lifecycle`. Esperado: seleção positiva e Green, logs completos preservados.
+- [x] **Step 2: Formato dirigido, links/documentação e diff**. `66-*` passou em5C++/24QML, com preservação e exceção explícita para a revogação transitória em PlaylistsBinding; `68-*` validou12 vínculos locais novos/alterados e diff. Setup histórico intacto, sem novo instalador. Capturas offscreen não são NVDA/DPI físico ou aceite humano.
+- [x] **Step 3: Revisão independente somente-leitura** do delta desde af8bef7 com manifesto de fontes/evidências. Parecer `deleg_3d4c52e1`, original **com correções** em86e37c6. Três Important corrigidos em `6dba923` com Red→Green e integração65; dois Minor e dez itens não julgados registrados na disposição e entrega, sem reetiquetar o parecer.
+- [x] **Step 4: Atualizar status, registrar evidências/limites e commitar** `docs: registrar a migração das páginas Aurora`. Entrega/status/plano distinguem checks atuais, história, três Important corrigidos, dois Minor e gates globais pendentes. O fechamento consome `audit-final.py` sobre recibos compatíveis, não reexecuta produto. Redesenho inteiro e instalador continuam bloqueados pelos aceites ainda abertos.
 
 ## Comandos de execução e evidência
 

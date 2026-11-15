@@ -10,7 +10,7 @@ Este arquivo é um índice do estado vigente, não um diário de desenvolvimento
 - **Unidade de produto existente:** núcleo, aplicação gráfica, testes e receitas Windows estão na raiz. Não é necessário promover novamente o experimento ou reimplementar o player. Consulte o [build desktop](desktop-build.md), o [núcleo independente](core-build.md) e os [comandos locais](development-commands.md).
 - **Identidade preservada:** RC Music é o nome aceito; identificadores e dados locais `MusicPlayer` permanecem conforme [ADR-0004](architecture/decisions/0004-rc-music-identity.md).
 - **Prontidão:** implementação, teste automatizado, validação nativa, instalação e aprovação de distribuição são estados distintos. M1 e a release 0.1 continuam abertos pelos seus gates residuais; isso não torna ausentes as funcionalidades já implementadas.
-- **Decisão vigente:** [ADR-0018](architecture/decisions/0018-aurora-and-lidarr-removal.md): retirada integral do Lidarr do app e migração incremental para o visual Aurora aprovado. A primeira fundação nativa está implementada e exercitada: lateral Agora/Fila, player persistente, temas Aurora e retirada do Lidarr. O gate legado de centralização de textos foi corrigido; [resultado, evidências e limites](delivery/aurora-native-foundation-20261115.md). Aceite humano Qt, pacote instalado e release permanecem separados.
+- **Decisão vigente:** [ADR-0018](architecture/decisions/0018-aurora-and-lidarr-removal.md): retirada integral do Lidarr e migração incremental para Aurora. Após a fundação, foram implementadas páginas integradas de playlists/atividade/preferências, cabeçalho, destaque horizontal, prateleira da fila real e player persistente compacto; [resultado, evidências e limites](delivery/aurora-native-pages-20261115.md). O redesenho inteiro e o aceite humano Qt continuam abertos. **Sem novo instalador até concluir integralmente o redesenho.**
 
 | Área | Implementação existente | Aceitação ainda separada |
 | --- | --- | --- |
@@ -21,9 +21,11 @@ Este arquivo é um índice do estado vigente, não um diário de desenvolvimento
 | Ponte e aquisição | Hosts Native Messaging, IPC, admissão durável, workers, conversão, publicação, recuperação e importação sem autoplay existem em composição opcional. [Bootstrap](player-downloads-bootstrap.md) · [Jobs](download-jobs.md) | Ativação instalada coerente, qualificação de isolamento e aquisição pública. Fixtures não comprovam esses gates. |
 | Edições e pacotes | Lite sem engine interna, Completa com navegação WebView2 experimental e setups privados de ambas já gerados. [ADR-0006](architecture/decisions/0006-browser-editions-and-extensions.md) · [Instalador](windows-installer.md) | Navegação real, instalação/upgrade/uninstall, assinatura e distribuição. O guia do instalador identifica os candidatos atuais e seus checks. |
 
-## 2. Prioridade atual: fundação Aurora sem Lidarr
+## 2. Prioridade atual: páginas e composição musical Aurora
 
-O checkpoint Aurora foi consolidado no commit de código `d4137db`, com [instalador privado gerado e auditado](windows-installer.md#setup-aurora-de-d4137db), sem instalação. A capacidade Lidarr foi retirada, não apenas seu botão. Reprodução, dados e os demais recursos existentes, incluindo Qt Network, letras, downloads opcionais, playlists e stores, foram preservados no recorte exercitado. A [decisão vigente](architecture/decisions/0018-aurora-and-lidarr-removal.md) separa esse recorte de provider de pesquisa, biblioteca permanente, instalação e gates de produção ainda não aprovados.
+As páginas nativas foram consolidadas em `26e2f0e`, a composição editorial em `86e37c6` e os consumidores/validador em `ab002ae`. A revisão independente retornou com correções; os três Important de seleção tardia/foco/virtualização foram corrigidos em `6dba923`, com Red→Green e nova integração agrupada. Dois Minor de apresentação/seleção continuam explícitos. Builds, testes, revisão e seis capturas Qt atuais estão no [relatório desta frente](delivery/aurora-native-pages-20261115.md). Não é conclusão das onze fases nem aceite visual humano.
+
+A fundação `d4137db` e seu [instalador privado histórico](windows-installer.md#setup-aurora-de-d4137db) permanecem registrados, sem representar a fonte nova. A condição posterior do mantenedor bloqueia instaladores intermediários. Reprodução, dados, Qt Network, letras, downloads opcionais, playlists e stores foram preservados no recorte exercitado. Biblioteca permanente/ingresso, pesquisa/provider, paridade visual restante, instalação e gates de produção conservam seus próprios aceites.
 
 ### Continuidade preservada: navegador → aplicativo
 
@@ -42,6 +44,7 @@ A separação principal/YouTube do ADR-0006 continua vigente. Um embed YouTube n
 
 ## 3. Gates ainda abertos
 
+- Conclusão integral do redesenho e aceite humano das páginas/jornadas restantes; só depois gerar outro instalador. Fila temporária não substitui biblioteca permanente nem dados reais de pesquisa.
 - Qualificação física do isolamento e perfis de execução; um header, marcador de instalação ou ensaio offline não aprova produção remota.
 - Brave/Native Messaging, WebView2, Explorer, Aplicativos Padrão e instalação/upgrade/uninstall reais, com escopo e autorização próprios.
 - Corpus hostil, segurança/dependências, licenças/fontes, cobertura transitiva do SBOM, CRT e máquina limpa. [Gates](quality/quality-gates.md) · [Release](delivery/release-process.md)
