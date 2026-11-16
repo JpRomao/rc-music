@@ -85,13 +85,20 @@ DownloadFailure headers(const QJsonObject& object, QByteArray& user_agent_hint) 
         return DownloadFailure::InvalidResult;
     const auto dictionary = value.toObject();
     constexpr std::array<const char*, 4> names{"user-agent", "accept", "accept-language", "sec-fetch-mode"};
+    // Credentials mean the stream needs an authenticated session the app never reproduces.
+    constexpr std::array<const char*, 3> credentials{"cookie", "authorization", "proxy-authorization"};
     QSet<QString> seen;
     QByteArray candidate;
     for (auto entry = dictionary.begin(); entry != dictionary.end(); ++entry) {
         const auto key = entry.key().toLower();
-        if (seen.contains(key) ||
-            std::none_of(names.begin(), names.end(), [&](const char* name) { return key == QLatin1String(name); }) ||
-            !entry.value().isString())
+        if (std::any_of(credentials.begin(), credentials.end(),
+                        [&](const char* name) { return key == QLatin1String(name); }))
+            return DownloadFailure::Restricted;
+        // Other request defaults a newer resolver may describe are never forwarded, so they must not
+        // block the download either; only the inspected names below are validated.
+        if (std::none_of(names.begin(), names.end(), [&](const char* name) { return key == QLatin1String(name); }))
+            continue;
+        if (seen.contains(key) || !entry.value().isString())
             return DownloadFailure::Restricted;
         seen.insert(key);
         const auto text = entry.value().toString();

@@ -207,7 +207,8 @@ class YoutubeAudioResolutionTests final : public QObject {
     }
     void rejectsArbitraryHttpHeaders_data() {
         QTest::addColumn<QJsonObject>("headers");
-        for (const auto* key : {"Cookie", "Authorization", "Referer", "Origin", "Range", "X-Arbitrary"})
+        // Credentials mean the stream needs an authenticated session the app never reproduces.
+        for (const auto* key : {"Cookie", "Authorization", "Proxy-Authorization"})
             QTest::newRow(key) << QJsonObject{{QLatin1String(key), "value"}};
         QTest::newRow("control injection") << QJsonObject{{"User-Agent", "Agent\r\nInjected: value"}};
         QTest::newRow("oversized value") << QJsonObject{{"Accept", QString(513, 'a')}};
@@ -222,6 +223,28 @@ class YoutubeAudioResolutionTests final : public QObject {
         const auto result = decodeYoutubeAudioResolution(bytes(object), video_id);
         QCOMPARE(result.error, DownloadFailure::Restricted);
         QVERIFY(!result.audio);
+    }
+    void ignoresUnknownHeadersWithoutForwardingThem_data() {
+        QTest::addColumn<QJsonObject>("headers");
+        // Newer resolvers may describe extra request defaults; they are never sent, so they must not block.
+        for (const auto* key : {"Referer", "Origin", "Range", "X-Arbitrary", "Sec-Ch-Ua"})
+            QTest::newRow(key) << QJsonObject{{"User-Agent", "Mozilla/5.0 Synthetic Test"},
+                                              {QLatin1String(key), "value"}};
+        QTest::newRow("malformed unknown value")
+            << QJsonObject{{"User-Agent", "Mozilla/5.0 Synthetic Test"}, {"X-Unused", QStringLiteral("line\r\nbreak")}};
+        QTest::newRow("non string unknown value")
+            << QJsonObject{{"User-Agent", "Mozilla/5.0 Synthetic Test"}, {"X-Unused", 7}};
+    }
+    void ignoresUnknownHeadersWithoutForwardingThem() {
+        QFETCH(QJsonObject, headers);
+        auto object = fixture();
+        object.insert("http_headers", headers);
+        const auto result = decodeYoutubeAudioResolution(bytes(object), video_id);
+        QCOMPARE(result.error, DownloadFailure::None);
+        QVERIFY(result.audio);
+        // Only the validated public User-Agent hint survives; nothing else becomes request authority.
+        QCOMPARE(result.audio->user_agent_hint, QByteArray("Mozilla/5.0 Synthetic Test"));
+        QCOMPARE(result.audio->stream_url, stream);
     }
     void validatesOnlyConstrainedGooglevideoUrlsAndNeverRewritesSignatures_data() {
         QTest::addColumn<QString>("url");
