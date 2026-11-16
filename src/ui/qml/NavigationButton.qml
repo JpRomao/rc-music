@@ -4,23 +4,32 @@ import MusicPlayer.M0
 
 AccessibleTransportButton {
     id: root
-    property string glyph: ""
     property bool compact: false
     property bool editorial: false
     accessibleName: text
     contentItem: Text {
-        text: root.editorial ? (root.compact ? root.glyph : root.glyph + "   " + root.text) : root.text
+        id: label
+        readonly property bool showsIcon: root.editorial && root.iconName.length > 0
+        // The compact rail shows only the icon; the name stays available as accessibleName/tooltip.
+        text: root.editorial && root.compact ? "" : root.text
         font: root.editorial ? Qt.font({
             family: root.font.family,
             pixelSize: root.compact ? root.contract.typeTitle : root.font.pixelSize,
             weight: root.checked && !root.compact ? Font.DemiBold : Font.Normal
         }) : root.font
-        leftPadding: root.editorial && !root.compact ? 12 : 0
+        leftPadding: root.editorial && !root.compact ? (label.showsIcon ? 12 + navigationIcon.width + 12 : 12) : 0
         color: root.contract.highContrast && !root.enabled ? root.contract.disabledTextColor : (root.contrastHighlighted ? root.contract.accentTextColor : (root.editorial && root.checked && !root.contract.highContrast ? root.contract.accentColor : root.contract.textPrimaryColor))
         horizontalAlignment: root.editorial && !root.compact ? Text.AlignLeft : Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
         textFormat: Text.PlainText
+        ShellIcon {
+            id: navigationIcon
+            iconName: label.showsIcon ? root.iconName : ""
+            color: label.color
+            x: root.compact ? (label.width - width) / 2 : 12
+            anchors.verticalCenter: parent.verticalCenter
+        }
     }
     background: Rectangle {
         color: root.contract.highContrast ? (root.contrastHighlighted ? root.contract.accentColor : root.contract.surfaceColor) : (root.editorial ? (root.checked ? root.contract.selectionColor : (root.hovered && root.enabled ? root.contract.hoverColor : root.contract.navigationColor)) : (root.checked ? root.contract.surfaceRaisedColor : root.contract.surfaceColor))

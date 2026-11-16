@@ -120,9 +120,16 @@ TestCase {
         const footer = findChild(shell, "player-footer");
         tryCompare(importStatus, "y", footer.y - importStatus.height - productContract.spacingUnit * 2);
         compare(findChild(shell, "now").contentItem.font.family, "Segoe UI");
-        verify(Qt.fontFamilies().indexOf("Segoe UI Symbol") >= 0);
-        for (const name of ["previous", "play-pause", "next"])
-            compare(findChild(shell, name).contentItem.font.family, "Segoe UI Symbol");
+        const transportIcons = {
+            "player-shuffle": "shuffle",
+            "previous": "previous",
+            "play-pause": "pause",
+            "next": "next",
+            "player-repeat": "repeat",
+            "mute": "mute"
+        };
+        for (const name in transportIcons)
+            verifyButtonIcon(findChild(shell, name), transportIcons[name]);
         compare(findChild(shell, "elapsed-time").font.family, "Segoe UI");
         compare(findChild(shell, "player-track-title").font.family, "Segoe UI");
         for (const dark of [true, false]) {
@@ -220,6 +227,65 @@ TestCase {
             verify(focus.visible);
             verifyContrast(focus.border.color, footer.color, 3, name + " focus on actual footer");
         }
+    }
+
+    // Aurora replaces Unicode glyphs/emoji with tinted line icons; the button text stays
+    // the accessible name and the icon follows the rendered foreground color.
+    function verifyButtonIcon(button, iconName) {
+        verify(button, iconName);
+        const icon = findChild(button, "button-icon");
+        verify(icon, button.objectName + " has an icon");
+        compare(icon.iconName, iconName, button.objectName);
+        verify(icon.visible, button.objectName);
+        tryCompare(icon, "status", Image.Ready);
+        verify(Qt.colorEqual(icon.color, button.contentItem.color), button.objectName + " icon " + icon.color + " vs text " + button.contentItem.color);
+        compare(icon.Accessible.ignored, true);
+        verify(button.accessibleName.length > 0, button.objectName);
+    }
+
+    function test_navigationUsesLineIconsAndTheAuroraBrandMark_data() {
+        return [
+            {
+                tag: "light",
+                dark: false
+            },
+            {
+                tag: "dark",
+                dark: true
+            }
+        ];
+    }
+
+    function test_navigationUsesLineIconsAndTheAuroraBrandMark(data) {
+        loadSyntheticQueue();
+        presenter.setThemePreference(data.dark ? PlayerPresenter.DarkTheme : PlayerPresenter.LightTheme);
+        tryCompare(productContract, "darkTheme", data.dark);
+        for (const entry of [["now", "home"], ["queue", "queue"], ["preferences", "settings"]])
+            verifyButtonIcon(findChild(shell, entry[0]), entry[1]);
+        const selectedIcon = findChild(findChild(shell, "now"), "button-icon");
+        verify(Qt.colorEqual(selectedIcon.color, productContract.accentColor), "selected icon uses the accent");
+        // Theme toggle offers the opposite theme: sun to go light, moon to go dark.
+        verifyButtonIcon(findChild(shell, "theme-toggle"), data.dark ? "sun" : "moon");
+        const mark = findChild(shell, "navigation-brand-mark");
+        verify(mark && mark.visible);
+        compare(mark.children.length, 3);
+        for (let index = 0; index < 3; ++index)
+            verify(Qt.colorEqual(mark.children[index].color, productContract.accentColor));
+        verify(mark.children[1].height > mark.children[2].height && mark.children[2].height > mark.children[0].height, "bars follow the approved 12/24/18 rhythm");
+        compare(mark.Accessible.ignored, true);
+        verify(findChild(shell, "navigation-brand").visible);
+    }
+
+    function test_compactNavigationKeepsIconsAndTheMarkOnly() {
+        loadSyntheticQueue();
+        shell.width = 720;
+        shell.height = 520;
+        tryCompare(shell.contentItem, "width", 720);
+        verify(waitForPolish(shell));
+        verifyButtonIcon(findChild(shell, "now"), "home");
+        compare(findChild(shell, "now").contentItem.text, "");
+        verify(findChild(shell, "navigation-brand-mark").visible);
+        verify(!findChild(shell, "navigation-brand").visible, "the 68 px rail shows the mark instead of a clipped name");
     }
 
     function test_selectedNavigationUsesAuroraSelection_data() {

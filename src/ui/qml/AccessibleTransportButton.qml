@@ -10,6 +10,8 @@ Button {
     property string shortcutHint: ""
     property string disabledReason: ""
     property bool primary: false
+    property string iconName: ""
+    property bool iconWithText: false
     readonly property string accessibleDescription: !enabled && disabledReason.length > 0 ? disabledReason : shortcutHint
     readonly property string toolTipText: !enabled && disabledReason.length > 0 ? accessibleName + " — " + disabledReason : accessibleName + (shortcutHint.length > 0 ? " (" + shortcutHint + ")" : "")
     readonly property bool contrastHighlighted: contract.highContrast && enabled && (hovered || down || checked)
@@ -67,11 +69,23 @@ Button {
         }
     }
     contentItem: Text {
-        text: control.text
+        id: buttonLabel
+        readonly property int iconGap: 8
+        // With an icon, the text is either replaced (icon-only glyph buttons) or kept beside it.
+        text: control.iconName.length > 0 && !control.iconWithText ? "" : control.text
         font: control.font
         color: control.contract.highContrast && !control.enabled ? control.contract.disabledTextColor : (control.contrastHighlighted || (control.primary && !control.contract.highContrast && control.enabled) ? control.contract.accentTextColor : control.contract.textPrimaryColor)
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         topPadding: control.down ? 2 : 0
+        leftPadding: control.iconName.length > 0 && control.iconWithText ? buttonIcon.width + iconGap : 0
+        ShellIcon {
+            id: buttonIcon
+            iconName: control.iconName
+            color: buttonLabel.color
+            // Centers the icon alone, or the icon + text pair as one group.
+            x: control.iconWithText ? (buttonLabel.width + buttonLabel.leftPadding - buttonLabel.contentWidth) / 2 - buttonLabel.iconGap - width : (buttonLabel.width - width) / 2
+            y: (buttonLabel.height - height) / 2 + buttonLabel.topPadding / 2
+        }
     }
 }

@@ -35,6 +35,7 @@ function(rc_music_add_ui target support qml_output)
             PageSurface.qml
             TrackArtwork.qml
             NavigationButton.qml
+            ShellIcon.qml
             WorkspaceHeader.qml
             QueuePreview.qml
             SideNavigation.qml
@@ -151,5 +152,17 @@ function(rc_music_add_ui target support qml_output)
     qt_add_resources(${target} m0_qt_shell_assets
         PREFIX "/m0"
         FILES "${RC_MUSIC_DESKTOP_PLACEHOLDER_ASSET_FILE}" "${RC_MUSIC_DESKTOP_TRACK_ASSET_FILE}"
+    )
+
+    # Aurora line icons (24 px grid, black stroke tinted at runtime by ShellIcon).
+    # Kept outside the frozen :/m0 inventory.
+    file(GLOB rc_music_icon_files CONFIGURE_DEPENDS "${RC_MUSIC_SOURCE_ROOT}/assets/icons/*.svg")
+    foreach(icon_file IN LISTS rc_music_icon_files)
+        get_filename_component(icon_name "${icon_file}" NAME)
+        set_source_files_properties("${icon_file}" PROPERTIES QT_RESOURCE_ALIAS "icons/${icon_name}")
+    endforeach()
+    qt_add_resources(${target} rc_music_shell_icons
+        PREFIX "/rc_music"
+        FILES ${rc_music_icon_files}
     )
 endfunction()

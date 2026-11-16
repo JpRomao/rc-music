@@ -102,7 +102,7 @@ class PrefixTranslator final : public QTranslator {
 
 [[nodiscard]] bool isTechnicalQmlContext(const QString& line) {
     static const QRegularExpression technical_property{QStringLiteral(
-        R"(\b(?:objectName|fallbackObjectName|imageObjectName|controlId|Accessible\.id|sequences?|property|color|source)\s*:)")};
+        R"(\b(?:objectName|fallbackObjectName|imageObjectName|controlId|Accessible\.id|sequences?|property|color|source|iconName)\s*:)")};
     static const QRegularExpression boolean_selector{
         QStringLiteral(R"(^\s*(?:readonly\s+)?property\s+bool\s+[A-Za-z_][A-Za-z0-9_]*\s*:)")};
     const QString trimmed = line.trimmed();
@@ -758,6 +758,11 @@ void ShellUiContractTests::distinguishesTechnicalDataFromVisibleText_data() {
     QTest::addColumn<QString>("literal");
     QTest::addColumn<bool>("technical");
     QTest::newRow("model-role") << QStringLiteral("textRole: \"label\"") << QStringLiteral("label") << true;
+    // Icon names select an asset; the control's translated text stays its accessible name.
+    QTest::newRow("icon-name") << QStringLiteral("iconName: root.editorial ? \"previous\" : \"\"")
+                               << QStringLiteral("previous") << true;
+    QTest::newRow("icon-name-beside-text")
+        << QStringLiteral("text: \"Tema escuro\"") << QStringLiteral("Tema escuro") << false;
     QTest::newRow("model-value-role") << QStringLiteral("valueRole: \"value\"") << QStringLiteral("value") << true;
     QTest::newRow("child-object-name") << QStringLiteral("primaryObjectName: \"playlist-row-name\"")
                                        << QStringLiteral("playlist-row-name") << true;

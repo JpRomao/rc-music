@@ -84,17 +84,51 @@ Rectangle {
             width: navigationFlick.width
             height: navigationFlick.contentHeight
             spacing: root.editorial ? 5 : root.contract.spacingUnit * 2
-            Text {
-                objectName: "navigation-brand"
+            RowLayout {
                 Layout.fillWidth: true
-                text: root.editorial && root.compact ? root.contract.appName.split(" ")[0] : root.contract.appName
-                Accessible.name: root.contract.appName
-                textFormat: Text.PlainText
-                font.family: root.contract.headingFontFamily
-                font.pixelSize: root.editorial ? root.contract.typeSection : (root.compact ? 22 : 28)
-                font.bold: !root.editorial
-                color: root.contract.textPrimaryColor
-                elide: Text.ElideRight
+                spacing: 10
+                Row {
+                    // Approved Aurora brand mark: three accent bars (12/24/18 px).
+                    objectName: "navigation-brand-mark"
+                    visible: root.editorial
+                    Layout.alignment: root.compact ? Qt.AlignHCenter : Qt.AlignVCenter
+                    spacing: 3
+                    Accessible.ignored: true
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 3
+                        height: 12
+                        radius: 2
+                        color: root.contract.highContrast ? root.contract.textPrimaryColor : root.contract.accentColor
+                    }
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 3
+                        height: 24
+                        radius: 2
+                        color: root.contract.highContrast ? root.contract.textPrimaryColor : root.contract.accentColor
+                    }
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 3
+                        height: 18
+                        radius: 2
+                        color: root.contract.highContrast ? root.contract.textPrimaryColor : root.contract.accentColor
+                    }
+                }
+                Text {
+                    objectName: "navigation-brand"
+                    Layout.fillWidth: true
+                    visible: !(root.editorial && root.compact)
+                    text: root.contract.appName
+                    Accessible.name: root.contract.appName
+                    textFormat: Text.PlainText
+                    font.family: root.contract.headingFontFamily
+                    font.pixelSize: root.editorial ? root.contract.typeSection : (root.compact ? 22 : 28)
+                    font.bold: !root.editorial
+                    color: root.contract.textPrimaryColor
+                    elide: Text.ElideRight
+                }
             }
             Text {
                 Layout.fillWidth: true
@@ -110,7 +144,7 @@ Rectangle {
             }
             NavigationButton {
                 id: nowAction
-                glyph: "⌂"
+                iconName: "home"
                 editorial: root.editorial
                 compact: root.compact
                 objectName: "now"
@@ -137,7 +171,7 @@ Rectangle {
             }
             NavigationButton {
                 id: queueAction
-                glyph: "≡"
+                iconName: "queue"
                 editorial: root.editorial
                 compact: root.compact
                 objectName: "queue"
@@ -155,7 +189,7 @@ Rectangle {
             }
             NavigationButton {
                 id: playlistsAction
-                glyph: "▤"
+                iconName: "playlist"
                 editorial: root.editorial
                 compact: root.compact
                 objectName: "playlists"
@@ -172,7 +206,7 @@ Rectangle {
             }
             NavigationButton {
                 id: downloadsAction
-                glyph: "↓"
+                iconName: "activity"
                 editorial: root.editorial
                 compact: root.compact
                 objectName: "downloads"
@@ -189,7 +223,7 @@ Rectangle {
             }
             NavigationButton {
                 id: browserAction
-                glyph: "↗"
+                iconName: "browser"
                 editorial: root.editorial
                 compact: root.compact
                 objectName: "embedded-browser"
@@ -218,6 +252,8 @@ Rectangle {
                     KeyNavigation.backtab: null
                     contract: root.contract
                     text: root.contract.darkTheme ? root.contract.themeLight : root.contract.themeDark
+                    iconName: root.editorial ? (root.contract.darkTheme ? "sun" : "moon") : ""
+                    iconWithText: true
                     accessibleName: root.contract.darkTheme ? labels.themeLight : labels.themeDark
                     enabled: !root.exiting
                     onClicked: root.themeRequested()
@@ -225,7 +261,7 @@ Rectangle {
             }
             NavigationButton {
                 id: preferencesAction
-                glyph: "⚙"
+                iconName: "settings"
                 editorial: root.editorial
                 compact: root.compact
                 objectName: "preferences"

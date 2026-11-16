@@ -199,6 +199,7 @@ GridLayout {
             checked: root.presenter.shuffleQueueEnabled
             contract: root.contract
             text: "⇄"
+            iconName: root.editorial ? "shuffle" : ""
             font.family: root.contract.symbolFontFamily
             accessibleName: queueLabels.shuffle
             shortcutHint: queueLabels.shortcutShuffle
@@ -214,6 +215,7 @@ GridLayout {
             enabled: root.presenter.canGoPrevious
             contract: root.contract
             text: "⏮"
+            iconName: root.editorial ? "previous" : ""
             accessibleName: root.contract.actionPrevious
             shortcutHint: labels.previousShortcut
             onClicked: root.presenter.previousTrack()
@@ -247,6 +249,7 @@ GridLayout {
             enabled: root.playbackEnabled
             contract: root.contract
             text: root.presenter.playbackState === PlayerPresenter.Playing ? "⏸" : "▶"
+            iconName: root.editorial ? (root.presenter.playbackState === PlayerPresenter.Playing ? "pause" : "play") : ""
             accessibleName: root.presenter.playbackState === PlayerPresenter.Playing ? root.contract.actionPause : root.contract.actionPlay
             shortcutHint: labels.playPauseShortcut
             onClicked: root.presenter.togglePlayback()
@@ -269,6 +272,7 @@ GridLayout {
             enabled: root.presenter.canGoNext
             contract: root.contract
             text: "⏭"
+            iconName: root.editorial ? "next" : ""
             accessibleName: root.contract.actionNext
             shortcutHint: labels.nextShortcut
             onClicked: root.presenter.nextTrack()
@@ -281,6 +285,7 @@ GridLayout {
             checked: root.presenter.repeatQueueEnabled
             contract: root.contract
             text: "↻"
+            iconName: root.editorial ? "repeat" : ""
             font.family: root.contract.symbolFontFamily
             accessibleName: queueLabels.repeat
             shortcutHint: queueLabels.shortcutRepeat
@@ -302,6 +307,7 @@ GridLayout {
             enabled: root.playbackEnabled
             contract: root.contract
             text: root.presenter.muted ? "🔊" : "🔇"
+            iconName: root.editorial ? (root.presenter.muted ? "volume" : "mute") : ""
             accessibleName: root.presenter.muted ? root.contract.actionUnmute : root.contract.actionMute
             shortcutHint: labels.muteShortcut
             onClicked: root.presenter.toggleMute()
