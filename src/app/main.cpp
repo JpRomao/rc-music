@@ -476,6 +476,9 @@ int main(int argc, char* argv[]) {
             music_player::m0::ApplicationText::playlistAudioDialogTitle(), localAudioDialogFilter());
         music_player::m0::QtAudioFileLocator playlist_audio_locator(
             music_player::m0::ApplicationText::locateAudioDialogTitle(), localAudioDialogFilter());
+        // A dedicated dialog for the library, so its requests never cross the playlists'.
+        music_player::m0::QtAudioFileLocator library_audio_locator(
+            music_player::m0::ApplicationText::locateAudioDialogTitle(), localAudioDialogFilter());
         auto* const playlist_picker = &playlist_audio_picker;
         auto* const playlist_locator = &playlist_audio_locator;
 #else
@@ -815,6 +818,7 @@ int main(int argc, char* argv[]) {
 #ifdef M0_QT_COMBINED_AUDIO
         // Tags and availability are read in the background, one bounded batch at a time.
         library_binding->setMetadataExtractor(std::make_shared<music_player::m0::TagLibMetadataExtractor>());
+        library_binding->setFileLocator(&library_audio_locator);
 #endif
         static_cast<void>(library_binding->start());
         presenter.setPlaylistExitPreparationProbe([&] {

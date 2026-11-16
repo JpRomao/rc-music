@@ -11,6 +11,7 @@
 #include <vector>
 
 namespace music_player::m0 {
+class AudioFileLocator;
 class LibraryStore;
 class MetadataExtractor;
 
@@ -30,6 +31,7 @@ class LibraryBinding final : public QObject {
     Q_PROPERTY(QObject* model READ model CONSTANT)
     Q_PROPERTY(QString filterText READ filterText WRITE setFilterText NOTIFY changed)
     Q_PROPERTY(int visibleCount READ visibleCount NOTIFY changed)
+    Q_PROPERTY(bool canLocate READ canLocate NOTIFY changed)
   public:
     using Paths = std::vector<std::filesystem::path>;
     // Appends to the queue without playback (the playlist path of the presenter).
@@ -43,6 +45,8 @@ class LibraryBinding final : public QObject {
     // time, for records never read or currently unavailable. Each record is tried
     // at most once per session. Set before start().
     void setMetadataExtractor(std::shared_ptr<const MetadataExtractor> extractor);
+    // Optional, borrowed for the binding's lifetime: the dialog used to locate a moved file.
+    void setFileLocator(AudioFileLocator* locator);
     // Explicit local ingress (open, add, drop, forwarding, playlist). Idempotent by exact path.
     void admit(Paths paths);
     // First-use seed from existing queue and playlist references. Ignored once
@@ -68,6 +72,12 @@ class LibraryBinding final : public QObject {
     // Removes only the catalog record; the audio file, queue, playlists and
     // playback are untouched.
     Q_INVOKABLE bool remove(const QString& record_id);
+    [[nodiscard]] bool canLocate() const;
+    // Asks the user for the record's new location. The ID, tags and playlists stay
+    // as they are; a path that belongs to another record is reported as a conflict.
+    Q_INVOKABLE bool locate(const QString& record_id);
+    // Revokes a pending dialog (page closed); a late answer is ignored.
+    Q_INVOKABLE void cancelLocate();
     // True while a write is running or queued; a failed save does not hold exit.
     [[nodiscard]] bool savingForExit() const;
     Q_INVOKABLE bool retrySave();

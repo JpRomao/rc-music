@@ -1,10 +1,12 @@
 #include "LibraryBinding.hpp"
 #include "LibraryListModel.hpp"
 #include "m0/domain/MetadataSanitization.hpp"
+#include "m0/ports/AudioFileLocator.hpp"
 #include "m0/ports/LibraryStore.hpp"
 #include "m0/ports/MetadataExtractor.hpp"
 
 #include <QFutureWatcher>
+#include <QPointer>
 #include <QtConcurrent/QtConcurrentRun>
 
 #include <atomic>
@@ -112,6 +114,9 @@ struct LibraryBinding::Impl final {
     std::shared_ptr<std::atomic_bool> cancel_reads = std::make_shared<std::atomic_bool>(false);
     std::unordered_set<std::uint64_t> attempted;
     bool reading{};
+    AudioFileLocator* locator{};
+    std::uint64_t locate_generation{};
+    bool locating{};
 
     Impl(LibraryBinding& q, std::shared_ptr<LibraryStore> source, QueueAppender append)
         : owner(q), store(std::move(source)), appender(std::move(append)) {
@@ -249,6 +254,42 @@ struct LibraryBinding::Impl final {
         enrich();
         emit owner.changed();
     }
+    void located(const std::uint64_t generation, const std::uint64_t id, const std::filesystem::path& original,
+                 const AudioFileLocationResult& result) {
+        if (generation != locate_generation || !locating)
+            return; // Cancelled or superseded.
+        locating = false;
+        if (stopping)
+            return;
+        if (result.status == AudioFileLocationStatus::Selected) {
+            auto candidate = working ? *working : confirmed;
+            const auto* record = candidate.find(id);
+            // Removed or moved again while the dialog was open: the answer is stale.
+            if (record && record->source_path.native() == original.native()) {
+                switch (candidate.relocate(id, result.source_path)) {
+                case LibraryRelocation::Relocated:
+                    working = std::move(candidate);
+                    if (!unsaved())
+                        working.reset();
+                    save_failed = false;
+                    save();
+                    notice =
+                        LibraryBinding::tr("Arquivo localizado. A faixa continua com o mesmo lugar na biblioteca.");
+                    break;
+                case LibraryRelocation::Conflict:
+                    notice = LibraryBinding::tr("Esse arquivo já está na biblioteca como outra faixa. Nada foi "
+                                                "alterado.");
+                    break;
+                default:
+                    notice = LibraryBinding::tr("Esse arquivo não pode ser usado. Escolha outro.");
+                    break;
+                }
+            }
+        } else if (result.status == AudioFileLocationStatus::Failed) {
+            notice = LibraryBinding::tr("Não foi possível abrir a escolha de arquivo. Tente novamente.");
+        }
+        emit owner.changed();
+    }
     void loaded(LibraryLoadResult result) {
         const auto status = result.status;
         const bool usable = (status == LibraryLoadStatus::Loaded || status == LibraryLoadStatus::RecoveredFromBackup ||
@@ -302,6 +343,45 @@ LibraryBinding::~LibraryBinding() {
 bool LibraryBinding::start() { return !impl_->ready && impl_->load(); }
 void LibraryBinding::setMetadataExtractor(std::shared_ptr<const MetadataExtractor> extractor) {
     impl_->extractor = std::move(extractor);
+}
+void LibraryBinding::setFileLocator(AudioFileLocator* locator) { impl_->locator = locator; }
+bool LibraryBinding::canLocate() const {
+    return impl_->locator && impl_->ready && !impl_->locating && !impl_->stopping;
+}
+bool LibraryBinding::locate(const QString& record_id) {
+    const auto id = recordId(record_id);
+    if (!id || !canLocate())
+        return false;
+    const auto* record = (impl_->working ? *impl_->working : impl_->confirmed).find(*id);
+    if (!record)
+        return false;
+    const auto original = record->source_path;
+    const auto generation = ++impl_->locate_generation;
+    impl_->locating = true;
+    const QPointer<LibraryBinding> alive(this);
+    bool accepted{};
+    try {
+        accepted = impl_->locator->locate(original, [alive, generation, id = *id, original](auto result) {
+            if (alive)
+                alive->impl_->located(generation, id, original, result);
+        });
+    } catch (...) {
+    }
+    if (!alive)
+        return false;
+    if (!accepted)
+        impl_->locating = false;
+    emit changed();
+    return accepted;
+}
+void LibraryBinding::cancelLocate() {
+    if (!impl_->locating)
+        return;
+    impl_->locating = false;
+    ++impl_->locate_generation;
+    if (impl_->locator)
+        impl_->locator->cancel();
+    emit changed();
 }
 void LibraryBinding::admit(Paths paths) { impl_->accept(std::move(paths), false); }
 void LibraryBinding::seed(Paths paths) { impl_->accept(std::move(paths), true); }
@@ -364,6 +444,7 @@ bool LibraryBinding::remove(const QString& record_id) {
 }
 bool LibraryBinding::retryLoad() { return !impl_->ready && impl_->load(); }
 void LibraryBinding::beginShutdown() {
+    cancelLocate();
     impl_->stopping = true;
     impl_->cancel_reads->store(true);
 }

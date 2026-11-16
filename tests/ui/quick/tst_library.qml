@@ -46,6 +46,8 @@ TestCase {
         property var model: records
         property var enqueued: []
         property var removed: []
+        property var located: []
+        property bool canLocate: true
         function enqueue(id) {
             enqueued = enqueued.concat([id]);
             return true;
@@ -53,6 +55,13 @@ TestCase {
         function remove(id) {
             removed = removed.concat([id]);
             return true;
+        }
+        function locate(id) {
+            located = located.concat([id]);
+            statusText = "Arquivo localizado.";
+            return true;
+        }
+        function cancelLocate() {
         }
         function retryLoad() {
             return true;
@@ -77,6 +86,8 @@ TestCase {
         catalog.filterText = "";
         catalog.enqueued = [];
         catalog.removed = [];
+        catalog.located = [];
+        catalog.statusText = "Sua biblioteca está pronta.";
         shell = createTemporaryObject(shellComponent, null);
         verify(shell);
         shell.width = 1440;
@@ -143,6 +154,16 @@ TestCase {
         tryCompare(confirmation, "visible", false);
         compare(catalog.removed, ["3"]);
         compare(catalog.enqueued, []);
+    }
+    function test_onlyUnavailableRecordsOfferLocating() {
+        const panel = openLibrary();
+        verify(!findChild(row(panel, "3"), "library-locate").visible);
+        const locate = findChild(row(panel, "4"), "library-locate");
+        verify(locate.visible);
+        mouseClick(locate);
+        compare(catalog.located, ["4"]);
+        tryVerify(() => findChild(panel, "library-status").visible);
+        compare(findChild(panel, "library-status").text, "Arquivo localizado.");
     }
     function test_typingFiltersThroughTheBinding() {
         const panel = openLibrary();

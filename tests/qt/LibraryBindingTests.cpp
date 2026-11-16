@@ -1,3 +1,4 @@
+#include "m0/ports/AudioFileLocator.hpp"
 #include "m0/ports/LibraryStore.hpp"
 #include "m0/ports/MetadataExtractor.hpp"
 #include "presentation/LibraryBinding.hpp"
@@ -85,6 +86,33 @@ TrackMetadata tagged(const Path& path, std::string title, std::string artist, st
     metadata.tags.album = std::move(album);
     metadata.audio.duration_ms = duration;
     return metadata;
+}
+
+class FakeLocator final : public AudioFileLocator {
+  public:
+    std::vector<Path> requests;
+    AudioFileLocationCompletion pending;
+    int cancels{};
+    bool locate(const Path& missing, AudioFileLocationCompletion completion) override {
+        requests.push_back(missing);
+        pending = std::move(completion);
+        return true;
+    }
+    void cancel() noexcept override {
+        ++cancels;
+        pending = {};
+    }
+    void finish(AudioFileLocationResult result) {
+        auto completion = std::move(pending);
+        pending = {};
+        if (completion)
+            completion(std::move(result));
+    }
+};
+LibraryLoadResult twoRecords() {
+    return {
+        .snapshot = {{{1, track(1), "Sumida", "", "", 1000, false}, {2, track(2), "Presente", "", "", 2000, true}}, 3},
+        .status = LibraryLoadStatus::Loaded};
 }
 
 struct Harness final {
@@ -337,6 +365,57 @@ class LibraryBindingTests final : public QObject {
         QTRY_VERIFY(h.binding.confirmedSnapshot().records.back().available);
         QCOMPARE(h.binding.confirmedSnapshot().records.back().title, std::string{"Voltou"});
         QCOMPARE(extractor->reads.load(), 1);
+    }
+    void locatingKeepsTheIdAndMarksTheRecordAvailable() {
+        Harness h;
+        FakeLocator locator;
+        h.store->setLoaded(twoRecords());
+        h.binding.setFileLocator(&locator);
+        h.startAndWait();
+        QVERIFY(h.binding.canLocate());
+        QVERIFY(h.binding.locate(QStringLiteral("1")));
+        QCOMPARE(locator.requests, std::vector<Path>{track(1)});
+        QVERIFY(!h.binding.canLocate());
+        QVERIFY(!h.binding.locate(QStringLiteral("2"))); // One request at a time.
+        locator.finish({.status = AudioFileLocationStatus::Selected, .source_path = track(9)});
+        QTRY_VERIFY(h.binding.confirmedSnapshot().records.front().source_path == track(9));
+        const auto record = h.binding.confirmedSnapshot().records.front();
+        QCOMPARE(record.id, std::uint64_t{1});
+        QVERIFY(record.available);
+        QCOMPARE(record.title, std::string{"Sumida"});
+        QVERIFY(h.binding.canLocate());
+    }
+    void anotherRecordsPathIsAConflictAndChangesNothing() {
+        Harness h;
+        FakeLocator locator;
+        h.store->setLoaded(twoRecords());
+        h.binding.setFileLocator(&locator);
+        h.startAndWait();
+        QVERIFY(h.binding.locate(QStringLiteral("1")));
+        locator.finish({.status = AudioFileLocationStatus::Selected, .source_path = track(2)});
+        QVERIFY(!h.binding.hasPendingChange());
+        QVERIFY(h.binding.statusText().contains(QStringLiteral("outra faixa")));
+        QCOMPARE(h.binding.confirmedSnapshot().records.front().source_path, track(1));
+        QVERIFY(h.store->saved().empty());
+    }
+    void cancellingOrALateAnswerForARemovedRecordChangesNothing() {
+        Harness h;
+        FakeLocator locator;
+        h.store->setLoaded(twoRecords());
+        h.binding.setFileLocator(&locator);
+        h.startAndWait();
+        QVERIFY(h.binding.locate(QStringLiteral("1")));
+        h.binding.cancelLocate();
+        QCOMPARE(locator.cancels, 1);
+        QVERIFY(h.binding.canLocate());
+        QVERIFY(h.binding.locate(QStringLiteral("1")));
+        auto late = locator.pending;
+        QVERIFY(h.binding.remove(QStringLiteral("1")));
+        QTRY_COMPARE(h.binding.count(), 1);
+        late({.status = AudioFileLocationStatus::Selected, .source_path = track(9)});
+        QVERIFY(!h.binding.hasPendingChange());
+        QCOMPARE(h.binding.confirmedSnapshot().records.size(), std::size_t{1});
+        QVERIFY(!h.binding.locate(QStringLiteral("999")));
     }
     void exitWaitsOnlyForAnActiveSave() {
         Harness h;

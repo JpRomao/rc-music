@@ -21,6 +21,8 @@ PageSurface {
     property string removeId: ""
     property string removeTitle: ""
     property string notice: ""
+    // After a locate request, the binding's own outcome is shown.
+    property bool showStatus: false
     readonly property bool ready: library !== null && library.ready
     readonly property int total: library !== null ? library.count : 0
     readonly property int visibleTotal: library !== null ? library.visibleCount : 0
@@ -34,7 +36,11 @@ PageSurface {
         else if (retryLoadButton.visible)
             retryLoadButton.forceActiveFocus(Qt.TabFocusReason);
     }
-    onClosed: removeConfirmation.close()
+    onClosed: {
+        removeConfirmation.close();
+        if (library !== null)
+            library.cancelLocate();
+    }
 
     function requestRemove(recordId, title) {
         removeId = recordId;
@@ -61,7 +67,7 @@ PageSurface {
         }
         RowLayout {
             Layout.fillWidth: true
-            visible: root.library !== null && root.library.statusText.length > 0 && (!root.ready || root.library.canRetrySave)
+            visible: root.library !== null && root.library.statusText.length > 0 && (!root.ready || root.library.canRetrySave || root.showStatus)
             Text {
                 objectName: "library-status"
                 Layout.fillWidth: true
@@ -275,13 +281,29 @@ PageSurface {
                         Accessible.ignored: true
                     }
                     AccessibleTransportButton {
+                        objectName: "library-locate"
+                        contract: root.contract
+                        flat: true
+                        visible: !row.available
+                        enabled: root.library !== null && root.library.canLocate
+                        text: libraryText.locateShort
+                        accessibleName: libraryText.locate.arg(row.title)
+                        onClicked: {
+                            root.notice = "";
+                            root.showStatus = root.library.locate(row.recordId);
+                        }
+                    }
+                    AccessibleTransportButton {
                         objectName: "library-enqueue"
                         contract: root.contract
                         flat: true
                         iconName: "plus"
                         enabled: row.available
                         accessibleName: libraryText.enqueue.arg(row.title)
-                        onClicked: root.notice = root.library.enqueue(row.recordId) ? libraryText.enqueued.arg(row.title) : libraryText.enqueueFailed
+                        onClicked: {
+                            root.showStatus = false;
+                            root.notice = root.library.enqueue(row.recordId) ? libraryText.enqueued.arg(row.title) : libraryText.enqueueFailed;
+                        }
                     }
                     AccessibleTransportButton {
                         objectName: "library-remove"

@@ -15,6 +15,8 @@ QtObject {
     readonly property string enqueued: qsTr("“%1” foi para o fim da fila.")
     readonly property string enqueueFailed: qsTr("Não foi possível adicionar à fila agora. Tente de novo.")
     readonly property string remove: qsTr("Remover %1 da biblioteca")
+    readonly property string locate: qsTr("Localizar %1")
+    readonly property string locateShort: qsTr("Localizar")
     readonly property string removeTitle: qsTr("Remover “%1” da biblioteca?")
     readonly property string removeAdvice: qsTr("Só o registro sai da biblioteca. O arquivo de áudio, a fila, as playlists e o que está tocando continuam como estão.")
     readonly property string removeConfirm: qsTr("Remover da biblioteca")
