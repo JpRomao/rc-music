@@ -9,6 +9,7 @@
 #include "PlayerDownloadsBuildProfile.hpp"
 #include "adapters/WindowsYoutubeExecution.hpp"
 #include "adapters/YoutubeSearch.hpp"
+#include "m0/application/DownloadService.hpp"
 #include "presentation/OnlineSearchBinding.hpp"
 #endif
 #include "adapters/QtJsonLibraryStore.hpp"
