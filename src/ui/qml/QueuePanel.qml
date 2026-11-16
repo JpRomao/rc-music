@@ -11,6 +11,7 @@ FocusScope {
     objectName: "queue-panel"
     required property ShellUiContract contract
     required property PlayerPresenter presenter
+    // True when shown as the Aurora side drawer over the home; false as a full legacy page.
     property bool overlayMode: false
     property alias listView: queueList
     property string selectedOccurrenceId: ""

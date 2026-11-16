@@ -415,6 +415,7 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("selectionColor"),
         QStringLiteral("hoverColor"),
         QStringLiteral("dividerColor"),
+        QStringLiteral("scrimColor"),
         QStringLiteral("highContrast"),
         QStringLiteral("darkTheme"),
         QStringLiteral("reducedMotion"),
@@ -424,17 +425,18 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("trackSource"),
     };
     const QStringList appearance_properties = {
-        QStringLiteral("navigationColor"),   QStringLiteral("canvasColor"),
-        QStringLiteral("surfaceColor"),      QStringLiteral("surfaceRaisedColor"),
-        QStringLiteral("textPrimaryColor"),  QStringLiteral("textSecondaryColor"),
-        QStringLiteral("accentColor"),       QStringLiteral("accentTextColor"),
-        QStringLiteral("focusColor"),        QStringLiteral("borderColor"),
-        QStringLiteral("errorColor"),        QStringLiteral("warningColor"),
-        QStringLiteral("successColor"),      QStringLiteral("disabledTextColor"),
-        QStringLiteral("selectionColor"),    QStringLiteral("hoverColor"),
-        QStringLiteral("dividerColor"),      QStringLiteral("highContrast"),
-        QStringLiteral("darkTheme"),         QStringLiteral("reducedMotion"),
-        QStringLiteral("panelTransitionMs"), QStringLiteral("feedbackTransitionMs"),
+        QStringLiteral("navigationColor"),      QStringLiteral("canvasColor"),
+        QStringLiteral("surfaceColor"),         QStringLiteral("surfaceRaisedColor"),
+        QStringLiteral("textPrimaryColor"),     QStringLiteral("textSecondaryColor"),
+        QStringLiteral("accentColor"),          QStringLiteral("accentTextColor"),
+        QStringLiteral("focusColor"),           QStringLiteral("borderColor"),
+        QStringLiteral("errorColor"),           QStringLiteral("warningColor"),
+        QStringLiteral("successColor"),         QStringLiteral("disabledTextColor"),
+        QStringLiteral("selectionColor"),       QStringLiteral("hoverColor"),
+        QStringLiteral("dividerColor"),         QStringLiteral("scrimColor"),
+        QStringLiteral("highContrast"),         QStringLiteral("darkTheme"),
+        QStringLiteral("reducedMotion"),        QStringLiteral("panelTransitionMs"),
+        QStringLiteral("feedbackTransitionMs"),
     };
     QStringList actual_properties;
     for (int index = meta->propertyOffset(); index < meta->propertyCount(); ++index) {
@@ -573,13 +575,18 @@ void ShellUiContractTests::interactionTokensFollowAuroraHighContrastAndFrozenFix
     QCOMPARE(tokens(), QStringList({QStringLiteral("#EEE0D2"), QStringLiteral("#EAE1D5"), QStringLiteral("#D7CAB9")}));
     QVERIFY(product.selectionColor() != product.navigationColor());
     QVERIFY(product.selectionColor() != product.surfaceRaisedColor());
+    // Drawer backdrop from the prototype (#080d0b at 33 %), the same in both themes.
+    QCOMPARE(product.scrimColor(), QStringLiteral("#55080d0b"));
     product.updateAppearance(ThemeMode::Dark, MotionMode::System, false, false);
     QCOMPARE(tokens(), QStringList({QStringLiteral("#3A2C23"), QStringLiteral("#353029"), QStringLiteral("#4C4236")}));
+    QCOMPARE(product.scrimColor(), QStringLiteral("#55080d0b"));
     QVERIFY(product.selectionColor() != product.navigationColor());
 
     const HighContrastPalette contrast = lightHighContrastPalette();
     product.updateAppearance(ThemeMode::Dark, MotionMode::System, false, false, contrast);
     QCOMPARE(tokens(), QStringList({contrast.highlight.name(), contrast.window.name(), contrast.window_text.name()}));
+    // High contrast keeps system colors untouched: no translucent backdrop.
+    QCOMPARE(product.scrimColor(), QStringLiteral("#00000000"));
 
     const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
     ShellUiContract historical(bundle);

@@ -138,7 +138,19 @@ TestCase {
         tryVerify(() => button.enabled);
         compare(button.iconName, "lyrics");
         mouseClick(button);
-        tryVerify(() => findChild(shell, "lyrics-reader").visible);
+        const reader = findChild(shell, "lyrics-reader");
+        tryVerify(() => reader.visible);
+        // Aurora drawer: flush to the right edge, from the top to the player.
+        tryVerify(() => reader.opened);
+        const point = reader.contentItem.parent.mapToItem(shell.contentItem, 0, 0);
+        const footer = findChild(shell, "player-footer");
+        compare(Math.round(reader.x + reader.width), shell.width);
+        compare(reader.y, 0);
+        compare(Math.round(reader.y + reader.height), Math.round(footer.y));
+        verify(reader.width <= 420);
+        compare(reader.background.radius, 0);
+        compare(reader.background.border.width, 0);
+        verify(point.x >= 0);
     }
     function test_playerLyricsButtonFollowsLyricsAvailability() {
         const button = findChild(shell, "player-lyrics");

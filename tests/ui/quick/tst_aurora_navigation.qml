@@ -73,7 +73,9 @@ TestCase {
         const queue = findChild(shell, "queue-panel");
         findChild(shell, "queue").Accessible.pressAction();
         tryVerify(() => queue.visible);
-        verify(!findChild(shell, "state-layer").visible);
+        // The home stays under the queue drawer, inactive and out of the keyboard path.
+        verify(findChild(shell, "state-layer").visible);
+        verify(!findChild(shell, "state-layer").enabled);
         compare(findChild(shell, "queue-list").count, 2);
         findChild(shell, "now").Accessible.pressAction();
         tryVerify(() => !queue.visible);
@@ -402,6 +404,6 @@ TestCase {
         const p = footer.mapToItem(shell.contentItem, 0, 0);
         verify(q.y + queue.height <= p.y + 1);
         compare(p.y + footer.height, shell.height);
-        verify(!queue.overlayMode);
+        verify(queue.overlayMode, "Aurora shows the queue as a side drawer");
     }
 }

@@ -249,6 +249,10 @@ QString ShellUiContract::selectionColor() const {
     return high_contrast_ ? high_contrast_->highlight.name() : palette().selection;
 }
 QString ShellUiContract::hoverColor() const { return high_contrast_ ? high_contrast_->window.name() : palette().hover; }
+QString ShellUiContract::scrimColor() const {
+    // Prototype drawer backdrop: #080d0b at 33 % opacity, shared by both themes.
+    return high_contrast_ ? QStringLiteral("#00000000") : QStringLiteral("#55080d0b");
+}
 QString ShellUiContract::dividerColor() const {
     return high_contrast_ ? high_contrast_->window_text.name() : palette().divider;
 }

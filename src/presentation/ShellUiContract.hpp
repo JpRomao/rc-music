@@ -97,6 +97,8 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(QString selectionColor READ selectionColor NOTIFY appearanceChanged)
     Q_PROPERTY(QString hoverColor READ hoverColor NOTIFY appearanceChanged)
     Q_PROPERTY(QString dividerColor READ dividerColor NOTIFY appearanceChanged)
+    // Translucent backdrop behind side drawers (#AARRGGBB); transparent in high contrast.
+    Q_PROPERTY(QString scrimColor READ scrimColor NOTIFY appearanceChanged)
     Q_PROPERTY(bool highContrast READ highContrast NOTIFY appearanceChanged)
     Q_PROPERTY(bool darkTheme READ darkTheme NOTIFY appearanceChanged)
     Q_PROPERTY(bool reducedMotion READ reducedMotion NOTIFY appearanceChanged)
@@ -186,6 +188,7 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] QString selectionColor() const;
     [[nodiscard]] QString hoverColor() const;
     [[nodiscard]] QString dividerColor() const;
+    [[nodiscard]] QString scrimColor() const;
     [[nodiscard]] bool highContrast() const noexcept;
     [[nodiscard]] bool darkTheme() const noexcept;
     [[nodiscard]] bool reducedMotion() const noexcept;

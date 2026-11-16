@@ -23,18 +23,17 @@ Dialog {
     property int textSize: 18
     property int transportInset: 100
     property bool followingPlayback: true
-    readonly property int edgeMargin: contract.spacingUnit * 3
-    readonly property bool wideWindow: parent !== null && parent.width >= 1040
     signal seekRequested(int timeMs)
     signal attributionRequested
     signal textSizeRequested(int size)
 
     parent: Overlay.overlay
-    width: parent ? Math.min(wideWindow ? 460 : 640, Math.max(0, parent.width - edgeMargin * 2)) : 0
-    height: parent ? Math.min(600, Math.max(0, parent.height - transportInset - edgeMargin * 2)) : 0
-    x: parent ? (wideWindow ? parent.width - width - edgeMargin : (parent.width - width) / 2) : 0
-    y: edgeMargin
-    padding: edgeMargin
+    // Aurora side drawer: flush to the right edge, from the top of the window to the player.
+    width: parent ? Math.min(420, Math.max(0, parent.width - 64)) : 0
+    height: parent ? Math.max(0, parent.height - transportInset) : 0
+    x: parent ? parent.width - width : 0
+    y: 0
+    padding: contract.spacingUnit * 6
     modal: false
     focus: true
     popupType: Popup.Item
@@ -70,9 +69,15 @@ Dialog {
 
     background: Rectangle {
         color: root.contract.surfaceColor
-        radius: root.contract.radiusSmall
-        border.width: root.contract.highContrast ? 2 : 1
-        border.color: root.contract.borderColor
+        radius: 0
+        border.width: 0
+        Rectangle {
+            // Only the inner edge is drawn, like the queue drawer.
+            width: root.contract.highContrast ? 2 : 1
+            height: parent.height
+            color: root.contract.highContrast ? root.contract.borderColor : root.contract.dividerColor
+            Accessible.ignored: true
+        }
     }
 
     contentItem: ColumnLayout {

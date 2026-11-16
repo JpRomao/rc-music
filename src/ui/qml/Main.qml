@@ -432,8 +432,9 @@ ApplicationWindow {
             Flickable {
                 id: stateLayer
                 objectName: "state-layer"
-                visible: !window.queuePageActive && (!window.inlinePages || window.currentPage === "home")
-                enabled: !window.presenter.exiting
+                // Aurora keeps the home under the queue drawer, dimmed and out of the Tab order.
+                visible: window.inlinePages ? (window.currentPage === "home" || window.currentPage === "queue") : !window.queuePageActive
+                enabled: !window.presenter.exiting && !(window.inlinePages && window.queuePageActive)
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
@@ -692,15 +693,40 @@ ApplicationWindow {
         }
     }
 
+    Rectangle {
+        // Backdrop of the Aurora queue drawer; clicking it closes the drawer.
+        objectName: "queue-scrim"
+        x: 0
+        y: 0
+        width: queuePanel.x
+        height: playerFooter.y
+        z: 9
+        visible: window.inlinePages && window.queuePageActive
+        color: window.uiContract.scrimColor
+        Accessible.ignored: true
+        MouseArea {
+            anchors.fill: parent
+            onClicked: window.setQueueOpen(false)
+        }
+    }
     QueuePanel {
         id: queuePanel
-        x: mainLayout.x + contentArea.x + contentArea.width - width
-        y: mainLayout.y + contentArea.y
-        height: contentArea.height
-        width: contentArea.width
+        // Aurora: side drawer from the top to the player. Legacy: fills the content area.
+        x: window.inlinePages ? window.width - width : mainLayout.x + contentArea.x + contentArea.width - width
+        y: window.inlinePages ? 0 : mainLayout.y + contentArea.y
+        height: window.inlinePages ? playerFooter.y : contentArea.height
+        width: window.inlinePages ? Math.min(window.uiContract.queuePanelMaximumWidth, contentArea.width) : contentArea.width
         z: 10
         visible: window.queuePageActive
-        overlayMode: false
+        overlayMode: window.inlinePages
+        Rectangle {
+            visible: window.inlinePages
+            width: window.uiContract.highContrast ? 2 : 1
+            height: parent.height
+            z: 100
+            color: window.uiContract.highContrast ? window.uiContract.borderColor : window.uiContract.dividerColor
+            Accessible.ignored: true
+        }
         contract: window.uiContract
         presenter: window.presenter
         lyricVariantActionSupported: lyricsPanel.queueVariantActionSupported

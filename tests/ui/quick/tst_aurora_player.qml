@@ -136,6 +136,48 @@ TestCase {
         compare(audioCommands(), commands, "opening the queue must not touch playback");
     }
 
+    function test_queueOpensAsADrawerOverTheHome_data() {
+        return [
+            {
+                tag: "wide",
+                width: 1440,
+                height: 900
+            },
+            {
+                tag: "minimum",
+                width: 720,
+                height: 520
+            }
+        ];
+    }
+
+    function test_queueOpensAsADrawerOverTheHome(data) {
+        loadSyntheticQueue();
+        resize(data.width, data.height);
+        const commands = audioCommands();
+        mouseClick(findChild(shell, "player-queue"));
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        verify(waitForPolish(shell));
+        const area = rect(drawer);
+        const footer = findChild(shell, "player-footer");
+        verify(drawer.width <= productContract.queuePanelMaximumWidth, "the queue is a side drawer, not a full page");
+        compare(area.x + area.width, shell.width);
+        compare(area.y, 0);
+        compare(area.y + area.height, footer.y);
+        // The page underneath stays in place, dimmed and out of the keyboard path.
+        const home = findChild(shell, "state-layer");
+        verify(home.visible);
+        verify(!home.enabled);
+        const scrim = findChild(shell, "queue-scrim");
+        verify(scrim && scrim.visible);
+        verify(Qt.colorEqual(scrim.color, productContract.scrimColor));
+        mouseClick(scrim, 20, 20);
+        tryVerify(() => !drawer.visible);
+        verify(home.enabled);
+        compare(audioCommands(), commands, "opening and closing the drawer must not touch playback");
+    }
+
     function test_lyricsButtonIsDisabledWithAReasonWithoutLyrics() {
         loadSyntheticQueue();
         const button = findChild(shell, "player-lyrics");
