@@ -10,6 +10,7 @@ import math
 import re
 import struct
 import sys
+import unicodedata
 
 PINNED_YTDLP_VERSION = "2026.10.26"
 PINNED_EJS_VERSION = "0.8.0"
@@ -31,6 +32,11 @@ MAX_CHALLENGES = 256
 MAX_STRING_BYTES = 16 * 1024
 MAX_CHALLENGE_BYTES = 1024 * 1024
 MAX_CHALLENGE_GROUPS = 8
+# ADR-0019 search: individual videos only, metadata only, a short list.
+SEARCH_ARGUMENT = "--search"
+MAX_SEARCH_RESULTS = 12
+MAX_SEARCH_QUERY_BYTES = 400
+MAX_SEARCH_TEXT_BYTES = 1024
 PROJECTION_FIELDS = (
     "_type", "id", "extractor_key", "url", "title", "artist", "duration",
     "filesize", "filesize_approx", "ext", "acodec", "vcodec", "protocol",
@@ -385,6 +391,15 @@ class _SilentLogger:
         pass
 
 
+def search_options():
+    # Flat extraction lists results without resolving any video, player or
+    # stream. No format selection, cookies, plugins or JS runtime apply.
+    options = {key: value for key, value in fixed_options().items() if key not in ("format", "format_sort")}
+    options["extract_flat"] = "in_playlist"
+    options["noplaylist"] = False
+    return options
+
+
 def configure_runtime(runtime, transport):
     if runtime.version != PINNED_YTDLP_VERSION:
         raise ProtocolError("unsupported")
@@ -410,13 +425,87 @@ def _load_runtime():
     version = importlib.import_module("yt_dlp.version").__version__
     jsc = importlib.import_module("yt_dlp.extractor.youtube.jsc.provider")
     registry = importlib.import_module("yt_dlp.extractor.youtube.jsc._registry")
-    youtube_ie = importlib.import_module("yt_dlp.extractor.youtube").YoutubeIE
+    youtube = importlib.import_module("yt_dlp.extractor.youtube")
     return SimpleNamespace(version=version, globals=globals_module, jsc=jsc, registry=registry,
-                           YoutubeDL=package.YoutubeDL, YoutubeIE=youtube_ie)
+                           YoutubeDL=package.YoutubeDL, YoutubeIE=youtube.YoutubeIE,
+                           YoutubeSearchIE=youtube.YoutubeSearchIE)
 
 
 def _video_id(value):
     return type(value) is str and re.fullmatch(r"[A-Za-z0-9_-]{11}", value) is not None
+
+
+def _search_query(value):
+    if type(value) is not str or not value or value != value.strip(_QT_WHITESPACE):
+        return False
+    if any(unicodedata.category(character) in ("Cc", "Cs") for character in value):
+        return False
+    try:
+        return len(value.encode("utf-8", errors="strict")) <= MAX_SEARCH_QUERY_BYTES
+    except UnicodeError:
+        return False
+
+
+def _search_text(value):
+    if type(value) is not str or not value.strip(_QT_WHITESPACE):
+        return None
+    try:
+        return value if len(value.encode("utf-8", errors="strict")) <= MAX_SEARCH_TEXT_BYTES else None
+    except UnicodeError:
+        return None
+
+
+def _search_entries(extracted):
+    if type(extracted) is not dict or not isinstance(extracted.get("entries"), list):
+        raise ProtocolError("unsupported")
+    results, seen = [], set()
+    for entry in list.__iter__(extracted["entries"]):
+        if len(results) >= MAX_SEARCH_RESULTS:
+            break
+        if type(entry) is not dict or entry.get("ie_key") != "Youtube" or entry.get("_type", "url") != "url":
+            continue
+        video, title = entry.get("id"), _search_text(entry.get("title"))
+        if not _video_id(video) or video in seen or title is None:
+            continue
+        if entry.get("live_status") in ("is_live", "is_upcoming", "post_live"):
+            continue
+        result = {"id": video, "title": title}
+        channel = _search_text(entry.get("channel")) or _search_text(entry.get("uploader"))
+        if channel is not None:
+            result["channel"] = channel
+        duration = entry.get("duration")
+        if type(duration) in (int, float) and math.isfinite(duration) and 0 <= duration <= 7 * 24 * 3600:
+            result["duration"] = int(round(duration))
+        seen.add(video)
+        results.append(result)
+    return {"entries": results}
+
+
+def run_search(query, reader, writer, runtime_loader=None):
+    transport = ProtocolTransport(reader, writer)
+    if not _search_query(query):
+        _emit_failure(transport, "unsupported")
+        return 1
+    try:
+        runtime = (runtime_loader or _load_runtime)()
+        configure_runtime(runtime, transport)
+        with runtime.YoutubeDL(search_options(), auto_init=False) as downloader:
+            downloader.add_info_extractor(runtime.YoutubeSearchIE())
+            extracted = downloader.extract_info("ytsearch%d:%s" % (MAX_SEARCH_RESULTS, query), download=False)
+        if transport.closed:
+            return 1
+        data = _search_entries(extracted)
+        try:
+            _json_payload({"v": 1, "kind": "result", "seq": transport.seq, "data": data}, MAX_RESULT_BYTES)
+        except ProtocolError:
+            raise ProtocolError("unsupported") from None
+        transport._terminal({"v": 1, "kind": "result", "seq": transport.seq, "data": data}, MAX_FRAME_BYTES)
+        return 0
+    except ProtocolError as error:
+        _emit_failure(transport, error.code)
+    except Exception:
+        _emit_failure(transport, "unavailable")
+    return 1
 
 
 def _emit_failure(transport, code):
@@ -464,6 +553,8 @@ def main(argv=None, *, reader=None, writer=None, runtime_loader=None):
     argv = sys.argv[1:] if argv is None else argv
     reader = sys.stdin.buffer if reader is None else reader
     writer = sys.stdout.buffer if writer is None else writer
+    if type(argv) in (list, tuple) and len(argv) == 2 and argv[0] == SEARCH_ARGUMENT:
+        return run_search(argv[1], reader, writer, runtime_loader)
     if type(argv) not in (list, tuple) or len(argv) != 1:
         _emit_failure(ProtocolTransport(reader, writer), "unsupported")
         return 1

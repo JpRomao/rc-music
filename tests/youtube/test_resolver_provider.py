@@ -159,6 +159,10 @@ class FakeIE:
         return "player source: " + kwargs["player_url"]
 
 
+class FakeSearchIE:
+    pass
+
+
 class Exchange:
     def __init__(self):
         self.closed = False
@@ -193,6 +197,7 @@ class Bundle:
                                               _jsc_preferences=Indirect({object()}))
         self.jsc = public_api(self.registry._jsc_providers)
         self.YoutubeIE = FakeIE
+        self.YoutubeSearchIE = FakeSearchIE
         self.constructed, self.closed = 0, 0
         self.options, self.auto_init = None, None
         self.extract_calls, self.ies = [], []
@@ -661,6 +666,102 @@ class EntrypointTests(unittest.TestCase):
                 bundle = Bundle(); bundle.info.update(addition); output = io.BytesIO()
                 self.assertNotEqual(resolver.run(VIDEO, io.BytesIO(), output, lambda: bundle), 0)
                 self.assertTrue(all(item["kind"] != "result" for item in frames(output.getvalue())))
+
+
+def search_entry(video, title, **extra):
+    entry = {"_type": "url", "ie_key": "Youtube", "id": video, "title": title,
+             "url": "https://www.youtube.com/watch?v=" + video,
+             "thumbnails": [{"url": "https://i.ytimg.com/private.jpg"}], "description": "private snippet"}
+    entry.update(extra)
+    return entry
+
+
+class SearchModeTests(unittest.TestCase):
+    def search(self, query, entries, loader=None):
+        bundle = Bundle()
+        bundle.info = {"_type": "playlist", "id": query, "entries": entries}
+        output = io.BytesIO()
+        code = resolver.main(["--search", query], reader=io.BytesIO(), writer=output,
+                             runtime_loader=loader or (lambda: bundle))
+        return code, bundle, frames(output.getvalue()), output.getvalue()
+
+    def test_search_returns_only_typed_metadata_for_individual_videos(self):
+        entries = [
+            search_entry(VIDEO, "Canção do Mar", channel="Lia Campos", duration=217.4),
+            search_entry("Zz9_-Yy8Xx7", "Sem canal nem duração"),
+            search_entry(VIDEO, "Duplicado", channel="Outro"),
+            search_entry("Ll1_-Mm2Nn3", "Ao vivo agora", live_status="is_live"),
+            {"_type": "url", "ie_key": "YoutubeTab", "id": "UCabcdefghijklmnopqrstuv", "title": "Canal"},
+            search_entry("bad", "ID inválido"),
+            search_entry("Pp4_-Qq5Rr6", 7),
+            search_entry("Ss7_-Tt8Uu9", "Canal pelo uploader", uploader="Uploader", duration=-1),
+        ]
+        code, bundle, actual, raw = self.search("lia campos mar", entries)
+        self.assertEqual(code, 0)
+        self.assertEqual(bundle.extract_calls, [("ytsearch12:lia campos mar", False)])
+        self.assertEqual(len(bundle.ies), 1)
+        self.assertIsInstance(bundle.ies[0], FakeSearchIE)
+        self.assertEqual(bundle.options["extract_flat"], "in_playlist")
+        self.assertNotIn("format", bundle.options)
+        self.assertIsNone(bundle.options["cookiefile"])
+        self.assertEqual(bundle.options["js_runtimes"], {})
+        self.assertEqual(actual, [{"v": 1, "kind": "result", "seq": 1, "data": {"entries": [
+            {"id": VIDEO, "title": "Canção do Mar", "channel": "Lia Campos", "duration": 217},
+            {"id": "Zz9_-Yy8Xx7", "title": "Sem canal nem duração"},
+            {"id": "Ss7_-Tt8Uu9", "title": "Canal pelo uploader", "channel": "Uploader"},
+        ]}}])
+        self.assertNotIn(b"private", raw)
+        self.assertNotIn(b"https://", raw)
+
+    def test_search_results_are_capped(self):
+        entries = [search_entry("%011d" % index, "Faixa %d" % index) for index in range(30)]
+        code, _bundle, actual, _raw = self.search("faixa", entries)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(actual[0]["data"]["entries"]), resolver.MAX_SEARCH_RESULTS)
+
+    def test_no_matches_is_an_empty_success(self):
+        code, _bundle, actual, _raw = self.search("nada", [])
+        self.assertEqual(code, 0)
+        self.assertEqual(actual, [{"v": 1, "kind": "result", "seq": 1, "data": {"entries": []}}])
+
+    def test_invalid_queries_fail_before_loading_the_runtime(self):
+        for query in ("", "   ", " borda", "borda ", "linha\nnova", "tab\tinterno", "x" * 401, "ç" * 201):
+            with self.subTest(query=query[:12]):
+                loader = mock.Mock(side_effect=AssertionError("must stay lazy"))
+                code, _bundle, actual, _raw = self.search(query, [], loader)
+                self.assertNotEqual(code, 0)
+                loader.assert_not_called()
+                self.assertEqual(actual, [{"v": 1, "kind": "failure", "seq": 1, "code": "unsupported"}])
+        code, _bundle, _actual, _raw = self.search("x" * 400, [])
+        self.assertEqual(code, 0)
+
+    def test_search_argument_shape_is_exact(self):
+        for args in (["--search"], ["--search", "a", "b"], ["--search=a"], ["--other", "a"]):
+            with self.subTest(args=args):
+                output = io.BytesIO(); loader = mock.Mock(side_effect=AssertionError("must stay lazy"))
+                self.assertNotEqual(resolver.main(args, reader=io.BytesIO(), writer=output, runtime_loader=loader), 0)
+                loader.assert_not_called()
+                self.assertEqual(frames(output.getvalue())[0]["code"], "unsupported")
+
+    def test_search_errors_and_unexpected_shapes_are_fixed_failures(self):
+        bundle = Bundle(); bundle.error = RuntimeError("raw private detail")
+        output = io.BytesIO()
+        self.assertNotEqual(resolver.main(["--search", "x"], reader=io.BytesIO(), writer=output,
+                                          runtime_loader=lambda: bundle), 0)
+        self.assertEqual(frames(output.getvalue()), [{"v": 1, "kind": "failure", "seq": 1, "code": "unavailable"}])
+        for info in ({"_type": "playlist"}, {"_type": "playlist", "entries": "x"}, None):
+            with self.subTest(info=info):
+                bundle = Bundle(); bundle.info = info; output = io.BytesIO()
+                self.assertNotEqual(resolver.main(["--search", "x"], reader=io.BytesIO(), writer=output,
+                                                  runtime_loader=lambda: bundle), 0)
+                self.assertEqual(frames(output.getvalue())[0]["kind"], "failure")
+
+    def test_search_rejects_an_unpinned_runtime(self):
+        bundle = Bundle(); bundle.version = "2026.03.17"; output = io.BytesIO()
+        self.assertNotEqual(resolver.main(["--search", "x"], reader=io.BytesIO(), writer=output,
+                                          runtime_loader=lambda: bundle), 0)
+        self.assertEqual(bundle.constructed, 0)
+        self.assertEqual(frames(output.getvalue()), [{"v": 1, "kind": "failure", "seq": 1, "code": "unsupported"}])
 
 
 if __name__ == "__main__":
