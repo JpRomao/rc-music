@@ -30,6 +30,7 @@ PageSurface {
     readonly property bool ready: library !== null && library.ready
     readonly property int total: library !== null ? library.count : 0
     readonly property int visibleTotal: library !== null ? library.visibleCount : 0
+    readonly property string artworkBase: library !== null ? library.artworkBase : ""
     embedded: true
     padding: 0
     focus: true
@@ -270,6 +271,17 @@ PageSurface {
                             color: root.contract.accentColor
                             font.family: root.contract.headingFontFamily
                             font.pixelSize: root.contract.typeDisplay
+                            Accessible.ignored: true
+                        }
+                        Image {
+                            // Embedded art from the cover reader; a file without art
+                            // yields a transparent pixel, so the placeholder shows.
+                            objectName: "library-card-art"
+                            anchors.fill: parent
+                            source: root.artworkBase.length > 0 ? root.artworkBase + card.recordId : ""
+                            asynchronous: true
+                            cache: false
+                            fillMode: Image.PreserveAspectCrop
                             Accessible.ignored: true
                         }
                         AccessibleTransportButton {

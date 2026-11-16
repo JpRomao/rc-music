@@ -1,4 +1,5 @@
 #include "LibraryBinding.hpp"
+#include "LibraryArtworkIndex.hpp"
 #include "LibraryListModel.hpp"
 #include "m0/domain/MetadataSanitization.hpp"
 #include "m0/ports/AudioFileLocator.hpp"
@@ -116,6 +117,8 @@ struct LibraryBinding::Impl final {
     bool reading{};
     AudioFileLocator* locator{};
     PlaylistAppender playlist_appender;
+    std::shared_ptr<LibraryArtworkIndex> artwork_index;
+    QString artwork_base;
     std::uint64_t locate_generation{};
     bool locating{};
 
@@ -249,6 +252,8 @@ struct LibraryBinding::Impl final {
             saved(result.saved, result.written);
         // The list shows confirmed records only.
         model.setRecords(confirmed.snapshot().records);
+        if (artwork_index)
+            artwork_index->update(confirmed.snapshot());
         // A failure waits for new ingress or an explicit retry; it never loops.
         if (!stopping && !save_failed)
             save();
@@ -357,6 +362,14 @@ bool LibraryBinding::addToPlaylist(const QString& record_id, const QString& play
     } catch (...) {
         return false;
     }
+}
+QString LibraryBinding::artworkBase() const { return impl_->artwork_index ? impl_->artwork_base : QString{}; }
+void LibraryBinding::setArtworkIndex(std::shared_ptr<LibraryArtworkIndex> index, QString source_base) {
+    impl_->artwork_index = std::move(index);
+    impl_->artwork_base = std::move(source_base);
+    if (impl_->artwork_index)
+        impl_->artwork_index->update(impl_->confirmed.snapshot());
+    emit changed();
 }
 QStringList LibraryBinding::downloadJobs() const {
     QStringList jobs;

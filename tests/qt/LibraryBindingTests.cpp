@@ -1,6 +1,7 @@
 #include "m0/ports/AudioFileLocator.hpp"
 #include "m0/ports/LibraryStore.hpp"
 #include "m0/ports/MetadataExtractor.hpp"
+#include "presentation/LibraryArtworkIndex.hpp"
 #include "presentation/LibraryBinding.hpp"
 #include "presentation/LibraryListModel.hpp"
 
@@ -237,6 +238,21 @@ class LibraryBindingTests final : public QObject {
         QTest::qWait(50);
         QCOMPARE(h.store->saved().size(), writes);
         QCOMPARE(h.binding.count(), 1);
+    }
+    void coversFollowTheConfirmedCatalog() {
+        Harness h;
+        QCOMPARE(h.binding.artworkBase(), QString{});
+        auto index = std::make_shared<LibraryArtworkIndex>();
+        h.binding.setArtworkIndex(index, QStringLiteral("image://libraryart/"));
+        QCOMPARE(h.binding.artworkBase(), QStringLiteral("image://libraryart/"));
+        h.startAndWait();
+        h.binding.admit({track(1)});
+        QTRY_COMPARE(h.binding.count(), 1);
+        const auto id = h.binding.confirmedSnapshot().records.front().id;
+        QCOMPARE(index->find(id), std::optional{track(1)});
+        QVERIFY(h.binding.remove(QString::number(id)));
+        QTRY_COMPARE(h.binding.count(), 0);
+        QVERIFY(!index->find(id));
     }
     void activityLearnsWhichDownloadsEnteredTheLibraryOnlyAfterSaved() {
         Harness h;

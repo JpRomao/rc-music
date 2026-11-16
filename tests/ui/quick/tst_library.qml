@@ -49,6 +49,7 @@ TestCase {
         property var located: []
         property var playlistAdds: []
         property bool canLocate: true
+        property string artworkBase: ""
         function enqueue(id) {
             enqueued = enqueued.concat([id]);
             return true;
@@ -225,6 +226,8 @@ TestCase {
         mouseClick(findChild(findChild(grid, "library-card-3"), "library-card-enqueue"));
         compare(catalog.enqueued, ["3"]);
         verify(!findChild(findChild(grid, "library-card-4"), "library-card-enqueue").enabled);
+        // Without a cover reader the cards keep only the themed placeholder.
+        compare(findChild(findChild(grid, "library-card-3"), "library-card-art").source.toString(), "");
         mouseClick(findChild(panel, "library-view-list"));
         tryVerify(() => findChild(panel, "library-list").visible);
     }

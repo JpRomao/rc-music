@@ -12,6 +12,7 @@
 #include <vector>
 
 namespace music_player::m0 {
+class LibraryArtworkIndex;
 class AudioFileLocator;
 class LibraryStore;
 class MetadataExtractor;
@@ -35,6 +36,8 @@ class LibraryBinding final : public QObject {
     Q_PROPERTY(bool canLocate READ canLocate NOTIFY changed)
     // Download jobs whose audio entered the confirmed library (for Activity).
     Q_PROPERTY(QStringList downloadJobs READ downloadJobs NOTIFY changed)
+    // Cover image URL prefix (append the record ID); empty without a cover reader.
+    Q_PROPERTY(QString artworkBase READ artworkBase NOTIFY changed)
   public:
     using Paths = std::vector<std::filesystem::path>;
     // Appends to the queue without playback (the playlist path of the presenter).
@@ -82,6 +85,9 @@ class LibraryBinding final : public QObject {
     Q_INVOKABLE bool addToPlaylist(const QString& record_id, const QString& playlist_id);
     [[nodiscard]] bool canLocate() const;
     [[nodiscard]] QStringList downloadJobs() const;
+    [[nodiscard]] QString artworkBase() const;
+    // UI thread, before start. The index follows every confirmed change.
+    void setArtworkIndex(std::shared_ptr<LibraryArtworkIndex> index, QString source_base);
     // Asks the user for the record's new location. The ID, tags and playlists stay
     // as they are; a path that belongs to another record is reported as a conflict.
     Q_INVOKABLE bool locate(const QString& record_id);

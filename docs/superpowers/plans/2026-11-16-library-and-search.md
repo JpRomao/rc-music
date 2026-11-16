@@ -56,7 +56,8 @@
 - Adicionar à playlist: menu por linha com as playlists salvas, via `PlaylistsBinding::appendToPlaylist`. Só `Saved` confirma, e a seleção da página Playlists não muda.
 - Capas: alternativa à Lista, que continua padrão. As capas são marcadores em tons do tema com a inicial do álbum ou do título. Arte real precisa de um cache de capas próprio, ainda pendente.
 - Atividade: cada download com MP3 final mostra para onde ele foi: "MP3 pronto", "Na fila de reprodução" (concluído ou já importado) e "Na biblioteca" ou "Biblioteca pendente". A biblioteca vem de `LibraryBinding::downloadJobs`, o registro confirmado de jobs, que só muda com `Saved` e continua valendo se o registro for removido depois (o download entrou na biblioteca).
-- Pendente de L4b: cache de capas; teste no app real.
+- Capas reais: `LibraryArtworkProvider` (`image://libraryart/<id>`) lê a arte embutida com o mesmo extrator TagLib, fora da UI (duas leituras por vez), só quando um cartão aparece. As 256 miniaturas mais recentes ficam em memória, com chave de registro e caminho, então um arquivo localizado em outro lugar é lido de novo. `LibraryArtworkIndex` guarda ID e caminho dos registros disponíveis e acompanha cada `Saved`. Sem arte, registro desconhecido ou indisponível rende um pixel transparente e o marcador do tema continua visível. Nada é gravado em disco.
+- Pendente de L4b: teste no app real.
 
 ## Contrato de L5
 
@@ -74,3 +75,4 @@
 - L4b, parte 1 (metadados): 707/707 CTest.
 - L4b concluída (metadados, localizar, playlist e Capas): CTest 707/707, Quick 530/530.
 - L5 concluída no código (resolvedor, broker, sessão, binding e página Buscar). A busca real depende do runtime reconstruído.
+- L4b, restante: Atividade com destinos do MP3 (`63dc156`) e capas reais em memória.

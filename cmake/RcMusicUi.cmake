@@ -33,11 +33,21 @@ add_library(rc_music_library STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryBinding.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryBinding.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryListModel.hpp"
-    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryListModel.cpp")
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryListModel.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryArtworkIndex.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryArtworkIndex.cpp")
 target_include_directories(rc_music_library PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
 target_link_libraries(rc_music_library PUBLIC rc_music_core Qt6::Core PRIVATE rc_music_media_data Qt6::Concurrent)
 set_target_properties(rc_music_library PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_library)
+
+# Library covers: embedded art read on demand into an in-memory cache.
+find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Quick)
+add_library(rc_music_library_artwork STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryArtworkProvider.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryArtworkProvider.cpp")
+target_link_libraries(rc_music_library_artwork PUBLIC rc_music_library Qt6::Quick)
+rc_music_configure_cpp(rc_music_library_artwork)
 
 # ADR-0019: online search page (metadata only; downloads go through admission).
 add_library(rc_music_online_search STATIC
@@ -159,6 +169,7 @@ function(rc_music_add_ui target support qml_output)
         rc_music_playlists
         rc_music_library
         rc_music_online_search
+        rc_music_library_artwork
     )
     if(TARGET rc_music_browser_integration AND TARGET rc_music_downloads)
         target_sources(${target} PRIVATE

@@ -36,13 +36,14 @@ A fatia 1 da paridade visual adicionou ao contrato os tokens Seleção, Hover e 
 Ficam pendentes nessa trilha: reconstruir o runtime do extractor (o seletor Opus só vale depois dele), integrar o modo assinado ao instalador e validar um download real no app. A biblioteca permanente do [ADR-0019](architecture/decisions/0019-internal-search-library-and-extension-retirement.md) já está no app:
 - `library.json` com registro por caminho exato;
 - ingresso local e downloads entram nela, sem ressuscitar remoções;
-- página Biblioteca em Lista, com Capas como alternativa;
+- página Biblioteca em Lista, com Capas (arte embutida lida sob demanda) como alternativa;
+- Atividade dizendo se cada MP3 está pronto, na fila e na biblioteca;
 - busca local sem acento e tags lidas em segundo plano;
 - localizar arquivo, adicionar à fila e à playlist, e remover só o registro.
 
 A busca online pelo próprio yt-dlp (L5) também está no código: página Buscar com até 12 vídeos por consulta, só metadados, e Baixar enviando um pedido comum por ID. Ela usa o mesmo runtime verificado dos downloads e só aparece com o componente YouTube ativo.
 
-O plano está em [2026-11-16-library-and-search](superpowers/plans/2026-11-16-library-and-search.md). Falta ainda reconstruir o runtime (a busca real e o Opus dependem dele), o teste no app real e o cache de capas.
+O plano está em [2026-11-16-library-and-search](superpowers/plans/2026-11-16-library-and-search.md). Falta ainda reconstruir o runtime (a busca real e o Opus dependem dele) e o teste no app real.
 
 A fundação `d4137db` e seu [instalador privado histórico](windows-installer.md#setup-aurora-de-d4137db) permanecem registrados, sem representar a fonte nova. A condição posterior do mantenedor bloqueia instaladores intermediários. Reprodução, dados, Qt Network, letras, downloads opcionais, playlists e stores foram preservados no recorte exercitado. Biblioteca permanente/ingresso, pesquisa/provider, paridade visual restante, instalação e gates de produção conservam seus próprios aceites.
 

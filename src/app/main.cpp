@@ -45,6 +45,8 @@
 #include "presentation/ApplicationIdentity.hpp"
 #include "presentation/ApplicationText.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
+#include "presentation/LibraryArtworkIndex.hpp"
+#include "presentation/LibraryArtworkProvider.hpp"
 #include "presentation/LibraryBinding.hpp"
 #include "presentation/LifecycleText.hpp"
 #include "presentation/LyricsBinding.hpp"
@@ -831,7 +833,13 @@ int main(int argc, char* argv[]) {
                          &music_player::m0::LibraryBinding::beginShutdown);
 #ifdef M0_QT_COMBINED_AUDIO
         // Tags and availability are read in the background, one bounded batch at a time.
-        library_binding->setMetadataExtractor(std::make_shared<music_player::m0::TagLibMetadataExtractor>());
+        const auto library_extractor = std::make_shared<music_player::m0::TagLibMetadataExtractor>();
+        library_binding->setMetadataExtractor(library_extractor);
+        // Covers: embedded art read on demand for the Covers view, kept in memory.
+        const auto library_artwork = std::make_shared<music_player::m0::LibraryArtworkIndex>();
+        library_binding->setArtworkIndex(library_artwork, music_player::m0::LibraryArtworkProvider::sourceBase());
+        engine.addImageProvider(music_player::m0::LibraryArtworkProvider::providerId(),
+                                new music_player::m0::LibraryArtworkProvider(library_artwork, library_extractor));
         library_binding->setFileLocator(&library_audio_locator);
 #endif
         library_binding->setPlaylistAppender([&](const QString& playlist_id, auto paths) {

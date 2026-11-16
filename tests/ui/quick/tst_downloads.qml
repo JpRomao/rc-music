@@ -1492,6 +1492,7 @@ TestCase {
         property bool hasPendingChange: false
         property bool canRetrySave: false
         property bool canLocate: false
+        property string artworkBase: ""
         property string statusText: ""
         property string filterText: ""
         property var model: null
