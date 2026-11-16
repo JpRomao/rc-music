@@ -1,5 +1,6 @@
 #include "PlayerDownloadsBuildProfile.hpp"
 
+#include "adapters/SignedYoutubeRuntimeManifest.hpp"
 #include "adapters/WindowsDownloadCheckpointStore.hpp"
 
 #ifdef RC_MUSIC_NATIVE_BUILD_PROFILES_HEADER
@@ -15,6 +16,7 @@
 #include <utility>
 
 #include <QDateTime>
+#include <QFile>
 #include <qt_windows.h>
 
 namespace music_player::m0 {
@@ -119,11 +121,44 @@ void ownProfileStrings(WindowsPlayerDownloadProfile& profile) {
         for (const auto& key : execution.youtube->environment.keys())
             environment.insert(owned(key), owned(execution.youtube->environment.value(key)));
         execution.youtube->environment = std::move(environment);
+        if (execution.youtube->signed_runtime)
+            execution.youtube->signed_runtime->public_key = owned(execution.youtube->signed_runtime->public_key);
     }
     if (profile.options.native_ingress) {
         ownNativeStrings(profile.options.native_ingress->principal);
         ownNativeStrings(profile.options.native_ingress->youtube);
     }
+}
+std::optional<QByteArray> boundedFile(const QString& path, const qint64 maximum) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return std::nullopt;
+    auto bytes = file.read(maximum + 1);
+    if (bytes.size() > maximum)
+        return std::nullopt;
+    return bytes;
+}
+// ADR-0020: the signature, not the location, makes these two files trustworthy.
+std::optional<std::vector<WindowsYoutubeRuntimeSource>> signedRuntimeArtifacts(const QString& application,
+                                                                               const SignedYoutubeRuntimeTrust& trust) {
+    const auto base = application + (application.endsWith(u'/') ? QString{} : QStringLiteral("/"));
+    const auto manifest =
+        boundedFile(base + QStringLiteral("download-tools/youtube-runtime.json"), youtube_runtime_manifest_max_bytes);
+    const auto signature =
+        boundedFile(base + QStringLiteral("download-tools/youtube-runtime.sig"), youtube_runtime_signature_bytes);
+    if (!manifest || !signature)
+        return std::nullopt;
+    auto result = verifySignedYoutubeRuntimeManifest(*manifest, *signature, trust.public_key, trust.minimum_sequence,
+                                                     QStringLiteral("download-tools/youtube/"));
+    if (result.error != SignedYoutubeRuntimeManifestError::None || !result.manifest)
+        return std::nullopt;
+    return std::move(result.manifest->artifacts);
+}
+// An unusable runtime turns off only YouTube; the player and direct media remain.
+void disableYoutube(WindowsPlayerDownloadProfile& profile) {
+    profile.execution.youtube.reset();
+    if (profile.options.native_ingress)
+        profile.options.native_ingress->youtube = {};
 }
 void applyStorageLayout(WindowsPlayerDownloadProfile& profile, const QString& config_root) {
     const auto paths = windowsDownloadStoragePaths(config_root);
@@ -204,6 +239,15 @@ std::optional<WindowsPlayerDownloadProfile> makePackagedPlayerDownloadProfile(Wi
     if (!media || !validPin(profile.execution.media.source_sha256))
         return {};
     profile.execution.media.source_executable = *media;
+    if (profile.execution.youtube && profile.execution.youtube->signed_runtime) {
+        if (!profile.execution.youtube->runtime.artifacts.empty())
+            return {}; // One source of truth for the inventory.
+        auto artifacts = signedRuntimeArtifacts(*application, *profile.execution.youtube->signed_runtime);
+        if (artifacts)
+            profile.execution.youtube->runtime.artifacts = std::move(*artifacts);
+        else
+            disableYoutube(profile);
+    }
     if (profile.execution.youtube) {
         auto& youtube = *profile.execution.youtube;
         for (auto& artifact : youtube.runtime.artifacts) {

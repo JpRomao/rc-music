@@ -1,3 +1,4 @@
+#include "../../qt/support/TestEcdsaSigningKey.hpp"
 #include "../support/ConfiguredDownloadsContractProfile.hpp"
 #include "app/PlayerDownloadsBuildProfile.hpp"
 
@@ -5,6 +6,9 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
@@ -43,6 +47,31 @@ void matchingProfile() {
                                                                              .youtube = expected_profiles.youtube};
 }
 #ifndef RC_MUSIC_TEST_NATIVE_PROFILE_OFF
+// Writes a signed runtime manifest next to a temporary player image (ADR-0020).
+QByteArray signedRuntimeManifest(const QString& application, const test::SigningKey& key, qint64 sequence = 2) {
+    QJsonArray artifacts;
+    for (const auto& [role, path] :
+         std::vector<std::pair<QString, QString>>{{"Extractor", "extractor/yt-dlp.exe"},
+                                                  {"Node", "javascript/node.exe"},
+                                                  {"EjsCore", "extractor/_internal/yt_dlp_ejs/yt/solver/core.min.js"},
+                                                  {"EjsLibrary", "extractor/_internal/yt_dlp_ejs/yt/solver/lib.min.js"},
+                                                  {"Support", "notices/NEW-NOTICE.txt"}})
+        artifacts.append(QJsonObject{{"role", role}, {"path", path}, {"bytes", 1}, {"sha256", QString(64, 'c')}});
+    const auto manifest = QJsonDocument(QJsonObject{{"schemaVersion", 1},
+                                                    {"purpose", "rcmusic-youtube-runtime-v1"},
+                                                    {"sequence", sequence},
+                                                    {"ytDlpVersion", "2026.11.01"},
+                                                    {"artifacts", artifacts}})
+                              .toJson(QJsonDocument::Compact);
+    QDir{}.mkpath(application + QStringLiteral("/download-tools"));
+    QFile json(application + QStringLiteral("/download-tools/youtube-runtime.json"));
+    QFile signature(application + QStringLiteral("/download-tools/youtube-runtime.sig"));
+    if (!json.open(QIODevice::WriteOnly) || !signature.open(QIODevice::WriteOnly))
+        return {};
+    json.write(manifest);
+    signature.write(key.sign(manifest));
+    return manifest;
+}
 WindowsPlayerDownloadProfile packagedPrototype() {
     WindowsPlayerDownloadProfile profile;
     const QStringList names{QStringLiteral("RCMusicDownloadWorker.exe"),
@@ -663,6 +692,71 @@ class ConfiguredDownloadsProfileTests final : public QObject {
         QVERIFY(!QDir{config}.exists());
         QVERIFY(!QDir{first_root}.exists());
         QVERIFY(!QDir{second_root}.exists());
+    }
+    void signedRuntimeManifestReplacesTheCompiledInventory() {
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        const auto application = temporary.filePath(QStringLiteral("app 日本"));
+        test::SigningKey key;
+        QVERIFY(!signedRuntimeManifest(application, key).isEmpty());
+        auto prototype = packagedPrototype();
+        prototype.execution.youtube->runtime.artifacts.clear();
+        prototype.execution.youtube->signed_runtime = SignedYoutubeRuntimeTrust{key.publicKey(), 2};
+        const auto result = makePackagedPlayerDownloadProfile(prototype, temporary.filePath(QStringLiteral("config")),
+                                                              application, QStringLiteral("W:/Windows"));
+        QVERIFY(result);
+        QVERIFY(result->execution.youtube);
+        const auto& artifacts = result->execution.youtube->runtime.artifacts;
+        QCOMPARE(artifacts.size(), std::size_t{5});
+        QCOMPARE(artifacts.front().role, WindowsYoutubeRuntimeRole::Extractor);
+        QCOMPARE(QDir::fromNativeSeparators(artifacts.front().source_path),
+                 application + QStringLiteral("/download-tools/youtube/extractor/yt-dlp.exe"));
+        QCOMPARE(artifacts.back().relative_path, QStringLiteral("notices/NEW-NOTICE.txt"));
+        QCOMPARE(artifacts.back().sha256, QByteArray(64, 'c'));
+        QCOMPARE(result->execution.youtube->environment.value(QStringLiteral("PATH")), QString{});
+        compareProfile(result->options.native_ingress->youtube, prototype.options.native_ingress->youtube);
+    }
+    void unusableSignedManifestTurnsOffOnlyYoutube_data() {
+        QTest::addColumn<int>("defect");
+        QTest::newRow("missing files") << 0;
+        QTest::newRow("other key") << 1;
+        QTest::newRow("tampered manifest") << 2;
+        QTest::newRow("below minimum sequence") << 3;
+    }
+    void unusableSignedManifestTurnsOffOnlyYoutube() {
+        QFETCH(int, defect);
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        const auto application = temporary.filePath(QStringLiteral("app"));
+        test::SigningKey key;
+        test::SigningKey other;
+        if (defect != 0)
+            QVERIFY(!signedRuntimeManifest(application, key, defect == 3 ? 1 : 2).isEmpty());
+        if (defect == 2) {
+            QFile json(application + QStringLiteral("/download-tools/youtube-runtime.json"));
+            QVERIFY(json.open(QIODevice::Append));
+            json.write(" ");
+        }
+        auto prototype = packagedPrototype();
+        prototype.execution.youtube->runtime.artifacts.clear();
+        prototype.execution.youtube->signed_runtime =
+            SignedYoutubeRuntimeTrust{defect == 1 ? other.publicKey() : key.publicKey(), 2};
+        const auto result = makePackagedPlayerDownloadProfile(prototype, temporary.filePath(QStringLiteral("config")),
+                                                              application, QStringLiteral("W:/Windows"));
+        QVERIFY(result);
+        QVERIFY(!result->execution.youtube);
+        QVERIFY(result->options.native_ingress);
+        QVERIFY(result->options.native_ingress->youtube.allowed_origin.isEmpty());
+        QVERIFY(result->options.native_ingress->youtube.endpoint_name.isEmpty());
+        compareProfile(result->options.native_ingress->principal, prototype.options.native_ingress->principal);
+        QCOMPARE(result->execution.network.artifacts.size(), prototype.execution.network.artifacts.size());
+    }
+    void signedTrustAndACompiledInventoryCannotBothApply() {
+        test::SigningKey key;
+        auto prototype = packagedPrototype();
+        prototype.execution.youtube->signed_runtime = SignedYoutubeRuntimeTrust{key.publicKey(), 1};
+        QVERIFY(!makePackagedPlayerDownloadProfile(prototype, QStringLiteral("C:/not-created/config"),
+                                                   QStringLiteral("D:/not-created/app"), QStringLiteral("W:/Windows")));
     }
     void packagedRelativeSourcesRejectAmbiguityBeforeJoining_data() {
         QTest::addColumn<QString>("source");

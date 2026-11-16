@@ -89,7 +89,7 @@ if(TARGET rc_music_player_downloads AND TARGET rc_music_native_messaging AND
     add_executable(rc_music_configured_downloads_profile_tests
         qtest/ConfiguredDownloadsProfileTests.cpp
         "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadsBuildProfile.cpp")
-    target_link_libraries(rc_music_configured_downloads_profile_tests PRIVATE rc_music_player_downloads Qt6::Test)
+    target_link_libraries(rc_music_configured_downloads_profile_tests PRIVATE rc_music_player_downloads Qt6::Test Bcrypt)
     target_compile_definitions(rc_music_configured_downloads_profile_tests PRIVATE
         RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER="${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsContractProfile.hpp"
         RC_MUSIC_NATIVE_BUILD_PROFILES_HEADER="${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsContractProfile.hpp")
@@ -103,7 +103,7 @@ if(TARGET rc_music_player_downloads AND TARGET rc_music_native_messaging AND
     add_executable(rc_music_configured_downloads_profile_off_tests
         qtest/ConfiguredDownloadsProfileTests.cpp
         "${RC_MUSIC_SOURCE_ROOT}/src/app/PlayerDownloadsBuildProfile.cpp")
-    target_link_libraries(rc_music_configured_downloads_profile_off_tests PRIVATE rc_music_player_downloads Qt6::Test)
+    target_link_libraries(rc_music_configured_downloads_profile_off_tests PRIVATE rc_music_player_downloads Qt6::Test Bcrypt)
     target_compile_definitions(rc_music_configured_downloads_profile_off_tests PRIVATE
         RC_MUSIC_TEST_NATIVE_PROFILE_OFF
         RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER="${CMAKE_CURRENT_SOURCE_DIR}/support/ConfiguredDownloadsContractProfile.hpp")

@@ -40,7 +40,9 @@ makePlayerDownloadCheckpointFactory(const WindowsPlayerDownloadProfile& profile,
                                     WindowsPlayerDownloadStoragePreparer prepare = prepareWindowsDownloadStorage);
 
 // Trusted compiled prototype with package-relative source paths. Pure overload
-// rebases sources without filesystem inspection/hashing, snapshots Qt paths and
+// rebases sources without hashing; with a signed YouTube runtime trust it reads
+// only the two bounded manifest files under download-tools/ (ADR-0020) and turns
+// off YouTube alone when they do not verify. It also snapshots Qt paths and
 // pins, enables fixed private storage and supplies an explicit YouTube
 // environment/UTC clock when the resolver is already present. Other roles,
 // limits, options and Native identities retain their existing contracts.

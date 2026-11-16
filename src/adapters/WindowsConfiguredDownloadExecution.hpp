@@ -10,8 +10,16 @@
 #include <optional>
 
 namespace music_player::m0 {
+// ADR-0020: compiled trust anchor for the signed runtime manifest.
+struct SignedYoutubeRuntimeTrust final {
+    QByteArray public_key{}; // P-256 X||Y, 64 raw bytes
+    quint64 minimum_sequence{1};
+};
 struct WindowsYoutubeDownloadProfile final {
     WindowsYoutubeRuntimeConfig runtime{};
+    // When set, the packaged composition takes runtime.artifacts from the signed
+    // manifest next to the player; the compiled artifact list must then be empty.
+    std::optional<SignedYoutubeRuntimeTrust> signed_runtime{};
     QProcessEnvironment environment{};
     std::function<qint64()> epoch_clock{};
     YoutubeResolverLimits limits{};

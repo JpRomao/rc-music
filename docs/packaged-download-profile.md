@@ -103,7 +103,7 @@ output_directory/
         notices/
 ```
 
-O futuro `RCMusic.exe` fica na raiz de `payload`. Por isso o header usa `download-tools/...`, sem prefixo `payload/` nem caminhos absolutos do checkout. O arquivo é um input explícito de `RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER`; o app não lê o JSON da receita ou do recibo para conceder autoridade em runtime.
+O futuro `RCMusic.exe` fica na raiz de `payload`. Por isso o header usa `download-tools/...`, sem prefixo `payload/` nem caminhos absolutos do checkout. O arquivo é um input explícito de `RC_MUSIC_PLAYER_DOWNLOAD_PROFILE_HEADER`; o app não lê o JSON da receita ou do recibo para conceder autoridade em runtime. A exceção é o inventário do runtime YouTube do [ADR-0020](architecture/decisions/0020-signed-youtube-runtime-manifest.md). Quando o header traz `signed_runtime` (chave pública P-256 e sequência mínima) e uma lista de artefatos vazia, o player lê `download-tools/youtube-runtime.json` e `youtube-runtime.sig`, limitados a 1 MiB e 64 bytes. A assinatura é conferida antes do JSON. Se a verificação falhar, só o YouTube é desligado.
 
 O provider gerado fixa os pins da rede, Media Foundation e do resolver opcional, define `prepare_storage=true` e retorna `makePackagedPlayerDownloadProfile(std::move(profile), config_root)`. O helper C++ resolve as fontes em relação ao diretório da imagem do player. Os caminhos mutáveis vêm do [layout privado de storage](player-download-storage.md), sem repetir sua configuração no gerador.
 
