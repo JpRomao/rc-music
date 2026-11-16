@@ -6370,12 +6370,17 @@ void PlayerPresenterTests::drivesTransportPreferencesAndManualTicksDeterministic
     QVERIFY(!presenter.setVolume(2.0));
     QVERIFY(!presenter.setVolume(0.25));
     QCOMPARE(preferences.size(), 1);
+    // Zero volume mutes; unmuting restores the last audible volume, and moving
+    // the volume while muted unmutes.
     QVERIFY(presenter.setVolume(0.0));
-    QVERIFY(presenter.toggleMute());
     QVERIFY(presenter.muted());
     QVERIFY(presenter.toggleMute());
     QVERIFY(!presenter.muted());
     QCOMPARE(presenter.volume(), 0.25);
+    QVERIFY(presenter.toggleMute());
+    QVERIFY(presenter.muted());
+    QVERIFY(presenter.setVolume(0.4));
+    QVERIFY(!presenter.muted());
 }
 
 void PlayerPresenterTests::keepsUnavailableAndTerminalTransportInert() {

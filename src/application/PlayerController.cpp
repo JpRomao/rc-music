@@ -280,11 +280,21 @@ bool PlayerController::setVolume(const double volume) {
         return false;
     }
 
+    const double original_volume = preferences_.volume;
     if (playback_backend_.setVolume(volume) != PlaybackCommandResult::Accepted) {
         return false;
     }
 
+    // Moving the volume unmutes; reaching zero mutes.
+    const bool target_muted = volume == 0.0;
+    if (target_muted != preferences_.muted &&
+        playback_backend_.setMuted(target_muted) != PlaybackCommandResult::Accepted) {
+        (void)playback_backend_.setVolume(original_volume);
+        return false;
+    }
+
     preferences_.volume = volume;
+    preferences_.muted = target_muted;
     if (volume > 0.0) {
         last_nonzero_volume_ = volume;
     }

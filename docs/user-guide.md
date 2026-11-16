@@ -26,7 +26,7 @@ Para buscar no player, clique em **Buscar letra**, confira as tags de título, a
 
 Ao detectar japonês, **Gerar romaji** aparece junto à letra. Na fila, abra **Gerenciar letras** e selecione uma versão japonesa salva. Revise o rascunho editável e salve como uma nova versão. Os tempos da letra são preservados. Com chaves de parceiro, o **LyricFind** pode complementar a busca do LRCLIB. [Preparar o romaji](lyrics-variants.md#gerar-romaji) · [Configurar o LyricFind](lyrics-variants.md#fonte-opcional-lyricfind)
 
-Na barra de volume, a porcentagem atual de **0 a 100%** aparece ao passar o mouse ou durante o arraste, inclusive ao levar o ponteiro para fora do slider enquanto o botão estiver pressionado.
+Na barra de volume, a porcentagem atual de **0 a 100%** aparece ao passar o mouse ou durante o arraste, inclusive ao levar o ponteiro para fora do slider enquanto o botão estiver pressionado. Mexer no volume desativa o mudo; levá-lo a 0% ativa o mudo. O ícone mostra o estado do som: o alto-falante com "x" aparece quando o som está mudo ou em 0%, e **Ativar som** volta ao último volume audível.
 
 ## Pesquisar e solicitar álbuns no Lidarr
 

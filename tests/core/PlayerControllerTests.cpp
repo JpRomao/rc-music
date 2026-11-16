@@ -889,12 +889,57 @@ TEST_CASE("rejected volume command preserves preferences and the last accepted n
 
     backend.volume_result = PlaybackCommandResult::Accepted;
     REQUIRE(controller.setVolume(0.0));
-    REQUIRE(controller.toggleMute());
+    CHECK(controller.preferences().muted);
     REQUIRE(controller.toggleMute());
 
     CHECK_FALSE(controller.preferences().muted);
     CHECK(controller.preferences().volume == Catch::Approx(0.8));
     CHECK((backend.volume_requests == std::vector<double>{0.35, 0.0, 0.8}));
+}
+
+TEST_CASE("changing the volume unmutes and zero volume mutes", "[m0][qt][core][preferences][mute][volume]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform};
+
+    REQUIRE(controller.setVolume(0.35));
+    REQUIRE(controller.toggleMute());
+    REQUIRE(controller.setVolume(0.5));
+    CHECK_FALSE(controller.preferences().muted);
+    CHECK(controller.preferences().volume == Catch::Approx(0.5));
+    CHECK((backend.mute_requests == std::vector<bool>{true, false}));
+    CHECK_FALSE(backend.backend_muted);
+
+    REQUIRE(controller.setVolume(0.0));
+    CHECK(controller.preferences().muted);
+    CHECK(controller.preferences().volume == 0.0);
+    CHECK((backend.mute_requests == std::vector<bool>{true, false, true}));
+    CHECK(backend.backend_muted);
+
+    // Unmuting from zero restores the last audible volume.
+    REQUIRE(controller.toggleMute());
+    CHECK_FALSE(controller.preferences().muted);
+    CHECK(controller.preferences().volume == Catch::Approx(0.5));
+
+    // An unmuted change at a nonzero volume sends no mute command.
+    REQUIRE(controller.setVolume(0.6));
+    CHECK((backend.mute_requests == std::vector<bool>{true, false, true, false}));
+}
+
+TEST_CASE("a rejected mute change keeps the previous volume", "[m0][qt][core][preferences][mute][volume][error]") {
+    RecordingPlaybackBackend backend;
+    RecordingPlatformIntegration platform{true};
+    PlayerController controller{backend, platform};
+    REQUIRE(controller.setVolume(0.35));
+    REQUIRE(controller.toggleMute());
+    const auto expected = controller.preferences();
+    backend.mute_result = PlaybackCommandResult::Shutdown;
+
+    CHECK_FALSE(controller.setVolume(0.5));
+
+    checkUnchangedPreferences(controller.preferences(), expected);
+    CHECK(backend.backend_volume == Catch::Approx(0.35));
+    CHECK(backend.backend_muted);
 }
 
 TEST_CASE("rejected mute command preserves preferences", "[m0][qt][core][preferences][mute][error]") {
@@ -948,7 +993,7 @@ TEST_CASE("unmute restores the last nonzero logical volume", "[m0][qt][core][pre
 
     REQUIRE(controller.setVolume(0.35));
     REQUIRE(controller.setVolume(0.0));
-    controller.toggleMute();
+    CHECK(controller.preferences().muted);
     controller.toggleMute();
 
     CHECK_FALSE(controller.preferences().muted);
