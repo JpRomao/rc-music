@@ -15,7 +15,10 @@ inline constexpr qsizetype pasted_youtube_links_max_chars = 64 * 1024;
 
 struct PastedYoutubeLink final {
     std::string video_id{}, lyrics_page{};
-    bool operator==(const PastedYoutubeLink&) const = default;
+    int line{}; // 1-based line of the YouTube link; not part of the identity.
+    bool operator==(const PastedYoutubeLink& other) const {
+        return video_id == other.video_id && lyrics_page == other.lyrics_page;
+    }
 };
 enum class PastedLinkIssueKind { NotALink, LetrasWithoutYoutube, Duplicate, TooMany, TextTooLong };
 struct PastedLinkIssue final {

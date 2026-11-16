@@ -78,6 +78,14 @@ A retirada da extensão saiu do plano (revisão do ADR-0019 em 2026-11-16). Ela 
 - O filtro é um `SortFilterProxyModel` do QtQml.Models sobre o mesmo modelo de jobs, com `FunctionFilter` pelo papel `state`. Um job que muda de estado troca de filtro sozinho. As ações continuam usando o ID estável do job, não a posição na lista filtrada.
 - Teclado: o grupo é uma parada do Tab (o filtro ativo), e as setas trocam de filtro, como num grupo de opções. Cada filtro tem sua mensagem de lista vazia.
 
+## Contrato de L7
+
+- Decisão do mantenedor (2026-11-16): um link do Letras se junta ao link do YouTube da mesma linha ou da linha anterior. Um link do Letras sozinho vira o aviso "falta o link do YouTube". O app não abre páginas do Letras.
+- `parsePastedYoutubeLinks` lê o texto colado, até 64 KiB. Aceita `youtube.com/watch?v=`, `youtu.be/`, `/shorts/`, `/live/` e `/embed/` em `youtube.com`, `www`, `m` e `music`, com ou sem `https://`. Também aceita o Letras com ou sem `www`, que vira `https://www.letras.mus.br/<caminho>` sem query nem fragmento. Avisos por linha: sem link, Letras sem YouTube, vídeo repetido, mais de 20 links e texto grande demais.
+- O resolvedor ganha `--lookup <id1,id2,...>`: a lista temporária `watch_videos` lida com o `YoutubeTabIE` e a mesma extração plana da busca, sem player nem JavaScript. Só os IDs pedidos, na ordem do pedido. O broker tem o modo `Lookup` e o `ThreadedYoutubeSearch` tem uma fábrica própria para ele.
+- Página Buscar: Colar links abre o campo, e Consultar links mostra os títulos. Um vídeo que não volta da consulta vira "vídeo não encontrado (privado ou removido)". Cada linha tem Abrir no YouTube e Baixar; Baixar todos manda um pedido só com o que ainda não foi pedido. A página do Letras segue em cada item.
+- Pendente: reconstruir o runtime com o entrypoint novo para a consulta de links funcionar no app real.
+
 ## Estado
 
 - L1 concluída: commit `d4cbc8c`.
@@ -88,4 +96,5 @@ A retirada da extensão saiu do plano (revisão do ADR-0019 em 2026-11-16). Ela 
 - L4b concluída (metadados, localizar, playlist e Capas): CTest 707/707, Quick 530/530.
 - L5 concluída no código (resolvedor, broker, sessão, binding e página Buscar) e testada no app real com o runtime reconstruído.
 - L6 concluída: filtros da Atividade.
+- L7 concluída no código: colar vários links do YouTube e do Letras. Falta o runtime reconstruído para o teste real.
 - L4b, restante: Atividade com destinos do MP3 (`63dc156`) e capas reais em memória.

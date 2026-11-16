@@ -118,6 +118,8 @@ Quando o componente de downloads está ativo, abra **Downloads** no player para 
 
 Ao sair pelo menu ou com **Ctrl+Q**, o RC Music salva a fila de downloads. Na próxima abertura, retoma os pendentes na mesma ordem. O download que estava em andamento reinicia a transferência do começo. Os itens cancelados manualmente e os arquivos já concluídos ficam no histórico. Se o processo for encerrado à força, o aplicativo preserva as evidências para revisão em **Downloads**.
 
+Na página **Buscar**, pesquise pelo nome ou use **Colar links** para enviar vários vídeos de uma vez, um link do YouTube por linha. Um link do Letras na mesma linha ou na linha seguinte leva a letra junto. **Consultar links** mostra o título de cada vídeo e avisa sobre linhas sem link. **Abrir no YouTube** abre o vídeo no navegador para conferir antes de baixar. **Baixar todos** envia de uma vez os vídeos que ainda não foram pedidos.
+
 Na página **Atividade**, os filtros **Todos**, **Com erro**, **Concluídos**, **Na fila** e **Baixando** mostram só os pedidos daquele estado. Com o teclado, o grupo de filtros é uma parada do Tab, e as setas para a esquerda e a direita trocam de filtro. Pedidos cancelados aparecem só em **Todos**.
 
 **Abrir pasta de downloads** abre o destino atual no Explorador. Em **Preferências → Downloads → Alterar pasta**, escolha uma pasta local existente no mesmo volume da pasta de downloads do aplicativo. A mudança vale para novas transferências. Os arquivos que já foram baixados ficam onde estão.

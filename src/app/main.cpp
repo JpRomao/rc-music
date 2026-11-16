@@ -651,11 +651,15 @@ int main(int argc, char* argv[]) {
         // borrows, and after the QML roots that show it.
         music_player::m0::OnlineSearchBinding online_search_binding;
         const auto compose_player_downloads = [&](music_player::m0::WindowsPlayerDownloadProfile profile) {
-            // The search uses the same verified runtime as YouTube downloads.
+            // The search and the lookup of pasted links use the same verified
+            // runtime as YouTube downloads.
             std::unique_ptr<music_player::m0::ThreadedYoutubeSearch> online_search;
             if (profile.execution.youtube)
                 online_search = std::make_unique<music_player::m0::ThreadedYoutubeSearch>(
                     music_player::m0::makeWindowsYoutubeBrokerSearchFactory(profile.execution.youtube->runtime,
+                                                                            profile.execution.youtube->environment),
+                    music_player::m0::YoutubeSearchLimits{},
+                    music_player::m0::makeWindowsYoutubeBrokerLookupFactory(profile.execution.youtube->runtime,
                                                                             profile.execution.youtube->environment));
             auto checkpoint_factory = music_player::m0::makePlayerDownloadCheckpointFactory(profile, config_root);
             profile.options.lyrics_writer = &lyrics_binding;

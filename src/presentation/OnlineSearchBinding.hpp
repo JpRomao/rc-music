@@ -5,6 +5,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVariantList>
 
 #include <memory>
@@ -22,6 +23,10 @@ class OnlineSearchBinding final : public QObject {
     Q_PROPERTY(QString query READ query NOTIFY changed)
     Q_PROPERTY(QString statusText READ statusText NOTIFY changed)
     Q_PROPERTY(QVariantList results READ results NOTIFY changed)
+    // L7: the results came from pasted links rather than a text search.
+    Q_PROPERTY(bool linksMode READ linksMode NOTIFY changed)
+    Q_PROPERTY(QStringList linkIssues READ linkIssues NOTIFY changed)
+    Q_PROPERTY(bool canDownloadAll READ canDownloadAll NOTIFY changed)
 
   public:
     explicit OnlineSearchBinding(QObject* parent = nullptr);
@@ -37,6 +42,9 @@ class OnlineSearchBinding final : public QObject {
     [[nodiscard]] QString query() const;
     [[nodiscard]] QString statusText() const;
     [[nodiscard]] QVariantList results() const;
+    [[nodiscard]] bool linksMode() const;
+    [[nodiscard]] QStringList linkIssues() const;
+    [[nodiscard]] bool canDownloadAll() const;
 
     Q_INVOKABLE bool search(const QString& text);
     Q_INVOKABLE void cancel();
@@ -45,6 +53,12 @@ class OnlineSearchBinding final : public QObject {
     // Opens a listed video on YouTube in the default browser, so the user can
     // check it before downloading. Nothing is downloaded.
     Q_INVOKABLE bool openPreview(const QString& video_id);
+    // Reads pasted YouTube links (a Letras page on the same line or the next
+    // one goes with its video) and looks up their titles. Problems are listed
+    // per line in linkIssues.
+    Q_INVOKABLE bool lookupLinks(const QString& text);
+    // Sends every listed link that was not requested yet as one request.
+    Q_INVOKABLE bool downloadAll();
 
   signals:
     void changed();
@@ -54,5 +68,6 @@ class OnlineSearchBinding final : public QObject {
     std::unique_ptr<Impl> impl_;
     void pollBackend();
     void finishAdmission(const DownloadSubmissionResult& result);
+    bool admit(const YoutubeAudioRequest& request, std::vector<std::string> video_ids, const QString& title);
 };
 } // namespace music_player::m0

@@ -22,6 +22,9 @@ PageSurface {
     readonly property bool available: onlineSearch !== null && onlineSearch.available
     readonly property bool busy: available && onlineSearch.busy
     readonly property var results: available ? onlineSearch.results : []
+    // L7: several YouTube links at once, each with an optional Letras page.
+    readonly property bool linksMode: available && onlineSearch.linksMode === true
+    readonly property var linkIssues: available && onlineSearch.linkIssues ? onlineSearch.linkIssues : []
     embedded: true
     padding: 0
     focus: true
@@ -33,6 +36,10 @@ PageSurface {
     function submit() {
         if (available && !busy && queryField.text.trim().length > 0)
             onlineSearch.search(queryField.text);
+    }
+    function submitLinks() {
+        if (available && !busy && linksField.text.trim().length > 0)
+            onlineSearch.lookupLinks(linksField.text);
     }
 
     background: Rectangle {
@@ -85,6 +92,49 @@ PageSurface {
                 text: searchText.cancel
                 onClicked: root.onlineSearch.cancel()
             }
+            AccessibleTransportButton {
+                id: linksToggle
+                objectName: "search-links-toggle"
+                contract: root.contract
+                flat: true
+                checkable: true
+                iconName: "plus"
+                iconWithText: true
+                text: searchText.pasteLinks
+                onCheckedChanged: {
+                    if (checked)
+                        linksField.forceActiveFocus(Qt.TabFocusReason);
+                }
+            }
+        }
+        ColumnLayout {
+            objectName: "search-links-box"
+            Layout.fillWidth: true
+            visible: root.available && linksToggle.checked
+            spacing: root.contract.spacingUnit
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 112
+                TextArea {
+                    id: linksField
+                    objectName: "search-links-field"
+                    enabled: !root.busy
+                    wrapMode: TextEdit.NoWrap
+                    placeholderText: searchText.linksPlaceholder
+                    font.family: root.contract.bodyFontFamily
+                    font.pixelSize: root.contract.typeBody
+                    Accessible.name: searchText.linksField
+                }
+            }
+            AccessibleTransportButton {
+                objectName: "search-links-submit"
+                contract: root.contract
+                enabled: !root.busy && linksField.text.trim().length > 0
+                iconName: "search"
+                iconWithText: true
+                text: searchText.linksSubmit
+                onClicked: root.submitLinks()
+            }
         }
         Text {
             objectName: "search-status"
@@ -96,6 +146,28 @@ PageSurface {
             color: root.contract.textSecondaryColor
             font.family: root.contract.bodyFontFamily
             font.pixelSize: root.contract.typeBody
+        }
+        Text {
+            objectName: "search-link-issues"
+            Layout.fillWidth: true
+            visible: root.linksMode && root.linkIssues.length > 0
+            text: root.linkIssues.join("\n")
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: root.contract.highContrast ? root.contract.textPrimaryColor : root.contract.warningColor
+            font.family: root.contract.bodyFontFamily
+            font.pixelSize: root.contract.typeCaption
+        }
+        AccessibleTransportButton {
+            objectName: "search-download-all"
+            contract: root.contract
+            visible: root.linksMode && root.results.length > 0
+            enabled: root.onlineSearch !== null && root.onlineSearch.canDownloadAll === true
+            iconName: "arrow-down"
+            iconWithText: true
+            text: searchText.downloadAll
+            accessibleName: searchText.downloadAllName
+            onClicked: root.onlineSearch.downloadAll()
         }
         ListView {
             id: list

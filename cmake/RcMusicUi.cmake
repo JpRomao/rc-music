@@ -54,7 +54,7 @@ add_library(rc_music_online_search STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/OnlineSearchBinding.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/OnlineSearchBinding.cpp")
 target_include_directories(rc_music_online_search PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src" "${RC_MUSIC_SOURCE_ROOT}/include")
-target_link_libraries(rc_music_online_search PUBLIC Qt6::Core Qt6::Gui)
+target_link_libraries(rc_music_online_search PUBLIC rc_music_youtube_codec Qt6::Core Qt6::Gui)
 set_target_properties(rc_music_online_search PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_online_search)
 

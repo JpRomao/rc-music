@@ -12,6 +12,7 @@ using namespace music_player::m0;
 namespace {
 struct SearchState final {
     std::vector<std::string> queries;
+    std::vector<std::vector<std::string>> lookups;
     std::optional<OnlineSearchOutcome> outcome;
     int cancels{};
     bool refuse{false};
@@ -24,6 +25,12 @@ class FakeSearch final : public OnlineSearch {
         if (state.refuse)
             return std::nullopt;
         state.queries.push_back(query);
+        return ++state.ticket;
+    }
+    std::optional<std::uint64_t> lookup(const std::vector<std::string>& ids) override {
+        if (state.refuse)
+            return std::nullopt;
+        state.lookups.push_back(ids);
         return ++state.ticket;
     }
     std::optional<OnlineSearchOutcome> poll() override { return std::exchange(state.outcome, std::nullopt); }
@@ -48,7 +55,11 @@ class FakeSubmission final : public AsyncYoutubeAudioSubmission {
     DownloadSubmissionResult result() const {
         if (error != DownloadSubmissionError::None)
             return {.error = error};
-        return {.error = DownloadSubmissionError::None, .job_ids = {"job-1"}};
+        // One job per item of the last request.
+        std::vector<std::string> jobs;
+        for (std::size_t index = 0; index < requests.back().items.size(); ++index)
+            jobs.push_back("job-" + std::to_string(index + 1));
+        return {.error = DownloadSubmissionError::None, .job_ids = jobs};
     }
 };
 const std::string first = "aB0-_Cd1EF2";
@@ -208,6 +219,73 @@ class OnlineSearchBindingTests final : public QObject {
         h.submission.error = DownloadSubmissionError::NotAvailable;
         QVERIFY(!h.binding.download(QString::fromStdString(first)));
         QVERIFY(h.binding.statusText() != busy);
+    }
+    void pastedLinksAreLookedUpAndKeepTheirLetrasPages() {
+        Harness h;
+        const auto pasted = QStringLiteral("https://youtu.be/aB0-_Cd1EF2 https://www.letras.mus.br/lia/mar/\n"
+                                           "https://www.youtube.com/watch?v=Zz9_-Yy8Xx7\n"
+                                           "https://www.youtube.com/watch?v=Aa1_-Bb2Cc3\n"
+                                           "texto qualquer\n"
+                                           "https://www.letras.mus.br/sozinha/\n");
+        QVERIFY(h.binding.lookupLinks(pasted));
+        QVERIFY(h.binding.busy());
+        QVERIFY(h.binding.linksMode());
+        QCOMPARE(h.state.lookups, (std::vector<std::vector<std::string>>{{first, second, "Aa1_-Bb2Cc3"}}));
+        QVERIFY(h.state.queries.empty());
+        // Problems are listed per line while the lookup runs.
+        QCOMPARE(h.binding.linkIssues(),
+                 (QStringList{QStringLiteral("Linha 4: não é um link do YouTube nem do Letras."),
+                              QStringLiteral("Linha 5: falta o link do YouTube para esta página do Letras.")}));
+        // The third video is not found (private or removed).
+        h.complete(found(1));
+        QCOMPARE(h.binding.results().size(), 2);
+        QVERIFY(at(h.binding, 0).value("hasLyricsPage").toBool());
+        QVERIFY(!at(h.binding, 1).value("hasLyricsPage").toBool());
+        QCOMPARE(h.binding.linkIssues().last(),
+                 QStringLiteral("Linha 3: vídeo não encontrado no YouTube (privado ou removido)."));
+        QCOMPARE(h.binding.statusText(), QStringLiteral("2 links prontos para baixar."));
+        QVERIFY(h.binding.canDownloadAll());
+
+        // One link alone keeps its Letras page too.
+        QVERIFY(h.binding.download(QString::fromStdString(first)));
+        QCOMPARE(h.submission.requests.back().items.front().lyrics_page,
+                 std::string{"https://www.letras.mus.br/lia/mar/"});
+        QVERIFY(h.binding.downloadAll());
+        const auto& all = h.submission.requests.back();
+        QCOMPARE(all.items.size(), std::size_t{1}); // Only what was not requested yet.
+        QCOMPARE(all.items.front().video_id, second);
+        QCOMPARE(all.items.front().title, std::string{"Sem canal"});
+        QVERIFY(at(h.binding, 1).value("requested").toBool());
+        QVERIFY(!h.binding.canDownloadAll());
+        QVERIFY(!h.binding.downloadAll());
+    }
+    void downloadAllSendsOneRequestWithEveryLink() {
+        Harness h;
+        QVERIFY(h.binding.lookupLinks(QStringLiteral("https://youtu.be/aB0-_Cd1EF2\nhttps://youtu.be/Zz9_-Yy8Xx7")));
+        QVERIFY(h.binding.linkIssues().isEmpty());
+        h.complete(found(1));
+        QVERIFY(h.binding.downloadAll());
+        QCOMPARE(h.submission.requests.size(), std::size_t{1});
+        QCOMPARE(h.submission.requests.front().items.size(), std::size_t{2});
+        QVERIFY(at(h.binding, 0).value("requested").toBool());
+        QVERIFY(at(h.binding, 1).value("requested").toBool());
+        QCOMPARE(h.binding.statusText(), QStringLiteral("2 áudios foram para os downloads. Acompanhe em Atividade."));
+    }
+    void pastingNothingUsableDoesNotLookUp() {
+        Harness h;
+        QVERIFY(!h.binding.lookupLinks(QStringLiteral("nada aqui")));
+        QVERIFY(h.state.lookups.empty());
+        QCOMPARE(h.binding.statusText(), QStringLiteral("Nenhum link do YouTube encontrado."));
+        QCOMPARE(h.binding.linkIssues().size(), 1);
+        QVERIFY(!h.binding.lookupLinks(QStringLiteral("  ")));
+        QCOMPARE(h.binding.statusText(), QStringLiteral("Cole um ou mais links do YouTube, um por linha."));
+        // A normal search leaves the link mode.
+        QVERIFY(h.binding.lookupLinks(QStringLiteral("https://youtu.be/aB0-_Cd1EF2")));
+        h.complete(found(1));
+        QVERIFY(h.binding.search(QStringLiteral("lia")));
+        QVERIFY(!h.binding.linksMode());
+        QVERIFY(h.binding.linkIssues().isEmpty());
+        QVERIFY(!h.binding.downloadAll());
     }
     void previewOpensOnlyListedVideosInTheBrowser() {
         UrlRecorder browser;

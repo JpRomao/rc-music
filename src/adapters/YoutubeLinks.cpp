@@ -110,7 +110,7 @@ PastedYoutubeLinks parsePastedYoutubeLinks(const QString& text) {
                     too_many = true;
                     last_link.reset();
                 } else {
-                    parsed.links.push_back({*id, {}});
+                    parsed.links.push_back({*id, {}, line});
                     last_link = parsed.links.size() - 1;
                     last_link_line = line;
                 }

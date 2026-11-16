@@ -24,6 +24,11 @@ TestCase {
         property var searches: []
         property var downloads: []
         property var previews: []
+        property bool linksMode: false
+        property var linkIssues: []
+        property bool canDownloadAll: false
+        property var pastedTexts: []
+        property int downloadAllCalls: 0
         property int cancels: 0
         function search(text) {
             searches = searches.concat([text]);
@@ -40,6 +45,17 @@ TestCase {
         }
         function openPreview(id) {
             previews = previews.concat([id]);
+            return true;
+        }
+        function lookupLinks(text) {
+            pastedTexts = pastedTexts.concat([text]);
+            busy = true;
+            linksMode = true;
+            return true;
+        }
+        function downloadAll() {
+            downloadAllCalls += 1;
+            canDownloadAll = false;
             return true;
         }
     }
@@ -61,6 +77,11 @@ TestCase {
         finder.searches = [];
         finder.downloads = [];
         finder.previews = [];
+        finder.linksMode = false;
+        finder.linkIssues = [];
+        finder.canDownloadAll = false;
+        finder.pastedTexts = [];
+        finder.downloadAllCalls = 0;
         finder.cancels = 0;
         shell = createTemporaryObject(shellComponent, null);
         verify(shell);
@@ -137,6 +158,51 @@ TestCase {
         compare(finder.downloads, ["aB0-_Cd1EF2"]);
         tryVerify(() => findChild(list, "search-row-Zz9_-Yy8Xx7") !== null);
         verify(!findChild(findChild(list, "search-row-Zz9_-Yy8Xx7"), "search-download").enabled);
+    }
+    function test_severalLinksCanBePastedAtOnce() {
+        const panel = openSearch();
+        const toggle = findChild(panel, "search-links-toggle");
+        verify(toggle && toggle.visible);
+        compare(toggle.text, "Colar links");
+        const field = findChild(panel, "search-links-field");
+        verify(!field.visible, "The links box opens on demand");
+        mouseClick(toggle);
+        tryVerify(() => field.visible);
+        verify(field.activeFocus);
+        const submit = findChild(panel, "search-links-submit");
+        verify(!submit.enabled, "Nothing pasted yet");
+        field.text = "https://youtu.be/aB0-_Cd1EF2\nhttps://www.letras.mus.br/lia/mar/";
+        verify(submit.enabled);
+        compare(submit.text, "Consultar links");
+        mouseClick(submit);
+        compare(finder.pastedTexts, ["https://youtu.be/aB0-_Cd1EF2\nhttps://www.letras.mus.br/lia/mar/"]);
+        compare(finder.searches, []);
+
+        finder.busy = false;
+        finder.linkIssues = ["Linha 3: não é um link do YouTube nem do Letras."];
+        finder.results = [
+            {
+                videoId: "aB0-_Cd1EF2",
+                title: "Canção do Mar",
+                channel: "Lia Campos",
+                durationText: "3:37",
+                requested: false,
+                hasLyricsPage: true
+            }
+        ];
+        finder.canDownloadAll = true;
+        const issues = findChild(panel, "search-link-issues");
+        tryVerify(() => issues.visible);
+        compare(issues.text, "Linha 3: não é um link do YouTube nem do Letras.");
+        const all = findChild(panel, "search-download-all");
+        tryVerify(() => all.visible && all.enabled);
+        compare(all.text, "Baixar todos");
+        mouseClick(all);
+        compare(finder.downloadAllCalls, 1);
+        verify(!all.enabled);
+        // Download all belongs to pasted links, not to a text search.
+        finder.linksMode = false;
+        tryVerify(() => !all.visible);
     }
     function test_eachResultCanBePreviewedInTheBrowser() {
         const panel = openSearch();
