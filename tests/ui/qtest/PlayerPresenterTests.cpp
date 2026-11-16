@@ -548,6 +548,7 @@ class PlayerPresenterTests final : public QObject {
     void localOpenPublishesUnicodeFallbackAndStartsMetadata();
     void localOpenPublishesOrderedQueueWithDistinctDuplicateOccurrences();
     void playlistBatchAppendsWithoutSelectionOrPlaybackAndCopiesTheQueue();
+    void acceptedLocalIngressIsReportedToTheLibraryObserver();
     void playlistAppendPreservesActivePlaybackAndRejectsAnInvalidBatch();
     void playlistAppendAcknowledgesItsCommitWhenALaterObserverThrows();
     void openingAdditionalFilesPreservesTheQueueAndPlaysTheFirstNewOccurrence();
@@ -943,6 +944,37 @@ void PlayerPresenterTests::playlistBatchAppendsWithoutSelectionOrPlaybackAndCopi
     QVERIFY(presenter.removeQueueOccurrence(LocalQueueListModel::occurrenceId(snapshot.items[1].occurrence_id)));
     QCOMPARE(snapshot.items.size(), std::size_t{3});
     QCOMPARE(presenter.playlistQueueSnapshot().items.size(), std::size_t{2});
+}
+
+void PlayerPresenterTests::acceptedLocalIngressIsReportedToTheLibraryObserver() {
+    // ADR-0019: every accepted local ingress feeds the permanent library.
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    FakeLocalSourceDiscovery discovery;
+    const auto a = localTestPath(u8"Aberta 日本.mp3"), b = localTestPath(u8"Da playlist.flac"),
+               c = localTestPath(u8"Solta.wav");
+    PlayerPresenter presenter(
+        platform, backend, metadata, [a] { return std::vector<std::filesystem::path>{a}; }, discovery);
+    std::vector<std::vector<std::filesystem::path>> admitted;
+    presenter.setLocalAdmissionObserver([&](const std::vector<std::filesystem::path>& paths) {
+        admitted.push_back(paths);
+        throw std::runtime_error("observer failures never undo the queue change");
+    });
+    QVERIFY(presenter.openAudio());
+    QVERIFY(presenter.addAudio());
+    QVERIFY(presenter.appendPlaylistSources({b}));
+    QVERIFY(!presenter.appendPlaylistSources({std::filesystem::path("relative.mp3")}));
+    QVERIFY(presenter.openSourcePaths({c}, 1));
+    const DiscoveryGeneration generation = discovery.requests.front().generation;
+    discovery.publishBatch(generation, 1, {c}, {}, 1);
+    PlayerPresenterTestAccess::pollSourceImport(presenter);
+    QCOMPARE(admitted.size(), std::size_t{4});
+    QCOMPARE(admitted[0], std::vector<std::filesystem::path>{a});
+    QCOMPARE(admitted[1], std::vector<std::filesystem::path>{a});
+    QCOMPARE(admitted[2], std::vector<std::filesystem::path>{b});
+    QCOMPARE(admitted[3], std::vector<std::filesystem::path>{c});
+    QCOMPARE(presenter.playlistQueueSnapshot().items.size(), std::size_t{4});
 }
 
 void PlayerPresenterTests::playlistAppendPreservesActivePlaybackAndRejectsAnInvalidBatch() {

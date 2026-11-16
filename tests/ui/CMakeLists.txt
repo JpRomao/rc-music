@@ -101,6 +101,9 @@ set_target_properties(rc_music_playlists_store_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_library_store_tests rc_music.library.store
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtJsonLibraryStoreTests.cpp" rc_music_library rc_music_media_data)
 set_target_properties(rc_music_library_store_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_library_binding_tests rc_music.library.binding
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/LibraryBindingTests.cpp" rc_music_library)
+set_target_properties(rc_music_library_binding_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_playlists_binding_tests rc_music.playlists.binding
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/PlaylistsBindingTests.cpp" rc_music_playlists)
 set_target_properties(rc_music_playlists_binding_tests PROPERTIES AUTOMOC ON)

@@ -1609,6 +1609,19 @@ void PlayerPresenter::setSourceExitDrainedProbe(std::function<bool()> probe) {
 void PlayerPresenter::setPlaylistExitPreparationProbe(std::function<ExitPreparationState()> probe) {
     playlist_exit_preparation_probe_ = std::move(probe);
 }
+void PlayerPresenter::setLocalAdmissionObserver(
+    std::function<void(const std::vector<std::filesystem::path>&)> observer) {
+    local_admission_observer_ = std::move(observer);
+}
+void PlayerPresenter::notifyLocalAdmission(const std::vector<std::filesystem::path>& paths) noexcept {
+    if (!local_admission_observer_ || paths.empty())
+        return;
+    try {
+        local_admission_observer_(paths);
+    } catch (...) {
+        // The catalog is a separate destination; it never undoes the queue change.
+    }
+}
 
 void PlayerPresenter::cancelPendingPlaylistExit() {
     if (playlist_exit_deadline_.has_value()) {
@@ -1839,6 +1852,9 @@ bool PlayerPresenter::openSelectedAudio(const std::vector<std::filesystem::path>
     artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
     controller_.applyBackendSnapshot(backend_.snapshot());
     sessionStructureDidChange();
+    notifyLocalAdmission(selected_paths);
+    if (!guard)
+        return true;
     reconcileTimer();
     emit stateChanged();
     if (guard)
@@ -1895,6 +1911,9 @@ bool PlayerPresenter::addSelectedAudio(const std::vector<std::filesystem::path>&
         controller_.applyBackendSnapshot(backend_.snapshot());
     }
     sessionStructureDidChange();
+    notifyLocalAdmission(selected_paths);
+    if (!guard)
+        return true;
     reconcileTimer();
     emit stateChanged();
     if (!guard)
@@ -1933,7 +1952,11 @@ bool PlayerPresenter::appendPlaylistSources(std::vector<std::filesystem::path> p
     }
     bool committed{};
     try {
-        return appendLocalSourcesWithoutPlayback(std::move(paths), committed, nullptr);
+        const auto admitted = paths;
+        const auto accepted = appendLocalSourcesWithoutPlayback(std::move(paths), committed, nullptr);
+        if (accepted)
+            notifyLocalAdmission(admitted);
+        return accepted;
     } catch (...) {
         // A notification can fail after the queue transaction. Preserve the
         // committed acknowledgement so the caller cannot replay that batch.
@@ -2727,6 +2750,7 @@ bool PlayerPresenter::applySourceImportBatch(LocalSourceDiscoveryBatch batch) {
 
     const std::size_t insertion_index = sourceImportInsertionIndex();
     const std::size_t insertion_count = batch.accepted_paths.size();
+    const auto admitted = batch.accepted_paths;
     if (!local_queue_.insert(std::move(batch.accepted_paths), insertion_index))
         return false;
     if (!local_queue_model_.insert(local_queue_.items().subspan(insertion_index, insertion_count), insertion_index))
@@ -2772,6 +2796,7 @@ bool PlayerPresenter::applySourceImportBatch(LocalSourceDiscoveryBatch batch) {
     }
 
     sessionStructureDidChange();
+    notifyLocalAdmission(admitted);
     emit stateChanged();
     emit playbackChanged();
     return true;

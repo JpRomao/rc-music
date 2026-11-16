@@ -449,6 +449,15 @@ bool PlaylistsBinding::enqueuePlaylist(const QString& value) {
     emit changed();
     return accepted;
 }
+PlaylistsBinding::Paths PlaylistsBinding::entryPaths() const {
+    Paths result;
+    if (!impl_->ready)
+        return result;
+    for (const auto& playlist : impl_->library.snapshot().playlists)
+        for (const auto& entry : playlist.entries)
+            result.push_back(entry.source_path);
+    return result;
+}
 bool PlaylistsBinding::retrySave() { return impl_->save(); }
 void PlaylistsBinding::discardPending() {
     if (impl_->pending)

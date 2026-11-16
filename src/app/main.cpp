@@ -8,6 +8,7 @@
 #endif
 #include "PlayerDownloadsBuildProfile.hpp"
 #endif
+#include "adapters/QtJsonLibraryStore.hpp"
 #include "adapters/QtJsonLyricsVariantsStore.hpp"
 #include "adapters/QtJsonPlaylistStore.hpp"
 #include "adapters/QtLyricsRomanizer.hpp"
@@ -41,6 +42,7 @@
 #include "presentation/ApplicationIdentity.hpp"
 #include "presentation/ApplicationText.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
+#include "presentation/LibraryBinding.hpp"
 #include "presentation/LifecycleText.hpp"
 #include "presentation/LyricsBinding.hpp"
 #include "presentation/PlayerPresenter.hpp"
@@ -481,6 +483,8 @@ int main(int argc, char* argv[]) {
         music_player::m0::AudioFileLocator* const playlist_locator = nullptr;
 #endif
         std::unique_ptr<music_player::m0::PlaylistsBinding> playlists_binding;
+        std::unique_ptr<music_player::m0::LibraryBinding> library_binding;
+        bool library_queue_seeded{}, library_playlists_seeded{};
 #ifdef M0_QT_COMBINED_AUDIO
         auto artwork_cache = std::make_shared<music_player::m0::ArtworkImageCache>();
         music_player::m0::QtMultimediaPlaybackBackend backend;
@@ -566,9 +570,11 @@ int main(int argc, char* argv[]) {
 #endif
             const bool lyrics_drained = lyrics_binding.prepareExit();
             const bool playlists_drained = !playlists_binding || playlists_binding->prepareExit();
+            // A library write in flight finishes first; a failed one never holds exit.
+            const bool library_drained = !library_binding || !library_binding->savingForExit();
             return !retained_source_command.has_value() && single_instance.pendingCommandCount() == 0 &&
                    source_dispatcher.hasDrainedAcceptedWork() && lyrics_drained && playlists_drained &&
-                   downloads_component_drained;
+                   library_drained && downloads_component_drained;
         });
         QObject::connect(&single_instance, &music_player::m0::QtSingleInstanceCoordinator::commandAvailable,
                          &source_ipc_context, pump_source_commands, Qt::DirectConnection);
@@ -761,6 +767,39 @@ int main(int argc, char* argv[]) {
             [&](auto paths) { return presenter.appendPlaylistSources(std::move(paths)); }, nullptr, playlist_picker,
             playlist_locator);
         static_cast<void>(playlists_binding->retryLoad());
+        // ADR-0019: the permanent library sits next to the playlists in the configuration root.
+        library_binding = std::make_unique<music_player::m0::LibraryBinding>(
+            std::make_shared<music_player::m0::QtJsonLibraryStore>(playlists_config_root));
+        presenter.setLocalAdmissionObserver([&](const std::vector<std::filesystem::path>& paths) {
+            if (library_binding)
+                library_binding->admit(paths);
+        });
+        // First use only (the binding ignores seeds once library.json exists):
+        // adopt the references already in the queue and in the playlists, once each.
+        auto seed_library = [&] {
+            if (!library_binding || !library_binding->ready())
+                return;
+            if (!library_queue_seeded) {
+                library_queue_seeded = true;
+                auto snapshot = presenter.playlistQueueSnapshot();
+                music_player::m0::LibraryBinding::Paths paths;
+                paths.reserve(snapshot.items.size());
+                for (auto& item : snapshot.items)
+                    paths.push_back(std::move(item.source_path));
+                library_binding->seed(std::move(paths));
+            }
+            if (!library_playlists_seeded && playlists_binding && playlists_binding->ready()) {
+                library_playlists_seeded = true;
+                library_binding->seed(playlists_binding->entryPaths());
+            }
+        };
+        QObject::connect(library_binding.get(), &music_player::m0::LibraryBinding::changed, library_binding.get(),
+                         seed_library);
+        QObject::connect(playlists_binding.get(), &music_player::m0::PlaylistsBinding::changed, library_binding.get(),
+                         seed_library);
+        QObject::connect(&application, &QCoreApplication::aboutToQuit, library_binding.get(),
+                         &music_player::m0::LibraryBinding::beginShutdown);
+        static_cast<void>(library_binding->start());
         presenter.setPlaylistExitPreparationProbe([&] {
             if (!playlists_binding->hasPendingChange())
                 return music_player::m0::ExitPreparationState::Ready;

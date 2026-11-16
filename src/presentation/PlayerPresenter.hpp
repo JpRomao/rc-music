@@ -358,6 +358,9 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] qulonglong sourceImportInspectedCount() const noexcept;
     void setSourceExitDrainedProbe(std::function<bool()> probe);
     void setPlaylistExitPreparationProbe(std::function<ExitPreparationState()> probe);
+    // ADR-0019: receives the paths of every accepted local ingress (open, add,
+    // drop/forwarding, playlist) after the queue commits. Exceptions are contained.
+    void setLocalAdmissionObserver(std::function<void(const std::vector<std::filesystem::path>&)> observer);
     void cancelPendingPlaylistExit();
     // A complete pair or an empty pair is accepted before its first begin only.
     // An active/used gate cannot be detached or replaced to bypass preparation.
@@ -508,6 +511,7 @@ class PlayerPresenter final : public QObject {
     void discardStaleRestoredSessionState();
     void cancelRestoredPositionForExplicitTransport();
     void sessionStructureDidChange();
+    void notifyLocalAdmission(const std::vector<std::filesystem::path>& paths) noexcept;
     void observeSessionPosition(bool checkpoint);
     void reconcileRestoredPosition();
     [[nodiscard]] bool hasSourceVolumeRecovery() const noexcept;
@@ -658,6 +662,7 @@ class PlayerPresenter final : public QObject {
     std::optional<SystemPowerEvent> last_system_power_event_{};
     std::function<bool()> source_exit_drained_probe_{};
     std::function<ExitPreparationState()> playlist_exit_preparation_probe_{};
+    std::function<void(const std::vector<std::filesystem::path>&)> local_admission_observer_{};
     std::optional<PlaybackEvent> deferred_playback_event_{};
     WindowNotice window_notice_{WindowNotice::NoNotice};
     bool tray_notice_enabled_{true};

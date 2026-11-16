@@ -113,6 +113,15 @@ class PlaylistsBindingTests final : public QObject {
         QVERIFY(binding.playlists().isEmpty());
         QVERIFY(!binding.statusText().isEmpty());
     }
+    void confirmedEntryPathsSeedTheLibraryOnlyOnceLoaded() {
+        auto store = std::make_shared<Store>();
+        const std::filesystem::path a{L"C:/Música/a.mp3"}, b{L"D:/b.flac"};
+        store->disk = {{{{3, "Primeira", {{1, a}, {2, b}}}, {4, "Segunda", {{5, a}}}}}, PlaylistLoadStatus::Loaded};
+        PlaylistsBinding binding(store, [] { return PlaylistsBinding::Paths{}; }, [](auto) { return true; });
+        QVERIFY(binding.entryPaths().empty()); // Not loaded yet.
+        load(binding);
+        QCOMPARE(binding.entryPaths(), (PlaylistsBinding::Paths{a, b, a}));
+    }
     void aPlaylistIsPublishedOnlyAfterSavedAndEditingDoesNotTouchTheQueue() {
         auto store = std::make_shared<Store>();
         int appends{};

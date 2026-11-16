@@ -25,3 +25,16 @@
 - Limites: 20.000 registros, 512 bytes por texto, 32.768 unidades por caminho e 24 MiB de carga útil.
 - A busca sem acento fica na apresentação (L4), com `QString`, porque o núcleo não depende de Qt.
 - O store copia o padrão do `QtJsonPlaylistStore`: lock cooperativo, primário mais `.bak`, versão futura nunca sobrescrita, e só `Saved` confirma.
+
+## Contrato de L2
+
+- `LibraryBinding` carrega e grava `library.json` num worker. O catálogo confirmado só avança com `Saved`. Ingressos que chegam durante uma gravação entram numa gravação seguinte.
+- Uma falha mantém a mudança pendente até um novo ingresso ou `retrySave`, sem repetir sozinha. A saída do app espera só a gravação em andamento; uma falha nunca segura a saída.
+- `PlayerPresenter::setLocalAdmissionObserver` recebe os caminhos aceitos em Abrir, Adicionar, soltar/encaminhamento e enfileirar playlist, depois que a fila confirma. Exceções do observador não desfazem a fila. Downloads ficam para L3.
+- Semente de primeiro uso: só quando `library.json` não existia, uma vez da fila e uma vez das playlists (`PlaylistsBinding::entryPaths`). Depois disso, sementes são ignoradas, então um registro removido não volta.
+- Biblioteca ilegível (inválida, versão futura, indisponível) nunca é sobrescrita; ingressos ficam em memória, com limite.
+
+## Estado
+
+- L1 concluída: commit `d4cbc8c`.
+- L2 concluída: catálogo alimentado pelo ingresso local, com 704/704 CTest (sem a suíte Quick, sem mudança de QML).

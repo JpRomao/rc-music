@@ -47,6 +47,8 @@ class PlaylistsBinding final : public QObject {
     [[nodiscard]] bool canReplaceFile() const;
     [[nodiscard]] bool canRetrySave() const;
     [[nodiscard]] bool hasPendingChange() const;
+    // Paths of every confirmed entry (empty until loaded), for the library's first-use seed.
+    [[nodiscard]] Paths entryPaths() const;
     Q_INVOKABLE bool selectPlaylist(const QString& id);
     Q_INVOKABLE bool createPlaylist(const QString& name);
     Q_INVOKABLE bool renamePlaylist(const QString& id, const QString& name);
