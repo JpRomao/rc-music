@@ -163,6 +163,10 @@ class FakeSearchIE:
     pass
 
 
+class FakeTabIE:
+    pass
+
+
 class Exchange:
     def __init__(self):
         self.closed = False
@@ -198,6 +202,7 @@ class Bundle:
         self.jsc = public_api(self.registry._jsc_providers)
         self.YoutubeIE = FakeIE
         self.YoutubeSearchIE = FakeSearchIE
+        self.YoutubeTabIE = FakeTabIE
         self.constructed, self.closed = 0, 0
         self.options, self.auto_init = None, None
         self.extract_calls, self.ies = [], []
@@ -768,6 +773,72 @@ class SearchModeTests(unittest.TestCase):
                                           runtime_loader=lambda: bundle), 0)
         self.assertEqual(bundle.constructed, 0)
         self.assertEqual(frames(output.getvalue()), [{"v": 1, "kind": "failure", "seq": 1, "code": "unsupported"}])
+
+
+class LookupModeTests(unittest.TestCase):
+    """L7: titles of pasted links, by video ID, with the same flat extraction."""
+
+    def lookup(self, ids, entries, loader=None):
+        bundle = Bundle()
+        bundle.info = {"_type": "playlist", "id": "TLGG", "entries": entries}
+        output = io.BytesIO()
+        code = resolver.main(["--lookup", ids], reader=io.BytesIO(), writer=output,
+                             runtime_loader=loader or (lambda: bundle))
+        return code, bundle, frames(output.getvalue()), output.getvalue()
+
+    def test_lookup_returns_metadata_for_the_requested_ids_in_request_order(self):
+        entries = [
+            search_entry("Zz9_-Yy8Xx7", "Segundo", channel="Canal B", duration=96),
+            search_entry(VIDEO, "Canção do Mar", channel="Lia Campos", duration=217.4),
+            search_entry("Ll1_-Mm2Nn3", "Não pedido"),
+            search_entry("Pp4_-Qq5Rr6", "Ao vivo", live_status="is_live"),
+        ]
+        ids = ",".join([VIDEO, "Zz9_-Yy8Xx7", "Pp4_-Qq5Rr6", "Aa0_-Bb1Cc2"])
+        code, bundle, actual, raw = self.lookup(ids, entries)
+        self.assertEqual(code, 0)
+        self.assertEqual(bundle.extract_calls,
+                         [("https://www.youtube.com/watch_videos?video_ids=" + ids, False)])
+        self.assertEqual(len(bundle.ies), 1)
+        self.assertIsInstance(bundle.ies[0], FakeTabIE)
+        self.assertEqual(bundle.options["extract_flat"], "in_playlist")
+        self.assertNotIn("format", bundle.options)
+        self.assertEqual(bundle.options["js_runtimes"], {})
+        # Unrequested, live and missing videos are left out; the order follows the request.
+        self.assertEqual(actual, [{"v": 1, "kind": "result", "seq": 1, "data": {"entries": [
+            {"id": VIDEO, "title": "Canção do Mar", "channel": "Lia Campos", "duration": 217},
+            {"id": "Zz9_-Yy8Xx7", "title": "Segundo", "channel": "Canal B", "duration": 96},
+        ]}}])
+        self.assertNotIn(b"private", raw)
+
+    def test_up_to_twenty_unique_ids_are_accepted(self):
+        ids = ",".join("%011d" % index for index in range(resolver.MAX_LOOKUP_IDS))
+        code, _bundle, _actual, _raw = self.lookup(ids, [])
+        self.assertEqual(code, 0)
+
+    def test_invalid_id_lists_fail_before_loading_the_runtime(self):
+        too_many = ",".join("%011d" % index for index in range(resolver.MAX_LOOKUP_IDS + 1))
+        for ids in ("", VIDEO + ",", "," + VIDEO, VIDEO + "," + VIDEO, "bad", VIDEO + " ,Zz9_-Yy8Xx7",
+                    VIDEO + ";Zz9_-Yy8Xx7", "https://www.youtube.com/watch?v=" + VIDEO, too_many):
+            with self.subTest(ids=ids[:24]):
+                loader = mock.Mock(side_effect=AssertionError("must stay lazy"))
+                code, _bundle, actual, _raw = self.lookup(ids, [], loader)
+                self.assertNotEqual(code, 0)
+                loader.assert_not_called()
+                self.assertEqual(actual, [{"v": 1, "kind": "failure", "seq": 1, "code": "unsupported"}])
+
+    def test_lookup_argument_shape_is_exact(self):
+        for args in (["--lookup"], ["--lookup", VIDEO, "x"], ["--lookup=" + VIDEO]):
+            with self.subTest(args=args):
+                output = io.BytesIO(); loader = mock.Mock(side_effect=AssertionError("must stay lazy"))
+                self.assertNotEqual(resolver.main(args, reader=io.BytesIO(), writer=output, runtime_loader=loader), 0)
+                loader.assert_not_called()
+
+    def test_lookup_errors_are_fixed_failures(self):
+        bundle = Bundle(); bundle.error = RuntimeError("raw private detail")
+        output = io.BytesIO()
+        self.assertNotEqual(resolver.main(["--lookup", VIDEO], reader=io.BytesIO(), writer=output,
+                                          runtime_loader=lambda: bundle), 0)
+        self.assertEqual(frames(output.getvalue()), [{"v": 1, "kind": "failure", "seq": 1, "code": "unavailable"}])
 
 
 if __name__ == "__main__":

@@ -37,6 +37,8 @@ SEARCH_ARGUMENT = "--search"
 MAX_SEARCH_RESULTS = 12
 MAX_SEARCH_QUERY_BYTES = 400
 MAX_SEARCH_TEXT_BYTES = 512  # Same cap as the player's decoder.
+LOOKUP_ARGUMENT = "--lookup"
+MAX_LOOKUP_IDS = 20  # Same cap as a YouTube audio request.
 PROJECTION_FIELDS = (
     "_type", "id", "extractor_key", "url", "title", "artist", "duration",
     "filesize", "filesize_approx", "ext", "acodec", "vcodec", "protocol",
@@ -428,7 +430,7 @@ def _load_runtime():
     youtube = importlib.import_module("yt_dlp.extractor.youtube")
     return SimpleNamespace(version=version, globals=globals_module, jsc=jsc, registry=registry,
                            YoutubeDL=package.YoutubeDL, YoutubeIE=youtube.YoutubeIE,
-                           YoutubeSearchIE=youtube.YoutubeSearchIE)
+                           YoutubeSearchIE=youtube.YoutubeSearchIE, YoutubeTabIE=youtube.YoutubeTabIE)
 
 
 def _video_id(value):
@@ -455,17 +457,26 @@ def _search_text(value):
         return None
 
 
-def _search_entries(extracted):
+def _lookup_ids(value):
+    if type(value) is not str:
+        return None
+    ids = value.split(",")
+    if not 1 <= len(ids) <= MAX_LOOKUP_IDS or len(set(ids)) != len(ids) or not all(map(_video_id, ids)):
+        return None
+    return ids
+
+
+def _search_entries(extracted, wanted=None):
     if type(extracted) is not dict or not isinstance(extracted.get("entries"), list):
         raise ProtocolError("unsupported")
     results, seen = [], set()
     for entry in list.__iter__(extracted["entries"]):
-        if len(results) >= MAX_SEARCH_RESULTS:
+        if len(results) >= (MAX_SEARCH_RESULTS if wanted is None else len(wanted)):
             break
         if type(entry) is not dict or entry.get("ie_key") != "Youtube" or entry.get("_type", "url") != "url":
             continue
         video, title = entry.get("id"), _search_text(entry.get("title"))
-        if not _video_id(video) or video in seen or title is None:
+        if not _video_id(video) or video in seen or title is None or (wanted is not None and video not in wanted):
             continue
         if entry.get("live_status") in ("is_live", "is_upcoming", "post_live"):
             continue
@@ -478,23 +489,41 @@ def _search_entries(extracted):
             result["duration"] = int(round(duration))
         seen.add(video)
         results.append(result)
+    if wanted is not None:
+        results.sort(key=lambda item: wanted.index(item["id"]))
     return {"entries": results}
 
 
 def run_search(query, reader, writer, runtime_loader=None):
-    transport = ProtocolTransport(reader, writer)
     if not _search_query(query):
-        _emit_failure(transport, "unsupported")
+        _emit_failure(ProtocolTransport(reader, writer), "unsupported")
         return 1
+    return _run_flat("ytsearch%d:%s" % (MAX_SEARCH_RESULTS, query), "YoutubeSearchIE", None,
+                     reader, writer, runtime_loader)
+
+
+def run_lookup(value, reader, writer, runtime_loader=None):
+    # The video IDs of pasted links become a temporary list, read with the same
+    # flat extraction as the search: titles only, no player, stream or JS.
+    ids = _lookup_ids(value)
+    if ids is None:
+        _emit_failure(ProtocolTransport(reader, writer), "unsupported")
+        return 1
+    return _run_flat("https://www.youtube.com/watch_videos?video_ids=" + ",".join(ids), "YoutubeTabIE", ids,
+                     reader, writer, runtime_loader)
+
+
+def _run_flat(url, extractor, wanted, reader, writer, runtime_loader):
+    transport = ProtocolTransport(reader, writer)
     try:
         runtime = (runtime_loader or _load_runtime)()
         configure_runtime(runtime, transport)
         with runtime.YoutubeDL(search_options(), auto_init=False) as downloader:
-            downloader.add_info_extractor(runtime.YoutubeSearchIE())
-            extracted = downloader.extract_info("ytsearch%d:%s" % (MAX_SEARCH_RESULTS, query), download=False)
+            downloader.add_info_extractor(getattr(runtime, extractor)())
+            extracted = downloader.extract_info(url, download=False)
         if transport.closed:
             return 1
-        data = _search_entries(extracted)
+        data = _search_entries(extracted, wanted)
         try:
             _json_payload({"v": 1, "kind": "result", "seq": transport.seq, "data": data}, MAX_RESULT_BYTES)
         except ProtocolError:
@@ -555,6 +584,8 @@ def main(argv=None, *, reader=None, writer=None, runtime_loader=None):
     writer = sys.stdout.buffer if writer is None else writer
     if type(argv) in (list, tuple) and len(argv) == 2 and argv[0] == SEARCH_ARGUMENT:
         return run_search(argv[1], reader, writer, runtime_loader)
+    if type(argv) in (list, tuple) and len(argv) == 2 and argv[0] == LOOKUP_ARGUMENT:
+        return run_lookup(argv[1], reader, writer, runtime_loader)
     if type(argv) not in (list, tuple) or len(argv) != 1:
         _emit_failure(ProtocolTransport(reader, writer), "unsupported")
         return 1
