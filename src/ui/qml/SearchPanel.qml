@@ -139,6 +139,8 @@ PageSurface {
         Text {
             objectName: "search-status"
             Layout.fillWidth: true
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
             visible: text.length > 0
             text: root.onlineSearch !== null ? root.onlineSearch.statusText : searchText.unavailable
             textFormat: Text.PlainText
@@ -150,6 +152,8 @@ PageSurface {
         Text {
             objectName: "search-link-issues"
             Layout.fillWidth: true
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
             visible: root.linksMode && root.linkIssues.length > 0
             text: root.linkIssues.join("\n")
             textFormat: Text.PlainText
@@ -174,7 +178,13 @@ PageSurface {
             objectName: "search-results"
             visible: root.results.length > 0
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(contentHeight, 640)
+            // Asks for one row, then takes the room left on the page and
+            // scrolls inside it, so the page itself does not grow past the
+            // window and the search fields stay in view.
+            Layout.fillHeight: true
+            Layout.minimumHeight: Math.min(contentHeight, 60)
+            Layout.preferredHeight: Math.min(contentHeight, 60)
+            Layout.maximumHeight: contentHeight
             clip: true
             activeFocusOnTab: true
             keyNavigationEnabled: true

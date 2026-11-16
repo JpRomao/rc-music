@@ -204,6 +204,52 @@ TestCase {
         finder.linksMode = false;
         tryVerify(() => !all.visible);
     }
+    function linkResults(count) {
+        const rows = [];
+        for (let index = 0; index < count; ++index)
+            rows.push({
+                videoId: "aB0-_Cd1EF" + index,
+                title: "Faixa " + index,
+                channel: "Canal",
+                durationText: "3:0" + index,
+                requested: false,
+                hasLyricsPage: false
+            });
+        return rows;
+    }
+    function test_statusAndLinkIssuesAreReadByAssistiveTechnology() {
+        const panel = openSearch();
+        finder.statusText = "3 links prontos para baixar.";
+        finder.linksMode = true;
+        finder.linkIssues = ["Linha 4: não é um link do YouTube nem do Letras."];
+        finder.results = linkResults(1);
+        const status = findChild(panel, "search-status");
+        compare(status.Accessible.role, Accessible.StaticText);
+        compare(status.Accessible.name, "3 links prontos para baixar.");
+        const issues = findChild(panel, "search-link-issues");
+        tryVerify(() => issues.visible);
+        compare(issues.Accessible.role, Accessible.StaticText);
+        compare(issues.Accessible.name, "Linha 4: não é um link do YouTube nem do Letras.");
+    }
+    function test_resultsScrollInsideASmallWindowWithTheLinksBoxOpen() {
+        shell.width = 1024;
+        shell.height = 760;
+        const panel = openSearch();
+        mouseClick(findChild(panel, "search-links-toggle"));
+        finder.linksMode = true;
+        finder.statusText = "6 links prontos para baixar.";
+        finder.results = linkResults(6);
+        const list = findChild(panel, "search-results");
+        tryVerify(() => list.visible && list.count === 6 && list.height > 0);
+        verify(waitForPolish(shell));
+        // The list ends above the player footer and scrolls instead of being cut.
+        const bottom = list.mapToItem(shell.contentItem, 0, list.height).y;
+        verify(bottom <= findChild(shell, "player-footer").y + 1, "list bottom " + bottom);
+        verify(list.height < list.contentHeight, "the list scrolls");
+        verify(list.height >= 60, "at least one row stays visible");
+        list.positionViewAtEnd();
+        tryVerify(() => findChild(list, "search-row-aB0-_Cd1EF5") !== null);
+    }
     function test_eachResultCanBePreviewedInTheBrowser() {
         const panel = openSearch();
         finder.results = [
