@@ -26,6 +26,7 @@ if(WIN32)
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsYoutubeBrokerProcess.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsYoutubeExecution.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsYoutubeRuntime.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/src/adapters/SignedYoutubeRuntimeManifest.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadTlsRuntime.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadNetworkLaunch.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsLocalMediaConverter.cpp"
@@ -36,7 +37,7 @@ if(WIN32)
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsConfiguredDownloadExecution.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/YoutubeDownloadExecution.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsDownloadJobSession.cpp")
-    target_link_libraries(rc_music_download_network PRIVATE Advapi32)
+    target_link_libraries(rc_music_download_network PRIVATE Advapi32 Bcrypt)
     # Legacy directly-linked executable is an explicit historical/test seam,
     # never the authenticated runtime's entry point or a default OFF artifact.
     add_executable(rc_music_download_network_worker EXCLUDE_FROM_ALL
@@ -66,7 +67,7 @@ if(BUILD_TESTING)
         DirectDownloadSession FfmpegDownloadCodec)
     if(WIN32)
         list(APPEND rc_music_download_network_test_units
-            WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadInteractiveInput WindowsYoutubeResolverProcess WindowsYoutubeBrokerProcess WindowsYoutubeRuntime YoutubeRuntimeReceipt WindowsYoutubeExecution WindowsDownloadTlsRuntime DownloadWorkerProtocol
+            WindowsDownloadWorkspace WindowsDownloadProcess WindowsDownloadInteractiveInput WindowsYoutubeResolverProcess WindowsYoutubeBrokerProcess WindowsYoutubeRuntime SignedYoutubeRuntimeManifest YoutubeRuntimeReceipt WindowsYoutubeExecution WindowsDownloadTlsRuntime DownloadWorkerProtocol
             WindowsDownloadNetworkWorker WindowsProcessDownloadIo WindowsDownloadExecution WindowsDownloadRecoveryValidation
             WindowsDownloadNetworkLaunch WindowsPreparedDownloadTask WindowsPreparedDownloadExecution
             WindowsPreparedMediaDownloadTask WindowsConfiguredDownloadExecution)
@@ -224,6 +225,9 @@ if(BUILD_TESTING)
             ENVIRONMENT "QT_LOGGING_TO_CONSOLE=1;QT_FORCE_STDERR_LOGGING=1"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
+        if(unit STREQUAL "SignedYoutubeRuntimeManifest")
+            target_link_libraries(${target} PRIVATE Bcrypt) # The tests sign with a fresh CNG key.
+        endif()
         if(unit STREQUAL "WindowsYoutubeRuntime")
             set_tests_properties("rc_music.download-network.${unit}" PROPERTIES
                 LABELS "download-network;qt;FR-050;FR-052")

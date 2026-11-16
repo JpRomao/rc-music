@@ -32,6 +32,7 @@ ADRs registram escolhas que alteram estrutura, dependências, distribuição ou 
 | [0017](0017-youtube-audio-and-lyrics-acquisition.md) | Proposto | Aquisição YouTube em MP3, ingresso separado e preferência Letras → LRCLIB; ferramentas, acesso e produção pendentes |
 | [0018](0018-aurora-and-lidarr-removal.md) | Aceito | Retirada integral do Lidarr do app, FR-055 fora de escopo e migração nativa Aurora incremental; demais recursos e dados preservados |
 | [0019](0019-internal-search-library-and-extension-retirement.md) | Aceito | Busca online pelo próprio yt-dlp (só metadados), biblioteca permanente aprovada abrindo em Lista e retirada da extensão quando o app cobrir a jornada |
+| [0020](0020-signed-youtube-runtime-manifest.md) | Aceito | Inventário do runtime YouTube em manifesto assinado (ECDSA P-256, chave pública compilada), atualizando o yt-dlp sem recompilar o player |
 
 ## Processo
 
