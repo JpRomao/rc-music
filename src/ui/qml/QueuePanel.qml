@@ -242,10 +242,12 @@ FocusScope {
     }
 
     Rectangle {
+        // The drawer edge is drawn by the shell; the legacy page keeps its card.
+        objectName: "queue-panel-background"
         anchors.fill: parent
         color: root.contract.surfaceColor
-        radius: root.contract.radiusMedium
-        border.width: 1
+        radius: root.overlayMode ? 0 : root.contract.radiusMedium
+        border.width: root.overlayMode ? 0 : 1
         border.color: root.contract.borderColor
     }
 
@@ -255,11 +257,27 @@ FocusScope {
         spacing: root.contract.spacingUnit * 3
 
         Text {
+            objectName: "queue-eyebrow"
+            visible: root.overlayMode
+            text: queueText.drawerEyebrow
+            textFormat: Text.PlainText
+            color: root.contract.textSecondaryColor
+            font.family: root.contract.bodyFontFamily
+            font.pixelSize: root.contract.typeEyebrow
+            font.letterSpacing: 1.2
+            Layout.bottomMargin: -root.contract.spacingUnit * 2
+        }
+        Text {
             id: queueTitle
             objectName: "queue-title"
             text: root.contract.queueTitle
             color: root.contract.textPrimaryColor
-            font.bold: true
+            font: root.overlayMode ? Qt.font({
+                family: root.contract.headingFontFamily,
+                pixelSize: root.contract.typeHeading
+            }) : Qt.font({
+                bold: true
+            })
             Accessible.role: Accessible.Heading
             Accessible.name: text
         }
@@ -273,6 +291,8 @@ FocusScope {
             QueueActionButton {
                 id: addButton
                 controlId: "queue-add"
+                iconName: root.overlayMode ? "plus" : ""
+                quiet: root.overlayMode
                 accessibleName: queueText.add
                 text: "+"
                 contract: root.contract
@@ -282,6 +302,8 @@ FocusScope {
             QueueActionButton {
                 id: moveUpButton
                 controlId: "queue-move-up"
+                iconName: root.overlayMode ? "arrow-up" : ""
+                quiet: root.overlayMode
                 accessibleName: queueText.moveUp
                 shortcutHint: queueText.shortcutMoveUp
                 text: "↑"
@@ -292,6 +314,8 @@ FocusScope {
             QueueActionButton {
                 id: moveDownButton
                 controlId: "queue-move-down"
+                iconName: root.overlayMode ? "arrow-down" : ""
+                quiet: root.overlayMode
                 accessibleName: queueText.moveDown
                 shortcutHint: queueText.shortcutMoveDown
                 text: "↓"
@@ -302,6 +326,8 @@ FocusScope {
             QueueActionButton {
                 id: removeButton
                 controlId: "queue-remove"
+                iconName: root.overlayMode ? "minus" : ""
+                quiet: root.overlayMode
                 accessibleName: queueText.remove
                 shortcutHint: queueText.shortcutRemove
                 text: "−"
@@ -315,6 +341,8 @@ FocusScope {
             QueueActionButton {
                 id: clearButton
                 controlId: "queue-clear"
+                iconName: root.overlayMode ? "close" : ""
+                quiet: root.overlayMode
                 accessibleName: queueText.clear
                 text: "×"
                 contract: root.contract
@@ -330,6 +358,9 @@ FocusScope {
 
             AccessibleTransportButton {
                 objectName: "queue-shuffle"
+                flat: root.overlayMode
+                iconName: root.overlayMode ? "shuffle" : ""
+                iconWithText: true
                 Layout.fillWidth: true
                 contract: root.contract
                 text: root.presenter.shuffleQueueEnabled ? queueText.shuffleOn : queueText.shuffleOff
@@ -344,6 +375,9 @@ FocusScope {
             }
             AccessibleTransportButton {
                 objectName: "queue-repeat"
+                flat: root.overlayMode
+                iconName: root.overlayMode ? "repeat" : ""
+                iconWithText: true
                 Layout.fillWidth: true
                 contract: root.contract
                 text: root.presenter.repeatQueueEnabled ? queueText.repeatOn : queueText.repeatOff
@@ -474,7 +508,16 @@ FocusScope {
                 }
 
                 background: Rectangle {
-                    color: root.contract.highContrast ? (row.contrastHighlighted ? root.contract.accentColor : root.contract.surfaceColor) : (row.ListView.isCurrentItem ? Qt.alpha(root.contract.accentColor, 0.12) : (row.hovered ? Qt.alpha(root.contract.focusColor, 0.08) : "transparent"))
+                    color: root.contract.highContrast ? (row.contrastHighlighted ? root.contract.accentColor : root.contract.surfaceColor) : (root.overlayMode ? (row.ListView.isCurrentItem ? root.contract.selectionColor : (row.hovered ? root.contract.hoverColor : "transparent")) : (row.ListView.isCurrentItem ? Qt.alpha(root.contract.accentColor, 0.12) : (row.hovered ? Qt.alpha(root.contract.focusColor, 0.08) : "transparent")))
+                    Rectangle {
+                        objectName: "queue-row-divider"
+                        visible: root.overlayMode
+                        anchors.bottom: parent.bottom
+                        width: parent.width
+                        height: 1
+                        color: root.contract.highContrast ? root.contract.borderColor : root.contract.dividerColor
+                        Accessible.ignored: true
+                    }
                     radius: root.contract.radiusSmall
                     border.width: row.ListView.isCurrentItem ? (queueList.activeFocus ? 3 : (root.contract.highContrast ? 2 : 0)) : (root.contract.highContrast && row.hovered ? 1 : 0)
                     border.color: row.contrastHighlighted ? root.contract.accentTextColor : root.contract.focusColor
@@ -484,9 +527,15 @@ FocusScope {
                     spacing: root.contract.spacingUnit * 2
 
                     Text {
-                        text: row.occurrenceId === root.presenter.currentOccurrenceId ? "▶" : ""
-                        color: row.primaryColor
-                        Layout.preferredWidth: 16
+                        // Aurora numbers the queue; the legacy page marks the playing row.
+                        objectName: "queue-row-number"
+                        text: root.overlayMode ? String(row.orderIndex + 1) : (row.occurrenceId === root.presenter.currentOccurrenceId ? "▶" : "")
+                        color: root.overlayMode ? row.secondaryColor : row.primaryColor
+                        font: root.overlayMode ? Qt.font({
+                            family: root.contract.bodyFontFamily,
+                            pixelSize: root.contract.typeCaption
+                        }) : root.contract.applicationFont
+                        Layout.preferredWidth: root.overlayMode ? 24 : 16
                         Accessible.ignored: true
                     }
                     ColumnLayout {
@@ -497,7 +546,7 @@ FocusScope {
                             text: row.title.length > 0 ? row.title : row.fileName
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
-                            color: row.primaryColor
+                            color: root.overlayMode && !root.contract.highContrast && row.occurrenceId === root.presenter.currentOccurrenceId ? root.contract.accentColor : row.primaryColor
                             Layout.fillWidth: true
                             Accessible.ignored: true
                         }

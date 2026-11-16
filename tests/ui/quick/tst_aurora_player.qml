@@ -178,6 +178,50 @@ TestCase {
         compare(audioCommands(), commands, "opening and closing the drawer must not touch playback");
     }
 
+    function test_queueDrawerUsesTheAuroraHeaderIconsAndRows() {
+        loadSyntheticQueue();
+        resize(1440, 900);
+        mouseClick(findChild(shell, "player-queue"));
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        verify(drawer.overlayMode);
+        const surface = findChild(drawer, "queue-panel-background");
+        compare(surface.radius, 0);
+        compare(surface.border.width, 0);
+        const eyebrow = findChild(drawer, "queue-eyebrow");
+        verify(eyebrow && eyebrow.visible && eyebrow.text.length > 0);
+        const title = findChild(drawer, "queue-title");
+        compare(title.font.family, productContract.headingFontFamily);
+        compare(title.font.pixelSize, productContract.typeHeading);
+        const icons = {
+            "queue-add": "plus",
+            "queue-move-up": "arrow-up",
+            "queue-move-down": "arrow-down",
+            "queue-remove": "minus",
+            "queue-clear": "close"
+        };
+        for (const name in icons) {
+            const button = findChild(drawer, name);
+            verify(button, name);
+            const icon = findChild(button, "button-icon");
+            verify(icon && icon.visible, name + " shows a line icon");
+            compare(icon.iconName, icons[name]);
+            tryCompare(icon, "status", Image.Ready);
+            compare(button.contentItem.text, "");
+        }
+        for (const entry of [["queue-shuffle", "shuffle", "Aleatório"], ["queue-repeat", "repeat", "Repetir"]]) {
+            const mode = findChild(drawer, entry[0]);
+            verify(mode.flat, entry[0]);
+            compare(findChild(mode, "button-icon").iconName, entry[1]);
+            verify(mode.text.indexOf(entry[2]) >= 0, mode.text);
+        }
+        const list = findChild(drawer, "queue-list");
+        const first = list.itemAtIndex(0);
+        compare(findChild(first, "queue-row-number").text, "1");
+        verify(Qt.colorEqual(findChild(first, "queue-row-title").color, productContract.accentColor), "the playing track is highlighted");
+        verify(findChild(first, "queue-row-divider").visible);
+    }
+
     function test_lyricsButtonIsDisabledWithAReasonWithoutLyrics() {
         loadSyntheticQueue();
         const button = findChild(shell, "player-lyrics");
