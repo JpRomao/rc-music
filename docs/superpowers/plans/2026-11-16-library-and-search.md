@@ -41,8 +41,16 @@
 - Reconciliação a cada início: `downloadImportReceipts()` da sessão passa pela biblioteca. Um download cuja gravação na biblioteca se perdeu (falha ou queda entre as confirmações) entra na próxima abertura, sem refazer o download nem tocar na fila.
 - A ordem não é atômica entre os dois destinos: fila e biblioteca confirmam separadamente. A distinção desses estados na Atividade fica para L4.
 
+## Contrato de L4a
+
+- `LibraryListModel` projeta só registros confirmados, em ordem de entrada. O título cai para o nome do arquivo sem extensão; duração em `m:ss`. O filtro local decompõe acentos, ignora caixa e exige todos os termos em título, artista, álbum ou nome do arquivo, sem rede nem disco.
+- `LibraryBinding` expõe `model`, `filterText`, `visibleCount`, `enqueue(id)` (fim da fila, sem tocar, pelo mesmo caminho das playlists) e `remove(id)` (só o registro, confirmado por `Saved`).
+- Página `LibraryPanel` no modo Aurora, abrindo em Lista. Tem cabeçalho editorial, filtro, contador “N de M faixas”, colunas Nº / Faixa e artista / Álbum / Tempo, adicionar à fila e remover com confirmação que diz que o áudio fica. Estados distintos para vazio, sem resultado e falha de carga ou gravação. A entrada “Biblioteca” fica na lateral entre Início/Fila e Playlists.
+- Fica para L4b: metadados em segundo plano (hoje só aparecem tags para registros já preenchidos), visão em Capas, localizar arquivo indisponível, adicionar à playlist e a distinção na Atividade.
+
 ## Estado
 
 - L1 concluída: commit `d4cbc8c`.
 - L2 concluída: catálogo alimentado pelo ingresso local, com 704/704 CTest (sem a suíte Quick, sem mudança de QML).
 - L3 concluída: downloads nos dois destinos com registro de jobs, 707/707 CTest (sem a suíte Quick).
+- L4a concluída: página Biblioteca em Lista. Quick 527/527, contando os 6 casos de composição repetidos com `RC_MUSIC_UI_ARTIFACT_DIR`, que o CTest define.

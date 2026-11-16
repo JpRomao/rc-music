@@ -6,6 +6,7 @@
 #include <QString>
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -25,10 +26,16 @@ class LibraryBinding final : public QObject {
     Q_PROPERTY(bool hasPendingChange READ hasPendingChange NOTIFY changed)
     Q_PROPERTY(bool canRetrySave READ canRetrySave NOTIFY changed)
     Q_PROPERTY(QString statusText READ statusText NOTIFY changed)
+    Q_PROPERTY(QObject* model READ model CONSTANT)
+    Q_PROPERTY(QString filterText READ filterText WRITE setFilterText NOTIFY changed)
+    Q_PROPERTY(int visibleCount READ visibleCount NOTIFY changed)
   public:
     using Paths = std::vector<std::filesystem::path>;
+    // Appends to the queue without playback (the playlist path of the presenter).
+    using QueueAppender = std::function<bool(Paths)>;
     // Passive construction; start() begins loading.
-    explicit LibraryBinding(std::shared_ptr<LibraryStore> store, QObject* parent = nullptr);
+    explicit LibraryBinding(std::shared_ptr<LibraryStore> store, QueueAppender append_queue = {},
+                            QObject* parent = nullptr);
     ~LibraryBinding() override;
     [[nodiscard]] bool start();
     // Explicit local ingress (open, add, drop, forwarding, playlist). Idempotent by exact path.
@@ -46,6 +53,16 @@ class LibraryBinding final : public QObject {
     [[nodiscard]] bool canRetrySave() const;
     [[nodiscard]] QString statusText() const;
     [[nodiscard]] LibrarySnapshot confirmedSnapshot() const;
+    // List view projection of the confirmed catalog (a LibraryListModel).
+    [[nodiscard]] QObject* model() const;
+    [[nodiscard]] QString filterText() const;
+    void setFilterText(const QString& text);
+    [[nodiscard]] int visibleCount() const;
+    // Adds the record's file to the end of the queue without playback.
+    Q_INVOKABLE bool enqueue(const QString& record_id);
+    // Removes only the catalog record; the audio file, queue, playlists and
+    // playback are untouched.
+    Q_INVOKABLE bool remove(const QString& record_id);
     // True while a write is running or queued; a failed save does not hold exit.
     [[nodiscard]] bool savingForExit() const;
     Q_INVOKABLE bool retrySave();

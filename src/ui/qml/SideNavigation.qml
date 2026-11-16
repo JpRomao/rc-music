@@ -16,6 +16,7 @@ Rectangle {
     property Item pageReturnFocusItem: null
     property bool exiting: false
     property bool hasPlaylists: false
+    property bool hasLibrary: false
     property bool hasDownloads: false
     property bool hasBrowser: false
     property bool downloadsExitRecovery: false
@@ -24,6 +25,7 @@ Rectangle {
     property alias queueButton: queueAction
     property alias preferencesButton: preferencesAction
     property alias playlistsButton: playlistsAction
+    property alias libraryButton: libraryAction
     property alias downloadsButton: downloadsAction
     property alias browserButton: browserAction
     property alias themeButton: themeAction
@@ -31,6 +33,7 @@ Rectangle {
     signal queueRequested
     signal preferencesRequested
     signal playlistsRequested
+    signal libraryRequested
     signal downloadsRequested
     signal browserRequested
     signal themeRequested
@@ -186,6 +189,25 @@ Rectangle {
                 Accessible.checkable: true
                 Accessible.checked: checked
                 onClicked: root.queueRequested()
+            }
+            NavigationButton {
+                id: libraryAction
+                iconName: "library"
+                editorial: root.editorial
+                compact: root.compact
+                objectName: "library"
+                KeyNavigation.tab: null
+                KeyNavigation.backtab: null
+                Layout.fillWidth: true
+                contract: root.contract
+                text: labels.library
+                checkable: true
+                checked: root.activePage === "library"
+                visible: root.hasLibrary && root.editorial
+                enabled: visible && !root.exiting
+                Accessible.checkable: true
+                Accessible.checked: checked
+                onClicked: root.libraryRequested()
             }
             NavigationButton {
                 id: playlistsAction

@@ -125,8 +125,8 @@ class PrefixTranslator final : public QTranslator {
         return true;
     }
     const QStringList kinds{QStringLiteral("original"), QStringLiteral("romanized"), QStringLiteral("translation")};
-    if (QStringList{QStringLiteral("home"), QStringLiteral("queue"), QStringLiteral("playlists"),
-                    QStringLiteral("downloads"), QStringLiteral("preferences")}
+    if (QStringList{QStringLiteral("home"), QStringLiteral("queue"), QStringLiteral("library"),
+                    QStringLiteral("playlists"), QStringLiteral("downloads"), QStringLiteral("preferences")}
             .contains(literal) &&
         matches(R"(^\s*(?:readonly\s+)?property\s+string\s+currentPage\s*:)")) {
         return true;

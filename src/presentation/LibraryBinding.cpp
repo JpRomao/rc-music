@@ -1,4 +1,5 @@
 #include "LibraryBinding.hpp"
+#include "LibraryListModel.hpp"
 #include "m0/ports/LibraryStore.hpp"
 
 #include <QFutureWatcher>
@@ -24,9 +25,20 @@ struct Buffered final {
 constexpr std::size_t maximum_buffered_paths = maximum_library_records;
 } // namespace
 
+static std::optional<std::uint64_t> recordId(const QString& text) {
+    bool valid{};
+    const auto id = text.toULongLong(&valid);
+    if (!valid || id == 0 || QString::number(id) != text)
+        return {};
+    return id;
+}
+
 struct LibraryBinding::Impl final {
     LibraryBinding& owner;
     std::shared_ptr<LibraryStore> store;
+    QueueAppender appender;
+    LibraryListModel model;
+    QString filter;
     LocalLibrary confirmed;
     // Confirmed catalog plus admissions not yet acknowledged by the store.
     std::optional<LocalLibrary> working;
@@ -36,7 +48,8 @@ struct LibraryBinding::Impl final {
     QString notice;
     bool busy{}, ready{}, seed_allowed{}, save_failed{}, stopping{};
 
-    Impl(LibraryBinding& q, std::shared_ptr<LibraryStore> source) : owner(q), store(std::move(source)) {
+    Impl(LibraryBinding& q, std::shared_ptr<LibraryStore> source, QueueAppender append)
+        : owner(q), store(std::move(source)), appender(std::move(append)) {
         QObject::connect(&watcher, &QFutureWatcher<Job>::finished, &owner, [this] { finished(); });
     }
     bool unsaved() const { return working && !(working->snapshot() == confirmed.snapshot()); }
@@ -115,6 +128,8 @@ struct LibraryBinding::Impl final {
             loaded(std::move(result.loaded));
         else
             saved(result.saved, result.written);
+        // The list shows confirmed records only.
+        model.setRecords(confirmed.snapshot().records);
         // A failure waits for new ingress or an explicit retry; it never loops.
         if (!stopping && !save_failed)
             save();
@@ -162,8 +177,8 @@ struct LibraryBinding::Impl final {
     }
 };
 
-LibraryBinding::LibraryBinding(std::shared_ptr<LibraryStore> store, QObject* parent)
-    : QObject(parent), impl_(std::make_unique<Impl>(*this, std::move(store))) {}
+LibraryBinding::LibraryBinding(std::shared_ptr<LibraryStore> store, QueueAppender append_queue, QObject* parent)
+    : QObject(parent), impl_(std::make_unique<Impl>(*this, std::move(store), std::move(append_queue))) {}
 LibraryBinding::~LibraryBinding() {
     impl_->stopping = true;
     impl_->watcher.waitForFinished();
@@ -193,6 +208,40 @@ bool LibraryBinding::retrySave() {
     impl_->save();
     emit changed();
     return impl_->busy;
+}
+QObject* LibraryBinding::model() const { return &impl_->model; }
+QString LibraryBinding::filterText() const { return impl_->filter; }
+void LibraryBinding::setFilterText(const QString& text) {
+    if (text == impl_->filter)
+        return;
+    impl_->filter = text;
+    impl_->model.setFilter(text);
+    emit changed();
+}
+int LibraryBinding::visibleCount() const { return impl_->model.count(); }
+bool LibraryBinding::enqueue(const QString& record_id) {
+    const auto id = recordId(record_id);
+    const auto* record = id ? impl_->confirmed.find(*id) : nullptr;
+    if (!record || !impl_->appender || impl_->stopping)
+        return false;
+    try {
+        return impl_->appender({record->source_path});
+    } catch (...) {
+        return false;
+    }
+}
+bool LibraryBinding::remove(const QString& record_id) {
+    const auto id = recordId(record_id);
+    if (!id || !impl_->ready || impl_->stopping)
+        return false;
+    auto candidate = impl_->working ? *impl_->working : impl_->confirmed;
+    if (!candidate.remove(*id))
+        return false;
+    impl_->working = std::move(candidate);
+    impl_->save_failed = false;
+    impl_->save();
+    emit changed();
+    return true;
 }
 bool LibraryBinding::retryLoad() { return !impl_->ready && impl_->load(); }
 void LibraryBinding::beginShutdown() { impl_->stopping = true; }

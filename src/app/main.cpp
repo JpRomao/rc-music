@@ -769,7 +769,8 @@ int main(int argc, char* argv[]) {
         static_cast<void>(playlists_binding->retryLoad());
         // ADR-0019: the permanent library sits next to the playlists in the configuration root.
         library_binding = std::make_unique<music_player::m0::LibraryBinding>(
-            std::make_shared<music_player::m0::QtJsonLibraryStore>(playlists_config_root));
+            std::make_shared<music_player::m0::QtJsonLibraryStore>(playlists_config_root),
+            [&](auto paths) { return presenter.appendPlaylistSources(std::move(paths)); });
         presenter.setLocalAdmissionObserver([&](const std::vector<std::filesystem::path>& paths) {
             if (library_binding)
                 library_binding->admit(paths);
@@ -868,6 +869,7 @@ int main(int argc, char* argv[]) {
                                        {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
                                        {QStringLiteral("lyrics"), QVariant::fromValue(&lyrics_binding)},
                                        {QStringLiteral("playlists"), QVariant::fromValue(playlists_binding.get())},
+                                       {QStringLiteral("library"), QVariant::fromValue(library_binding.get())},
                                        {QStringLiteral("startupReady"), false}};
 #ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
         initial_properties.insert(QStringLiteral("embeddedBrowser"), QVariant::fromValue(&embedded_browser));

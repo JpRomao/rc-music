@@ -1,0 +1,27 @@
+import QtQml
+
+// Strings of the permanent library page (ADR-0019).
+QtObject {
+    readonly property string filterPlaceholder: qsTr("Filtrar sua coleção…")
+    readonly property string filterName: qsTr("Filtrar a biblioteca")
+    readonly property string countText: qsTr("%1 de %2 faixas")
+    readonly property string numberHeader: qsTr("Nº")
+    readonly property string trackHeader: qsTr("FAIXA / ARTISTA")
+    readonly property string albumHeader: qsTr("ÁLBUM")
+    readonly property string timeHeader: qsTr("TEMPO")
+    readonly property string unknownArtist: qsTr("Artista desconhecido")
+    readonly property string unavailable: qsTr("Indisponível")
+    readonly property string enqueue: qsTr("Adicionar %1 à fila")
+    readonly property string enqueued: qsTr("“%1” foi para o fim da fila.")
+    readonly property string enqueueFailed: qsTr("Não foi possível adicionar à fila agora. Tente de novo.")
+    readonly property string remove: qsTr("Remover %1 da biblioteca")
+    readonly property string removeTitle: qsTr("Remover “%1” da biblioteca?")
+    readonly property string removeAdvice: qsTr("Só o registro sai da biblioteca. O arquivo de áudio, a fila, as playlists e o que está tocando continuam como estão.")
+    readonly property string removeConfirm: qsTr("Remover da biblioteca")
+    readonly property string cancel: qsTr("Cancelar")
+    readonly property string emptyTitle: qsTr("Sua biblioteca está vazia")
+    readonly property string emptyAdvice: qsTr("Abra ou adicione arquivos, ou baixe uma música: ela fica guardada aqui mesmo depois que a fila muda.")
+    readonly property string noMatches: qsTr("Nenhuma faixa corresponde a “%1”.")
+    readonly property string retryLoad: qsTr("Tentar carregar de novo")
+    readonly property string retrySave: qsTr("Tentar salvar de novo")
+}

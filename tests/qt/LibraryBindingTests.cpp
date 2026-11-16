@@ -1,5 +1,6 @@
 #include "m0/ports/LibraryStore.hpp"
 #include "presentation/LibraryBinding.hpp"
+#include "presentation/LibraryListModel.hpp"
 
 #include <QSignalSpy>
 #include <QTest>
@@ -61,7 +62,11 @@ class FakeLibraryStore final : public LibraryStore {
 
 struct Harness final {
     std::shared_ptr<FakeLibraryStore> store = std::make_shared<FakeLibraryStore>();
-    LibraryBinding binding{store};
+    std::vector<LibraryBinding::Paths> enqueued;
+    LibraryBinding binding{store, [this](LibraryBinding::Paths paths) {
+                               enqueued.push_back(std::move(paths));
+                               return true;
+                           }};
     void startAndWait() {
         QVERIFY(binding.start());
         QTRY_VERIFY(!binding.busy());
@@ -177,6 +182,85 @@ class LibraryBindingTests final : public QObject {
         QTest::qWait(50);
         QCOMPARE(h.store->saved().size(), writes);
         QCOMPARE(h.binding.count(), 1);
+    }
+    void theModelListsConfirmedRecordsWithReadableFallbacks() {
+        Harness h;
+        h.store->setLoaded({.snapshot = {{{3, std::filesystem::path(L"C:/Música/Canção do Mar.mp3"), "Canção do Mar",
+                                           "Lia Campos", "Depois da Chuva", 217'000, true},
+                                          {4, std::filesystem::path(L"D:/sem tags/faixa sem nome.flac"), "", "", "",
+                                           std::nullopt, false}},
+                                         5},
+                            .status = LibraryLoadStatus::Loaded});
+        h.startAndWait();
+        auto* model = qobject_cast<LibraryListModel*>(h.binding.model());
+        QVERIFY(model);
+        QCOMPARE(model->rowCount(), 2);
+        const auto row = [&](int index, int role) { return model->data(model->index(index, 0), role); };
+        QCOMPARE(row(0, LibraryListModel::TitleRole).toString(), QStringLiteral("Canção do Mar"));
+        QCOMPARE(row(0, LibraryListModel::ArtistRole).toString(), QStringLiteral("Lia Campos"));
+        QCOMPARE(row(0, LibraryListModel::AlbumRole).toString(), QStringLiteral("Depois da Chuva"));
+        QCOMPARE(row(0, LibraryListModel::DurationTextRole).toString(), QStringLiteral("3:37"));
+        QCOMPARE(row(0, LibraryListModel::RecordIdRole).toString(), QStringLiteral("3"));
+        QVERIFY(row(0, LibraryListModel::AvailableRole).toBool());
+        // Without tags the file name stands in for the title.
+        QCOMPARE(row(1, LibraryListModel::TitleRole).toString(), QStringLiteral("faixa sem nome"));
+        QVERIFY(row(1, LibraryListModel::ArtistRole).toString().isEmpty());
+        QVERIFY(row(1, LibraryListModel::DurationTextRole).toString().isEmpty());
+        QVERIFY(!row(1, LibraryListModel::AvailableRole).toBool());
+        QCOMPARE(h.binding.visibleCount(), 2);
+    }
+    void filteringIgnoresAccentsAndCaseAcrossTitleArtistAlbumAndFile_data() {
+        QTest::addColumn<QString>("query");
+        QTest::addColumn<int>("matches");
+        QTest::newRow("accentless title") << QStringLiteral("cancao") << 1;
+        QTest::newRow("upper artist") << QStringLiteral("LIA") << 1;
+        QTest::newRow("album words") << QStringLiteral("depois chuva") << 1;
+        QTest::newRow("file name") << QStringLiteral("sem nome") << 1;
+        QTest::newRow("surrounding spaces") << QStringLiteral("  mar  ") << 1;
+        QTest::newRow("no match") << QStringLiteral("rock") << 0;
+        QTest::newRow("empty shows all") << QString{} << 2;
+    }
+    void filteringIgnoresAccentsAndCaseAcrossTitleArtistAlbumAndFile() {
+        QFETCH(QString, query);
+        QFETCH(int, matches);
+        Harness h;
+        h.store->setLoaded(
+            {.snapshot = {{{3, std::filesystem::path(L"C:/Música/Canção do Mar.mp3"), "Canção do Mar", "Lia Campos",
+                            "Depois da Chuva", 217'000, true},
+                           {4, std::filesystem::path(L"D:/faixa sem nome.flac"), "", "", "", std::nullopt, true}},
+                          5},
+             .status = LibraryLoadStatus::Loaded});
+        h.startAndWait();
+        h.binding.setFilterText(query);
+        QCOMPARE(h.binding.visibleCount(), matches);
+        QCOMPARE(h.binding.model()->property("count").toInt(), matches);
+        QCOMPARE(h.binding.count(), 2);
+    }
+    void enqueueingSendsTheFileToTheQueueWithoutChangingTheLibrary() {
+        Harness h;
+        h.startAndWait();
+        h.binding.admit({track(1)});
+        QTRY_COMPARE(h.binding.count(), 1);
+        const auto id = QString::number(h.binding.confirmedSnapshot().records.front().id);
+        QVERIFY(h.binding.enqueue(id));
+        QCOMPARE(h.enqueued.size(), std::size_t{1});
+        QCOMPARE(h.enqueued.front(), LibraryBinding::Paths{track(1)});
+        QVERIFY(!h.binding.enqueue(QStringLiteral("999")));
+        QVERIFY(!h.binding.enqueue(QStringLiteral("not-a-number")));
+        QCOMPARE(h.binding.count(), 1);
+    }
+    void removingDropsOnlyTheRecordOnceSaved() {
+        Harness h;
+        h.startAndWait();
+        h.binding.admit({track(1), track(2)});
+        QTRY_COMPARE(h.binding.count(), 2);
+        const auto id = QString::number(h.binding.confirmedSnapshot().records.front().id);
+        QVERIFY(h.binding.remove(id));
+        QCOMPARE(h.binding.count(), 2); // Not saved yet.
+        QTRY_COMPARE(h.binding.count(), 1);
+        QCOMPARE(h.store->saved().back().records.front().source_path, track(2));
+        QVERIFY(!h.binding.remove(id));
+        QVERIFY(h.enqueued.empty());
     }
     void exitWaitsOnlyForAnActiveSave() {
         Harness h;

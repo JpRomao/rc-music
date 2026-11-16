@@ -31,7 +31,9 @@ add_library(rc_music_library STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonLibraryStore.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonLibraryStore.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryBinding.hpp"
-    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryBinding.cpp")
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryBinding.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryListModel.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LibraryListModel.cpp")
 target_include_directories(rc_music_library PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
 target_link_libraries(rc_music_library PUBLIC rc_music_core Qt6::Core PRIVATE rc_music_media_data Qt6::Concurrent)
 set_target_properties(rc_music_library PROPERTIES AUTOMOC ON)
@@ -70,6 +72,8 @@ function(rc_music_add_ui target support qml_output)
             LyricsVariantsPanel.qml
             PlaylistsText.qml
             PlaylistsPanel.qml
+            LibraryText.qml
+            LibraryPanel.qml
             QueuePanel.qml
             QueueText.qml
             QueueActionButton.qml
