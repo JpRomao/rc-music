@@ -7,7 +7,9 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <map>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -139,6 +141,44 @@ struct Finish final {
         execution.shutdown();
     }
 };
+// L8: one independent task per job, so several lanes can run at once.
+struct LaneControl final {
+    std::mutex mutex;
+    std::map<std::string, DownloadExecutionState> finished;
+    std::set<std::thread::id> threads;
+    std::atomic_int running{0}, peak{0};
+    void finish(const std::string& id, const DownloadExecutionState state) {
+        std::lock_guard lock(mutex);
+        finished[id] = state;
+    }
+};
+class LaneTask final : public WindowsDownloadTask {
+  public:
+    explicit LaneTask(std::shared_ptr<LaneControl> control) : c(std::move(control)) {}
+    ~LaneTask() override { --c->running; }
+    bool start(const std::string& job_id, const DownloadItem&, qint64) override {
+        id = job_id;
+        const auto now = ++c->running;
+        for (auto peak = c->peak.load(); now > peak && !c->peak.compare_exchange_weak(peak, now);) {
+        }
+        std::lock_guard lock(c->mutex);
+        c->threads.insert(std::this_thread::get_id());
+        return true;
+    }
+    void cancel() override { c->finish(id, DownloadExecutionState::Cancelled); }
+    DownloadExecutionUpdate poll(qint64) override {
+        std::lock_guard lock(c->mutex);
+        DownloadExecutionUpdate update;
+        update.job_id = id;
+        if (const auto found = c->finished.find(id); found != c->finished.end())
+            update.state = found->second;
+        return update;
+    }
+
+  private:
+    std::shared_ptr<LaneControl> c;
+    std::string id;
+};
 class Import final : public DownloadImport {
   public:
     int calls{0};
@@ -240,6 +280,47 @@ class WindowsDownloadExecutionTests final : public QObject {
         QTRY_COMPARE(execution.poll("job-2").state, DownloadExecutionState::Cancelled);
         execution.shutdown();
         QTRY_VERIFY(execution.stopped());
+    }
+    void lanesRunSeveralJobsAtOnceEachOnItsOwnThread() {
+        auto c = std::make_shared<LaneControl>();
+        WindowsDownloadExecution execution([c] { return std::make_unique<LaneTask>(c); }, {}, 3);
+        QVERIFY(execution.start("job-1", item));
+        QVERIFY(execution.start("job-2", item));
+        QVERIFY(execution.start("job-3", item));
+        QVERIFY(!execution.start("job-4", item)); // Every lane is busy.
+        QTRY_COMPARE(c->peak.load(), 3);
+        {
+            std::lock_guard lock(c->mutex);
+            QCOMPARE(c->threads.size(), std::size_t{3});
+        }
+        // Each job is polled and cancelled on its own lane.
+        execution.cancel("job-2");
+        QTRY_COMPARE(execution.poll("job-2").state, DownloadExecutionState::Cancelled);
+        QCOMPARE(execution.poll("job-1").state, DownloadExecutionState::Running);
+        QCOMPARE(execution.poll("job-3").job_id, std::string{"job-3"});
+        // The observed terminal frees that lane for the next job.
+        QVERIFY(execution.start("job-4", item));
+        QTRY_COMPARE(c->running.load(), 3);
+        QVERIFY(!execution.start("job-5", item));
+        execution.shutdown();
+        QTRY_VERIFY(execution.stopped());
+        QCOMPARE(c->running.load(), 0);
+    }
+    void oneLaneIsTheDefaultAndALaneCountIsBounded() {
+        auto c = std::make_shared<LaneControl>();
+        for (const std::size_t lanes : {std::size_t{0}, std::size_t{1}}) {
+            WindowsDownloadExecution execution([c] { return std::make_unique<LaneTask>(c); }, {}, lanes);
+            QVERIFY(execution.start("job-1", item));
+            QVERIFY(!execution.start("job-2", item));
+            execution.shutdown();
+            QTRY_VERIFY(execution.stopped());
+        }
+        WindowsDownloadExecution many([c] { return std::make_unique<LaneTask>(c); }, {}, 99);
+        for (int index = 1; index <= int(download_service_max_active_jobs); ++index)
+            QVERIFY(many.start("job-" + std::to_string(index), item));
+        QVERIFY(!many.start("job-extra", item));
+        many.shutdown();
+        QTRY_VERIFY(many.stopped());
     }
     void invalidAdmissionRetainsNoWork_data() {
         QTest::addColumn<std::string>("id");

@@ -7,6 +7,7 @@
 #include "WindowsDownloadOwnershipStore.hpp"
 #include "WindowsMediaProfileOwner.hpp"
 #include "YoutubeAudioResolution.hpp"
+#include "m0/application/DownloadService.hpp"
 
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -408,7 +409,11 @@ std::unique_ptr<WindowsDownloadTask> makeWindowsOwnedPreparedDownloadTask(
                                                  std::move(media_prepare), std::move(media_profile));
 }
 
-struct WindowsDownloadExecution::Impl final {
+// One worker thread running one job at a time. L8: the executor owns 1 to
+// download_service_max_active_jobs lanes and routes each job to its lane.
+struct ExecutionLane final {
+    using TaskFactory = WindowsDownloadExecution::TaskFactory;
+    using Preflight = WindowsDownloadExecution::Preflight;
     struct Request final {
         std::string id;
         DownloadItem item;
@@ -416,8 +421,8 @@ struct WindowsDownloadExecution::Impl final {
         std::vector<std::string> retired_import_job_ids;
     };
     struct Worker final : QThread {
-        Impl& owner;
-        explicit Worker(Impl& value) : owner(value) {}
+        ExecutionLane& owner;
+        explicit Worker(ExecutionLane& value) : owner(value) {}
         void run() override { owner.run(); }
     };
     TaskFactory factory;
@@ -431,7 +436,7 @@ struct WindowsDownloadExecution::Impl final {
     QObject* dispatcher{nullptr}; // lifetime protected by mutex, one queued wake at most
     Worker worker;
 
-    Impl(TaskFactory value, std::function<bool(const DownloadItem&)> admit, Preflight check)
+    ExecutionLane(TaskFactory value, std::function<bool(const DownloadItem&)> admit, Preflight check)
         : factory(std::move(value)), admission(std::move(admit)), preflight(std::move(check)), worker(*this) {
         worker.start();
     }
@@ -618,12 +623,22 @@ struct WindowsDownloadExecution::Impl final {
     }
 };
 
-WindowsDownloadExecution::WindowsDownloadExecution(TaskFactory factory, Preflight preflight)
-    : WindowsDownloadExecution(std::move(factory), validItem, std::move(preflight)) {}
+struct WindowsDownloadExecution::Impl final {
+    std::function<bool(const DownloadItem&)> admission;
+    std::vector<std::unique_ptr<ExecutionLane>> lanes;
+};
+
+WindowsDownloadExecution::WindowsDownloadExecution(TaskFactory factory, Preflight preflight, const std::size_t lanes)
+    : WindowsDownloadExecution(std::move(factory), validItem, std::move(preflight), lanes) {}
 WindowsDownloadExecution::WindowsDownloadExecution(TaskFactory factory,
                                                    std::function<bool(const DownloadItem&)> admission,
-                                                   Preflight preflight)
-    : impl_(std::make_unique<Impl>(std::move(factory), std::move(admission), std::move(preflight))) {}
+                                                   Preflight preflight, const std::size_t lanes)
+    : impl_(std::make_unique<Impl>()) {
+    impl_->admission = admission;
+    const auto count = std::clamp<std::size_t>(lanes, 1, download_service_max_active_jobs);
+    for (std::size_t index = 0; index < count; ++index)
+        impl_->lanes.push_back(std::make_unique<ExecutionLane>(factory, admission, preflight));
+}
 WindowsDownloadExecution::WindowsDownloadExecution(WindowsProcessDownloadIoConfig io,
                                                    WindowsDownloadJobSessionConfig job)
     : WindowsDownloadExecution(
@@ -641,56 +656,90 @@ WindowsDownloadExecution::WindowsDownloadExecution(WindowsDownloadNetworkLaunchC
       }) {}
 WindowsDownloadExecution::~WindowsDownloadExecution() {
     shutdown();
-    impl_->worker.wait(); // owner must have observed stopped before UI destruction
+    for (const auto& lane : impl_->lanes)
+        lane->worker.wait(); // owner must have observed stopped before UI destruction
 }
 bool WindowsDownloadExecution::start(const std::string& id, const DownloadItem& item) {
     return startWithArchivedJobs(id, item, {});
 }
 bool WindowsDownloadExecution::startWithArchivedJobs(const std::string& id, const DownloadItem& item,
                                                      const ArchivedDownloadJobEvidence& evidence) {
-    if (!validId(id) || !validText(item.title, 800) || !impl_->admission(item) ||
+    if (!validId(id) || !validText(item.title, 800) || !impl_->admission || !impl_->admission(item) ||
         !validEvidenceIds(evidence.archived_job_ids) || !validEvidenceIds(evidence.retired_import_job_ids))
         return false;
-    Impl::Request request{id,
-                          item,
-                          {evidence.archived_job_ids.begin(), evidence.archived_job_ids.end()},
-                          {evidence.retired_import_job_ids.begin(), evidence.retired_import_job_ids.end()}};
-    DownloadExecutionUpdate initial;
-    initial.job_id = id;
-    std::lock_guard lock(impl_->mutex);
-    if (impl_->closed || (impl_->admitted && !impl_->terminal_observed))
-        return false;
-    impl_->pending = std::move(request);
-    impl_->snapshot = std::move(initial);
-    impl_->recovery.clear();
-    impl_->admitted = true;
-    impl_->terminal_observed = false;
-    impl_->cancel_requested = false;
-    impl_->wake();
-    return true;
+    // A job already running on a lane is never started twice.
+    for (const auto& lane : impl_->lanes) {
+        std::lock_guard lock(lane->mutex);
+        if (lane->closed)
+            return false;
+        if (lane->admitted && !lane->terminal_observed && lane->snapshot.job_id == id)
+            return false;
+    }
+    for (const auto& lane : impl_->lanes) {
+        std::lock_guard lock(lane->mutex);
+        // A lane is free until its first job, then again once the owner has
+        // observed that job's terminal update.
+        if (lane->closed || (lane->admitted && !lane->terminal_observed))
+            continue;
+        ExecutionLane::Request request{
+            id,
+            item,
+            {evidence.archived_job_ids.begin(), evidence.archived_job_ids.end()},
+            {evidence.retired_import_job_ids.begin(), evidence.retired_import_job_ids.end()}};
+        DownloadExecutionUpdate initial;
+        initial.job_id = id;
+        lane->pending = std::move(request);
+        lane->snapshot = std::move(initial);
+        lane->recovery.clear();
+        lane->admitted = true;
+        lane->terminal_observed = false;
+        lane->cancel_requested = false;
+        lane->wake();
+        return true;
+    }
+    return false;
 }
 void WindowsDownloadExecution::cancel(const std::string_view id) {
-    std::lock_guard lock(impl_->mutex);
-    if (impl_->admitted && impl_->snapshot.job_id == id && !terminal(impl_->snapshot.state)) {
-        impl_->cancel_requested = true;
-        impl_->wake();
+    for (const auto& lane : impl_->lanes) {
+        std::lock_guard lock(lane->mutex);
+        if (lane->admitted && lane->snapshot.job_id == id && !terminal(lane->snapshot.state)) {
+            lane->cancel_requested = true;
+            lane->wake();
+        }
     }
 }
 DownloadExecutionUpdate WindowsDownloadExecution::poll(const std::string_view id) {
-    std::lock_guard lock(impl_->mutex);
-    if (impl_->admitted && impl_->snapshot.job_id == id && terminal(impl_->snapshot.state))
-        impl_->terminal_observed = true;
-    return impl_->snapshot; // stale polling is inert and exposes the actual job ID
+    for (const auto& lane : impl_->lanes) {
+        std::lock_guard lock(lane->mutex);
+        if (lane->admitted && lane->snapshot.job_id == id) {
+            if (terminal(lane->snapshot.state))
+                lane->terminal_observed = true;
+            return lane->snapshot;
+        }
+    }
+    // Stale polling is inert and exposes the actual job ID of the first lane.
+    const auto& first = impl_->lanes.front();
+    std::lock_guard lock(first->mutex);
+    return first->snapshot;
 }
 void WindowsDownloadExecution::shutdown() {
-    std::lock_guard lock(impl_->mutex);
-    impl_->closed = true;
-    impl_->cancel_requested = true;
-    impl_->wake();
+    for (const auto& lane : impl_->lanes) {
+        std::lock_guard lock(lane->mutex);
+        lane->closed = true;
+        lane->cancel_requested = true;
+        lane->wake();
+    }
 }
-bool WindowsDownloadExecution::stopped() const { return impl_->worker.isFinished(); }
+std::size_t WindowsDownloadExecution::lanes() const { return impl_->lanes.size(); }
+bool WindowsDownloadExecution::stopped() const {
+    return std::ranges::all_of(impl_->lanes, [](const auto& lane) { return lane->worker.isFinished(); });
+}
 std::filesystem::path WindowsDownloadExecution::retainedPublicationPath(const std::string_view id) const {
-    std::lock_guard lock(impl_->mutex);
-    return impl_->snapshot.job_id == id ? impl_->recovery : std::filesystem::path{};
+    for (const auto& lane : impl_->lanes) {
+        std::lock_guard lock(lane->mutex);
+        if (lane->snapshot.job_id == id)
+            return lane->recovery;
+    }
+    return {};
 }
 } // namespace music_player::m0

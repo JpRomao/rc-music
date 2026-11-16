@@ -86,6 +86,11 @@ A retirada da extensão saiu do plano (revisão do ADR-0019 em 2026-11-16). Ela 
 - Página Buscar: Colar links abre o campo, e Consultar links mostra os títulos. Um vídeo que não volta da consulta vira "vídeo não encontrado (privado ou removido)". Cada linha tem Abrir no YouTube e Baixar; Baixar todos manda um pedido só com o que ainda não foi pedido. A página do Letras segue em cada item.
 - Pendente: reconstruir o runtime com o entrypoint novo para a consulta de links funcionar no app real.
 
+## Contrato de L8
+
+- [ADR-0021](../../architecture/decisions/0021-parallel-downloads.md): até três downloads ao mesmo tempo. O serviço tem `max_active_jobs`, de 1 a 3, e o executor do Windows tem uma pista por vaga, cada uma com sua thread. As gravações do checkpoint e do diário de propriedade passam por uma fila no processo antes do lock de arquivo. O app usa 3.
+- Pendente: teste real com vários downloads simultâneos no app, depois de reconstruir o runtime.
+
 ## Estado
 
 - L1 concluída: commit `d4cbc8c`.
@@ -97,4 +102,5 @@ A retirada da extensão saiu do plano (revisão do ADR-0019 em 2026-11-16). Ela 
 - L5 concluída no código (resolvedor, broker, sessão, binding e página Buscar) e testada no app real com o runtime reconstruído.
 - L6 concluída: filtros da Atividade.
 - L7 concluída no código: colar vários links do YouTube e do Letras. Falta o runtime reconstruído para o teste real.
+- L8 concluída no código: até três downloads simultâneos (ADR-0021). Falta o teste real.
 - L4b, restante: Atividade com destinos do MP3 (`63dc156`) e capas reais em memória.

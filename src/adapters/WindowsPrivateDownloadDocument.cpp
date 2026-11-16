@@ -14,6 +14,7 @@
 #include <array>
 #include <cstddef>
 #include <cstring>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -281,6 +282,15 @@ bool writableStatus(const DownloadCheckpointLoadStatus status) {
     return status == DownloadCheckpointLoadStatus::Missing || status == DownloadCheckpointLoadStatus::Loaded;
 }
 
+// The writer lock file refuses a second handle instead of waiting. Parallel
+// downloads (L8) update the same documents from several worker threads, so
+// writers in this process take turns here first. Recursive: a nested update on
+// the same thread still meets the file lock and fails, as before.
+std::recursive_mutex& processWriters() {
+    static std::recursive_mutex writers;
+    return writers;
+}
+
 Handle writerLock(const PrivateDirectory& directory, PrivateSecurity& security, const Policy& policy) {
     const auto path = nativePath(directory.child(policy.lock_leaf));
     Handle handle(CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE | READ_CONTROL, 0, security.attributes(),
@@ -490,6 +500,7 @@ WindowsPrivateDownloadDocumentResult WindowsPrivateDownloadDocument::load() {
 }
 
 DownloadCheckpointSaveStatus WindowsPrivateDownloadDocument::update(const Mutation& mutation) {
+    const std::lock_guard serial(processWriters());
     try {
         const auto policy = documentPolicy(kind_);
         if (!policy || !validator_ || !mutation)

@@ -71,7 +71,9 @@ class WindowsDownloadExecution final : public DownloadExecution {
     // Trusted synchronous check on the execution worker before task creation.
     // The evidence spans are valid only for the call. None allows the job.
     using Preflight = std::function<DownloadFailure(std::string_view job_id, const ArchivedDownloadJobEvidence&)>;
-    explicit WindowsDownloadExecution(TaskFactory factory, Preflight preflight = {});
+    // L8: `lanes` jobs run at once, each on its own worker thread (1 to
+    // download_service_max_active_jobs; other values are clamped).
+    explicit WindowsDownloadExecution(TaskFactory factory, Preflight preflight = {}, std::size_t lanes = 1);
     WindowsDownloadExecution(WindowsProcessDownloadIoConfig io, WindowsDownloadJobSessionConfig job);
     WindowsDownloadExecution(WindowsDownloadNetworkLaunchConfig launch, WindowsDownloadJobSessionConfig job);
     WindowsDownloadExecution(WindowsDownloadNetworkLaunchConfig network, WindowsMediaFoundationLaunchConfig media,
@@ -87,8 +89,10 @@ class WindowsDownloadExecution final : public DownloadExecution {
     [[nodiscard]] DownloadExecutionUpdate poll(std::string_view job_id) override;
     void shutdown();
     [[nodiscard]] bool stopped() const;
+    // Number of jobs this executor can run at the same time.
+    [[nodiscard]] std::size_t lanes() const;
 
-    // Current job's committed final, including Published racing cancellation or
+    // A job's committed final, including Published racing cancellation or
     // failed post-rename cleanup. Bounded private recovery evidence, NOT import
     // authority or durable ownership. Cleared only by the next successful start.
     [[nodiscard]] std::filesystem::path retainedPublicationPath(std::string_view job_id) const;
@@ -96,7 +100,7 @@ class WindowsDownloadExecution final : public DownloadExecution {
   private:
     friend class YoutubeDownloadExecutionFactory;
     WindowsDownloadExecution(TaskFactory factory, std::function<bool(const DownloadItem&)> admission,
-                             Preflight preflight);
+                             Preflight preflight, std::size_t lanes = 1);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

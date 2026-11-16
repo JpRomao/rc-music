@@ -37,6 +37,8 @@ struct WindowsDownloadExecutionProfile final {
     // Trusted composition provides a synchronized snapshot when a new local
     // job is created. An empty selection keeps the existing publish parent.
     std::function<QString()> publication_directory{};
+    // L8: jobs that run at the same time, each on its own executor lane.
+    std::size_t parallel_jobs{1};
 };
 
 struct WindowsDownloadExecutionPreparers final {

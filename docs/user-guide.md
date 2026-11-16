@@ -120,6 +120,8 @@ Ao sair pelo menu ou com **Ctrl+Q**, o RC Music salva a fila de downloads. Na pr
 
 Na página **Buscar**, pesquise pelo nome ou use **Colar links** para enviar vários vídeos de uma vez, um link do YouTube por linha. Um link do Letras na mesma linha ou na linha seguinte leva a letra junto. **Consultar links** mostra o título de cada vídeo e avisa sobre linhas sem link. **Abrir no YouTube** abre o vídeo no navegador para conferir antes de baixar. **Baixar todos** envia de uma vez os vídeos que ainda não foram pedidos.
 
+Até três downloads rodam ao mesmo tempo; os demais esperam na fila e começam assim que uma vaga libera.
+
 Na página **Atividade**, os filtros **Todos**, **Com erro**, **Concluídos**, **Na fila** e **Baixando** mostram só os pedidos daquele estado. Com o teclado, o grupo de filtros é uma parada do Tab, e as setas para a esquerda e a direita trocam de filtro. Pedidos cancelados aparecem só em **Todos**.
 
 **Abrir pasta de downloads** abre o destino atual no Explorador. Em **Preferências → Downloads → Alterar pasta**, escolha uma pasta local existente no mesmo volume da pasta de downloads do aplicativo. A mudança vale para novas transferências. Os arquivos que já foram baixados ficam onde estão.

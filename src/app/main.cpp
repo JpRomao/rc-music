@@ -665,6 +665,8 @@ int main(int argc, char* argv[]) {
             profile.options.lyrics_writer = &lyrics_binding;
             profile.options.lyricfind = lyricfind;
             profile.options.configurable_download_directory = profile.prepare_storage;
+            // L8 (ADR-0021): up to three downloads run at the same time.
+            profile.execution.parallel_jobs = music_player::m0::download_service_max_active_jobs;
             player_downloads = music_player::m0::WindowsPlayerDownloads::createConfigured(
                 presenter, downloads_initial_session, std::move(profile.execution), std::move(checkpoint_factory),
                 std::move(profile.options));

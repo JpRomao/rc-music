@@ -7,10 +7,13 @@
 #include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QThread>
 
 #include <AclAPI.h>
 #include <Sddl.h>
 
+#include <atomic>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -394,6 +397,29 @@ class WindowsDownloadOwnershipStoreTests final : public QObject {
         QVERIFY(observed);
         QCOMPARE(nested, DownloadCheckpointSaveStatus::Failed);
         QCOMPARE(second.record(planned(2)), DownloadCheckpointSaveStatus::Saved);
+        const auto loaded = second.load();
+        QVERIFY(loaded.journal);
+        QVERIFY(loaded.journal->records == std::vector({planned(1), planned(2)}));
+    }
+    void writersOnOtherThreadsWaitForTheLockInsteadOfFailing() {
+        // L8: parallel downloads record ownership from their own execution threads.
+        Fixture fixture;
+        QVERIFY(fixture.created);
+        WindowsDownloadOwnershipStore second(fixture.directory);
+        std::atomic<int> nested{-1};
+        std::thread other;
+        WindowsDownloadOwnershipStore first(
+            fixture.directory, {.inject_fault = [&](const auto point) {
+                if (point == WindowsDownloadOwnershipFaultPoint::BeforeCommit && !other.joinable()) {
+                    other = std::thread([&] { nested = static_cast<int>(second.record(planned(2))); });
+                    // Give the other writer time to reach the lock.
+                    QThread::msleep(200);
+                }
+                return false;
+            }});
+        QCOMPARE(first.record(planned()), DownloadCheckpointSaveStatus::Saved);
+        other.join();
+        QCOMPARE(static_cast<DownloadCheckpointSaveStatus>(nested.load()), DownloadCheckpointSaveStatus::Saved);
         const auto loaded = second.load();
         QVERIFY(loaded.journal);
         QVERIFY(loaded.journal->records == std::vector({planned(1), planned(2)}));

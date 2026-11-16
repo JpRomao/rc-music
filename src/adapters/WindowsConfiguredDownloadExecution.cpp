@@ -90,7 +90,8 @@ makeWindowsConfiguredDownloadExecution(WindowsDownloadExecutionProfile profile,
                                                         network_prepare, media_prepare, media_profile);
         };
     if (!profile.youtube)
-        return std::make_unique<WindowsDownloadExecution>(std::move(destination), std::move(preflight));
+        return std::make_unique<WindowsDownloadExecution>(std::move(destination), std::move(preflight),
+                                                          profile.parallel_jobs);
 
     auto& youtube = *profile.youtube;
     // The broker factory already snapshots every runtime/environment value.
@@ -98,6 +99,7 @@ makeWindowsConfiguredDownloadExecution(WindowsDownloadExecutionProfile profile,
     auto resolver = makeWindowsYoutubeBrokerResolverFactory(std::move(youtube.runtime), std::move(youtube.environment),
                                                             std::move(preparers.youtube));
     return makeWindowsMediaAndYoutubeExecution(std::move(resolver), std::move(destination),
-                                               std::move(youtube.epoch_clock), youtube.limits, std::move(preflight));
+                                               std::move(youtube.epoch_clock), youtube.limits, std::move(preflight),
+                                               profile.parallel_jobs);
 }
 } // namespace music_player::m0

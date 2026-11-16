@@ -308,6 +308,24 @@ class WindowsConfiguredDownloadExecutionTests final : public QObject {
         QCOMPARE(state->clocks.load(), 0);
         QVERIFY(h.clean());
     }
+    void parallelJobsBecomeExecutorLanesForDirectAndYoutubeProfiles() {
+        // L8: the configured executor runs up to the profile's parallel jobs.
+        for (const bool youtube : {false, true}) {
+            Fixture h;
+            QVERIFY(h.initialize());
+            const auto state = std::make_shared<Observations>();
+            if (youtube)
+                h.enableYoutube(state);
+            QCOMPARE(h.profile.parallel_jobs, std::size_t{1});
+            h.profile.parallel_jobs = 3;
+            auto execution = makeWindowsConfiguredDownloadExecution(h.profile, rejecting(state));
+            QVERIFY(execution);
+            Drain drain{*execution, h};
+            QCOMPARE(execution->lanes(), std::size_t{3});
+            execution->shutdown();
+            QVERIFY(waitFor([&] { return execution->stopped(); }));
+        }
+    }
     void protectedMediaConflictingCapabilitiesFailBeforeCallingAnyPort() {
         Fixture h;
         QVERIFY(h.initialize());

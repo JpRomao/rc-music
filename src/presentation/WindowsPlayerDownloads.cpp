@@ -223,7 +223,8 @@ struct WindowsPlayerDownloads::Impl final : AsyncDownloadSubmission {
           service(*execution, importer,
                   options.job_namespace.empty() ? QUuid::createUuid().toString(QUuid::Id128).toStdString()
                                                 : std::move(options.job_namespace),
-                  {}, &identity),
+                  // L8: one service slot per executor lane.
+                  DownloadServiceLimits{.max_active_jobs = execution->lanes()}, &identity),
           controller(service, checkpoint, session, DownloadFinalSavePolicy::HoldForDecision,
                      DownloadQueueClosePolicy::Preserve),
           youtube(controller), lyrics_writer(options.lyrics_writer),

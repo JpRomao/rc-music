@@ -277,14 +277,15 @@ class YoutubeDownloadExecutionFactory final {
   public:
     static std::unique_ptr<WindowsDownloadExecution> create(WindowsDownloadExecution::TaskFactory factory,
                                                             const bool mixed = false,
-                                                            WindowsDownloadExecution::Preflight preflight = {}) {
+                                                            WindowsDownloadExecution::Preflight preflight = {},
+                                                            const std::size_t lanes = 1) {
         return std::unique_ptr<WindowsDownloadExecution>(new WindowsDownloadExecution(
             std::move(factory),
             [mixed](const DownloadItem& item) {
                 return mixed ? (item.youtube ? youtubeContext(item) : directItem(item))
                              : (!videoId(item).isEmpty() && (!item.youtube || youtubeContext(item)));
             },
-            std::move(preflight)));
+            std::move(preflight), lanes));
     }
 };
 std::unique_ptr<WindowsDownloadExecution>
@@ -301,13 +302,14 @@ makeWindowsYoutubeAudioExecution(YoutubeResolverProcessFactory source,
 std::unique_ptr<WindowsDownloadExecution>
 makeWindowsMediaAndYoutubeExecution(YoutubeResolverProcessFactory source,
                                     WindowsDownloadExecution::TaskFactory destination, YoutubeResolverEpochClock clock,
-                                    YoutubeResolverLimits limits, WindowsDownloadExecution::Preflight preflight) {
+                                    YoutubeResolverLimits limits, WindowsDownloadExecution::Preflight preflight,
+                                    const std::size_t lanes) {
     if (!source || !destination || !clock)
         return {};
     return YoutubeDownloadExecutionFactory::create(
         [source = std::move(source), destination = std::move(destination), clock = std::move(clock), limits] {
             return std::make_unique<RoutedSessionTask>(source, destination, clock, limits);
         },
-        true, std::move(preflight));
+        true, std::move(preflight), lanes);
 }
 } // namespace music_player::m0

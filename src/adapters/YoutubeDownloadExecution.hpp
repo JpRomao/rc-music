@@ -21,5 +21,5 @@ makeWindowsYoutubeAudioExecution(YoutubeResolverProcessFactory resolver,
 makeWindowsMediaAndYoutubeExecution(YoutubeResolverProcessFactory resolver,
                                     WindowsDownloadExecution::TaskFactory destination,
                                     YoutubeResolverEpochClock epoch_clock, YoutubeResolverLimits limits = {},
-                                    WindowsDownloadExecution::Preflight preflight = {});
+                                    WindowsDownloadExecution::Preflight preflight = {}, std::size_t lanes = 1);
 } // namespace music_player::m0
