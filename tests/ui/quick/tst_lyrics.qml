@@ -132,6 +132,24 @@ TestCase {
         wait(0);
         driver.resetLocalScenario();
     }
+    function test_playerLyricsButtonOpensTheReader() {
+        const button = findChild(shell, "player-lyrics");
+        verify(button && button.visible);
+        tryVerify(() => button.enabled);
+        compare(button.iconName, "lyrics");
+        mouseClick(button);
+        tryVerify(() => findChild(shell, "lyrics-reader").visible);
+    }
+    function test_playerLyricsButtonFollowsLyricsAvailability() {
+        const button = findChild(shell, "player-lyrics");
+        tryVerify(() => button.enabled);
+        lyrics.hasSyncedLyrics = false;
+        lyrics.plainText = "";
+        tryVerify(() => !button.enabled);
+        verify(button.disabledReason.length > 0);
+        lyrics.plainText = "Verse";
+        tryVerify(() => button.enabled);
+    }
     function test_originalVerseIsPlainTextImmediatelyAboveTheProgressBar() {
         const line = findChild(shell, "lyrics-current-line");
         verify(line);

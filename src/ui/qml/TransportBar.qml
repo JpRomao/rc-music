@@ -13,7 +13,14 @@ GridLayout {
     readonly property bool editorial: !presenter.usesFrozenFixture
     readonly property bool spread: editorial && width >= 680
     readonly property bool queueModesAvailable: editorial && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
-    columns: spread ? 2 : 1
+    // Narrow rails drop the ±5 s buttons; ←/→ and the progress bar keep that function.
+    readonly property bool roomy: !editorial || width >= 580
+    property int queueCount: 0
+    property bool queueAvailable: false
+    property bool lyricsAvailable: false
+    signal queueRequested
+    signal lyricsRequested
+    columns: editorial ? 2 : 1
     columnSpacing: editorial ? 24 : 0
     rowSpacing: editorial ? 4 : 5
     QueueText {
@@ -193,6 +200,7 @@ GridLayout {
         Layout.alignment: Qt.AlignHCenter
         AccessibleTransportButton {
             objectName: "player-shuffle"
+            flat: root.editorial
             visible: root.editorial
             enabled: root.queueModesAvailable
             checkable: true
@@ -210,6 +218,7 @@ GridLayout {
         }
         AccessibleTransportButton {
             id: previousTrack
+            flat: root.editorial
             objectName: "previous"
             font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
             enabled: root.presenter.canGoPrevious
@@ -222,7 +231,9 @@ GridLayout {
         }
         AccessibleTransportButton {
             id: skipBackward
+            flat: root.editorial
             objectName: "skip-backward"
+            visible: root.roomy
             enabled: root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
             contract: root.contract
             text: root.contract.skipBackwardShort.replace("{seconds}", root.presenter.skipBackwardSeconds)
@@ -256,7 +267,9 @@ GridLayout {
         }
         AccessibleTransportButton {
             id: skipForward
+            flat: root.editorial
             objectName: "skip-forward"
+            visible: root.roomy
             enabled: root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
             contract: root.contract
             text: root.contract.skipForwardShort.replace("{seconds}", root.presenter.skipForwardSeconds)
@@ -267,6 +280,7 @@ GridLayout {
         }
         AccessibleTransportButton {
             id: nextTrack
+            flat: root.editorial
             objectName: "next"
             font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
             enabled: root.presenter.canGoNext
@@ -279,6 +293,7 @@ GridLayout {
         }
         AccessibleTransportButton {
             objectName: "player-repeat"
+            flat: root.editorial
             visible: root.editorial
             enabled: root.queueModesAvailable
             checkable: true
@@ -295,15 +310,76 @@ GridLayout {
             }
         }
     }
+    GridLayout {
+        id: rightCluster
+        objectName: "player-side-actions"
+        visible: root.editorial
+        Layout.row: 0
+        Layout.column: 1
+        Layout.rowSpan: 2
+        Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+        columns: root.spread ? 1 : 2
+        rowSpacing: 4
+        columnSpacing: 4
+        RowLayout {
+            Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+            spacing: 4
+            AccessibleTransportButton {
+                objectName: "player-lyrics"
+                flat: true
+                contract: root.contract
+                iconName: "lyrics"
+                iconWithText: root.spread
+                text: labels.lyricsAction
+                enabled: root.lyricsAvailable
+                disabledReason: labels.lyricsUnavailable
+                onClicked: {
+                    if (enabled)
+                        root.lyricsRequested();
+                }
+            }
+            AccessibleTransportButton {
+                id: queueAction
+                objectName: "player-queue"
+                flat: true
+                contract: root.contract
+                iconName: "queue"
+                iconWithText: root.spread
+                text: root.contract.queueTitle
+                accessibleName: labels.queueWithCount.arg(root.queueCount)
+                enabled: root.queueAvailable
+                rightPadding: root.spread ? queueCountLabel.implicitWidth + 18 : 6
+                implicitWidth: Math.max(root.contract.controlTargetPreferred, contentItem.implicitWidth + 16 + (root.spread ? queueCountLabel.implicitWidth + 6 : 0))
+                onClicked: {
+                    if (enabled)
+                        root.queueRequested();
+                }
+                Text {
+                    id: queueCountLabel
+                    objectName: "player-queue-count"
+                    // Beside the label when wide; a small badge on the icon when narrow.
+                    anchors.right: parent.right
+                    anchors.rightMargin: root.spread ? 12 : 4
+                    anchors.top: root.spread ? undefined : parent.top
+                    anchors.topMargin: 4
+                    anchors.verticalCenter: root.spread ? parent.verticalCenter : undefined
+                    text: String(root.queueCount)
+                    textFormat: Text.PlainText
+                    font.family: root.contract.bodyFontFamily
+                    font.pixelSize: root.spread ? root.contract.typeCaption : root.contract.typeEyebrow
+                    color: root.contract.textSecondaryColor
+                    Accessible.ignored: true
+                }
+            }
+        }
+    }
     RowLayout {
         id: volumeControls
-        parent: root.editorial ? root : controlsRow
-        Layout.row: root.spread ? 0 : 2
-        Layout.column: root.spread ? 1 : 0
-        Layout.rowSpan: root.spread ? 2 : 1
-        Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+        parent: root.editorial ? rightCluster : controlsRow
+        Layout.alignment: root.editorial ? Qt.AlignRight | Qt.AlignVCenter : Qt.AlignHCenter | Qt.AlignVCenter
         AccessibleTransportButton {
             objectName: "mute"
+            flat: root.editorial
             enabled: root.playbackEnabled
             contract: root.contract
             text: root.presenter.muted ? "🔊" : "🔇"
@@ -342,7 +418,7 @@ GridLayout {
                 }
             }
             stepSize: 1
-            implicitWidth: 120
+            implicitWidth: root.editorial && !root.spread ? 64 : 120
             activeFocusOnTab: true
             Accessible.role: Accessible.Slider
             Accessible.id: "volume"
@@ -364,6 +440,18 @@ GridLayout {
                 if (!pressed)
                     synchronizeValue();
             }
+        }
+        Text {
+            objectName: "player-volume-percent"
+            visible: root.editorial && root.spread
+            Layout.preferredWidth: 36
+            horizontalAlignment: Text.AlignRight
+            text: labels.volumePercent.arg(Math.round(root.presenter.volume * 100))
+            textFormat: Text.PlainText
+            font.family: root.contract.bodyFontFamily
+            font.pixelSize: root.contract.typeCaption
+            color: root.contract.textSecondaryColor
+            Accessible.ignored: true
         }
     }
 }

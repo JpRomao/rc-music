@@ -16,6 +16,10 @@ QtObject {
     readonly property string seekUnsupported: qsTr("Esta fonte não permite avançar ou voltar.")
     readonly property string seekPreviewActive: qsTr("Conclua o ajuste da posição antes de usar o salto.")
     readonly property string seekPending: qsTr("Aguarde a atualização da posição antes de usar o salto.")
+    readonly property string lyricsAction: qsTr("Letras")
+    readonly property string lyricsUnavailable: qsTr("Esta faixa ainda não tem letra para ler.")
+    readonly property string queueWithCount: qsTr("Abrir a fila (%1)")
+    readonly property string volumePercent: qsTr("%1%")
 
     function seconds(count) {
         return qsTr("%n segundo", "Duração configurável do salto", count);

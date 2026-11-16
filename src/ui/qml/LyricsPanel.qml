@@ -38,6 +38,12 @@ Item {
     signal readerSeekRequested(int timeMs)
     signal readerTextSizeRequested(int size)
     property bool versionsOpenedForRomaji: false
+    // The persistent player opens the same reader as the panel's own action.
+    readonly property bool readerAvailable: enabled && (synchronizedLyrics || plainLyrics)
+    function showReader() {
+        if (readerAvailable)
+            reader.open();
+    }
 
     function openLyricFind() {
         if (root.enabled && root.protectedLyrics)

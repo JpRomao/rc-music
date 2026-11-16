@@ -15,6 +15,7 @@ Button {
     readonly property string accessibleDescription: !enabled && disabledReason.length > 0 ? disabledReason : shortcutHint
     readonly property string toolTipText: !enabled && disabledReason.length > 0 ? accessibleName + " — " + disabledReason : accessibleName + (shortcutHint.length > 0 ? " (" + shortcutHint + ")" : "")
     readonly property bool contrastHighlighted: contract.highContrast && enabled && (hovered || down || checked)
+    readonly property bool quiet: flat && !primary && !contract.highContrast
     Accessible.role: Accessible.Button
     Accessible.id: controlId
     Accessible.name: accessibleName
@@ -38,9 +39,9 @@ Button {
         event.accepted = true;
     }
     background: Rectangle {
-        color: control.contract.highContrast ? (control.contrastHighlighted ? control.contract.accentColor : control.contract.surfaceColor) : (control.enabled ? (control.primary ? control.contract.accentColor : (control.checked ? control.contract.surfaceRaisedColor : control.contract.surfaceColor)) : "transparent")
+        color: control.contract.highContrast ? (control.contrastHighlighted ? control.contract.accentColor : control.contract.surfaceColor) : (control.quiet ? (control.checked ? control.contract.selectionColor : (control.hovered && control.enabled ? control.contract.hoverColor : control.contract.surfaceColor)) : (control.enabled ? (control.primary ? control.contract.accentColor : (control.checked ? control.contract.surfaceRaisedColor : control.contract.surfaceColor)) : "transparent"))
         radius: control.primary ? height / 2 : control.contract.radiusSmall
-        border.width: control.activeFocus ? 3 : (control.checked ? 2 : 1)
+        border.width: control.activeFocus ? 3 : (control.quiet ? 0 : (control.checked ? 2 : 1))
         border.color: control.contract.highContrast ? (!control.enabled ? control.contract.disabledTextColor : (control.contrastHighlighted ? control.contract.accentTextColor : control.contract.focusColor)) : (control.activeFocus ? (control.primary ? control.contract.accentTextColor : control.contract.focusColor) : (control.checked ? control.contract.accentColor : control.contract.borderColor))
         Rectangle {
             anchors.fill: parent
@@ -58,7 +59,7 @@ Button {
             radius: control.contract.radiusSmall
             color: control.contract.textPrimaryColor
             visible: !control.contract.highContrast
-            opacity: !control.contract.highContrast && control.hovered && control.enabled ? 0.08 : 0
+            opacity: !control.contract.highContrast && !control.quiet && control.hovered && control.enabled ? 0.08 : 0
             Accessible.ignored: true
             Behavior on opacity {
                 enabled: !control.contract.highContrast
@@ -74,7 +75,7 @@ Button {
         // With an icon, the text is either replaced (icon-only glyph buttons) or kept beside it.
         text: control.iconName.length > 0 && !control.iconWithText ? "" : control.text
         font: control.font
-        color: control.contract.highContrast && !control.enabled ? control.contract.disabledTextColor : (control.contrastHighlighted || (control.primary && !control.contract.highContrast && control.enabled) ? control.contract.accentTextColor : control.contract.textPrimaryColor)
+        color: control.contract.highContrast && !control.enabled ? control.contract.disabledTextColor : (control.contrastHighlighted || (control.primary && !control.contract.highContrast && control.enabled) ? control.contract.accentTextColor : (control.quiet && control.checked ? control.contract.accentColor : control.contract.textPrimaryColor))
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         topPadding: control.down ? 2 : 0

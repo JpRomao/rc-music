@@ -633,7 +633,12 @@ ApplicationWindow {
             anchors.rightMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 18 : 28) : window.uiContract.spacingUnit * 3
             contract: window.uiContract
             presenter: window.presenter
-            enabled: !window.presenter.exiting && (playbackEnabled || window.presenter.canGoPrevious || window.presenter.canGoNext)
+            enabled: !window.presenter.exiting && (playbackEnabled || window.presenter.canGoPrevious || window.presenter.canGoNext || queueAvailable || lyricsAvailable)
+            queueCount: queuePreview.count
+            queueAvailable: window.presenter.queueLoaded && queuePreview.count > 0 && !window.presenter.exiting
+            lyricsAvailable: lyricsPanel.readerAvailable
+            onQueueRequested: window.setQueueOpen(true)
+            onLyricsRequested: lyricsPanel.showReader()
         }
         Item {
             id: playerIdentity
