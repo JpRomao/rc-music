@@ -29,4 +29,6 @@ struct YoutubeAudioDecodingResult final {
                                                                                  std::size_t expected_item_count);
 // Empty for an invalid opaque ID; no caller-controlled host, query or shell.
 [[nodiscard]] QString canonicalYoutubeWatchUrl(std::string_view video_id);
+// The lyrics page rule of a request item: an https Letras page, without query.
+[[nodiscard]] bool validYoutubeLyricsPage(const QString& page);
 } // namespace music_player::m0

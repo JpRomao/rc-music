@@ -315,6 +315,7 @@ std::optional<DownloadSubmissionResult> decodeYoutubeAudioResponse(const QByteAr
             return DownloadSubmissionResult{.error = error};
     return {};
 }
+bool validYoutubeLyricsPage(const QString& page) { return !page.isEmpty() && validLyricsPage(page); }
 QString canonicalYoutubeWatchUrl(const std::string_view video_id) {
     return validVideoId(video_id) ? QStringLiteral("https://www.youtube.com/watch?v=") +
                                         QString::fromLatin1(video_id.data(), static_cast<qsizetype>(video_id.size()))
