@@ -4,6 +4,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include <filesystem>
 #include <functional>
@@ -32,6 +33,8 @@ class LibraryBinding final : public QObject {
     Q_PROPERTY(QString filterText READ filterText WRITE setFilterText NOTIFY changed)
     Q_PROPERTY(int visibleCount READ visibleCount NOTIFY changed)
     Q_PROPERTY(bool canLocate READ canLocate NOTIFY changed)
+    // Download jobs whose audio entered the confirmed library (for Activity).
+    Q_PROPERTY(QStringList downloadJobs READ downloadJobs NOTIFY changed)
   public:
     using Paths = std::vector<std::filesystem::path>;
     // Appends to the queue without playback (the playlist path of the presenter).
@@ -78,6 +81,7 @@ class LibraryBinding final : public QObject {
     // Adds the record's file to the end of a saved playlist; the library is unchanged.
     Q_INVOKABLE bool addToPlaylist(const QString& record_id, const QString& playlist_id);
     [[nodiscard]] bool canLocate() const;
+    [[nodiscard]] QStringList downloadJobs() const;
     // Asks the user for the record's new location. The ID, tags and playlists stay
     // as they are; a path that belongs to another record is reported as a conflict.
     Q_INVOKABLE bool locate(const QString& record_id);

@@ -40,4 +40,8 @@ QtObject {
     readonly property string lyricsBusy: qsTr("Buscando letra…")
     readonly property string reviewLyrics: qsTr("Revisar letras")
     readonly property string title: qsTr("Downloads")
+    readonly property string mp3Ready: qsTr("MP3 pronto")
+    readonly property string inQueue: qsTr("Na fila de reprodução")
+    readonly property string inLibrary: qsTr("Na biblioteca")
+    readonly property string libraryPending: qsTr("Biblioteca pendente")
 }

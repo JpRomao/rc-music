@@ -358,6 +358,12 @@ bool LibraryBinding::addToPlaylist(const QString& record_id, const QString& play
         return false;
     }
 }
+QStringList LibraryBinding::downloadJobs() const {
+    QStringList jobs;
+    for (const auto& job : impl_->confirmed.snapshot().download_jobs)
+        jobs.push_back(QString::fromStdString(job));
+    return jobs;
+}
 bool LibraryBinding::canLocate() const {
     return impl_->locator && impl_->ready && !impl_->locating && !impl_->stopping;
 }

@@ -33,6 +33,8 @@ PageSurface {
     readonly property bool closeWithoutSaveAvailable: downloads !== null && downloads.canCloseAfterFinalSaveFailure
     required property ShellUiContract contract
     property var downloads: null
+    // ADR-0019: the library's confirmed download ledger, for the destinations line.
+    property var library: null
     readonly property bool openFolderAvailable: downloads !== null && typeof downloads.openDownloadDirectory === "function" && typeof downloads.downloadDirectoryText === "string" && downloads.downloadDirectoryText.length > 0
     readonly property bool directoryActionPending: openFolderAvailable && downloads.downloadDirectoryPending === true
     readonly property var lyricsBackend: downloads !== null && typeof downloads.lyrics !== "undefined" ? downloads.lyrics : null
@@ -659,6 +661,21 @@ PageSurface {
                         color: root.contract.textSecondaryColor
                         objectName: "download-status"
                         text: row.statusText
+                        textFormat: Text.PlainText
+                        wrapMode: Text.Wrap
+                    }
+                    Text {
+                        // Where a finished MP3 went: ready, in the playback queue, in the library.
+                        readonly property bool fileReady: row.jobState === "completed" || row.jobState === "imported" || row.jobState === "import_failed"
+                        readonly property bool queued: row.jobState === "completed" || row.jobState === "imported"
+                        readonly property bool inLibrary: root.library !== null && root.library.downloadJobs.indexOf(row.jobId) >= 0
+                        Accessible.name: text
+                        Accessible.role: Accessible.StaticText
+                        Layout.fillWidth: true
+                        visible: fileReady
+                        color: root.contract.textSecondaryColor
+                        objectName: "download-destinations"
+                        text: [labels.mp3Ready, queued ? labels.inQueue : "", inLibrary ? labels.inLibrary : (root.library !== null ? labels.libraryPending : "")].filter(part => part.length > 0).join(" · ")
                         textFormat: Text.PlainText
                         wrapMode: Text.Wrap
                     }

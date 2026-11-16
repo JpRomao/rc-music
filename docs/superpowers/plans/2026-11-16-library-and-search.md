@@ -55,7 +55,8 @@
 - Localizar: faixa indisponível ganha "Localizar", com escolha de arquivo própria da biblioteca. O ID e as tags ficam, e o registro volta a ficar disponível. Um caminho de outra faixa é conflito, sem mudança. Fechar a página cancela o pedido, e respostas tardias para registros removidos são ignoradas.
 - Adicionar à playlist: menu por linha com as playlists salvas, via `PlaylistsBinding::appendToPlaylist`. Só `Saved` confirma, e a seleção da página Playlists não muda.
 - Capas: alternativa à Lista, que continua padrão. As capas são marcadores em tons do tema com a inicial do álbum ou do título. Arte real precisa de um cache de capas próprio, ainda pendente.
-- Pendente de L4b: Atividade distinguindo "MP3 pronto", "na biblioteca" e "na fila"; cache de capas; teste no app real.
+- Atividade: cada download com MP3 final mostra para onde ele foi: "MP3 pronto", "Na fila de reprodução" (concluído ou já importado) e "Na biblioteca" ou "Biblioteca pendente". A biblioteca vem de `LibraryBinding::downloadJobs`, o registro confirmado de jobs, que só muda com `Saved` e continua valendo se o registro for removido depois (o download entrou na biblioteca).
+- Pendente de L4b: cache de capas; teste no app real.
 
 ## Contrato de L5
 

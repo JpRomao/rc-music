@@ -238,6 +238,22 @@ class LibraryBindingTests final : public QObject {
         QCOMPARE(h.store->saved().size(), writes);
         QCOMPARE(h.binding.count(), 1);
     }
+    void activityLearnsWhichDownloadsEnteredTheLibraryOnlyAfterSaved() {
+        Harness h;
+        h.startAndWait();
+        QVERIFY(h.binding.downloadJobs().isEmpty());
+        h.store->holdSaves(true);
+        h.binding.admitDownload(track(1), "downloads-1");
+        QTest::qWait(30);
+        QVERIFY(h.binding.downloadJobs().isEmpty()); // Not saved yet.
+        h.store->holdSaves(false);
+        QTRY_COMPARE(h.binding.downloadJobs(), QStringList{QStringLiteral("downloads-1")});
+        // Removing the record keeps the ledger: the download did enter the library.
+        const auto id = QString::number(h.binding.confirmedSnapshot().records.front().id);
+        QVERIFY(h.binding.remove(id));
+        QTRY_COMPARE(h.binding.count(), 0);
+        QCOMPARE(h.binding.downloadJobs(), QStringList{QStringLiteral("downloads-1")});
+    }
     void theModelListsConfirmedRecordsWithReadableFallbacks() {
         Harness h;
         h.store->setLoaded({.snapshot = {{{3, std::filesystem::path(L"C:/Música/Canção do Mar.mp3"), "Canção do Mar",

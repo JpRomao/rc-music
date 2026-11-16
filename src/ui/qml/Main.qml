@@ -863,6 +863,7 @@ ApplicationWindow {
         y: embedded ? mainLayout.y + contentArea.y : (window.height - height) / 2
         contract: window.uiContract
         downloads: window.downloads
+        library: window.library
         fallbackFocusItem: downloadsButton
         focusRestoreAllowed: window.active && (!window.inlinePages || window.currentPage === "home") && (!window.presenter.exiting || window.downloadFinalSaveDecisionRequired)
         onExitRequested: window.presenter.requestExit()

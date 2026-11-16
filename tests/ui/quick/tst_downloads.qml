@@ -68,6 +68,7 @@ TestCase {
         driver.resetLocalScenario();
         driver.setHighContrast(false, false);
         jobs.clear();
+        libraryLedger.downloadJobs = ["in-library"];
         jobs.cancelledIds = [];
         jobs.retriedIds = [];
         downloads = createTemporaryObject(bindingComponent, testCase);
@@ -460,6 +461,22 @@ TestCase {
         verify(!presenter.exiting, "A refused abandonment must not request exit");
         verify(!presenter.exitCommitted);
         compare(scenario.localExitCalls(), 0, "A refused abandonment must not exit the local platform");
+    }
+    function test_finishedDownloadsSayWhereTheMp3Went() {
+        addJob("in-library", "completed", "Concluído", false, false, false, 1);
+        addJob("pending", "imported", "Já importado na fila", false, false, false, 1);
+        addJob("not-queued", "import_failed", "Arquivo pronto; importação pendente", false, true, false, 1);
+        addJob("running", "downloading", "Baixando", true, false, false, 0.3);
+        shell.library = libraryLedger;
+        openDownloads();
+        compare(findChild(rowAt(0), "download-destinations").text, "MP3 pronto · Na fila de reprodução · Na biblioteca");
+        compare(findChild(rowAt(1), "download-destinations").text, "MP3 pronto · Na fila de reprodução · Biblioteca pendente");
+        compare(findChild(rowAt(2), "download-destinations").text, "MP3 pronto · Biblioteca pendente");
+        verify(!findChild(rowAt(3), "download-destinations").visible);
+        libraryLedger.downloadJobs = ["in-library", "pending"];
+        tryCompare(findChild(rowAt(1), "download-destinations"), "text", "MP3 pronto · Na fila de reprodução · Na biblioteca");
+        shell.library = null;
+        tryCompare(findChild(rowAt(0), "download-destinations"), "text", "MP3 pronto · Na fila de reprodução");
     }
     function test_importedHistoryIsFinalWithoutActionsOrFileCapability() {
         addJob("history", "imported", "Já importado na fila", false, false, false, 1);
@@ -1466,6 +1483,22 @@ TestCase {
 
     // This proxy and ListModel are UI-only harnesses. They neither execute a
     // download nor stand in for the production owner/binding integration tests.
+    QtObject {
+        id: libraryLedger
+        property bool ready: true
+        property bool busy: false
+        property int count: 0
+        property int visibleCount: 0
+        property bool hasPendingChange: false
+        property bool canRetrySave: false
+        property bool canLocate: false
+        property string statusText: ""
+        property string filterText: ""
+        property var model: null
+        property var downloadJobs: ["in-library"]
+        function cancelLocate() {
+        }
+    }
     ListModel {
         id: jobs
 
