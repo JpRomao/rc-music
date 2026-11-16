@@ -326,7 +326,7 @@ Popup {
                 text: root.contract.detailsTitle
                 textFormat: Text.PlainText
                 color: root.contract.textPrimaryColor
-                font.pixelSize: 20
+                font.pixelSize: root.contract.typeTitle
                 font.bold: true
                 Accessible.ignored: true
             }

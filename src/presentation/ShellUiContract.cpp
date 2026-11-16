@@ -84,10 +84,12 @@ ShellUiContract::ShellUiContract(const FixtureBundle& bundle, QObject* parent) :
                layout.radius_small_px,          layout.radius_medium_px,
                layout.spacing_unit_px};
     const auto convert_palette = [](const FixturePalette& source) {
-        return Palette{source.canvas,         source.surface, source.surface_raised, source.text_primary,
-                       source.text_secondary, source.accent,  source.on_accent,      source.border,
-                       source.focus,          source.error,   source.warning,        source.success,
-                       source.surface};
+        // The frozen M0 fixture predates selection/hover/divider roles; map them to the
+        // colors its QML already used so historical renders stay unchanged.
+        return Palette{source.canvas,         source.surface,        source.surface_raised, source.text_primary,
+                       source.text_secondary, source.accent,         source.on_accent,      source.border,
+                       source.focus,          source.error,          source.warning,        source.success,
+                       source.surface,        source.surface_raised, source.surface_raised, source.border};
     };
     light_palette_ = convert_palette(themes.light);
     dark_palette_ = convert_palette(themes.dark);
@@ -150,6 +152,16 @@ int ShellUiContract::controlTargetPreferred() const noexcept { return layout_.co
 int ShellUiContract::radiusMedium() const noexcept { return layout_.radius_medium_px; }
 int ShellUiContract::radiusSmall() const noexcept { return layout_.radius_small_px; }
 int ShellUiContract::spacingUnit() const noexcept { return layout_.spacing_unit_px; }
+int ShellUiContract::typeEyebrow() const noexcept { return 10; }
+int ShellUiContract::typeCaption() const noexcept { return 12; }
+int ShellUiContract::typeBody() const noexcept { return 14; }
+int ShellUiContract::typeSubtitle() const noexcept { return 18; }
+int ShellUiContract::typeTitle() const noexcept { return 20; }
+int ShellUiContract::typeSection() const noexcept { return 24; }
+int ShellUiContract::typeHeading() const noexcept { return 30; }
+int ShellUiContract::typeDisplay() const noexcept { return 36; }
+int ShellUiContract::compactWidth() const noexcept { return 900; }
+int ShellUiContract::wideWidth() const noexcept { return 1200; }
 QString ShellUiContract::appName() const { return ApplicationIdentity::displayName(); }
 QString ShellUiContract::headingFontFamily() const { return QStringLiteral("Georgia"); }
 QString ShellUiContract::bodyFontFamily() const { return QStringLiteral("Segoe UI"); }
@@ -232,6 +244,13 @@ QString ShellUiContract::successColor() const {
 }
 QString ShellUiContract::disabledTextColor() const {
     return high_contrast_ ? high_contrast_->disabled_text.name() : textPrimaryColor();
+}
+QString ShellUiContract::selectionColor() const {
+    return high_contrast_ ? high_contrast_->highlight.name() : palette().selection;
+}
+QString ShellUiContract::hoverColor() const { return high_contrast_ ? high_contrast_->window.name() : palette().hover; }
+QString ShellUiContract::dividerColor() const {
+    return high_contrast_ ? high_contrast_->window_text.name() : palette().divider;
 }
 bool ShellUiContract::highContrast() const noexcept { return high_contrast_.has_value(); }
 bool ShellUiContract::darkTheme() const noexcept { return dark_theme_; }

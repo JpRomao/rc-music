@@ -65,14 +65,14 @@ ColumnLayout {
             Text {
                 text: labels.queueShelf
                 font.family: root.contract.headingFontFamily
-                font.pixelSize: 25
+                font.pixelSize: root.contract.typeSection
                 color: root.contract.textPrimaryColor
                 textFormat: Text.PlainText
             }
             Text {
                 text: labels.queueCount.arg(cards.count)
                 font.family: root.contract.bodyFontFamily
-                font.pixelSize: 12
+                font.pixelSize: root.contract.typeCaption
                 color: root.contract.textSecondaryColor
                 textFormat: Text.PlainText
             }
@@ -171,7 +171,7 @@ ColumnLayout {
                     Layout.fillWidth: true
                     text: card.displayTitle
                     font.family: root.contract.bodyFontFamily
-                    font.pixelSize: 14
+                    font.pixelSize: root.contract.typeBody
                     color: root.contract.textPrimaryColor
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
@@ -180,7 +180,7 @@ ColumnLayout {
                     Layout.fillWidth: true
                     text: card.artist.length > 0 ? card.artist : labels.localAudio
                     font.family: root.contract.bodyFontFamily
-                    font.pixelSize: 12
+                    font.pixelSize: root.contract.typeCaption
                     color: root.contract.textSecondaryColor
                     elide: Text.ElideRight
                     textFormat: Text.PlainText

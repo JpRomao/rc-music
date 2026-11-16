@@ -291,7 +291,7 @@ PageSurface {
             textFormat: Text.PlainText
             color: root.contract.textPrimaryColor
             font.bold: true
-            font.pixelSize: 22
+            font.pixelSize: root.contract.typeSection
             Accessible.ignored: true
         }
         RowLayout {

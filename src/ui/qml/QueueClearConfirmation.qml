@@ -48,7 +48,7 @@ Popup {
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             color: root.contract.textPrimaryColor
-            font.pixelSize: 20
+            font.pixelSize: root.contract.typeTitle
             font.bold: true
             Accessible.ignored: true
         }

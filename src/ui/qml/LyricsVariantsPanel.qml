@@ -506,7 +506,7 @@ Dialog {
             textFormat: Text.PlainText
             color: root.contract.textPrimaryColor
             font.bold: true
-            font.pixelSize: 22
+            font.pixelSize: root.contract.typeSection
             Accessible.ignored: true
         }
         Text {
@@ -897,7 +897,7 @@ Dialog {
                     textFormat: Text.PlainText
                     color: root.contract.textPrimaryColor
                     font.bold: true
-                    font.pixelSize: 20
+                    font.pixelSize: root.contract.typeTitle
                     wrapMode: Text.Wrap
                     Accessible.ignored: true
                 }

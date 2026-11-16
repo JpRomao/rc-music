@@ -32,6 +32,18 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(int radiusMedium READ radiusMedium CONSTANT)
     Q_PROPERTY(int radiusSmall READ radiusSmall CONSTANT)
     Q_PROPERTY(int spacingUnit READ spacingUnit CONSTANT)
+    // Type scale in pixels; QML uses these roles instead of literal sizes.
+    Q_PROPERTY(int typeEyebrow READ typeEyebrow CONSTANT)
+    Q_PROPERTY(int typeCaption READ typeCaption CONSTANT)
+    Q_PROPERTY(int typeBody READ typeBody CONSTANT)
+    Q_PROPERTY(int typeSubtitle READ typeSubtitle CONSTANT)
+    Q_PROPERTY(int typeTitle READ typeTitle CONSTANT)
+    Q_PROPERTY(int typeSection READ typeSection CONSTANT)
+    Q_PROPERTY(int typeHeading READ typeHeading CONSTANT)
+    Q_PROPERTY(int typeDisplay READ typeDisplay CONSTANT)
+    // Window widths at or below which the shell switches to compact / medium layouts.
+    Q_PROPERTY(int compactWidth READ compactWidth CONSTANT)
+    Q_PROPERTY(int wideWidth READ wideWidth CONSTANT)
     Q_PROPERTY(QString appName READ appName CONSTANT)
     Q_PROPERTY(QString headingFontFamily READ headingFontFamily CONSTANT)
     Q_PROPERTY(QString bodyFontFamily READ bodyFontFamily CONSTANT)
@@ -82,6 +94,9 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(QString warningColor READ warningColor NOTIFY appearanceChanged)
     Q_PROPERTY(QString successColor READ successColor NOTIFY appearanceChanged)
     Q_PROPERTY(QString disabledTextColor READ disabledTextColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString selectionColor READ selectionColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString hoverColor READ hoverColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString dividerColor READ dividerColor NOTIFY appearanceChanged)
     Q_PROPERTY(bool highContrast READ highContrast NOTIFY appearanceChanged)
     Q_PROPERTY(bool darkTheme READ darkTheme NOTIFY appearanceChanged)
     Q_PROPERTY(bool reducedMotion READ reducedMotion NOTIFY appearanceChanged)
@@ -108,6 +123,16 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] int radiusMedium() const noexcept;
     [[nodiscard]] int radiusSmall() const noexcept;
     [[nodiscard]] int spacingUnit() const noexcept;
+    [[nodiscard]] int typeEyebrow() const noexcept;
+    [[nodiscard]] int typeCaption() const noexcept;
+    [[nodiscard]] int typeBody() const noexcept;
+    [[nodiscard]] int typeSubtitle() const noexcept;
+    [[nodiscard]] int typeTitle() const noexcept;
+    [[nodiscard]] int typeSection() const noexcept;
+    [[nodiscard]] int typeHeading() const noexcept;
+    [[nodiscard]] int typeDisplay() const noexcept;
+    [[nodiscard]] int compactWidth() const noexcept;
+    [[nodiscard]] int wideWidth() const noexcept;
     [[nodiscard]] QString appName() const;
     [[nodiscard]] QString headingFontFamily() const;
     [[nodiscard]] QString bodyFontFamily() const;
@@ -158,6 +183,9 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] QString warningColor() const;
     [[nodiscard]] QString successColor() const;
     [[nodiscard]] QString disabledTextColor() const;
+    [[nodiscard]] QString selectionColor() const;
+    [[nodiscard]] QString hoverColor() const;
+    [[nodiscard]] QString dividerColor() const;
     [[nodiscard]] bool highContrast() const noexcept;
     [[nodiscard]] bool darkTheme() const noexcept;
     [[nodiscard]] bool reducedMotion() const noexcept;
@@ -199,6 +227,9 @@ class ShellUiContract final : public QObject {
         QString warning;
         QString success;
         QString navigation;
+        QString selection;
+        QString hover;
+        QString divider;
     };
     struct MotionTimings final {
         int panel_transition_ms;
@@ -211,16 +242,16 @@ class ShellUiContract final : public QObject {
     LayoutTokens layout_{320, 380, 40, 44, 8, 12, 4};
     // Production uses Aurora. The fixture constructor restores authenticated
     // historical palettes independently; do not recolor the frozen M0 inputs.
-    Palette light_palette_{QStringLiteral("#F5F1E9"), QStringLiteral("#FFFCF6"), QStringLiteral("#EEE8DD"),
-                           QStringLiteral("#302D28"), QStringLiteral("#726557"), QStringLiteral("#934B32"),
-                           QStringLiteral("#FFFAF4"), QStringLiteral("#A58C73"), QStringLiteral("#934B32"),
-                           QStringLiteral("#9B3C32"), QStringLiteral("#795A21"), QStringLiteral("#167344"),
-                           QStringLiteral("#EEE8DD")};
-    Palette dark_palette_{QStringLiteral("#1B1917"), QStringLiteral("#24211D"), QStringLiteral("#2D2923"),
-                          QStringLiteral("#F2EADD"), QStringLiteral("#BFB09D"), QStringLiteral("#D6A27E"),
-                          QStringLiteral("#2D1C13"), QStringLiteral("#89715A"), QStringLiteral("#D6A27E"),
-                          QStringLiteral("#F2ADA0"), QStringLiteral("#E2C78B"), QStringLiteral("#6DDA9B"),
-                          QStringLiteral("#1E1C19")};
+    Palette light_palette_{
+        QStringLiteral("#F5F1E9"), QStringLiteral("#FFFCF6"), QStringLiteral("#EEE8DD"), QStringLiteral("#302D28"),
+        QStringLiteral("#726557"), QStringLiteral("#934B32"), QStringLiteral("#FFFAF4"), QStringLiteral("#A58C73"),
+        QStringLiteral("#934B32"), QStringLiteral("#9B3C32"), QStringLiteral("#795A21"), QStringLiteral("#167344"),
+        QStringLiteral("#EEE8DD"), QStringLiteral("#EEE0D2"), QStringLiteral("#EAE1D5"), QStringLiteral("#D7CAB9")};
+    Palette dark_palette_{
+        QStringLiteral("#1B1917"), QStringLiteral("#24211D"), QStringLiteral("#2D2923"), QStringLiteral("#F2EADD"),
+        QStringLiteral("#BFB09D"), QStringLiteral("#D6A27E"), QStringLiteral("#2D1C13"), QStringLiteral("#89715A"),
+        QStringLiteral("#D6A27E"), QStringLiteral("#F2ADA0"), QStringLiteral("#E2C78B"), QStringLiteral("#6DDA9B"),
+        QStringLiteral("#1E1C19"), QStringLiteral("#3A2C23"), QStringLiteral("#353029"), QStringLiteral("#4C4236")};
     MotionTimings normal_motion_{160, 120};
     MotionTimings reduced_motion_timings_{0, 0};
     std::optional<HighContrastPalette> high_contrast_;

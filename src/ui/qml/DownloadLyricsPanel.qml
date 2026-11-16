@@ -375,7 +375,7 @@ Dialog {
         FieldLabel {
             text: lyricsText.downloadedTitle
             font.bold: true
-            font.pixelSize: 20
+            font.pixelSize: root.contract.typeTitle
         }
         Text {
             objectName: "download-lyrics-status"

@@ -197,8 +197,9 @@ TestCase {
             mouseMove(button);
             tryVerify(() => button.hovered);
             const hover = findChild(button.background, "hover-feedback");
-            tryVerify(() => Math.abs(hover.opacity - 0.08) < 0.001);
-            verifyContrast(button.contentItem.color, composite(hover.color, button.background.color, hover.opacity), 4.5, name + " text including hover");
+            tryVerify(() => button.checked || (hover && hover.opacity > 0.001) || Qt.colorEqual(button.background.color, productContract.hoverColor), 5000, name + " shows hover feedback");
+            const rendered = hover && hover.opacity > 0 ? composite(hover.color, button.background.color, hover.opacity) : button.background.color;
+            verifyContrast(button.contentItem.color, rendered, 4.5, name + " text including hover");
             button.forceActiveFocus(Qt.TabFocusReason);
             verify(button.activeFocus);
             verifyContrast(button.background.border.color, button.background.color, 3, name + " inner focus/selection");
@@ -219,6 +220,44 @@ TestCase {
             verify(focus.visible);
             verifyContrast(focus.border.color, footer.color, 3, name + " focus on actual footer");
         }
+    }
+
+    function test_selectedNavigationUsesAuroraSelection_data() {
+        return [
+            {
+                tag: "light",
+                dark: false
+            },
+            {
+                tag: "dark",
+                dark: true
+            }
+        ];
+    }
+
+    function test_selectedNavigationUsesAuroraSelection(data) {
+        // The queue entry is disabled (and correctly shows no hover) until the queue has tracks.
+        loadSyntheticQueue();
+        presenter.setMotionPreference(PlayerPresenter.ReducedMotion);
+        presenter.setThemePreference(data.dark ? PlayerPresenter.DarkTheme : PlayerPresenter.LightTheme);
+        tryCompare(productContract, "darkTheme", data.dark);
+        verify(waitForPolish(shell));
+        const navigation = findChild(shell, "side-navigation");
+        const selected = findChild(shell, "now");
+        const other = findChild(shell, "queue");
+        verify(selected.checked);
+        verify(!other.checked);
+        // The selected page must be recognizable without relying on the 3 px bar alone.
+        verify(Qt.colorEqual(selected.background.color, productContract.selectionColor), String(selected.background.color));
+        verify(!Qt.colorEqual(selected.background.color, navigation.color));
+        verify(Qt.colorEqual(selected.contentItem.color, productContract.accentColor), String(selected.contentItem.color));
+        verify(selected.contentItem.font.weight > other.contentItem.font.weight);
+        verifyContrast(selected.contentItem.color, selected.background.color, 4.5, "selected navigation text");
+        verify(Qt.colorEqual(other.background.color, navigation.color), String(other.background.color));
+        mouseMove(other);
+        tryVerify(() => other.hovered);
+        tryVerify(() => Qt.colorEqual(other.background.color, productContract.hoverColor));
+        verifyContrast(other.contentItem.color, other.background.color, 4.5, "hovered navigation text");
     }
 
     function test_navigationHighContrastOverridesTheApprovedTheme() {

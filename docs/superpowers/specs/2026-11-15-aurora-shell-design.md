@@ -45,6 +45,8 @@ Transformar o player em um aplicativo musical completo, com navegação lateral 
 
 Mapear papéis para o contrato nativo, não colar CSS no QML. O contorno funcional não usa a divisória decorativa se isso violar o contraste de controles. Para papéis sem token próprio na referência, preservar semântica e contraste, registrando a escolha técnica sem atribuí-la ao usuário.
 
+**Mapeamento nativo (fatia 1, 2026-11-16).** `ShellUiContract` expõe `selectionColor`, `hoverColor` e `dividerColor` com os valores da tabela. Em alto contraste, viram respectivamente Highlight, Window e WindowText do sistema. No construtor do fixture M0 congelado, Seleção e Hover reutilizam a superfície elevada e Divisória reutiliza a borda, de modo que os renders históricos não mudam. O contrato também fixa a escala tipográfica em pixels (`typeEyebrow` 10, `typeCaption` 12, `typeBody` 14, `typeSubtitle` 18, `typeTitle` 20, `typeSection` 24, `typeHeading` 30, `typeDisplay` 36) e os breakpoints `compactWidth` 900 e `wideWidth` 1200 do protótipo. Na navegação Aurora, o item atual usa fundo de Seleção, texto em Destaque e peso semibold, sem depender só da barra de 3 px. O hover usa o token Hover, e as divisórias da lateral, do cabeçalho e do player usam Divisória opaca.
+
 Georgia/serif de sistema nos títulos editoriais e Segoe UI/fonte do sistema nos controles são a referência, sem baixar ou embutir fontes. Layout deve funcionar com fallback. Preservar alvos mínimos 40 px, preferidos 44 px, e janela mínima 720×520; escala/DPI e texto longo não podem tornar ações essenciais inalcançáveis.
 
 ## Contratos da migração

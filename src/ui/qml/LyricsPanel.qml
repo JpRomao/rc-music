@@ -189,7 +189,7 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             font.bold: true
-            font.pixelSize: 18
+            font.pixelSize: root.contract.typeSubtitle
             color: root.contract.textPrimaryColor
             Accessible.role: Accessible.StaticText
             Accessible.name: text
@@ -499,7 +499,7 @@ Item {
                 textFormat: Text.PlainText
                 color: root.contract.textPrimaryColor
                 font.bold: true
-                font.pixelSize: 20
+                font.pixelSize: root.contract.typeTitle
                 Accessible.ignored: true
             }
             Text {

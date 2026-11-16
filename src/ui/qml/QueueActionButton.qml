@@ -47,6 +47,6 @@ ToolButton {
         color: control.contract.highContrast && !control.enabled ? control.contract.disabledTextColor : (control.contrastHovered ? control.contract.accentTextColor : (control.enabled ? control.contract.textPrimaryColor : control.contract.textSecondaryColor))
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
-        font.pixelSize: 20
+        font.pixelSize: control.contract.typeTitle
     }
 }

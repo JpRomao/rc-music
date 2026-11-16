@@ -370,8 +370,8 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: playerFooter.top
-        width: window.inlinePages ? (window.width <= 900 ? 68 : (window.width <= 1200 ? 196 : 224)) : (compact ? 144 : 224)
-        compact: window.inlinePages ? window.width <= 900 : window.width < 1000
+        width: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 68 : (window.width <= window.uiContract.wideWidth ? 196 : 224)) : (compact ? 144 : 224)
+        compact: window.inlinePages ? window.width <= window.uiContract.compactWidth : window.width < 1000
         editorial: window.inlinePages
         themeHost: window.inlinePages ? workspaceHeader.themeHost : null
         contract: window.uiContract
@@ -413,7 +413,7 @@ ApplicationWindow {
         height: implicitHeight
         visible: window.inlinePages
         contract: window.uiContract
-        compact: window.width <= 900
+        compact: window.width <= window.uiContract.compactWidth
         pageTitle: window.currentPage === "home" ? navigationText.home : (window.currentPage === "queue" ? window.uiContract.queueTitle : (window.currentPage === "playlists" ? navigationText.playlists : (window.currentPage === "downloads" ? downloadText.title : window.uiContract.preferencesTitle)))
     }
     ColumnLayout {
@@ -423,8 +423,8 @@ ApplicationWindow {
         anchors.top: window.inlinePages ? workspaceHeader.bottom : parent.top
         anchors.bottom: playerFooter.top
         anchors.margins: window.inlinePages ? 30 : window.uiContract.spacingUnit * 6
-        anchors.leftMargin: window.inlinePages ? (window.width <= 900 ? 23 : 38) : window.uiContract.spacingUnit * 6
-        anchors.rightMargin: window.inlinePages ? (window.width <= 900 ? 23 : 38) : window.uiContract.spacingUnit * 6
+        anchors.leftMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 23 : 38) : window.uiContract.spacingUnit * 6
+        anchors.rightMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 23 : 38) : window.uiContract.spacingUnit * 6
         Item {
             id: contentArea
             Layout.fillWidth: true
@@ -468,7 +468,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             text: navigationText.heading
                             font.family: window.uiContract.headingFontFamily
-                            font.pixelSize: 36
+                            font.pixelSize: window.uiContract.typeDisplay
                             color: window.uiContract.textPrimaryColor
                             textFormat: Text.PlainText
                             wrapMode: Text.WordWrap
@@ -477,7 +477,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             text: navigationText.pageDescription
                             font.family: window.uiContract.bodyFontFamily
-                            font.pixelSize: 14
+                            font.pixelSize: window.uiContract.typeBody
                             color: window.uiContract.textSecondaryColor
                             textFormat: Text.PlainText
                             wrapMode: Text.WordWrap
@@ -514,7 +514,7 @@ ApplicationWindow {
                     text: navigationText.heading
                     textFormat: Text.PlainText
                     font.family: window.uiContract.headingFontFamily
-                    font.pixelSize: 30
+                    font.pixelSize: window.uiContract.typeHeading
                     color: window.uiContract.textPrimaryColor
                     elide: Text.ElideRight
                 }
@@ -617,8 +617,8 @@ ApplicationWindow {
         Rectangle {
             width: parent.width
             height: 1
-            color: window.uiContract.borderColor
-            opacity: window.uiContract.highContrast ? 1 : 0.4
+            color: window.inlinePages ? window.uiContract.dividerColor : window.uiContract.borderColor
+            opacity: window.uiContract.highContrast || window.inlinePages ? 1 : 0.4
         }
         TransportBar {
             id: transport
@@ -630,7 +630,7 @@ ApplicationWindow {
             anchors.verticalCenter: window.inlinePages ? parent.verticalCenter : undefined
             anchors.margins: window.uiContract.spacingUnit * 3
             anchors.leftMargin: window.inlinePages ? 24 : window.uiContract.spacingUnit * 3
-            anchors.rightMargin: window.inlinePages ? (window.width <= 900 ? 18 : 28) : window.uiContract.spacingUnit * 3
+            anchors.rightMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 18 : 28) : window.uiContract.spacingUnit * 3
             contract: window.uiContract
             presenter: window.presenter
             enabled: !window.presenter.exiting && (playbackEnabled || window.presenter.canGoPrevious || window.presenter.canGoNext)
@@ -639,12 +639,12 @@ ApplicationWindow {
             id: playerIdentity
             objectName: "player-identity"
             anchors.left: parent.left
-            anchors.leftMargin: window.inlinePages ? (window.width <= 900 ? 18 : 28) : window.uiContract.spacingUnit * 3
+            anchors.leftMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 18 : 28) : window.uiContract.spacingUnit * 3
             anchors.top: window.inlinePages ? undefined : parent.top
             anchors.topMargin: window.uiContract.spacingUnit * 3
             anchors.verticalCenter: window.inlinePages ? parent.verticalCenter : undefined
-            width: window.inlinePages ? (window.width <= 900 ? 160 : 220) : parent.width - window.uiContract.spacingUnit * 6
-            implicitHeight: window.inlinePages ? (window.width <= 900 ? 44 : 56) : footerTitle.implicitHeight
+            width: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 160 : 220) : parent.width - window.uiContract.spacingUnit * 6
+            implicitHeight: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 44 : 56) : footerTitle.implicitHeight
             TrackArtwork {
                 id: footerArtwork
                 objectName: "player-artwork"
@@ -662,7 +662,7 @@ ApplicationWindow {
                 anchors.leftMargin: window.inlinePages ? 12 : 0
                 anchors.right: parent.right
                 anchors.top: parent.top
-                anchors.topMargin: window.inlinePages ? (window.width <= 900 ? 4 : 10) : 0
+                anchors.topMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 4 : 10) : 0
                 text: window.presenter.hasCurrentTrack ? window.presenter.currentTitle + (!window.inlinePages && window.presenter.currentArtist.length > 0 ? " · " + window.presenter.currentArtist : "") : window.uiContract.emptyTitle
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
@@ -678,7 +678,7 @@ ApplicationWindow {
                 visible: window.inlinePages
                 text: window.presenter.currentArtist.length > 0 ? window.presenter.currentArtist : navigationText.localAudio
                 font.family: window.uiContract.bodyFontFamily
-                font.pixelSize: 12
+                font.pixelSize: window.uiContract.typeCaption
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
                 color: window.uiContract.textSecondaryColor

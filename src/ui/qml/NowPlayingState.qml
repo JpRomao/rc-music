@@ -45,7 +45,7 @@ GridLayout {
         visible: root.editorial
         text: root.presenter.playbackState === PlayerPresenter.Loading ? labels.loadingTrack : (root.presenter.playbackState === PlayerPresenter.Playing ? labels.nowPlaying : (root.presenter.playbackState === PlayerPresenter.Paused ? labels.paused : labels.ready))
         font.family: root.contract.bodyFontFamily
-        font.pixelSize: 10
+        font.pixelSize: root.contract.typeEyebrow
         font.letterSpacing: 1.4
         color: root.contract.textSecondaryColor
         textFormat: Text.PlainText

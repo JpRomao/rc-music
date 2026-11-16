@@ -168,6 +168,8 @@ class ShellUiContractTests final : public QObject {
     void exposesFrozenConstantsAndAuthenticatedResources();
     void productConstantsRetainFrozenBehaviorWithAuroraColors();
     void productAppearanceUsesAuroraWhileHistoricalPalettesStayFrozen();
+    void interactionTokensFollowAuroraHighContrastAndFrozenFixture();
+    void exposesTypeScaleAndLayoutBreakpoints();
     void productTextRetainsTheHistoricalTranslationContract();
     void historicalConstructorRetainsAcceptedVisualOverrides();
     void rejectsUnknownAssetMappings();
@@ -350,6 +352,16 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("radiusMedium"),
         QStringLiteral("radiusSmall"),
         QStringLiteral("spacingUnit"),
+        QStringLiteral("typeEyebrow"),
+        QStringLiteral("typeCaption"),
+        QStringLiteral("typeBody"),
+        QStringLiteral("typeSubtitle"),
+        QStringLiteral("typeTitle"),
+        QStringLiteral("typeSection"),
+        QStringLiteral("typeHeading"),
+        QStringLiteral("typeDisplay"),
+        QStringLiteral("compactWidth"),
+        QStringLiteral("wideWidth"),
         QStringLiteral("appName"),
         QStringLiteral("headingFontFamily"),
         QStringLiteral("bodyFontFamily"),
@@ -400,6 +412,9 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("warningColor"),
         QStringLiteral("successColor"),
         QStringLiteral("disabledTextColor"),
+        QStringLiteral("selectionColor"),
+        QStringLiteral("hoverColor"),
+        QStringLiteral("dividerColor"),
         QStringLiteral("highContrast"),
         QStringLiteral("darkTheme"),
         QStringLiteral("reducedMotion"),
@@ -409,16 +424,17 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("trackSource"),
     };
     const QStringList appearance_properties = {
-        QStringLiteral("navigationColor"),      QStringLiteral("canvasColor"),
-        QStringLiteral("surfaceColor"),         QStringLiteral("surfaceRaisedColor"),
-        QStringLiteral("textPrimaryColor"),     QStringLiteral("textSecondaryColor"),
-        QStringLiteral("accentColor"),          QStringLiteral("accentTextColor"),
-        QStringLiteral("focusColor"),           QStringLiteral("borderColor"),
-        QStringLiteral("errorColor"),           QStringLiteral("warningColor"),
-        QStringLiteral("successColor"),         QStringLiteral("disabledTextColor"),
-        QStringLiteral("highContrast"),         QStringLiteral("darkTheme"),
-        QStringLiteral("reducedMotion"),        QStringLiteral("panelTransitionMs"),
-        QStringLiteral("feedbackTransitionMs"),
+        QStringLiteral("navigationColor"),   QStringLiteral("canvasColor"),
+        QStringLiteral("surfaceColor"),      QStringLiteral("surfaceRaisedColor"),
+        QStringLiteral("textPrimaryColor"),  QStringLiteral("textSecondaryColor"),
+        QStringLiteral("accentColor"),       QStringLiteral("accentTextColor"),
+        QStringLiteral("focusColor"),        QStringLiteral("borderColor"),
+        QStringLiteral("errorColor"),        QStringLiteral("warningColor"),
+        QStringLiteral("successColor"),      QStringLiteral("disabledTextColor"),
+        QStringLiteral("selectionColor"),    QStringLiteral("hoverColor"),
+        QStringLiteral("dividerColor"),      QStringLiteral("highContrast"),
+        QStringLiteral("darkTheme"),         QStringLiteral("reducedMotion"),
+        QStringLiteral("panelTransitionMs"), QStringLiteral("feedbackTransitionMs"),
     };
     QStringList actual_properties;
     for (int index = meta->propertyOffset(); index < meta->propertyCount(); ++index) {
@@ -545,6 +561,48 @@ void ShellUiContractTests::productAppearanceUsesAuroraWhileHistoricalPalettesSta
     QCOMPARE(product.panelTransitionMs(), bundle.motion.normal.panel_transition_ms);
     QCOMPARE(product.feedbackTransitionMs(), bundle.motion.normal.feedback_transition_ms);
     QCOMPARE(product_changed.count(), historical_changed.count());
+}
+
+void ShellUiContractTests::interactionTokensFollowAuroraHighContrastAndFrozenFixture() {
+    ShellUiContract product(nullptr);
+    const auto tokens = [&] {
+        return QStringList{product.selectionColor(), product.hoverColor(), product.dividerColor()};
+    };
+    // Approved Aurora reference (docs/superpowers/specs/2026-11-15-aurora-shell-design.md).
+    product.updateAppearance(ThemeMode::Light, MotionMode::System, false, false);
+    QCOMPARE(tokens(), QStringList({QStringLiteral("#EEE0D2"), QStringLiteral("#EAE1D5"), QStringLiteral("#D7CAB9")}));
+    QVERIFY(product.selectionColor() != product.navigationColor());
+    QVERIFY(product.selectionColor() != product.surfaceRaisedColor());
+    product.updateAppearance(ThemeMode::Dark, MotionMode::System, false, false);
+    QCOMPARE(tokens(), QStringList({QStringLiteral("#3A2C23"), QStringLiteral("#353029"), QStringLiteral("#4C4236")}));
+    QVERIFY(product.selectionColor() != product.navigationColor());
+
+    const HighContrastPalette contrast = lightHighContrastPalette();
+    product.updateAppearance(ThemeMode::Dark, MotionMode::System, false, false, contrast);
+    QCOMPARE(tokens(), QStringList({contrast.highlight.name(), contrast.window.name(), contrast.window_text.name()}));
+
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    ShellUiContract historical(bundle);
+    for (const ThemeMode theme : {ThemeMode::Light, ThemeMode::Dark}) {
+        historical.updateAppearance(theme, MotionMode::System, false, false);
+        QCOMPARE(historical.selectionColor(), historical.surfaceRaisedColor());
+        QCOMPARE(historical.hoverColor(), historical.surfaceRaisedColor());
+        QCOMPARE(historical.dividerColor(), historical.borderColor());
+    }
+}
+
+void ShellUiContractTests::exposesTypeScaleAndLayoutBreakpoints() {
+    ShellUiContract product(nullptr);
+    const QList<int> scale{product.typeEyebrow(), product.typeCaption(), product.typeBody(),    product.typeSubtitle(),
+                           product.typeTitle(),   product.typeSection(), product.typeHeading(), product.typeDisplay()};
+    QCOMPARE(scale, QList<int>({10, 12, 14, 18, 20, 24, 30, 36}));
+    QCOMPARE(product.compactWidth(), 900);
+    QCOMPARE(product.wideWidth(), 1200);
+    QVERIFY(product.minimumWidth() < product.compactWidth());
+    const FixtureBundle bundle = FixtureRepository{}.load(fixture_resource_path, queue_resource_path);
+    ShellUiContract historical(bundle);
+    QCOMPARE(historical.typeBody(), product.typeBody());
+    QCOMPARE(historical.compactWidth(), product.compactWidth());
 }
 
 void ShellUiContractTests::productTextRetainsTheHistoricalTranslationContract() {

@@ -329,7 +329,7 @@ PageSurface {
                 Layout.fillWidth: true
                 color: root.contract.textPrimaryColor
                 font.bold: true
-                font.pixelSize: 20
+                font.pixelSize: root.contract.typeTitle
                 text: labels.title
                 textFormat: Text.PlainText
             }

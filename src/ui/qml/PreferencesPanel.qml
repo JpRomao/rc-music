@@ -156,7 +156,7 @@ PageSurface {
                 text: root.contract.preferencesTitle
                 textFormat: Text.PlainText
                 color: root.contract.textPrimaryColor
-                font.pixelSize: 20
+                font.pixelSize: root.contract.typeTitle
                 font.bold: true
                 Layout.fillWidth: true
             }
@@ -287,7 +287,7 @@ PageSurface {
                     text: !root.presenter.defaultAppsSettingsAvailable || root.presenter.defaultAppsSettingsState === PlayerPresenter.Unavailable ? labels.defaultAppsSettingsUnavailable : labels.defaultAppsSettingsFailed
                     textFormat: Text.PlainText
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 12
+                    font.pixelSize: root.contract.typeCaption
                     color: root.presenter.defaultAppsSettingsState === PlayerPresenter.Failed ? root.contract.errorColor : root.contract.textSecondaryColor
                     visible: root.presenter.defaultAppsSettingsSupported && (!root.presenter.defaultAppsSettingsAvailable || root.presenter.defaultAppsSettingsState === PlayerPresenter.Unavailable || root.presenter.defaultAppsSettingsState === PlayerPresenter.Failed)
                     Accessible.role: Accessible.AlertMessage
@@ -361,7 +361,7 @@ PageSurface {
                     text: root.audioOutputSelectionRejected ? labels.audioOutputSelectionFailed : root.selectedAudioOutputIndex < 0 ? labels.missingAudioOutputMessage : root.audioOutputDevices.length === 0 ? labels.noAudioOutputs : ""
                     textFormat: Text.PlainText
                     wrapMode: Text.WordWrap
-                    font.pixelSize: 12
+                    font.pixelSize: root.contract.typeCaption
                     color: root.audioOutputSelectionRejected ? root.contract.errorColor : root.contract.textSecondaryColor
                     visible: root.presenter.audioOutputSelectionSupported && text.length > 0
                     Accessible.role: Accessible.StaticText
@@ -466,7 +466,7 @@ PageSurface {
             text: labels.memoryNote
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            font.pixelSize: 12
+            font.pixelSize: root.contract.typeCaption
             color: root.contract.textSecondaryColor
         }
     }

@@ -68,7 +68,7 @@ ColumnLayout {
             text: root.errorText
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            font.pixelSize: 12
+            font.pixelSize: root.contract.typeCaption
             color: root.contract.errorColor
             visible: !field.draftValid
             Accessible.name: text

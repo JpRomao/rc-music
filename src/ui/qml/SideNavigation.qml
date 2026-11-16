@@ -49,8 +49,8 @@ Rectangle {
         anchors.right: parent.right
         height: parent.height
         width: 1
-        color: root.contract.borderColor
-        opacity: root.contract.highContrast ? 1 : 0.4
+        color: root.editorial ? root.contract.dividerColor : root.contract.borderColor
+        opacity: root.contract.highContrast || root.editorial ? 1 : 0.4
     }
     function revealFocus(item) {
         if (!item || !item.activeFocus)
@@ -91,7 +91,7 @@ Rectangle {
                 Accessible.name: root.contract.appName
                 textFormat: Text.PlainText
                 font.family: root.contract.headingFontFamily
-                font.pixelSize: root.editorial ? (root.compact ? 22 : 25) : (root.compact ? 22 : 28)
+                font.pixelSize: root.editorial ? root.contract.typeSection : (root.compact ? 22 : 28)
                 font.bold: !root.editorial
                 color: root.contract.textPrimaryColor
                 elide: Text.ElideRight
@@ -104,7 +104,7 @@ Rectangle {
                 objectName: "navigation-caption"
                 textFormat: Text.PlainText
                 font.family: root.contract.bodyFontFamily
-                font.pixelSize: 10
+                font.pixelSize: root.contract.typeEyebrow
                 font.letterSpacing: 1
                 color: root.contract.textSecondaryColor
             }

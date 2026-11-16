@@ -25,7 +25,7 @@ Rectangle {
             Text {
                 text: labels.localWorkspace
                 font.family: root.contract.bodyFontFamily
-                font.pixelSize: 10
+                font.pixelSize: root.contract.typeEyebrow
                 font.letterSpacing: 1.2
                 color: root.contract.textSecondaryColor
                 textFormat: Text.PlainText
@@ -35,7 +35,7 @@ Rectangle {
                 objectName: "workspace-page-title"
                 text: root.pageTitle
                 font.family: root.contract.bodyFontFamily
-                font.pixelSize: 14
+                font.pixelSize: root.contract.typeBody
                 color: root.contract.textPrimaryColor
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
@@ -51,8 +51,7 @@ Rectangle {
         anchors.bottom: parent.bottom
         width: parent.width
         height: 1
-        color: root.contract.borderColor
-        opacity: root.contract.highContrast ? 1 : 0.4
+        color: root.contract.dividerColor
         Accessible.ignored: true
     }
 }
