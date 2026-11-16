@@ -29,8 +29,11 @@ PageSurface {
     clip: true
     popupType: Popup.Item
     closePolicy: Popup.CloseOnEscape
-    padding: contract.spacingUnit * 3
+    padding: embedded ? 0 : contract.spacingUnit * 3
 
+    NavigationText {
+        id: navigationLabels
+    }
     PreferencesText {
         id: labels
     }
@@ -125,9 +128,10 @@ PageSurface {
         }
     }
     background: Rectangle {
-        color: root.contract.surfaceRaisedColor
-        radius: root.contract.radiusMedium
-        border.width: 1
+        // Inline Aurora pages sit on the canvas; the legacy dialog keeps its card.
+        color: root.embedded ? root.contract.canvasColor : root.contract.surfaceRaisedColor
+        radius: root.embedded ? 0 : root.contract.radiusMedium
+        border.width: root.embedded ? 0 : 1
         border.color: root.contract.borderColor
     }
     enter: Transition {
@@ -149,22 +153,21 @@ PageSurface {
     contentItem: ColumnLayout {
         spacing: root.contract.spacingUnit * 2
         Accessible.role: root.embedded ? Accessible.Pane : Accessible.Dialog
-        Accessible.name: root.contract.preferencesTitle
-        RowLayout {
+        Accessible.name: root.embedded ? navigationLabels.settings : root.contract.preferencesTitle
+        PageHeader {
             Layout.fillWidth: true
-            Text {
-                text: root.contract.preferencesTitle
-                textFormat: Text.PlainText
-                color: root.contract.textPrimaryColor
-                font.pixelSize: root.contract.typeTitle
-                font.bold: true
-                Layout.fillWidth: true
-            }
+            contract: root.contract
+            editorial: root.embedded
+            eyebrow: root.embedded ? navigationLabels.settingsEyebrow : ""
+            title: root.embedded ? navigationLabels.settings : root.contract.preferencesTitle
+            description: root.embedded ? navigationLabels.settingsDescription : ""
             AccessibleTransportButton {
                 objectName: "preferences-close"
                 contract: root.contract
+                flat: root.embedded
+                iconName: root.embedded ? "close" : ""
                 text: "✕"
-                accessibleName: labels.close
+                accessibleName: root.embedded ? navigationLabels.closeSettings : labels.close
                 onClicked: root.close()
             }
         }

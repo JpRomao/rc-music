@@ -202,7 +202,7 @@ TestCase {
 
     function test_publicControlsExistInTheNativeAccessibleTree() {
         verifyControl(findChild(shell, "open-audio"), Accessible.Button, "Abrir áudio", true);
-        verifyControl(findChild(shell, "preferences"), Accessible.Button, "Preferências", true);
+        verifyControl(findChild(shell, "preferences"), Accessible.Button, "Configurações", true);
 
         testScenarioDriver.enqueueLocalSelection(["C:/Música/Árvore acessível 日本語.mp3"]); // qmllint disable unqualified
         findChild(shell, "open-audio").Accessible.pressAction();

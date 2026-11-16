@@ -414,7 +414,7 @@ ApplicationWindow {
         visible: window.inlinePages
         contract: window.uiContract
         compact: window.width <= window.uiContract.compactWidth
-        pageTitle: window.currentPage === "home" ? navigationText.home : (window.currentPage === "queue" ? window.uiContract.queueTitle : (window.currentPage === "playlists" ? navigationText.playlists : (window.currentPage === "downloads" ? downloadText.title : window.uiContract.preferencesTitle)))
+        pageTitle: window.currentPage === "home" ? navigationText.home : (window.currentPage === "queue" ? window.uiContract.queueTitle : (window.currentPage === "playlists" ? navigationText.playlists : (window.currentPage === "downloads" ? navigationText.activity : navigationText.settings)))
     }
     ColumnLayout {
         id: mainLayout

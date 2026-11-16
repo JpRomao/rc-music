@@ -7,6 +7,9 @@ import MusicPlayer.M0
 
 PageSurface {
     id: root
+    NavigationText {
+        id: navigationLabels
+    }
     PlaylistsText {
         id: playlistsText
     }
@@ -41,7 +44,7 @@ PageSurface {
     anchors.centerIn: embedded ? undefined : parent
     width: Math.min(920, parent ? parent.width - contract.spacingUnit * 8 : 920)
     height: Math.min(680, parent ? parent.height - contract.spacingUnit * 8 : 680)
-    padding: contract.spacingUnit * 3
+    padding: embedded ? 0 : contract.spacingUnit * 3
     modal: !embedded
     focus: true
     popupType: Popup.Item
@@ -276,23 +279,24 @@ PageSurface {
         }
     }
     background: Rectangle {
-        color: root.contract.surfaceRaisedColor
-        radius: root.contract.radiusMedium
-        border.width: 1
+        // Inline Aurora pages sit on the canvas; the legacy dialog keeps its card.
+        color: root.embedded ? root.contract.canvasColor : root.contract.surfaceRaisedColor
+        radius: root.embedded ? 0 : root.contract.radiusMedium
+        border.width: root.embedded ? 0 : 1
         border.color: root.contract.borderColor
     }
     contentItem: ColumnLayout {
         spacing: root.contract.spacingUnit * 2
         Accessible.role: root.embedded ? Accessible.Pane : Accessible.Dialog
         Accessible.name: playlistsText.title
-        Text {
+        PageHeader {
             Layout.fillWidth: true
-            text: playlistsText.title
-            textFormat: Text.PlainText
-            color: root.contract.textPrimaryColor
-            font.bold: true
-            font.pixelSize: root.contract.typeSection
-            Accessible.ignored: true
+            contract: root.contract
+            editorial: root.embedded
+            eyebrow: root.embedded ? navigationLabels.playlistsEyebrow : ""
+            title: playlistsText.title
+            description: root.embedded ? navigationLabels.playlistsDescription : ""
+            legacyTitleSize: root.contract.typeSection
         }
         RowLayout {
             Layout.fillWidth: true
@@ -564,6 +568,9 @@ PageSurface {
             AccessibleTransportButton {
                 objectName: "playlists-close"
                 contract: root.contract
+                flat: root.embedded
+                iconName: root.embedded ? "close" : ""
+                iconWithText: true
                 text: playlistsText.close
                 onClicked: root.close()
             }

@@ -106,7 +106,7 @@ TestCase {
         shell.downloads = downloads;
         const opener = findChild(shell, "downloads");
         verify(opener && opener.visible && opener.enabled, "The optional binding must expose Downloads");
-        compare(opener.Accessible.name, "Downloads");
+        compare(opener.Accessible.name, "Atividade");
         opener.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Return);
         const panel = findChild(shell, "downloads-panel");
@@ -931,13 +931,14 @@ TestCase {
         addJob("active", "downloading", "Baixando", true, false, false, 0.5);
         const panel = openDownloads();
         verify(panel.width <= 672 && panel.height <= 472);
-        verify(Qt.colorEqual(panel.background.color, shell.uiContract.surfaceRaisedColor));
+        // Inline Aurora pages sit on the canvas; the legacy dialog keeps its raised card.
+        verify(Qt.colorEqual(panel.background.color, panel.embedded ? shell.uiContract.canvasColor : shell.uiContract.surfaceRaisedColor));
         compare(panel.background.color.a, 1);
         verify(Qt.colorEqual(findChild(rowAt(0), "download-title").color, shell.uiContract.textPrimaryColor));
         verifyTarget(findChild(shell, "downloads-close"));
         verifyTarget(findChild(rowAt(0), "download-cancel"));
         if (data.contrast)
-            verify(panel.background.border.width >= 2);
+            verify(panel.embedded ? panel.background.border.width === 0 : panel.background.border.width >= 2);
     }
     function test_smallWindowUsesThemeAndKeepsControlsVisible_data() {
         return [

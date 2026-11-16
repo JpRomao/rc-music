@@ -19,16 +19,25 @@ Rectangle {
         anchors.leftMargin: root.compact ? 23 : 38
         anchors.rightMargin: root.compact ? 23 : 38
         spacing: 16
-        ColumnLayout {
+        RowLayout {
+            // Breadcrumb of the approved prototype: root, separator and current page.
             Layout.fillWidth: true
-            spacing: 4
+            spacing: 10
             Text {
-                text: labels.localWorkspace
+                objectName: "workspace-breadcrumb-root"
+                text: labels.breadcrumbRoot
                 font.family: root.contract.bodyFontFamily
-                font.pixelSize: root.contract.typeEyebrow
-                font.letterSpacing: 1.2
+                font.pixelSize: root.contract.typeBody
                 color: root.contract.textSecondaryColor
                 textFormat: Text.PlainText
+            }
+            Text {
+                text: labels.breadcrumbSeparator
+                font.family: root.contract.bodyFontFamily
+                font.pixelSize: root.contract.typeBody
+                color: root.contract.textSecondaryColor
+                textFormat: Text.PlainText
+                Accessible.ignored: true
             }
             Text {
                 Layout.fillWidth: true

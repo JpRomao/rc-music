@@ -209,6 +209,63 @@ TestCase {
         compare(presenter.volume, 0.52);
         compare(commands(), audio);
     }
+    function test_pagesUseTheEditorialHeaderWithoutACard_data() {
+        return [
+            {
+                tag: "playlists",
+                open: "openPlaylists",
+                panel: "playlists-panel",
+                title: "Playlists",
+                nav: "playlists",
+                close: "playlists-close",
+                labelled: true
+            },
+            {
+                tag: "activity",
+                open: "openDownloads",
+                panel: "downloads-panel",
+                title: "Atividade",
+                nav: "downloads",
+                close: "downloads-close"
+            },
+            {
+                tag: "settings",
+                open: "openPreferences",
+                panel: "preferences-panel",
+                title: "Configurações",
+                nav: "preferences",
+                close: "preferences-close"
+            }
+        ];
+    }
+    function test_pagesUseTheEditorialHeaderWithoutACard(data) {
+        loadQueue();
+        shell[data.open]();
+        const panel = findChild(shell, data.panel);
+        tryCompare(panel, "opened", true);
+        const header = findChild(panel, "page-header");
+        verify(header && header.visible, data.tag + " has the editorial page header");
+        const title = findChild(header, "page-title");
+        compare(title.text, data.title);
+        compare(title.font.family, contract.headingFontFamily);
+        compare(title.font.pixelSize, contract.typeHeading);
+        verify(findChild(header, "page-eyebrow").text.length > 0);
+        verify(findChild(header, "page-description").text.length > 0);
+        // Pages sit on the canvas like the home page, not inside a bordered card.
+        compare(panel.background.border.width, 0);
+        verify(Qt.colorEqual(panel.background.color, contract.canvasColor), String(panel.background.color));
+        const close = findChild(panel, data.close);
+        verify(close && close.visible);
+        verify(close.flat, "closing is a quiet action");
+        compare(close.iconName, "close");
+        compare(close.contentItem.text.length > 0, data.labelled === true, "close label");
+        verify(close.accessibleName.length > 0);
+        compare(findChild(shell, "workspace-page-title").text, data.title);
+        const root = findChild(shell, "workspace-breadcrumb-root");
+        verify(root && root.visible);
+        compare(root.text, "Seu espaço");
+        compare(findChild(shell, data.nav).text, data.title);
+    }
     function test_pageNavigationPreservesPlaybackAndRevokesTransientOwners() {
         loadQueue();
         const audio = commands();

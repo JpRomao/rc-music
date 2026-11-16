@@ -214,7 +214,7 @@ Rectangle {
                 KeyNavigation.backtab: null
                 Layout.fillWidth: true
                 contract: root.contract
-                text: downloadLabels.title
+                text: root.editorial ? labels.activity : downloadLabels.title
                 checkable: true
                 checked: root.activePage === "downloads"
                 visible: root.hasDownloads
@@ -269,7 +269,7 @@ Rectangle {
                 KeyNavigation.backtab: null
                 Layout.fillWidth: true
                 contract: root.contract
-                text: root.contract.preferencesTitle
+                text: root.editorial ? labels.settings : root.contract.preferencesTitle
                 checkable: true
                 checked: root.preferencesOpen
                 enabled: !root.exiting

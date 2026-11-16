@@ -308,31 +308,29 @@ PageSurface {
     focus: true
     modal: !embedded
     objectName: "downloads-panel"
-    padding: contract.spacingUnit * 3
+    padding: embedded ? 0 : contract.spacingUnit * 3
     popupType: Popup.Item
 
     background: Rectangle {
+        // Inline Aurora pages sit on the canvas; the legacy dialog keeps its card.
         border.color: root.contract.borderColor
-        border.width: root.contract.highContrast ? 2 : 1
-        color: root.contract.surfaceRaisedColor
-        radius: root.contract.radiusMedium
+        border.width: root.embedded ? 0 : (root.contract.highContrast ? 2 : 1)
+        color: root.embedded ? root.contract.canvasColor : root.contract.surfaceRaisedColor
+        radius: root.embedded ? 0 : root.contract.radiusMedium
     }
     contentItem: ColumnLayout {
-        Accessible.name: labels.title
+        Accessible.name: root.embedded ? navigationLabels.activity : labels.title
         Accessible.role: root.embedded ? Accessible.Pane : Accessible.Dialog
         spacing: root.contract.spacingUnit * 2
 
-        RowLayout {
+        PageHeader {
             Layout.fillWidth: true
+            contract: root.contract
+            editorial: root.embedded
+            eyebrow: root.embedded ? navigationLabels.activityEyebrow : ""
+            title: root.embedded ? navigationLabels.activity : labels.title
+            description: root.embedded ? navigationLabels.activityDescription : ""
 
-            Text {
-                Layout.fillWidth: true
-                color: root.contract.textPrimaryColor
-                font.bold: true
-                font.pixelSize: root.contract.typeTitle
-                text: labels.title
-                textFormat: Text.PlainText
-            }
             AccessibleTransportButton {
                 id: openFolderButton
 
@@ -358,8 +356,10 @@ PageSurface {
 
                 KeyNavigation.backtab: root.nextTopControl(closeButton, true)
                 KeyNavigation.tab: root.nextTopControl(closeButton, false)
-                accessibleName: labels.close
+                accessibleName: root.embedded ? navigationLabels.closeActivity : labels.close
                 contract: root.contract
+                flat: root.embedded
+                iconName: root.embedded ? "close" : ""
                 objectName: "downloads-close"
                 text: "✕"
 
@@ -1006,6 +1006,9 @@ PageSurface {
     onSurfaceOpened: closeButton.forceActiveFocus(Qt.TabFocusReason)
     onWarningChanged: invalidateCloseConsent()
 
+    NavigationText {
+        id: navigationLabels
+    }
     DownloadText {
         id: labels
     }
