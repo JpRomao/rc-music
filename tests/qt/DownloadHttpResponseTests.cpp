@@ -124,9 +124,22 @@ class DownloadHttpResponseTests final : public QObject {
         QVERIFY(ignored.body.isEmpty());
     }
 
+    void partialContentEmitsBodyAndKeepsContentRange() {
+        DownloadHttpResponse decoder(16);
+        const auto result = decoder.feed(
+            "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 4-7/10\r\nContent-Length: 4\r\n\r\nEFGH");
+        QVERIFY(result.metadataAvailable);
+        QVERIFY(result.finished);
+        QVERIFY(!result.failed);
+        QCOMPARE(result.body, QByteArray("EFGH"));
+        QCOMPARE(decoder.statusCode(), 206);
+        QCOMPARE(decoder.header("content-range"), QByteArray("bytes 4-7/10"));
+        QVERIFY(decoder.feed("X").failed);
+    }
+
     void nonSuccessBodyNeverBecomesMedia_data() {
         QTest::addColumn<int>("code");
-        for (int code : {204, 206, 301, 302, 303, 304, 307, 308, 401, 403, 404, 500})
+        for (int code : {204, 301, 302, 303, 304, 307, 308, 401, 403, 404, 416, 500})
             QTest::newRow(qPrintable(QString::number(code))) << code;
     }
 

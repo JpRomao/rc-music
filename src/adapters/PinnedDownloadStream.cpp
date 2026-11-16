@@ -80,7 +80,8 @@ constexpr qint64 closing_high_water_bytes = 48 * 1024;
     return !endpoint.address.isNull() && endpoint.address != QHostAddress::AnyIPv4 &&
            endpoint.address != QHostAddress::AnyIPv6 && endpoint.address.scopeId().isEmpty() && endpoint.port != 0 &&
            validHost(endpoint.host) && validTarget(endpoint.request_target) &&
-           validDownloadUserAgent(endpoint.user_agent);
+           validDownloadUserAgent(endpoint.user_agent) &&
+           (!endpoint.byte_range || endpoint.byte_range->first <= endpoint.byte_range->last);
 }
 
 [[nodiscard]] QByteArray wireRequest(const PinnedDownloadEndpoint& endpoint) {
@@ -94,6 +95,9 @@ constexpr qint64 closing_high_water_bytes = 48 * 1024;
                    crlf + "Accept-Encoding: identity" + crlf;
     if (!endpoint.user_agent.isEmpty())
         request += "User-Agent: " + endpoint.user_agent + crlf;
+    if (endpoint.byte_range)
+        request += "Range: bytes=" + QByteArray::number(endpoint.byte_range->first) + '-' +
+                   QByteArray::number(endpoint.byte_range->last) + crlf;
     request += "Connection: close" + crlf + crlf;
     return request;
 }

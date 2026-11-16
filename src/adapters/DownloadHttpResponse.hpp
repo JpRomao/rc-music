@@ -24,11 +24,10 @@ struct DownloadHttpUpdate final {
 
 // One identity-encoded GET response; no pipelining, decompression or network access.
 // The caller inspects metadata/failed before writing body, and deletes all partial
-// output on failure. Only status 200 emits body; other final statuses finish at
-// headers and require closing the connection (their bodies are discarded).
-// Retention is bounded framing plus headers; returned body never exceeds the
-// supplied feed. EOF is successful for close-delimited bodies only when transport
-// has independently proved an orderly end, including authenticated TLS closure.
+// output on failure. Only status 200 and 206 emit body (the caller validates Content-Range); other final statuses
+// finish at headers and require closing the connection (their bodies are discarded). Retention is bounded framing plus
+// headers; returned body never exceeds the supplied feed. EOF is successful for close-delimited bodies only when
+// transport has independently proved an orderly end, including authenticated TLS closure.
 class DownloadHttpResponse final {
   public:
     explicit DownloadHttpResponse(quint64 maxBodyBytes);

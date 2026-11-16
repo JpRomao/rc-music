@@ -133,7 +133,7 @@ DownloadHttpUpdate DownloadHttpResponse::feed(QByteArrayView bytes) {
     QByteArray body;
     while (!bytes.empty() && state_ != State::Failed) {
         if (state_ == State::Done) {
-            if (status_code_ == 200)
+            if (status_code_ == 200 || status_code_ == 206)
                 reject();
             break;
         }
@@ -342,7 +342,7 @@ void DownloadHttpResponse::completeHeaders() {
         state_ = State::Status;
         return;
     }
-    if (status_code_ != 200) {
+    if (status_code_ != 200 && status_code_ != 206) {
         metadata_available_ = true;
         state_ = State::Done;
         return;

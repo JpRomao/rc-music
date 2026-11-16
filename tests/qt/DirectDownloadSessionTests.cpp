@@ -16,6 +16,18 @@ QByteArray diagnosticResponse(QByteArray wire) {
     const auto crlf = QByteArray(1, char{13}) + char{10};
     return wire.replace("|", crlf);
 }
+QByteArray partial(quint64 first, quint64 last, quint64 total, const QByteArray& body) {
+    return diagnosticResponse("HTTP/1.1 206 Partial Content|Content-Range: bytes " + QByteArray::number(first) + '-' +
+                              QByteArray::number(last) + '/' + QByteArray::number(total) +
+                              "|Content-Length: " + QByteArray::number(body.size()) + "||" + body);
+}
+QList<QPair<quint64, quint64>> ranges(const QList<PinnedDownloadEndpoint>& endpoints) {
+    QList<QPair<quint64, quint64>> result;
+    for (const auto& endpoint : endpoints)
+        result.push_back(endpoint.byte_range ? qMakePair(endpoint.byte_range->first, endpoint.byte_range->last)
+                                             : qMakePair(~quint64{0}, ~quint64{0}));
+    return result;
+}
 class Io final : public DirectDownloadIo {
   public:
     QStringList hosts{};
@@ -88,6 +100,11 @@ struct Harness final {
     void connect() {
         QVERIFY(session.start("https://media.example.test/music.mp4?sig=%41%2f&x=1+2", 0));
         session.tick(1);
+    }
+    // One ranged hop: DNS answer and open, then the queued response.
+    void hop(qint64& now) {
+        session.tick(++now);
+        session.tick(++now);
     }
 };
 } // namespace
@@ -277,6 +294,117 @@ class DirectDownloadSessionTests final : public QObject {
         QVERIFY(!main.session.start(capability->streamUrl(), 0));
         QVERIFY(main.io.hosts.isEmpty());
     }
+    void youtubeAudioArrivesInValidatedRangeBlocks() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness h({.youtube_range_bytes = 4});
+        QVERIFY(h.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        h.io.chunks = {partial(0, 3, 10, "ABCD"), partial(4, 7, 10, "EFGH"), partial(8, 9, 10, "IJ")};
+        qint64 now = 0;
+        for (int i = 0; i < 3; ++i)
+            h.hop(now);
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Completed);
+        QCOMPARE(h.sink.data(), QByteArray("ABCDEFGHIJ"));
+        QCOMPARE(h.session.snapshot().received_bytes, quint64{10});
+        QCOMPARE(h.session.snapshot().total_bytes, std::optional<quint64>{10});
+        QCOMPARE(ranges(h.io.endpoints), (QList<QPair<quint64, quint64>>{{0, 3}, {4, 7}, {8, 9}}));
+    }
+    void serverIgnoringRangeStillDeliversTheWholeFileOnce() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness h({.youtube_range_bytes = 4});
+        QVERIFY(h.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        h.io.chunks = {diagnosticResponse("HTTP/1.1 200 OK|Content-Length: 10||ABCDEFGHIJ")};
+        qint64 now = 0;
+        h.hop(now);
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Completed);
+        QCOMPARE(h.sink.data(), QByteArray("ABCDEFGHIJ"));
+        QCOMPARE(h.io.endpoints.size(), qsizetype{1});
+    }
+    void inconsistentContentRangeFailsWithoutSplicingAudio_data() {
+        QTest::addColumn<QByteArray>("second");
+        QTest::newRow("wrong start") << partial(5, 7, 10, "FGH");
+        QTest::newRow("beyond request") << partial(4, 8, 10, "EFGHI");
+        QTest::newRow("total changed") << partial(4, 7, 11, "EFGH");
+        QTest::newRow("unknown total") << diagnosticResponse(
+            "HTTP/1.1 206 Partial Content|Content-Range: bytes 4-7/*|Content-Length: 4||EFGH");
+        QTest::newRow("short body") << diagnosticResponse(
+            "HTTP/1.1 206 Partial Content|Content-Range: bytes 4-7/10|Content-Length: 3||EFG");
+        QTest::newRow("whole file after offset")
+            << diagnosticResponse("HTTP/1.1 200 OK|Content-Length: 10||ABCDEFGHIJ");
+    }
+    void inconsistentContentRangeFailsWithoutSplicingAudio() {
+        QFETCH(QByteArray, second);
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness h({.youtube_range_bytes = 4});
+        QVERIFY(h.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        h.io.chunks = {partial(0, 3, 10, "ABCD"), second};
+        qint64 now = 0;
+        h.hop(now);
+        h.hop(now);
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Failed);
+        QCOMPARE(h.session.snapshot().error, DownloadFailure::UnsupportedMedia);
+        QCOMPARE(h.sink.data(), QByteArray("ABCD"));
+    }
+    void droppedConnectionResumesFromTheLastWrittenByte() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness h({.youtube_range_bytes = 4});
+        QVERIFY(h.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        // The first block is cut after two bytes.
+        h.io.chunks = {
+            diagnosticResponse("HTTP/1.1 206 Partial Content|Content-Range: bytes 0-3/10|Content-Length: 4||AB")};
+        qint64 now = 0;
+        h.hop(now);
+        QCOMPARE(h.sink.data(), QByteArray("AB"));
+        h.io.update.state = PinnedDownloadStreamState::Failed;
+        h.io.failure_value = DownloadFailure::Network;
+        h.session.tick(++now);
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Resolving);
+        h.io.update.state = PinnedDownloadStreamState::Receiving;
+        h.io.failure_value = DownloadFailure::None;
+        h.io.chunks = {partial(2, 5, 10, "CDEF"), partial(6, 9, 10, "GHIJ")};
+        h.hop(now);
+        h.hop(now);
+        QCOMPARE(h.session.snapshot().state, DirectDownloadState::Completed);
+        QCOMPARE(h.sink.data(), QByteArray("ABCDEFGHIJ"));
+        QCOMPARE(ranges(h.io.endpoints), (QList<QPair<quint64, quint64>>{{0, 3}, {2, 5}, {6, 9}}));
+    }
+    void resumesAreBoundedAndRefusalsAreNotRetried() {
+        const auto capability = test::resolvedYoutubeFixture();
+        QVERIFY(capability);
+        Harness drops({.youtube_range_bytes = 4, .max_resumes = 2});
+        QVERIFY(drops.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        drops.io.update.state = PinnedDownloadStreamState::Failed;
+        drops.io.failure_value = DownloadFailure::Network;
+        qint64 now = 0;
+        for (int i = 0; i < 3; ++i)
+            drops.hop(now);
+        QCOMPARE(drops.session.snapshot().state, DirectDownloadState::Failed);
+        QCOMPARE(drops.session.snapshot().error, DownloadFailure::Network);
+        QCOMPARE(drops.io.endpoints.size(), qsizetype{3});
+
+        Harness refused({.youtube_range_bytes = 4});
+        QVERIFY(refused.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
+        refused.io.chunks = {partial(0, 3, 10, "ABCD"),
+                             diagnosticResponse("HTTP/1.1 403 Forbidden|Content-Length: 4||DATA")};
+        now = 0;
+        for (int i = 0; i < 3; ++i)
+            refused.hop(now);
+        QCOMPARE(refused.session.snapshot().state, DirectDownloadState::Failed);
+        QCOMPARE(refused.session.snapshot().error, DownloadFailure::SourceRejected);
+        QCOMPARE(refused.io.endpoints.size(), qsizetype{2});
+    }
+    void directMediaKeepsASingleUnrangedRequest() {
+        Harness h({.youtube_range_bytes = 4});
+        h.connect();
+        QCOMPARE(h.io.endpoints.size(), qsizetype{1});
+        QVERIFY(!h.io.endpoints.front().byte_range);
+        h.io.chunks = {partial(0, 3, 10, "ABCD")};
+        h.session.tick(2);
+        QCOMPARE(h.session.snapshot().error, DownloadFailure::UnsupportedMedia);
+    }
     void youtubeCapabilityCannotAdmitAnyPrivateDnsAnswer() {
         const auto capability = test::resolvedYoutubeFixture();
         QVERIFY(capability);
@@ -347,6 +475,7 @@ class DirectDownloadSessionTests final : public QObject {
         quota.session.tick(2);
         QCOMPARE(quota.session.snapshot().error, DownloadFailure::LimitExceeded);
         QVERIFY(quota.sink.data().isEmpty());
+        // A 206 without a validated Content-Range is never media.
         Harness partial;
         QVERIFY(partial.session.startResolvedYoutube(capability, 0, capability->expiresAtSeconds() - 60));
         partial.session.tick(1);

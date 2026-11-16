@@ -20,6 +20,38 @@ std::optional<qint64> expiryBudget(const qint64 expires_at, const qint64 epoch_s
     const auto seconds = expires_at - epoch_start;
     return seconds > std::numeric_limits<qint64>::max() / 1000 ? std::numeric_limits<qint64>::max() : seconds * 1000;
 }
+struct ContentRange final {
+    quint64 first{0};
+    quint64 last{0};
+    quint64 total{0};
+};
+std::optional<quint64> decimal(QByteArrayView text) {
+    if (text.isEmpty() || text.size() > 19)
+        return {};
+    quint64 value = 0;
+    for (const char c : text) {
+        if (c < '0' || c > '9')
+            return {};
+        value = value * 10 + static_cast<quint64>(c - '0');
+    }
+    return value;
+}
+// Strict `bytes first-last/total`; an unknown total ("*") cannot be planned.
+std::optional<ContentRange> contentRange(const QByteArray& header) {
+    if (!header.startsWith("bytes "))
+        return {};
+    const auto spec = QByteArrayView{header}.sliced(6);
+    const auto dash = spec.indexOf('-');
+    const auto slash = spec.indexOf('/');
+    if (dash <= 0 || slash <= dash + 1)
+        return {};
+    const auto first = decimal(spec.first(dash));
+    const auto last = decimal(spec.sliced(dash + 1, slash - dash - 1));
+    const auto total = decimal(spec.sliced(slash + 1));
+    if (!first || !last || !total || *first > *last || *last >= *total)
+        return {};
+    return ContentRange{*first, *last, *total};
+}
 } // namespace
 
 DirectDownloadSession::DirectDownloadSession(DirectDownloadIo& io, QIODevice& sink, DirectDownloadLimits limits)
@@ -38,7 +70,8 @@ bool DirectDownloadSession::startImpl(const QString& url, const qint64 now_ms,
     const QScopedValueRollback operation(operating_, true);
     if (limits_.max_body_bytes == 0 || limits_.max_wire_bytes == 0 || limits_.max_redirects < 0 ||
         limits_.total_timeout_ms <= 0 || limits_.idle_timeout_ms <= 0 || limits_.dns_timeout_ms <= 0 ||
-        !sink_.isWritable() || sink_.isSequential() || sink_.size() != 0 || sink_.pos() != 0) {
+        limits_.max_resumes < 0 || !sink_.isWritable() || sink_.isSequential() || sink_.size() != 0 ||
+        sink_.pos() != 0) {
         snapshot_.state = DirectDownloadState::Failed;
         snapshot_.error = DownloadFailure::Unavailable;
         return false;
@@ -65,6 +98,7 @@ bool DirectDownloadSession::startImpl(const QString& url, const qint64 now_ms,
         youtube_capability_ = std::move(capability);
         youtube_epoch_start_ = trusted_epoch_seconds;
         youtube_cap_budget_ms_ = *budget;
+        ranged_ = limits_.youtube_range_bytes > 0;
     }
     started_ms_ = previous_ms_ = now_ms;
     return beginHop(now_ms);
@@ -82,6 +116,16 @@ bool DirectDownloadSession::beginHop(qint64 now_ms) {
     snapshot_.state = DirectDownloadState::Resolving;
     activity_ms_ = hop_ms_ = now_ms;
     response_ = std::make_unique<DownloadHttpResponse>(limits_.max_body_bytes);
+    partial_hop_ = false;
+    hop_body_bytes_ = hop_expected_bytes_ = 0;
+    if (ranged_) {
+        // Each block starts at the last written byte, so a resume never repeats or skips audio.
+        const auto first = snapshot_.received_bytes;
+        auto last = first + std::min(limits_.youtube_range_bytes - 1, std::numeric_limits<quint64>::max() - first);
+        if (range_total_)
+            last = std::min(last, *range_total_ - 1);
+        request_range_ = PinnedDownloadByteRange{first, last};
+    }
     try {
         const auto accepted = io_.resolve(target_->host);
         if (!active(snapshot_.state))
@@ -106,10 +150,15 @@ void DirectDownloadSession::tick(qint64 now_ms) {
         fail(DownloadFailure::Expired);
         return;
     }
-    if (elapsed(now_ms, started_ms_, limits_.total_timeout_ms) ||
-        elapsed(now_ms, activity_ms_, limits_.idle_timeout_ms) ||
-        (snapshot_.state == DirectDownloadState::Resolving && elapsed(now_ms, hop_ms_, limits_.dns_timeout_ms))) {
+    if (elapsed(now_ms, started_ms_, limits_.total_timeout_ms)) {
         fail(DownloadFailure::Timeout);
+        return;
+    }
+    if (elapsed(now_ms, activity_ms_, limits_.idle_timeout_ms) ||
+        (snapshot_.state == DirectDownloadState::Resolving && elapsed(now_ms, hop_ms_, limits_.dns_timeout_ms))) {
+        // Only a stalled transfer resumes; a DNS answer that never comes is not retried.
+        if (snapshot_.state != DirectDownloadState::Receiving || !resume(DownloadFailure::Timeout, now_ms))
+            fail(DownloadFailure::Timeout);
         return;
     }
     try {
@@ -136,6 +185,7 @@ void DirectDownloadSession::tick(qint64 now_ms) {
             endpoint.tls = target_->https;
             if (limits_.forward_youtube_user_agent && youtube_capability_)
                 endpoint.user_agent = youtube_capability_->data().user_agent_hint;
+            endpoint.byte_range = request_range_;
             snapshot_.state = DirectDownloadState::Receiving;
             activity_ms_ = now_ms;
             if (limits_.on_request_user_agent) {
@@ -159,7 +209,9 @@ void DirectDownloadSession::tick(qint64 now_ms) {
             return;
         if (stream.state == PinnedDownloadStreamState::Failed || stream.state == PinnedDownloadStreamState::Cancelled ||
             stream.state == PinnedDownloadStreamState::Idle) {
-            fail(ioFailure());
+            const auto error = ioFailure();
+            if (!resume(error, now_ms))
+                fail(error);
             return;
         }
         if (stream.state == PinnedDownloadStreamState::Connecting)
@@ -179,7 +231,8 @@ void DirectDownloadSession::tick(qint64 now_ms) {
             update = response_->feed(bytes);
         } else if (stream.state == PinnedDownloadStreamState::Finished) {
             if (!stream.authenticated_eof) {
-                fail(DownloadFailure::Network);
+                if (!resume(DownloadFailure::Network, now_ms))
+                    fail(DownloadFailure::Network);
                 return;
             }
             update = response_->finishEof();
@@ -212,7 +265,16 @@ void DirectDownloadSession::tick(qint64 now_ms) {
                 static_cast<void>(beginHop(now_ms));
                 return;
             }
-            if (status != 200) {
+            if (status == 206 && request_range_) {
+                if (!acceptPartialContent()) {
+                    fail(DownloadFailure::UnsupportedMedia);
+                    return;
+                }
+            } else if (status == 200 && request_range_ && snapshot_.received_bytes != 0) {
+                // The whole file again cannot be spliced after bytes already written.
+                fail(DownloadFailure::UnsupportedMedia);
+                return;
+            } else if (status != 200) {
                 if (status == 401 || status == 403)
                     fail(DownloadFailure::SourceRejected,
                          status == 401 ? DirectDownloadRestriction::Http401 : DirectDownloadRestriction::Http403);
@@ -221,10 +283,14 @@ void DirectDownloadSession::tick(qint64 now_ms) {
                          : status == 206                ? DownloadFailure::UnsupportedMedia
                                                         : DownloadFailure::Network);
                 return;
-            }
-            snapshot_.total_bytes = response_->contentLength();
+            } else
+                snapshot_.total_bytes = response_->contentLength();
         }
         if (!update.body.isEmpty()) {
+            if (partial_hop_ && static_cast<quint64>(update.body.size()) > hop_expected_bytes_ - hop_body_bytes_) {
+                fail(DownloadFailure::UnsupportedMedia);
+                return;
+            }
             if (!sink_.isWritable()) {
                 fail(DownloadFailure::Publication);
                 return;
@@ -237,6 +303,23 @@ void DirectDownloadSession::tick(qint64 now_ms) {
                 return;
             }
             snapshot_.received_bytes += static_cast<quint64>(update.body.size());
+            hop_body_bytes_ += static_cast<quint64>(update.body.size());
+        }
+        if (update.finished && partial_hop_) {
+            if (hop_body_bytes_ != hop_expected_bytes_) {
+                fail(DownloadFailure::UnsupportedMedia);
+                return;
+            }
+            if (snapshot_.received_bytes == *range_total_) {
+                snapshot_.state = DirectDownloadState::Completed;
+                io_.cancel();
+                return;
+            }
+            io_.cancel();
+            if (!active(snapshot_.state))
+                return;
+            static_cast<void>(beginHop(now_ms));
+            return;
         }
         if (update.finished) {
             if (snapshot_.received_bytes == 0) {
@@ -260,6 +343,34 @@ void DirectDownloadSession::cancel() {
     }
 }
 DirectDownloadSnapshot DirectDownloadSession::snapshot() const { return snapshot_; }
+bool DirectDownloadSession::acceptPartialContent() {
+    const auto range = contentRange(response_->header("content-range"));
+    if (!range || range->first != request_range_->first || range->last > request_range_->last ||
+        range->total > limits_.max_body_bytes || (range_total_ && *range_total_ != range->total))
+        return false;
+    const auto expected = range->last - range->first + 1;
+    if (const auto length = response_->contentLength(); length && *length != expected)
+        return false;
+    range_total_ = range->total;
+    snapshot_.total_bytes = range->total;
+    partial_hop_ = true;
+    hop_expected_bytes_ = expected;
+    return true;
+}
+bool DirectDownloadSession::resume(DownloadFailure error, qint64 now_ms) {
+    if (!ranged_ || resumes_ >= limits_.max_resumes ||
+        (error != DownloadFailure::Network && error != DownloadFailure::Timeout))
+        return false;
+    ++resumes_;
+    try {
+        io_.cancel();
+    } catch (...) {
+        return false;
+    }
+    if (active(snapshot_.state))
+        static_cast<void>(beginHop(now_ms));
+    return true;
+}
 DownloadFailure DirectDownloadSession::ioFailure() const noexcept {
     // Capture the adapter's already observed error before fail() cancels it.
     // Missing reports keep the conservative Network fallback; unknown values

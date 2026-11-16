@@ -7,10 +7,17 @@
 #include <QString>
 
 #include <memory>
+#include <optional>
 
 namespace music_player::m0 {
 
 inline constexpr qint64 pinned_download_stream_buffer_bytes = 64 * 1024;
+
+// Inclusive byte range for one `Range: bytes=first-last` request.
+struct PinnedDownloadByteRange final {
+    quint64 first{0};
+    quint64 last{0};
+};
 
 // Trusted adapter-to-adapter input, after public-address and URL policy checks.
 // Tests may pin loopback here; the production policy must never admit it.
@@ -21,6 +28,8 @@ struct PinnedDownloadEndpoint final {
     quint16 port{443};
     bool tls{true};
     QByteArray user_agent{};
+    // Set only by the trusted session for resolved YouTube audio; absent means the whole file.
+    std::optional<PinnedDownloadByteRange> byte_range{};
 };
 
 enum class PinnedDownloadStreamState { Idle, Connecting, Receiving, Finished, Failed, Cancelled };

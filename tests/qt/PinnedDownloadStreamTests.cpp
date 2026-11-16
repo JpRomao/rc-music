@@ -122,6 +122,32 @@ class PinnedDownloadStreamTests final : public QObject {
         QVERIFY(!observed.contains("Authorization:"));
         QVERIFY(!observed.contains("Referer:"));
     }
+    void sendsOneByteRangeOnlyWhenRequested() {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        auto value = endpoint(server.serverPort());
+        value.byte_range = PinnedDownloadByteRange{4, 10485763};
+        const auto crlf = QByteArray(1, char{13}) + char{10};
+        auto expected = expectedRequest(value);
+        expected.replace(crlf + "Connection: close", crlf + "Range: bytes=4-10485763" + crlf + "Connection: close");
+        PinnedDownloadStream stream;
+        QVERIFY(stream.open(value));
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 3000);
+        std::unique_ptr<QTcpSocket> peer(server.nextPendingConnection());
+        QTRY_VERIFY_WITH_TIMEOUT(peer->peek(4096).contains(crlf + crlf), 3000);
+        QCOMPARE(peer->readAll(), expected);
+    }
+    void invertedByteRangeFailsBeforeConnection() {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        auto value = endpoint(server.serverPort());
+        value.byte_range = PinnedDownloadByteRange{8, 7};
+        PinnedDownloadStream stream;
+        QVERIFY(!stream.open(value));
+        QCOMPARE(stream.poll().error, PinnedDownloadStreamError::InvalidEndpoint);
+        QCoreApplication::processEvents();
+        QVERIFY(!server.hasPendingConnections());
+    }
     void invalidUserAgentFailsBeforeConnection_data() {
         QTest::addColumn<QByteArray>("agent");
         QTest::newRow("CR") << (QByteArray("agent") + char{13} + "Cookie: no");

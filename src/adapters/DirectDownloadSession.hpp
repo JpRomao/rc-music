@@ -66,6 +66,12 @@ struct DirectDownloadLimits final {
     // Inclusion attempted at open(), not proof of server receipt. Same observer
     // lifetime/reentrancy restrictions as on_restricted; exceptions are contained.
     std::function<void(bool)> on_request_user_agent{};
+    // Resolved YouTube audio is requested in validated blocks of this size, as yt-dlp
+    // does; 0 keeps one whole-file GET. Direct media always uses a single request.
+    quint64 youtube_range_bytes{10 * 1024 * 1024};
+    // Ranged downloads resume from the last written byte after a dropped connection
+    // or an idle stall, at most this many times. Refusals and policy failures never retry.
+    int max_resumes{2};
 };
 
 // Caller-driven transport session, NOT a published/validated MP3. Sink is a fresh empty
@@ -91,6 +97,8 @@ class DirectDownloadSession final {
     void fail(DownloadFailure error, DirectDownloadRestriction reason = DirectDownloadRestriction::Io);
     void observeRestriction(DirectDownloadRestriction reason) noexcept;
     bool beginHop(qint64 now_ms);
+    bool resume(DownloadFailure error, qint64 now_ms);
+    bool acceptPartialContent();
     DirectDownloadIo& io_;
     QIODevice& sink_;
     DirectDownloadLimits limits_;
@@ -107,6 +115,13 @@ class DirectDownloadSession final {
     qint64 hop_ms_{0};
     quint64 wire_bytes_{0};
     int redirects_{0};
+    int resumes_{0};
+    bool ranged_{false};
+    bool partial_hop_{false};
+    std::optional<PinnedDownloadByteRange> request_range_{};
+    std::optional<quint64> range_total_{};
+    quint64 hop_body_bytes_{0};
+    quint64 hop_expected_bytes_{0};
     bool operating_{false};
     bool restriction_observed_{false};
 };

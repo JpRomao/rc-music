@@ -59,6 +59,32 @@ class DownloadWorkerProtocolTests final : public QObject {
         QCOMPARE(decoded->endpoint.tls, original.endpoint.tls);
         QCOMPARE(decoded->runtime.core_path, original.runtime.core_path);
     }
+    void byteRangeTravelsWithAndWithoutUserAgent() {
+        for (const QByteArray& agent : {QByteArray{}, QByteArray("RCMusic Synthetic Agent/1")}) {
+            auto original = request(DownloadWorkerMode::Stream);
+            original.endpoint.user_agent = agent;
+            original.endpoint.byte_range = PinnedDownloadByteRange{10485760, 20971519};
+            const auto encoded = encodeDownloadWorkerRequest(original);
+            QVERIFY(!encoded.isEmpty());
+            QCOMPARE(encoded.at(4), agent.isEmpty() ? char{3} : char{4});
+            const auto decoded = decodeDownloadWorkerRequest(encoded);
+            QVERIFY(decoded);
+            QVERIFY(decoded->endpoint.byte_range);
+            QCOMPARE(decoded->endpoint.byte_range->first, quint64{10485760});
+            QCOMPARE(decoded->endpoint.byte_range->last, quint64{20971519});
+            QCOMPARE(decoded->endpoint.user_agent, agent);
+            QCOMPARE(encodeDownloadWorkerRequest(*decoded), encoded);
+            for (qsizetype size = 0; size < encoded.size(); ++size)
+                QVERIFY(!decodeDownloadWorkerRequest(encoded.first(size)));
+            QVERIFY(!decodeDownloadWorkerRequest(encoded + char{0}));
+        }
+        auto inverted = request(DownloadWorkerMode::Stream);
+        inverted.endpoint.byte_range = PinnedDownloadByteRange{8, 7};
+        QVERIFY(encodeDownloadWorkerRequest(inverted).isEmpty());
+        auto dns = request();
+        dns.endpoint.byte_range = PinnedDownloadByteRange{0, 1};
+        QVERIFY(encodeDownloadWorkerRequest(dns).isEmpty());
+    }
     void minimalRequestsKeepLegacyVersionOne() {
         for (const auto mode : {DownloadWorkerMode::Resolve, DownloadWorkerMode::Stream}) {
             const auto original = request(mode);
