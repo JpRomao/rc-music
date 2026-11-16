@@ -11,11 +11,16 @@
 
 namespace music_player::m0 {
 
+// L8: at most this many downloads run at the same time.
+inline constexpr std::size_t download_service_max_active_jobs = 3;
+
 struct DownloadServiceLimits final {
     std::size_t max_jobs{128};
     std::size_t max_requests{64};
     std::size_t max_retained_request_bytes{1024 * 1024};
     std::int64_t job_timeout_ms{30 * 60 * 1000};
+    // Native executions running at once, 1 to download_service_max_active_jobs.
+    std::size_t max_active_jobs{1};
 };
 
 struct DownloadServiceCapacity final {

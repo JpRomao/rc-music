@@ -240,7 +240,8 @@ struct DownloadService::Impl {
     std::vector<std::string> acknowledged_archived_job_ids;
     std::optional<ArchivePlan> staged_archive;
     DownloadRecoveryReport recovery_report{};
-    std::optional<std::size_t> active;
+    // Indices of the jobs with a native execution slot (L8: up to max_active_jobs).
+    std::vector<std::size_t> active;
     std::size_t retained_request_bytes{0};
     std::uint64_t next_id{1};
     bool valid_configuration;
@@ -254,7 +255,16 @@ struct DownloadService::Impl {
          DownloadRequestIdentity* request_identity)
         : execution(worker), importer(local_import), identity(request_identity), prefix(std::move(id_prefix)),
           limits(caps), valid_configuration(validPrefix(prefix) && limits.max_jobs > 0 && limits.max_requests > 0 &&
-                                            limits.max_retained_request_bytes > 0 && limits.job_timeout_ms > 0) {}
+                                            limits.max_retained_request_bytes > 0 && limits.job_timeout_ms > 0 &&
+                                            limits.max_active_jobs > 0 &&
+                                            limits.max_active_jobs <= download_service_max_active_jobs) {}
+
+    // Releases the native execution slot of a job that reached a terminal state.
+    void release(const Job& job) {
+        const auto index = static_cast<std::size_t>(&job - jobs.data());
+        std::erase(active, index);
+    }
+    bool holdsSlot(const std::size_t index) const { return std::ranges::find(active, index) != active.end(); }
 
     Job* find(const std::string_view id) noexcept {
         const auto found =
@@ -467,7 +477,7 @@ struct DownloadService::Impl {
         job.view.state = DownloadJobState::Failed;
         job.view.error = error;
         job.view.completed_mp3.clear();
-        active.reset();
+        release(job);
     }
 
     void observe(Job& job, const DownloadExecutionUpdate& update) {
@@ -508,7 +518,7 @@ struct DownloadService::Impl {
                 } else {
                     job.view.state = DownloadJobState::Cancelled;
                 }
-                active.reset();
+                release(job);
             }
             return;
         }
@@ -533,14 +543,14 @@ struct DownloadService::Impl {
             job.view.state = DownloadJobState::Publishing;
             job.view.completed_mp3 = update.published_mp3;
             (void)import(job);
-            active.reset();
+            release(job);
             break;
         case DownloadExecutionState::Failed:
             failTerminal(job, update.error);
             break;
         case DownloadExecutionState::Cancelled:
             job.view.state = DownloadJobState::Cancelled;
-            active.reset();
+            release(job);
             break;
         }
     }
@@ -620,7 +630,7 @@ bool DownloadService::restoreImpl(const DownloadCheckpoint& checkpoint,
                                   const bool fresh_namespace) {
     auto& state = *impl_;
     if (state.calling_port || state.closed || !state.valid_configuration || state.identity == nullptr ||
-        state.restoration_performed || state.active.has_value() || !state.receipts.empty() || !state.jobs.empty() ||
+        state.restoration_performed || !state.active.empty() || !state.receipts.empty() || !state.jobs.empty() ||
         !state.archived_receipts.empty() || state.staged_archive)
         return false;
 
@@ -948,7 +958,7 @@ std::vector<DownloadJobSnapshot> DownloadService::snapshot() const {
         result.push_back(job.view);
     return result;
 }
-bool DownloadService::hasActiveExecution() const noexcept { return impl_->active.has_value(); }
+bool DownloadService::hasActiveExecution() const noexcept { return !impl_->active.empty(); }
 
 DownloadServiceCapacity DownloadService::capacity() const noexcept {
     const auto& state = *impl_;
@@ -963,7 +973,7 @@ DownloadServiceCapacity DownloadService::capacity() const noexcept {
 bool DownloadService::canArchiveSettled() const {
     const auto& state = *impl_;
     if (state.calling_port || state.closed || !state.valid_configuration || state.identity == nullptr ||
-        state.staged_archive || state.active ||
+        state.staged_archive || !state.active.empty() ||
         state.archived_receipts.size() >= download_checkpoint_max_archived_receipts ||
         std::ranges::any_of(state.jobs, [](const Impl::Job& job) {
             return job.awaiting_confirmation || job.view.state == DownloadJobState::Queued ||
@@ -1065,13 +1075,14 @@ void DownloadService::tick(const std::int64_t now_ms, const std::function<bool()
     // observed separately, including after shutdown, without a download clock
     // or execution cancellation being applied to the borrowed session writer.
     state.observeImports();
-    if (!state.active.has_value()) {
-        if (state.closed || state.restored_queue_pending)
-            return;
-        const auto next = std::find_if(state.jobs.begin(), state.jobs.end(),
-                                       [](const Impl::Job& job) { return job.view.state == DownloadJobState::Queued; });
-        if (next == state.jobs.end() || next->awaiting_confirmation)
-            return;
+    // A tick that starts a job polls nothing else, as with a single slot; the
+    // running jobs are polled on the next tick.
+    const auto next =
+        state.closed || state.restored_queue_pending || state.active.size() >= state.limits.max_active_jobs
+            ? state.jobs.end()
+            : std::find_if(state.jobs.begin(), state.jobs.end(),
+                           [](const Impl::Job& job) { return job.view.state == DownloadJobState::Queued; });
+    if (next != state.jobs.end() && !next->awaiting_confirmation) {
         ArchivedDownloadJobEvidence archive_evidence{.archived_job_ids = state.acknowledged_archived_job_ids};
         bool allowed = true;
         try {
@@ -1088,49 +1099,61 @@ void DownloadService::tick(const std::int64_t now_ms, const std::function<bool()
         } catch (...) {
             allowed = false;
         }
-        if (!allowed || state.closed || state.calling_port || state.active ||
-            next->view.state != DownloadJobState::Queued || next->awaiting_confirmation)
+        if (!allowed || state.closed || state.calling_port || state.active.size() >= state.limits.max_active_jobs ||
+            next->view.state != DownloadJobState::Queued || next->awaiting_confirmation) {
+            if (state.active.empty())
+                return;
+        } else {
+            state.active.push_back(static_cast<std::size_t>(next - state.jobs.begin()));
+            auto& job = *next;
+            job.view.state = DownloadJobState::Downloading;
+            job.started_at = job.last_observed_at = now_ms;
+            try {
+                bool accepted = false;
+                {
+                    const PortCall guard(state.calling_port);
+                    if (const auto* item = Impl::retainedSource(job, state.receipts)) {
+                        accepted =
+                            archive_evidence.archived_job_ids.empty()
+                                ? state.execution.start(job.view.job_id, *item)
+                                : state.execution.startWithArchivedJobs(job.view.job_id, *item, archive_evidence);
+                    }
+                }
+                if (!accepted)
+                    state.failTerminal(job, DownloadFailure::Unavailable);
+            } catch (...) {
+                state.requestCancellation(job, DownloadFailure::InvalidResult);
+            }
             return;
-        state.active = static_cast<std::size_t>(next - state.jobs.begin());
-        auto& job = *next;
-        job.view.state = DownloadJobState::Downloading;
-        job.started_at = job.last_observed_at = now_ms;
+        }
+    }
+    if (state.active.empty())
+        return;
+
+    // Observing one job may release its slot; walk a copy of the running set.
+    const auto running = state.active;
+    for (const auto index : running) {
+        if (!state.holdsSlot(index))
+            continue;
+        auto& job = state.jobs[index];
+        if (now_ms < job.last_observed_at) {
+            state.requestCancellation(job, DownloadFailure::InvalidResult);
+        } else {
+            job.last_observed_at = now_ms;
+            const auto elapsed = static_cast<std::uint64_t>(now_ms) - static_cast<std::uint64_t>(job.started_at);
+            if (elapsed >= static_cast<std::uint64_t>(state.limits.job_timeout_ms))
+                state.requestCancellation(job, DownloadFailure::Timeout);
+        }
         try {
-            bool accepted = false;
+            DownloadExecutionUpdate update;
             {
                 const PortCall guard(state.calling_port);
-                if (const auto* item = Impl::retainedSource(job, state.receipts)) {
-                    accepted = archive_evidence.archived_job_ids.empty()
-                                   ? state.execution.start(job.view.job_id, *item)
-                                   : state.execution.startWithArchivedJobs(job.view.job_id, *item, archive_evidence);
-                }
+                update = state.execution.poll(job.view.job_id);
             }
-            if (!accepted)
-                state.failTerminal(job, DownloadFailure::Unavailable);
+            state.observe(job, update);
         } catch (...) {
             state.requestCancellation(job, DownloadFailure::InvalidResult);
         }
-        return;
-    }
-
-    auto& job = state.jobs[*state.active];
-    if (now_ms < job.last_observed_at) {
-        state.requestCancellation(job, DownloadFailure::InvalidResult);
-    } else {
-        job.last_observed_at = now_ms;
-        const auto elapsed = static_cast<std::uint64_t>(now_ms) - static_cast<std::uint64_t>(job.started_at);
-        if (elapsed >= static_cast<std::uint64_t>(state.limits.job_timeout_ms))
-            state.requestCancellation(job, DownloadFailure::Timeout);
-    }
-    try {
-        DownloadExecutionUpdate update;
-        {
-            const PortCall guard(state.calling_port);
-            update = state.execution.poll(job.view.job_id);
-        }
-        state.observe(job, update);
-    } catch (...) {
-        state.requestCancellation(job, DownloadFailure::InvalidResult);
     }
 }
 
@@ -1292,20 +1315,23 @@ void DownloadService::shutdown(const bool preserve_queue) {
             (!preserve_queue || !Impl::retainedSource(job, state.receipts)))
             job.view.state = DownloadJobState::Cancelled;
     }
-    if (!state.active)
-        return;
-    auto& job = state.jobs[*state.active];
-    // An observed publication already owns its final handoff. Drain it and
-    // the import acknowledgement instead of interrupting the commit.
-    if (preserve_queue && job.view.state == DownloadJobState::Publishing)
-        return;
-    job.resume_on_close =
-        preserve_queue && job.view.state != DownloadJobState::Cancelling && Impl::retainedSource(job, state.receipts);
-    state.requestCancellation(job, DownloadFailure::None);
+    const auto running = state.active;
+    for (const auto index : running) {
+        if (!state.holdsSlot(index))
+            continue;
+        auto& job = state.jobs[index];
+        // An observed publication already owns its final handoff. Drain it and
+        // the import acknowledgement instead of interrupting the commit.
+        if (preserve_queue && job.view.state == DownloadJobState::Publishing)
+            continue;
+        job.resume_on_close = preserve_queue && job.view.state != DownloadJobState::Cancelling &&
+                              Impl::retainedSource(job, state.receipts);
+        state.requestCancellation(job, DownloadFailure::None);
+    }
 }
 
 bool DownloadService::stopped() const {
-    return impl_->closed && !impl_->active.has_value() && std::ranges::none_of(impl_->jobs, [](const Impl::Job& job) {
+    return impl_->closed && impl_->active.empty() && std::ranges::none_of(impl_->jobs, [](const Impl::Job& job) {
                return job.view.state == DownloadJobState::Importing ||
                       job.recovered_import == DownloadImportState::Pending;
            });

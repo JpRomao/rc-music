@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <map>
 
 #include <algorithm>
 #include <functional>
@@ -578,6 +579,125 @@ TEST_CASE("Recovered import handoff predicate cannot reenter mutations or duplic
     REQUIRE(h.importer.imports.size() == 1);
     REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Imported);
     REQUIRE(h.execution.starts.empty());
+}
+
+// L8: several native executions at once. Each job keeps its own update.
+struct ParallelExecution final : DownloadExecution {
+    std::vector<std::string> starts, cancellations;
+    std::map<std::string, DownloadExecutionUpdate, std::less<>> updates;
+    bool start(const std::string& job_id, const DownloadItem&) override {
+        starts.push_back(job_id);
+        updates[job_id] = {.job_id = job_id};
+        return true;
+    }
+    void cancel(std::string_view job_id) override { cancellations.emplace_back(job_id); }
+    DownloadExecutionUpdate poll(std::string_view job_id) override {
+        const auto found = updates.find(job_id);
+        return found == updates.end() ? DownloadExecutionUpdate{.job_id = std::string{job_id}} : found->second;
+    }
+    void finish(const std::string& id, const DownloadExecutionState state) {
+        updates[id] = {
+            .job_id = id,
+            .state = state,
+            .phase =
+                state == DownloadExecutionState::Published ? DownloadPhase::Publishing : DownloadPhase::Downloading,
+            .completed_units = 1,
+            .total_units = 1,
+            .published_mp3 = state == DownloadExecutionState::Published ? finalPath() : std::filesystem::path{},
+            .error = state == DownloadExecutionState::Failed ? DownloadFailure::Unavailable : DownloadFailure::None};
+    }
+};
+struct ParallelHarness final {
+    ParallelExecution execution;
+    FakeImport importer;
+    DownloadService service;
+    explicit ParallelHarness(const std::size_t slots)
+        : service(execution, importer, "test", DownloadServiceLimits{.max_active_jobs = slots}) {}
+    std::vector<std::string> admit(const std::size_t count) {
+        auto result = service.submit(request(1, count));
+        REQUIRE(result.error == DownloadSubmissionError::None);
+        return result.job_ids;
+    }
+    void ticks(const int count, std::int64_t& now) {
+        for (int index = 0; index < count; ++index)
+            service.tick(now++);
+    }
+};
+
+TEST_CASE("Up to the configured number of downloads run at the same time", "[download][parallel]") {
+    ParallelHarness h{3};
+    const auto ids = h.admit(5);
+    std::int64_t now = 0;
+    h.ticks(6, now);
+    REQUIRE(h.execution.starts == std::vector<std::string>{ids[0], ids[1], ids[2]});
+    REQUIRE(h.service.hasActiveExecution());
+    REQUIRE(h.service.snapshot()[3].state == DownloadJobState::Queued);
+
+    // A finished or failed job frees its slot for the next one in the queue.
+    h.execution.finish(ids[1], DownloadExecutionState::Published);
+    h.execution.finish(ids[2], DownloadExecutionState::Failed);
+    h.ticks(4, now);
+    REQUIRE(h.execution.starts == std::vector<std::string>{ids[0], ids[1], ids[2], ids[3], ids[4]});
+    REQUIRE(h.service.snapshot()[1].state == DownloadJobState::Completed);
+    REQUIRE(h.service.snapshot()[2].state == DownloadJobState::Failed);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Downloading);
+
+    h.execution.finish(ids[0], DownloadExecutionState::Published);
+    h.execution.finish(ids[3], DownloadExecutionState::Published);
+    h.execution.finish(ids[4], DownloadExecutionState::Published);
+    h.ticks(2, now);
+    REQUIRE_FALSE(h.service.hasActiveExecution());
+    for (const auto& job : h.service.snapshot())
+        REQUIRE((job.state == DownloadJobState::Completed || job.state == DownloadJobState::Failed));
+}
+
+TEST_CASE("The default still runs one download at a time", "[download][parallel]") {
+    ParallelHarness h{1};
+    const auto ids = h.admit(3);
+    std::int64_t now = 0;
+    h.ticks(5, now);
+    REQUIRE(h.execution.starts == std::vector<std::string>{ids[0]});
+    REQUIRE(DownloadServiceLimits{}.max_active_jobs == 1);
+}
+
+TEST_CASE("Each running download keeps its own deadline and cancellation", "[download][parallel]") {
+    ParallelHarness h{3};
+    const auto ids = h.admit(2);
+    std::int64_t now = 0;
+    h.ticks(2, now);
+    REQUIRE(h.execution.starts.size() == 2);
+    REQUIRE(h.service.cancel(ids[1]));
+    REQUIRE(h.execution.cancellations == std::vector<std::string>{ids[1]});
+    h.execution.finish(ids[1], DownloadExecutionState::Cancelled);
+    h.ticks(1, now);
+    REQUIRE(h.service.snapshot()[1].state == DownloadJobState::Cancelled);
+    REQUIRE(h.service.snapshot()[0].state == DownloadJobState::Downloading);
+    h.service.tick(DownloadServiceLimits{}.job_timeout_ms + 10);
+    REQUIRE(h.execution.cancellations == std::vector<std::string>{ids[1], ids[0]});
+}
+
+TEST_CASE("Closing stops every running download", "[download][parallel]") {
+    ParallelHarness h{3};
+    const auto ids = h.admit(3);
+    std::int64_t now = 0;
+    h.ticks(3, now);
+    h.service.shutdown(true);
+    REQUIRE(h.execution.cancellations.size() == 3);
+    REQUIRE_FALSE(h.service.stopped());
+    for (const auto& id : ids)
+        h.execution.finish(id, DownloadExecutionState::Cancelled);
+    h.ticks(1, now);
+    REQUIRE(h.service.stopped());
+    // Preserved downloads go back to the queue for the next session.
+    for (const auto& job : h.service.snapshot())
+        REQUIRE(job.state == DownloadJobState::Queued);
+}
+
+TEST_CASE("An invalid number of download slots disables the service", "[download][parallel]") {
+    for (const std::size_t slots : {std::size_t{0}, download_service_max_active_jobs + 1}) {
+        ParallelHarness h{slots};
+        REQUIRE(h.service.submit(request(1, 1)).error != DownloadSubmissionError::None);
+    }
 }
 
 TEST_CASE("A published download remains importing until its durable handoff commits", "[download][import-pending]") {
