@@ -382,8 +382,11 @@ GridLayout {
             flat: root.editorial
             enabled: root.playbackEnabled
             contract: root.contract
-            text: root.presenter.muted ? "🔊" : "🔇"
-            iconName: root.editorial ? (root.presenter.muted ? "volume" : "mute") : ""
+            // The icon shows the sound state (muted or at 0% → crossed speaker);
+            // the accessible name keeps the action.
+            readonly property bool silent: root.presenter.muted || root.presenter.volume <= 0
+            text: silent ? "🔇" : "🔊"
+            iconName: root.editorial ? (silent ? "mute" : "volume") : ""
             accessibleName: root.presenter.muted ? root.contract.actionUnmute : root.contract.actionMute
             shortcutHint: labels.muteShortcut
             onClicked: root.presenter.toggleMute()

@@ -128,7 +128,8 @@ TestCase {
             "play-pause": "pause",
             "next": "next",
             "player-repeat": "repeat",
-            "mute": "mute"
+            // The mute button shows the sound state: audible here.
+            "mute": "volume"
         };
         for (const name in transportIcons)
             verifyButtonIcon(findChild(shell, name), transportIcons[name]);

@@ -122,6 +122,33 @@ TestCase {
         keyClick(Qt.Key_Return);
         compare(openSpy.count, 1, "Enter remains the focused button activation key");
     }
+    function test_muteIconShowsTheCurrentSoundState() {
+        openQueue();
+        const mute = findChild(shell, "mute");
+        verify(!presenter.muted);
+        // The icon shows the sound state; the accessible name keeps the action.
+        compare(mute.text, "🔊");
+        if (mute.iconName.length > 0)
+            compare(mute.iconName, "volume");
+        compare(mute.Accessible.name.startsWith("Silenciar"), true);
+        mouseClick(mute, mute.width / 2, mute.height / 2);
+        verify(presenter.muted);
+        compare(mute.text, "🔇");
+        if (mute.iconName.length > 0)
+            compare(mute.iconName, "mute");
+        compare(mute.Accessible.name.startsWith("Silenciar"), false);
+        mouseClick(mute, mute.width / 2, mute.height / 2);
+        verify(!presenter.muted);
+        compare(mute.text, "🔊");
+        // Volume at 0% is silent too, so it shows the same crossed speaker.
+        const volume = presenter.volume;
+        verify(presenter.setVolume(0));
+        tryCompare(mute, "text", "🔇");
+        if (mute.iconName.length > 0)
+            compare(mute.iconName, "mute");
+        verify(presenter.setVolume(volume));
+        tryCompare(mute, "text", "🔊");
+    }
     function test_spaceAfterClickingMuteControlsPlaybackOnly() {
         openQueue();
         const mute = findChild(shell, "mute");
