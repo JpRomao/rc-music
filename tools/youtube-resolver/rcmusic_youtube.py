@@ -13,7 +13,11 @@ import sys
 
 PINNED_YTDLP_VERSION = "2026.10.26"
 PINNED_EJS_VERSION = "0.8.0"
-FORMAT_SELECTOR = "bestaudio[ext=m4a][vcodec=none][acodec~='^(mp4a[.]40[.]2|aac)$'][protocol=https]"
+# AAC in M4A first; Opus in WebM only when a video offers no AAC stream.
+FORMAT_SELECTOR = (
+    "bestaudio[ext=m4a][vcodec=none][acodec~='^(mp4a[.]40[.]2|aac)$'][protocol=https]"
+    "/bestaudio[ext=webm][vcodec=none][acodec=opus][protocol=https]"
+)
 # Prefer the original audio and the extractor's quality signals before using
 # bitrate and sample rate to rank otherwise equivalent AAC representations.
 FORMAT_SORT = ("lang", "quality", "source", "channels", "abr", "br", "asr")

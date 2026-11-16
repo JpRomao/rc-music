@@ -205,6 +205,22 @@ class YoutubeAudioResolutionTests final : public QObject {
         QCOMPARE(result.error, failure);
         QVERIFY(!result.audio);
     }
+    void acceptsOpusInWebmWhenNoAacStreamExists() {
+        // Some videos only offer Opus; FFmpeg converts it to MP3 like AAC.
+        auto object = fixture();
+        object.insert("ext", "webm");
+        object.insert("acodec", "opus");
+        const auto result = decodeYoutubeAudioResolution(bytes(object), video_id);
+        QCOMPARE(result.error, DownloadFailure::None);
+        QVERIFY(result.audio);
+        QCOMPARE(result.audio->stream_url, stream);
+        for (const auto& [ext, codec] :
+             {std::pair{"webm", "vorbis"}, std::pair{"m4a", "opus"}, std::pair{"mp4", "opus"}}) {
+            object.insert("ext", ext);
+            object.insert("acodec", codec);
+            QCOMPARE(decodeYoutubeAudioResolution(bytes(object), video_id).error, DownloadFailure::UnsupportedMedia);
+        }
+    }
     void rejectsArbitraryHttpHeaders_data() {
         QTest::addColumn<QJsonObject>("headers");
         // Credentials mean the stream needs an authenticated session the app never reproduces.
@@ -366,8 +382,9 @@ class YoutubeAudioResolutionTests final : public QObject {
         QCOMPARE(arguments.back(), "https://www.youtube.com/watch?v=" + video_id);
         const auto format_index = arguments.indexOf("--format");
         QVERIFY(format_index >= 0 && format_index + 1 < arguments.size());
-        QVERIFY(arguments[format_index + 1].contains("m4a"));
-        QVERIFY(arguments[format_index + 1].contains("https"));
+        QCOMPARE(arguments[format_index + 1],
+                 QStringLiteral("bestaudio[ext=m4a][vcodec=none][acodec~='^(mp4a[.]40[.]2|aac)$'][protocol=https]/"
+                                "bestaudio[ext=webm][vcodec=none][acodec=opus][protocol=https]"));
         const auto sort_index = arguments.indexOf("--format-sort");
         QVERIFY(sort_index >= 0 && sort_index + 1 < arguments.size());
         QCOMPARE(arguments[sort_index + 1], QStringLiteral("lang,quality,source,channels,abr,br,asr"));

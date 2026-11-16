@@ -235,10 +235,13 @@ YoutubeAudioResolutionResult decodeYoutubeAudioResolution(QByteArray payload, QS
         if (availability.toString() != QLatin1String("public") && availability.toString() != QLatin1String("unlisted"))
             return failure(DownloadFailure::Restricted);
     }
-    if (object.value(QStringLiteral("ext")).toString() != QLatin1String("m4a") ||
-        (object.value(QStringLiteral("acodec")).toString() != QLatin1String("mp4a.40.2") &&
-         object.value(QStringLiteral("acodec")).toString() != QLatin1String("aac")) ||
-        object.value(QStringLiteral("vcodec")).toString() != QLatin1String("none") ||
+    // AAC in M4A first; Opus in WebM when a video offers no AAC. Both convert to MP3.
+    const auto ext = object.value(QStringLiteral("ext")).toString();
+    const auto acodec = object.value(QStringLiteral("acodec")).toString();
+    const bool aac =
+        ext == QLatin1String("m4a") && (acodec == QLatin1String("mp4a.40.2") || acodec == QLatin1String("aac"));
+    const bool opus = ext == QLatin1String("webm") && acodec == QLatin1String("opus");
+    if ((!aac && !opus) || object.value(QStringLiteral("vcodec")).toString() != QLatin1String("none") ||
         object.value(QStringLiteral("protocol")).toString() != QLatin1String("https"))
         return failure(DownloadFailure::UnsupportedMedia);
     QByteArray user_agent_hint;
@@ -321,7 +324,8 @@ QStringList youtubeAudioResolverArguments(QString video_id, QString private_node
             QString{},
             QStringLiteral("--format"),
             QStringLiteral("bestaudio[ext=m4a][vcodec=none]"
-                           "[acodec~='^(mp4a[.]40[.]2|aac)$'][protocol=https]"),
+                           "[acodec~='^(mp4a[.]40[.]2|aac)$'][protocol=https]"
+                           "/bestaudio[ext=webm][vcodec=none][acodec=opus][protocol=https]"),
             QStringLiteral("--format-sort"),
             QStringLiteral("lang,quality,source,channels,abr,br,asr"),
             QStringLiteral("--"),

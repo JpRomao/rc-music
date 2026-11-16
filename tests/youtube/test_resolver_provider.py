@@ -550,7 +550,8 @@ class EntrypointTests(unittest.TestCase):
         self.assertIsInstance(bundle.ies[0], FakeIE)
         self.assertEqual(bundle.extract_calls, [("https://www.youtube.com/watch?v=" + VIDEO, False)])
         self.assertEqual(bundle.options["format"],
-                         "bestaudio[ext=m4a][vcodec=none][acodec~='^(mp4a[.]40[.]2|aac)$'][protocol=https]")
+                         "bestaudio[ext=m4a][vcodec=none][acodec~='^(mp4a[.]40[.]2|aac)$'][protocol=https]"
+                         "/bestaudio[ext=webm][vcodec=none][acodec=opus][protocol=https]")
         self.assertEqual(bundle.options["format_sort"], ["lang", "quality", "source", "channels", "abr", "br", "asr"])
         for option in ("simulate", "skip_download", "noplaylist", "quiet", "no_warnings", "noprogress"):
             self.assertIs(bundle.options[option], True, option)
