@@ -176,6 +176,7 @@ PageSurface {
             AccessibleTransportButton {
                 id: generalButton
                 objectName: "preferences-general"
+                flat: root.embedded
                 Layout.fillWidth: true
                 contract: root.contract
                 text: root.contract.sectionGeneral
@@ -188,6 +189,7 @@ PageSurface {
             }
             AccessibleTransportButton {
                 objectName: "preferences-playback"
+                flat: root.embedded
                 Layout.fillWidth: true
                 contract: root.contract
                 text: root.contract.sectionPlayback
@@ -200,6 +202,7 @@ PageSurface {
             }
             AccessibleTransportButton {
                 objectName: "preferences-appearance"
+                flat: root.embedded
                 Layout.fillWidth: true
                 contract: root.contract
                 text: root.contract.sectionAppearance
@@ -214,6 +217,7 @@ PageSurface {
                 id: downloadsSectionButton
 
                 objectName: "preferences-downloads"
+                flat: root.embedded
                 Layout.fillWidth: true
                 contract: root.contract
                 text: labels.downloads
@@ -232,6 +236,27 @@ PageSurface {
             Layout.minimumHeight: 0
             currentIndex: root.section
             ColumnLayout {
+                Text {
+                    objectName: "preferences-section-title-general"
+                    visible: root.embedded
+                    Layout.fillWidth: true
+                    Layout.topMargin: root.contract.spacingUnit * 2
+                    text: root.contract.sectionGeneral
+                    textFormat: Text.PlainText
+                    font.family: root.contract.headingFontFamily
+                    font.pixelSize: root.contract.typeSection
+                    color: root.contract.textPrimaryColor
+                    Accessible.role: Accessible.Heading
+                    Accessible.name: text
+                }
+                Rectangle {
+                    visible: root.embedded
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    Layout.bottomMargin: root.contract.spacingUnit * 2
+                    color: root.contract.highContrast ? root.contract.borderColor : root.contract.dividerColor
+                    Accessible.ignored: true
+                }
                 spacing: root.contract.spacingUnit
                 PreferenceChoice {
                     Layout.fillWidth: true
@@ -308,6 +333,27 @@ PageSurface {
                 }
             }
             ColumnLayout {
+                Text {
+                    objectName: "preferences-section-title-playback"
+                    visible: root.embedded
+                    Layout.fillWidth: true
+                    Layout.topMargin: root.contract.spacingUnit * 2
+                    text: root.contract.sectionPlayback
+                    textFormat: Text.PlainText
+                    font.family: root.contract.headingFontFamily
+                    font.pixelSize: root.contract.typeSection
+                    color: root.contract.textPrimaryColor
+                    Accessible.role: Accessible.Heading
+                    Accessible.name: text
+                }
+                Rectangle {
+                    visible: root.embedded
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    Layout.bottomMargin: root.contract.spacingUnit * 2
+                    color: root.contract.highContrast ? root.contract.borderColor : root.contract.dividerColor
+                    Accessible.ignored: true
+                }
                 spacing: root.contract.spacingUnit
                 RowLayout {
                     Layout.fillWidth: true
@@ -376,6 +422,27 @@ PageSurface {
                 }
             }
             ColumnLayout {
+                Text {
+                    objectName: "preferences-section-title-appearance"
+                    visible: root.embedded
+                    Layout.fillWidth: true
+                    Layout.topMargin: root.contract.spacingUnit * 2
+                    text: root.contract.sectionAppearance
+                    textFormat: Text.PlainText
+                    font.family: root.contract.headingFontFamily
+                    font.pixelSize: root.contract.typeSection
+                    color: root.contract.textPrimaryColor
+                    Accessible.role: Accessible.Heading
+                    Accessible.name: text
+                }
+                Rectangle {
+                    visible: root.embedded
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    Layout.bottomMargin: root.contract.spacingUnit * 2
+                    color: root.contract.highContrast ? root.contract.borderColor : root.contract.dividerColor
+                    Accessible.ignored: true
+                }
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: root.contract.spacingUnit * 3
@@ -416,6 +483,27 @@ PageSurface {
                 }
             }
             ColumnLayout {
+                Text {
+                    objectName: "preferences-section-title-downloads"
+                    visible: root.embedded
+                    Layout.fillWidth: true
+                    Layout.topMargin: root.contract.spacingUnit * 2
+                    text: labels.downloads
+                    textFormat: Text.PlainText
+                    font.family: root.contract.headingFontFamily
+                    font.pixelSize: root.contract.typeSection
+                    color: root.contract.textPrimaryColor
+                    Accessible.role: Accessible.Heading
+                    Accessible.name: text
+                }
+                Rectangle {
+                    visible: root.embedded
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    Layout.bottomMargin: root.contract.spacingUnit * 2
+                    color: root.contract.highContrast ? root.contract.borderColor : root.contract.dividerColor
+                    Accessible.ignored: true
+                }
                 spacing: root.contract.spacingUnit
 
                 Text {

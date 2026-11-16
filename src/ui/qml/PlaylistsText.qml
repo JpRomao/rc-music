@@ -12,6 +12,7 @@ QtObject {
     readonly property string rename: qsTr("Renomear")
     readonly property string deleteAction: qsTr("Excluir")
     readonly property string tracks: qsTr("Faixas da playlist")
+    readonly property string detailEyebrow: qsTr("PLAYLIST")
     readonly property string selectPlaylist: qsTr("Selecione uma playlist.")
     readonly property string emptyPlaylist: qsTr("Esta playlist está vazia.")
     readonly property string moveTrackUp: qsTr("Mover faixa para cima")

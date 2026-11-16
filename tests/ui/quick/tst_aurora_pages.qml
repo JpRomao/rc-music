@@ -266,6 +266,47 @@ TestCase {
         compare(root.text, "Seu espaço");
         compare(findChild(shell, data.nav).text, data.title);
     }
+    function test_playlistsShowAChooserAndADetailHeader() {
+        loadQueue();
+        shell.openPlaylists();
+        const page = findChild(shell, "playlists-panel");
+        tryCompare(page, "opened", true);
+        const header = findChild(page, "playlist-detail-header");
+        verify(header && header.visible);
+        const name = findChild(header, "playlist-detail-name");
+        compare(name.text, "Favoritas 日本");
+        compare(name.font.family, contract.headingFontFamily);
+        compare(name.font.pixelSize, contract.typeSection);
+        verify(findChild(header, "playlist-detail-eyebrow").text.length > 0);
+        compare(findChild(header, "playlist-detail-meta").text, "1 faixas");
+        verify(findChild(page, "playlist-create").primary, "creating a list is the page's main action");
+        verify(findChild(page, "playlist-enqueue").primary, "adding to the queue is the detail's main action");
+        // Quiet chooser: the selected list uses the Selection token, not a bordered card.
+        findChild(page, "playlist-create").forceActiveFocus(Qt.TabFocusReason);
+        const list = findChild(page, "playlists-list");
+        const row = list.itemAtIndex(0);
+        verify(row && row.highlighted);
+        verify(Qt.colorEqual(row.background.color, contract.selectionColor), String(row.background.color));
+        compare(row.background.border.width, 0);
+    }
+    function test_settingsUseQuietTabsAndSectionTitles() {
+        shell.openPreferences();
+        const page = findChild(shell, "preferences-panel");
+        tryCompare(page, "opened", true);
+        const general = findChild(page, "preferences-section-title-general");
+        verify(general && general.visible, "the current section has an editorial title");
+        compare(general.font.family, contract.headingFontFamily);
+        compare(general.font.pixelSize, contract.typeSection);
+        verify(!findChild(page, "preferences-section-title-playback").visible);
+        // One section at a time keeps the keyboard cycle short; the tabs are a quiet index.
+        const tab = findChild(page, "preferences-playback");
+        verify(tab.flat);
+        mouseClick(tab);
+        verify(tab.checked);
+        tryVerify(() => findChild(page, "preferences-section-title-playback").visible);
+        verify(!general.visible);
+        verify(findChild(page, "skip-forward-seconds").visible);
+    }
     function test_pageNavigationPreservesPlaybackAndRevokesTransientOwners() {
         loadQueue();
         const audio = commands();

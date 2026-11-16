@@ -237,6 +237,7 @@ PageSurface {
         property string secondaryText: ""
         property string primaryObjectName: ""
         property bool cursorFocused: false
+        property bool editorial: false
         implicitHeight: 58
         activeFocusOnTab: false
         focusPolicy: Qt.NoFocus
@@ -251,9 +252,9 @@ PageSurface {
                 clicked();
         }
         background: Rectangle {
-            color: row.highlighted ? row.contract.surfaceColor : "transparent"
+            color: row.editorial && !row.contract.highContrast ? (row.highlighted ? row.contract.selectionColor : (row.hovered && row.enabled ? row.contract.hoverColor : "transparent")) : (row.highlighted ? row.contract.surfaceColor : "transparent")
             radius: row.contract.radiusSmall
-            border.width: row.cursorFocused ? 3 : (row.highlighted ? 1 : 0)
+            border.width: row.cursorFocused ? 3 : (row.highlighted && (!row.editorial || row.contract.highContrast) ? 1 : 0)
             border.color: row.cursorFocused ? row.contract.focusColor : row.contract.accentColor
         }
         contentItem: Column {
@@ -303,6 +304,7 @@ PageSurface {
             AccessibleTransportButton {
                 id: createButton
                 objectName: "playlist-create"
+                primary: root.embedded
                 contract: root.contract
                 text: playlistsText.create
                 enabled: root.canEdit
@@ -348,6 +350,7 @@ PageSurface {
                         primaryText: modelData.name
                         secondaryText: playlistsText.trackCount.arg(modelData.count)
                         primaryObjectName: "playlist-row-name"
+                        editorial: root.embedded
                         highlighted: root.selectedPlaylistId === modelData.id
                         cursorFocused: playlistList.activeFocus && ListView.isCurrentItem
                         enabled: playlistList.selectionAllowed
@@ -385,11 +388,51 @@ PageSurface {
             Rectangle {
                 Layout.preferredWidth: 1
                 Layout.fillHeight: true
-                color: root.contract.borderColor
+                color: root.embedded && !root.contract.highContrast ? root.contract.dividerColor : root.contract.borderColor
             }
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                ColumnLayout {
+                    // Detail header of the selected list (Aurora): eyebrow, serif name, track count.
+                    objectName: "playlist-detail-header"
+                    visible: root.embedded && root.selectedPlaylist !== null
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 12
+                    Layout.bottomMargin: 8
+                    spacing: 4
+                    Text {
+                        objectName: "playlist-detail-eyebrow"
+                        Layout.fillWidth: true
+                        text: playlistsText.detailEyebrow
+                        textFormat: Text.PlainText
+                        font.family: root.contract.bodyFontFamily
+                        font.pixelSize: root.contract.typeEyebrow
+                        font.letterSpacing: 1.2
+                        color: root.contract.textSecondaryColor
+                    }
+                    Text {
+                        objectName: "playlist-detail-name"
+                        Layout.fillWidth: true
+                        text: root.selectedPlaylist !== null ? root.selectedPlaylist.name : ""
+                        textFormat: Text.PlainText
+                        font.family: root.contract.headingFontFamily
+                        font.pixelSize: root.contract.typeSection
+                        color: root.contract.textPrimaryColor
+                        elide: Text.ElideRight
+                        Accessible.role: Accessible.Heading
+                        Accessible.name: text
+                    }
+                    Text {
+                        objectName: "playlist-detail-meta"
+                        Layout.fillWidth: true
+                        text: playlistsText.trackCount.arg(root.selectedPlaylist !== null ? root.selectedPlaylist.count : 0)
+                        textFormat: Text.PlainText
+                        font.family: root.contract.bodyFontFamily
+                        font.pixelSize: root.contract.typeCaption
+                        color: root.contract.textSecondaryColor
+                    }
+                }
                 LibraryList {
                     id: entryList
                     objectName: "playlist-entries"
@@ -410,6 +453,7 @@ PageSurface {
                         primaryText: modelData.title
                         secondaryText: modelData.path
                         primaryObjectName: "playlist-entry-title"
+                        editorial: root.embedded
                         highlighted: root.selectedEntryId === modelData.id
                         cursorFocused: entryList.activeFocus && ListView.isCurrentItem
                         enabled: entryList.selectionAllowed
@@ -489,6 +533,7 @@ PageSurface {
             }
             AccessibleTransportButton {
                 objectName: "playlist-enqueue"
+                primary: root.embedded
                 contract: root.contract
                 text: playlistsText.addToQueue
                 enabled: root.canEdit && root.selectedPlaylist !== null && root.selectedPlaylist.count > 0
