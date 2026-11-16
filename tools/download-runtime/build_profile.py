@@ -252,8 +252,20 @@ def _tree(root, inventory):
         raise ValueError("YouTube tree does not match the complete inventory")
 
 
+def _signed_runtime(value):
+    """ADR-0020 trust anchor: P-256 public key (X||Y hex) and minimum manifest sequence."""
+    _closed(value, ("public_key", "minimum_sequence"))
+    key, sequence = value["public_key"], value["minimum_sequence"]
+    if type(key) is not str or len(key) != 128 or any(c not in "0123456789abcdef" for c in key):
+        raise ValueError("signed runtime public key must be 128 lowercase hex characters")
+    if type(sequence) is not int or not 1 <= sequence < 2 ** 53:
+        raise ValueError("signed runtime minimum sequence must be a positive integer")
+    return {"public_key": key, "minimum_sequence": sequence}
+
+
 def _youtube(value):
-    _closed(value, ("receipt_path", "receipt_sha256"))
+    _closed(value, ("receipt_path", "receipt_sha256", "signed_runtime") if type(value) is dict and "signed_runtime" in value
+            else ("receipt_path", "receipt_sha256"))
     receipt_path = _local(value["receipt_path"])
     expected_hash = _digest(value["receipt_sha256"])
     receipt, size, _ = _read_json(receipt_path, expected_hash)
@@ -322,7 +334,7 @@ def _youtube(value):
     return files, root, {"path": str(receipt_path), "sha256": expected_hash, "bytes": size}
 
 
-def _header(files, include_youtube, features=None):
+def _header(files, include_youtube, features=None, signed_runtime=None):
     network = [row for row in files if row["component"] == "network"]
     media = next(row for row in files if row["component"] == "media")
     def relative(row):
@@ -342,7 +354,12 @@ def _header(files, include_youtube, features=None):
         if "forward_youtube_user_agent" in features:
             forward_user_agent = str(features["forward_youtube_user_agent"]).lower()
             lines.append("    profile.execution.job.network.forward_youtube_user_agent = " + forward_user_agent + ";")
-    if include_youtube:
+    if include_youtube and signed_runtime is not None:
+        # The inventory comes from the signed manifest next to the player (ADR-0020).
+        lines.extend(["    profile.execution.youtube.emplace();",
+                      '    profile.execution.youtube->signed_runtime = SignedYoutubeRuntimeTrust{QByteArray::fromHex("' +
+                      signed_runtime["public_key"] + '"), ' + str(signed_runtime["minimum_sequence"]) + "ULL};"])
+    elif include_youtube:
         lines.extend(["    profile.execution.youtube.emplace();", "    profile.execution.youtube->runtime.artifacts = {"])
         for row in files:
             if row["component"] == "youtube":
@@ -393,9 +410,11 @@ def _plan(config, *, allow_existing_output=False):
         by_role[role] = value
     files = [_source(by_role[role], role, leaf, "network") for role, leaf in NETWORK]
     files.append(_source(config["media"], "Media", "RCMusicMediaWorker.exe", "media"))
-    youtube_receipt, tree = None, None
+    youtube_receipt, tree, signed_runtime = None, None, None
     if config["youtube"] is not None:
         youtube_files, tree, youtube_receipt = _youtube(config["youtube"])
+        if "signed_runtime" in config["youtube"]:
+            signed_runtime = _signed_runtime(config["youtube"]["signed_runtime"])
         files.extend(youtube_files)
         if _within(output, tree) or _within(tree, output):
             raise ValueError("output overlaps the closed YouTube source tree")
@@ -422,10 +441,12 @@ def _plan(config, *, allow_existing_output=False):
                              for row in files if row["component"] == "network"],
                  "media": {key: files[len(NETWORK)][{"path": "source_path"}.get(key, key)] for key in ("path", "bytes", "sha256")},
                  "youtube": None if youtube_receipt is None else {"receipt_path": youtube_receipt["path"], "receipt_sha256": youtube_receipt["sha256"]}}
+    if signed_runtime is not None:
+        canonical["youtube"]["signed_runtime"] = signed_runtime
     if features is not None:
         canonical["features"] = features
     return {"schemaVersion": 1, "purpose": "player-download-package-profile-v1", "config": canonical,
-            "output_directory": str(output), "files": files, "header_text": _header(files, youtube_receipt is not None, features),
+            "output_directory": str(output), "files": files, "header_text": _header(files, youtube_receipt is not None, features, signed_runtime),
             "recipe_files": recipes, "youtube_receipt": youtube_receipt}
 
 
@@ -484,6 +505,8 @@ def materialize(candidate):
                    "recipe_files": current["recipe_files"], "youtube_receipt": current["youtube_receipt"]}
         if "features" in current["config"]:
             receipt["features"] = current["config"]["features"]
+        if current["config"]["youtube"] is not None and "signed_runtime" in current["config"]["youtube"]:
+            receipt["youtube_signed_runtime"] = current["config"]["youtube"]["signed_runtime"]
         receipt_path = output / "download-profile-receipt.json"
         with receipt_path.open("x", encoding="utf-8", newline="\n") as stream:
             json.dump(receipt, stream, ensure_ascii=False, allow_nan=False, indent=2)

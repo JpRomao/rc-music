@@ -38,6 +38,7 @@ Em 2026-11-16 o mantenedor escolheu o manifesto assinado entre duas opções. A 
 - **Risco residual de retrocesso.** Quem tem escrita na instalação pode recolocar um runtime antigo, ainda assinado, com sequência maior ou igual ao mínimo. A mitigação é subir o mínimo compilado quando houver motivo de segurança.
 - Perder a chave privada impede novas assinaturas. A recuperação é gerar outra chave e compilar o player com a nova chave pública. Vazar a chave dá a quem a obtiver o mesmo poder que trocar o binário do player, até a troca de chave.
 - O próprio extractor continua fixando a versão do yt-dlp com que foi construído. Cada nova versão ainda exige reconstruir o runtime pelo builder existente.
+- O modo assinado é opcional no gerador do perfil (`youtube.signed_runtime`). O empacotamento do instalador ainda não o aceita; essa integração acompanha a retomada do instalador.
 
 ## Critérios de revisão
 

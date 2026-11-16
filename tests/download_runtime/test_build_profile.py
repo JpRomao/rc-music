@@ -283,6 +283,40 @@ class BuildProfileTests(unittest.TestCase):
             self.assertEqual(digest(self.output / "payload/download-tools/youtube" / row["path"]), row["sha256"])
         self.assertFalse((self.root / "historical-inputs").exists())
 
+    def test_signed_youtube_runtime_compiles_the_trust_anchor_instead_of_runtime_pins(self):
+        # ADR-0020: the player trusts a signed manifest; the header carries only the public key.
+        yt = self.add_youtube()
+        self.config["youtube"]["signed_runtime"] = {"public_key": "ab" * 64, "minimum_sequence": 3}
+        candidate = self.module.plan(self.config)
+        header = candidate["header_text"]
+        self.assertIn('profile.execution.youtube->signed_runtime = SignedYoutubeRuntimeTrust{QByteArray::fromHex("' +
+                      "ab" * 64 + '"), 3ULL};', header)
+        self.assertNotIn("WindowsYoutubeRuntimeRole::", header)
+        for row in yt.receipt["artifacts"]:
+            self.assertNotIn(row["sha256"], header)
+        self.assertEqual(candidate["config"]["youtube"]["signed_runtime"],
+                         {"public_key": "ab" * 64, "minimum_sequence": 3})
+        result = self.module.materialize(candidate)
+        for row in yt.receipt["artifacts"]:
+            self.assertEqual(digest(self.output / "payload/download-tools/youtube" / row["path"]), row["sha256"])
+        receipt = json.loads(Path(result["receipt_path"]).read_text(encoding="utf-8"))
+        self.assertEqual(receipt["youtube_signed_runtime"], {"public_key": "ab" * 64, "minimum_sequence": 3})
+
+    def test_signed_youtube_runtime_trust_is_strictly_validated(self):
+        self.add_youtube()
+        for trust in ({"public_key": "AB" * 64, "minimum_sequence": 1},
+                      {"public_key": "ab" * 63, "minimum_sequence": 1},
+                      {"public_key": "zz" * 64, "minimum_sequence": 1},
+                      {"public_key": "ab" * 64, "minimum_sequence": 0},
+                      {"public_key": "ab" * 64, "minimum_sequence": 1.0},
+                      {"public_key": "ab" * 64, "minimum_sequence": True},
+                      {"public_key": "ab" * 64, "minimum_sequence": 2 ** 53},
+                      {"public_key": "ab" * 64},
+                      {"public_key": "ab" * 64, "minimum_sequence": 1, "extra": 1}):
+            with self.subTest(trust=trust):
+                self.config["youtube"]["signed_runtime"] = trust
+                self.rejected()
+
     def test_current_node_receipt_binds_the_staged_binary_to_its_reviewed_source(self):
         yt = self.add_youtube()
         node = next(source for source in yt.receipt["sources"] if source["name"] == "node")
