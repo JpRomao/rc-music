@@ -172,7 +172,7 @@ class DirectDownloadSessionTests final : public QObject {
         QCOMPARE(h.session.snapshot().state, DirectDownloadState::Receiving);
         h.io.chunks = {diagnosticResponse("HTTP/1.1 403 Forbidden|Content-Length: 4||DATA")};
         h.session.tick(2);
-        QCOMPARE(h.session.snapshot().error, DownloadFailure::Restricted);
+        QCOMPARE(h.session.snapshot().error, DownloadFailure::SourceRejected);
         QVERIFY(h.sink.data().isEmpty());
         QCOMPARE(h.io.cancels, 1);
         h.session.tick(3);
@@ -213,7 +213,10 @@ class DirectDownloadSessionTests final : public QObject {
             h.session.tick(2);
         }
         QCOMPARE(h.session.snapshot().state, DirectDownloadState::Failed);
-        QCOMPARE(h.session.snapshot().error, DownloadFailure::Restricted);
+        // The server refusing access is reported apart from the app's own restrictions;
+        // the private cause observer still receives the exact reason in both cases.
+        QCOMPARE(h.session.snapshot().error, cause.startsWith(QStringLiteral("HTTP")) ? DownloadFailure::SourceRejected
+                                                                                      : DownloadFailure::Restricted);
         QVERIFY(h.sink.data().isEmpty());
         QCOMPARE(observed.size(), qsizetype{1});
         QCOMPARE(int(observed.front()), reason);
@@ -234,7 +237,7 @@ class DirectDownloadSessionTests final : public QObject {
         h.session.tick(2);
         QCOMPARE(calls, 1);
         QCOMPARE(h.session.snapshot().state, DirectDownloadState::Failed);
-        QCOMPARE(h.session.snapshot().error, DownloadFailure::Restricted);
+        QCOMPARE(h.session.snapshot().error, DownloadFailure::SourceRejected);
         QCOMPARE(h.io.cancels, 1);
         QVERIFY(h.sink.data().isEmpty());
     }
@@ -482,8 +485,8 @@ class DirectDownloadSessionTests final : public QObject {
     }
     void remoteFailuresAndMalformedResponsesNeverBecomeMedia() {
         for (const auto& [status, error] :
-             QList<QPair<int, DownloadFailure>>{{401, DownloadFailure::Restricted},
-                                                {403, DownloadFailure::Restricted},
+             QList<QPair<int, DownloadFailure>>{{401, DownloadFailure::SourceRejected},
+                                                {403, DownloadFailure::SourceRejected},
                                                 {404, DownloadFailure::Expired},
                                                 {410, DownloadFailure::Expired},
                                                 {429, DownloadFailure::Network},

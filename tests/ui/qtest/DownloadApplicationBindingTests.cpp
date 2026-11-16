@@ -2270,9 +2270,9 @@ class DownloadApplicationBindingTests final : public QObject {
         h.binding.poll();
 
         QCOMPARE(h.reviewValue(DownloadJobsModel::StateRole).toString(), QStringLiteral("failed"));
-        QCOMPARE(h.reviewValue(DownloadJobsModel::ErrorTextRole).toString(),
-                 QStringLiteral("Acesso à mídia recusado pela fonte ou pelas verificações de segurança do RC Music. "
-                                "Selecione outra mídia autorizada."));
+        QCOMPARE(
+            h.reviewValue(DownloadJobsModel::ErrorTextRole).toString(),
+            QStringLiteral("Bloqueado pelas verificações de segurança do RC Music. Selecione outra mídia autorizada."));
         QCOMPARE(h.importer.calls, 0);
     }
     void beforeShutdownClosesIngressBeforeCancellationAndExecutionShutdown() {

@@ -42,6 +42,7 @@ DownloadFailure normalizedFailure(DownloadFailure error) {
     case DownloadFailure::Import:
     case DownloadFailure::Timeout:
     case DownloadFailure::InvalidResult:
+    case DownloadFailure::SourceRejected:
         return error;
     default:
         return DownloadFailure::InvalidResult;

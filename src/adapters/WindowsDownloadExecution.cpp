@@ -73,6 +73,7 @@ bool knownFailure(const DownloadFailure error) {
     case DownloadFailure::Import:
     case DownloadFailure::Timeout:
     case DownloadFailure::InvalidResult:
+    case DownloadFailure::SourceRejected:
         return true;
     }
     return false;

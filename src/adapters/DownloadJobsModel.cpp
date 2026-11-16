@@ -93,8 +93,10 @@ QString errorText(const DownloadFailure failure) {
         return DownloadJobsModel::tr("O endereço expirou. Atualize a página e selecione a mídia novamente.");
     case DownloadFailure::Restricted:
         return DownloadJobsModel::tr(
-            "Acesso à mídia recusado pela fonte ou pelas verificações de segurança do RC Music. "
-            "Selecione outra mídia autorizada.");
+            "Bloqueado pelas verificações de segurança do RC Music. Selecione outra mídia autorizada.");
+    case DownloadFailure::SourceRejected:
+        return DownloadJobsModel::tr("A fonte recusou o acesso ao áudio. O link pode ter expirado ou exigir "
+                                     "outro acesso; tente baixar de novo.");
     case DownloadFailure::UnsupportedMedia:
         return DownloadJobsModel::tr("Formato não compatível. Selecione outro áudio ou vídeo.");
     case DownloadFailure::NoAudio:
@@ -181,6 +183,8 @@ QString failureCode(const DownloadFailure error) {
         return QStringLiteral("timeout");
     case DownloadFailure::InvalidResult:
         return QStringLiteral("invalid-result");
+    case DownloadFailure::SourceRejected:
+        return QStringLiteral("source-rejected");
     }
     return QStringLiteral("invalid-result");
 }

@@ -22,6 +22,10 @@ No corpo delimitado somente por EOF, HTTPS exige fechamento autenticado. Se o ba
 
 O socket aplica high-water de 4 KiB nas filas Qt, solicita recepção nativa de 4 KiB e confere valor efetivo de até 8 KiB antes da conexão. O fechamento TLS drena dados retidos enquanto o descritor ainda é válido, com high-water de 48 KiB para reservar um registro sob o limite legível de 64 KiB. Valores legíveis acima do teto falham fechados; não são mascarados em `poll()`. Essa margem foi exercitada por regressões de EOF/leituras desalinhadas, não é uma prova de limite de todas as filas internas ou alocações Schannel/Qt/Windows.
 
+## Recusa da fonte e bloqueio próprio (2026-11-16)
+
+HTTP 401/403 termina como `DownloadFailure::SourceRejected` (`source-rejected` no checkpoint), separado de `Restricted`, que fica reservado às verificações do próprio RC Music: alvo, DNS privado, redirect, isolamento e inventário. A UI mostra "A fonte recusou o acesso ao áudio…" para a recusa e "Bloqueado pelas verificações de segurança do RC Music…" para o bloqueio próprio. O observador privado `on_restricted` continua recebendo a causa exata nos dois casos. O novo valor foi acrescentado ao fim do enum e dos nomes persistidos, mantendo as posições anteriores; checkpoints antigos continuam válidos.
+
 ## Hint User-Agent temporário e default mínimo
 
 O teste autorizado de compatibilidade preserva somente um hint público `User-Agent` do resolvedor YouTube, após a validação integral dos metadados. O valor é efêmero na capability, ASCII imprimível (0x20–0x7e), limitado a 512 bytes e nunca registrado. Ausência/vazio continuam omitindo o header. Não há dicionário de headers, cookies, Authorization, Referer ou autoridade da página para habilitar encaminhamento.

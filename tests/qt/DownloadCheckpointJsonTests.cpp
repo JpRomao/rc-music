@@ -394,7 +394,7 @@ class DownloadCheckpointJsonTests final : public QObject {
             QCOMPARE(decoded.checkpoint, std::optional<DownloadCheckpoint>{checkpoint});
         }
         for (int code = static_cast<int>(DownloadFailure::Unavailable);
-             code <= static_cast<int>(DownloadFailure::InvalidResult); ++code) {
+             code <= static_cast<int>(DownloadFailure::SourceRejected); ++code) {
             auto checkpoint = sample();
             checkpoint.jobs[1].error = static_cast<DownloadFailure>(code);
             const auto decoded = DownloadCheckpointJson::decode(DownloadCheckpointJson::encode(checkpoint));

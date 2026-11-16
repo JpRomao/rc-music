@@ -214,7 +214,7 @@ void DirectDownloadSession::tick(qint64 now_ms) {
             }
             if (status != 200) {
                 if (status == 401 || status == 403)
-                    fail(DownloadFailure::Restricted,
+                    fail(DownloadFailure::SourceRejected,
                          status == 401 ? DirectDownloadRestriction::Http401 : DirectDownloadRestriction::Http403);
                 else
                     fail(status == 404 || status == 410 ? DownloadFailure::Expired
@@ -281,6 +281,7 @@ DownloadFailure DirectDownloadSession::ioFailure() const noexcept {
         case DownloadFailure::Import:
         case DownloadFailure::Timeout:
         case DownloadFailure::InvalidResult:
+        case DownloadFailure::SourceRejected:
             return error;
         default:
             return DownloadFailure::InvalidResult;
@@ -310,7 +311,7 @@ void DirectDownloadSession::fail(DownloadFailure error, DirectDownloadRestrictio
         io_.cancel();
     } catch (...) {
     }
-    if (error == DownloadFailure::Restricted)
+    if (error == DownloadFailure::Restricted || error == DownloadFailure::SourceRejected)
         observeRestriction(reason);
 }
 } // namespace music_player::m0

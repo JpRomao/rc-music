@@ -25,7 +25,9 @@ enum class DownloadFailure {
     Publication,
     Import,
     Timeout,
-    InvalidResult
+    InvalidResult,
+    // The source refused access (HTTP 401/403), as opposed to the app's own checks (Restricted).
+    SourceRejected
 };
 enum class DownloadExecutionState { Running, Published, Failed, Cancelled };
 enum class DownloadImportState { Pending, Committed, Failed };

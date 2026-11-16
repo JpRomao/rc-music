@@ -98,7 +98,7 @@ bool candidatePath(const std::filesystem::path& path) {
 }
 bool validJob(const DownloadJobSnapshot& job) {
     if (!asciiId(job.job_id) || job.title.empty() || job.title.size() > 800 || !validUtf8(job.title) ||
-        job.error < DownloadFailure::None || job.error > DownloadFailure::InvalidResult ||
+        job.error < DownloadFailure::None || job.error > DownloadFailure::SourceRejected ||
         (job.total_units && job.completed_units > *job.total_units) ||
         (!job.completed_mp3.empty() && !candidatePath(job.completed_mp3)))
         return false;

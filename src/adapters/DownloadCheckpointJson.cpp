@@ -26,9 +26,9 @@ constexpr std::array<std::string_view, 2> media_kind_names{"audio", "video"};
 constexpr std::array<std::string_view, 12> state_names{"queued",        "downloading", "converting", "publishing",
                                                        "cancelling",    "completed",   "cancelled",  "failed",
                                                        "import-failed", "interrupted", "importing",  "imported"};
-constexpr std::array<std::string_view, 13> error_names{
+constexpr std::array<std::string_view, 14> error_names{
     "none",           "unavailable", "network",     "expired", "restricted", "unsupported-media", "no-audio",
-    "limit-exceeded", "conversion",  "publication", "import",  "timeout",    "invalid-result"};
+    "limit-exceeded", "conversion",  "publication", "import",  "timeout",    "invalid-result",    "source-rejected"};
 
 QString latin(const std::string_view text) {
     return QString::fromLatin1(text.data(), static_cast<qsizetype>(text.size()));

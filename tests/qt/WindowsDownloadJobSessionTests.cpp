@@ -416,8 +416,9 @@ class WindowsDownloadJobSessionTests final : public QObject {
         QTest::addColumn<bool>("dns");
         QTest::addColumn<int>("error");
         for (const bool dns : {true, false}) {
-            for (const auto error : {DownloadFailure::Timeout, DownloadFailure::LimitExceeded,
-                                     DownloadFailure::InvalidResult, DownloadFailure::Unavailable}) {
+            for (const auto error :
+                 {DownloadFailure::Timeout, DownloadFailure::LimitExceeded, DownloadFailure::InvalidResult,
+                  DownloadFailure::Unavailable, DownloadFailure::SourceRejected}) {
                 const auto label = QByteArray(dns ? "DNS-" : "stream-") + QByteArray::number(static_cast<int>(error));
                 QTest::newRow(label.constData()) << dns << static_cast<int>(error);
             }

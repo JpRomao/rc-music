@@ -1080,7 +1080,7 @@ class DownloadJobsModelTests final : public QObject {
             DownloadFailure::Unavailable,   DownloadFailure::Network,          DownloadFailure::Expired,
             DownloadFailure::Restricted,    DownloadFailure::UnsupportedMedia, DownloadFailure::NoAudio,
             DownloadFailure::LimitExceeded, DownloadFailure::Conversion,       DownloadFailure::Publication,
-            DownloadFailure::Timeout,       DownloadFailure::InvalidResult};
+            DownloadFailure::Timeout,       DownloadFailure::InvalidResult,    DownloadFailure::SourceRejected};
         for (const auto error : errors)
             QTest::newRow(qPrintable(QString::number(static_cast<int>(error)))) << static_cast<int>(error);
     }
@@ -1107,6 +1107,31 @@ class DownloadJobsModelTests final : public QObject {
         QVERIFY(!value(model, DownloadJobsModel::CanRetryImportRole).toBool());
         QVERIFY(value(model, DownloadJobsModel::OutputPathRole).toString().isEmpty());
         QCOMPARE(model.activeCount(), 0);
+    }
+
+    void sourceRefusalIsToldApartFromTheAppsOwnChecks() {
+        const auto failureText = [](DownloadFailure error) {
+            Execution execution;
+            Importer importer;
+            DownloadService service(execution, importer, "model");
+            const auto submitted = service.submit(request()).error == DownloadSubmissionError::None;
+            DownloadJobsModel model(service);
+            service.tick(0);
+            execution.update.state = DownloadExecutionState::Failed;
+            execution.update.error = error;
+            service.tick(1);
+            model.refresh();
+            return submitted ? value(model, DownloadJobsModel::ErrorTextRole).toString() : QString{};
+        };
+        const auto refused = failureText(DownloadFailure::SourceRejected);
+        const auto restricted = failureText(DownloadFailure::Restricted);
+        const auto invalid = failureText(DownloadFailure::InvalidResult);
+        QVERIFY(!refused.isEmpty());
+        QVERIFY2(refused.contains(QStringLiteral("recusou")), qPrintable(refused));
+        QVERIFY2(restricted.contains(QStringLiteral("verificações")), qPrintable(restricted));
+        QVERIFY(refused != restricted);
+        // The service must keep the new failure instead of collapsing it into an invalid result.
+        QVERIFY(refused != invalid);
     }
 
     void safeBoundsLiteralTitlesAndNoReadSideEffects() {
