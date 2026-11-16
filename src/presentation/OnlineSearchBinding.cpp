@@ -1,8 +1,10 @@
 #include "OnlineSearchBinding.hpp"
 
+#include <QDesktopServices>
 #include <QElapsedTimer>
 #include <QPointer>
 #include <QTimer>
+#include <QUrl>
 #include <QUuid>
 #include <QVariantMap>
 
@@ -183,6 +185,15 @@ bool OnlineSearchBinding::download(const QString& video_id) {
     state.updateTimer();
     emit changed();
     return true;
+}
+
+bool OnlineSearchBinding::openPreview(const QString& video_id) {
+    // Only listed IDs, which the decoder already limited to 11 opaque characters.
+    const auto* row = available() ? impl_->row(video_id.toStdString()) : nullptr;
+    if (!row)
+        return false;
+    return QDesktopServices::openUrl(
+        QUrl(QStringLiteral("https://www.youtube.com/watch?v=") + QString::fromStdString(row->result.video_id)));
 }
 
 void OnlineSearchBinding::pollBackend() {

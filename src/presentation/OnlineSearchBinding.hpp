@@ -42,6 +42,9 @@ class OnlineSearchBinding final : public QObject {
     Q_INVOKABLE void cancel();
     // Requests the audio of one listed result. Each result can be sent once.
     Q_INVOKABLE bool download(const QString& video_id);
+    // Opens a listed video on YouTube in the default browser, so the user can
+    // check it before downloading. Nothing is downloaded.
+    Q_INVOKABLE bool openPreview(const QString& video_id);
 
   signals:
     void changed();

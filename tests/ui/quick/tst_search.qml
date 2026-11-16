@@ -23,6 +23,7 @@ TestCase {
         property var results: []
         property var searches: []
         property var downloads: []
+        property var previews: []
         property int cancels: 0
         function search(text) {
             searches = searches.concat([text]);
@@ -35,6 +36,10 @@ TestCase {
         }
         function download(id) {
             downloads = downloads.concat([id]);
+            return true;
+        }
+        function openPreview(id) {
+            previews = previews.concat([id]);
             return true;
         }
     }
@@ -55,6 +60,7 @@ TestCase {
         finder.results = [];
         finder.searches = [];
         finder.downloads = [];
+        finder.previews = [];
         finder.cancels = 0;
         shell = createTemporaryObject(shellComponent, null);
         verify(shell);
@@ -131,6 +137,30 @@ TestCase {
         compare(finder.downloads, ["aB0-_Cd1EF2"]);
         tryVerify(() => findChild(list, "search-row-Zz9_-Yy8Xx7") !== null);
         verify(!findChild(findChild(list, "search-row-Zz9_-Yy8Xx7"), "search-download").enabled);
+    }
+    function test_eachResultCanBePreviewedInTheBrowser() {
+        const panel = openSearch();
+        finder.results = [
+            {
+                videoId: "Zz9_-Yy8Xx7",
+                title: "Já pedida",
+                channel: "Lia Campos",
+                durationText: "3:37",
+                requested: true
+            }
+        ];
+        const list = findChild(panel, "search-results");
+        tryVerify(() => list.visible && list.count === 1 && list.width > 0 && list.height > 0);
+        tryVerify(() => findChild(list, "search-row-Zz9_-Yy8Xx7") !== null);
+        const preview = findChild(findChild(list, "search-row-Zz9_-Yy8Xx7"), "search-preview");
+        verify(preview && preview.visible);
+        // A requested result can still be previewed; previewing never downloads.
+        verify(preview.enabled);
+        compare(preview.text, "Abrir no YouTube");
+        compare(preview.accessibleName, "Abrir Já pedida no YouTube");
+        mouseClick(preview);
+        compare(finder.previews, ["Zz9_-Yy8Xx7"]);
+        compare(finder.downloads, []);
     }
     function test_theEntryIsHiddenWhileTheSearchIsUnavailable() {
         finder.available = false;

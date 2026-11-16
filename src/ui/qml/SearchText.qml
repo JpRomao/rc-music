@@ -10,6 +10,8 @@ QtObject {
     readonly property string download: qsTr("Baixar")
     readonly property string downloadName: qsTr("Baixar o áudio de %1")
     readonly property string requested: qsTr("Pedido")
+    readonly property string preview: qsTr("Abrir no YouTube")
+    readonly property string previewName: qsTr("Abrir %1 no YouTube")
     readonly property string requestedName: qsTr("%1 já foi para os downloads")
     readonly property string unknownChannel: qsTr("Canal desconhecido")
     readonly property string unavailable: qsTr("A busca online fica disponível quando o componente de downloads do YouTube está ativo.")

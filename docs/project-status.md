@@ -41,7 +41,7 @@ Ficam pendentes nessa trilha: reconstruir o runtime do extractor (o seletor Opus
 - busca local sem acento e tags lidas em segundo plano;
 - localizar arquivo, adicionar à fila e à playlist, e remover só o registro.
 
-A busca online pelo próprio yt-dlp (L5) também está no código: página Buscar com até 12 vídeos por consulta, só metadados, e Baixar enviando um pedido comum por ID. Ela usa o mesmo runtime verificado dos downloads e só aparece com o componente YouTube ativo.
+A busca online pelo próprio yt-dlp (L5) também está no código: página Buscar com até 12 vídeos por consulta, só metadados, Abrir no YouTube para conferir no navegador e Baixar enviando um pedido comum por ID. Ela usa o mesmo runtime verificado dos downloads e só aparece com o componente YouTube ativo.
 
 O plano está em [2026-11-16-library-and-search](superpowers/plans/2026-11-16-library-and-search.md). O runtime foi reconstruído com yt-dlp 2026.10.26 e a jornada buscar → baixar → fila e biblioteca passou no app real. A Atividade já tem os filtros Com erro, Concluídos, Na fila e Baixando (L6). Próximas fatias: vários links de uma vez e até 3 downloads simultâneos.
 

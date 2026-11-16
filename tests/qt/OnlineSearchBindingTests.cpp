@@ -1,5 +1,6 @@
 #include "presentation/OnlineSearchBinding.hpp"
 
+#include <QDesktopServices>
 #include <QSignalSpy>
 #include <QTest>
 #include <QUuid>
@@ -67,6 +68,14 @@ struct Harness final {
     }
 };
 QVariantMap at(const OnlineSearchBinding& binding, const int index) { return binding.results().at(index).toMap(); }
+// Stands in for the browser: QDesktopServices hands https links to it.
+class UrlRecorder final : public QObject {
+    Q_OBJECT
+  public:
+    QList<QUrl> urls;
+  public slots:
+    void open(const QUrl& url) { urls.append(url); }
+};
 } // namespace
 
 class OnlineSearchBindingTests final : public QObject {
@@ -199,6 +208,23 @@ class OnlineSearchBindingTests final : public QObject {
         h.submission.error = DownloadSubmissionError::NotAvailable;
         QVERIFY(!h.binding.download(QString::fromStdString(first)));
         QVERIFY(h.binding.statusText() != busy);
+    }
+    void previewOpensOnlyListedVideosInTheBrowser() {
+        UrlRecorder browser;
+        QDesktopServices::setUrlHandler(QStringLiteral("https"), &browser, "open");
+        Harness h;
+        QVERIFY(!h.binding.openPreview(QString::fromStdString(first)));
+        QVERIFY(h.binding.search(QStringLiteral("lia")));
+        h.complete(found(1));
+        QVERIFY(!h.binding.openPreview(QStringLiteral("notListed01")));
+        QVERIFY(!h.binding.openPreview(QStringLiteral("https://evil.example/")));
+        QVERIFY(browser.urls.isEmpty());
+        QVERIFY(h.binding.openPreview(QString::fromStdString(second)));
+        QDesktopServices::unsetUrlHandler(QStringLiteral("https"));
+        QCOMPARE(browser.urls, QList<QUrl>{QUrl(QStringLiteral("https://www.youtube.com/watch?v=") +
+                                                QString::fromStdString(second))});
+        // Previewing never sends a download request.
+        QVERIFY(h.submission.requests.empty());
     }
     void revokingTheBackendStopsTheSearch() {
         Harness h;

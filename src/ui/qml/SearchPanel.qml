@@ -182,6 +182,17 @@ PageSurface {
                         Accessible.ignored: true
                     }
                     AccessibleTransportButton {
+                        objectName: "search-preview"
+                        contract: root.contract
+                        flat: true
+                        iconName: "browser"
+                        iconWithText: true
+                        enabled: root.available
+                        text: searchText.preview
+                        accessibleName: searchText.previewName.arg(row.title)
+                        onClicked: root.onlineSearch.openPreview(row.videoId)
+                    }
+                    AccessibleTransportButton {
                         objectName: "search-download"
                         contract: root.contract
                         flat: true
