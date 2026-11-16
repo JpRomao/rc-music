@@ -1,12 +1,17 @@
 #include "LibraryBinding.hpp"
 #include "LibraryListModel.hpp"
+#include "m0/domain/MetadataSanitization.hpp"
 #include "m0/ports/LibraryStore.hpp"
+#include "m0/ports/MetadataExtractor.hpp"
 
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
 
+#include <atomic>
 #include <optional>
+#include <unordered_set>
 #include <utility>
+#include <variant>
 
 namespace music_player::m0 {
 namespace {
@@ -23,6 +28,61 @@ struct Buffered final {
 };
 // Admissions held while the catalog is unreadable stay bounded.
 constexpr std::size_t maximum_buffered_paths = maximum_library_records;
+constexpr std::size_t metadata_batch = 64;
+
+struct MetadataUpdate final {
+    std::uint64_t id{};
+    std::filesystem::path path{};
+    std::optional<LibraryMetadata> metadata{};
+    bool available{true};
+};
+// Library text must stay in the canonical single-line form and within its limit.
+std::string libraryText(const std::optional<std::string>& value) {
+    if (!value)
+        return {};
+    auto sanitized = sanitizeMetadataText(*value);
+    if (sanitized.disposition == MetadataTextDisposition::Empty ||
+        sanitized.disposition == MetadataTextDisposition::InvalidEncoding ||
+        sanitized.text.size() > maximum_library_text_bytes ||
+        sanitizeMetadataText(sanitized.text).disposition != MetadataTextDisposition::Unchanged)
+        return {};
+    return std::move(sanitized.text);
+}
+std::vector<MetadataUpdate> readMetadata(const std::shared_ptr<const MetadataExtractor>& extractor,
+                                         const std::vector<std::pair<std::uint64_t, std::filesystem::path>>& batch,
+                                         const std::shared_ptr<std::atomic_bool>& cancel) {
+    std::vector<MetadataUpdate> updates;
+    for (const auto& [id, path] : batch) {
+        if (cancel->load())
+            break;
+        MetadataReadResult result = MetadataReadError{};
+        try {
+            result = extractor->read(path, [cancel] { return cancel->load(); });
+        } catch (...) {
+        }
+        MetadataUpdate update{.id = id, .path = path};
+        if (const auto* track = std::get_if<TrackMetadata>(&result)) {
+            const auto duration = track->audio.duration_ms;
+            update.metadata = LibraryMetadata{
+                .title = libraryText(track->tags.title),
+                .artist = libraryText(track->tags.artist),
+                .album = libraryText(track->tags.album),
+                // 0 marks "read, duration unknown" so the file is not read on every start.
+                .duration_ms = duration && *duration > 0 ? static_cast<std::uint64_t>(*duration) : 0,
+            };
+        } else {
+            const auto code = std::get<MetadataReadError>(result).code;
+            if (code == MetadataReadErrorCode::Cancelled)
+                break;
+            // Unreachable files are marked unavailable; unreadable formats stay listed.
+            update.available = code != MetadataReadErrorCode::SourceUnavailable;
+            if (update.available)
+                update.metadata = LibraryMetadata{.duration_ms = 0};
+        }
+        updates.push_back(std::move(update));
+    }
+    return updates;
+}
 } // namespace
 
 static std::optional<std::uint64_t> recordId(const QString& text) {
@@ -47,10 +107,62 @@ struct LibraryBinding::Impl final {
     QFutureWatcher<Job> watcher;
     QString notice;
     bool busy{}, ready{}, seed_allowed{}, save_failed{}, stopping{};
+    std::shared_ptr<const MetadataExtractor> extractor;
+    QFutureWatcher<std::vector<MetadataUpdate>> metadata_watcher;
+    std::shared_ptr<std::atomic_bool> cancel_reads = std::make_shared<std::atomic_bool>(false);
+    std::unordered_set<std::uint64_t> attempted;
+    bool reading{};
 
     Impl(LibraryBinding& q, std::shared_ptr<LibraryStore> source, QueueAppender append)
         : owner(q), store(std::move(source)), appender(std::move(append)) {
         QObject::connect(&watcher, &QFutureWatcher<Job>::finished, &owner, [this] { finished(); });
+        QObject::connect(&metadata_watcher, &QFutureWatcher<std::vector<MetadataUpdate>>::finished, &owner,
+                         [this] { metadataRead(); });
+    }
+    void enrich() {
+        if (stopping || reading || !ready || !extractor)
+            return;
+        std::vector<std::pair<std::uint64_t, std::filesystem::path>> batch;
+        for (const auto& record : (working ? *working : confirmed).snapshot().records) {
+            if ((record.duration_ms && record.available) || attempted.contains(record.id))
+                continue;
+            attempted.insert(record.id);
+            batch.emplace_back(record.id, record.source_path);
+            if (batch.size() == metadata_batch)
+                break;
+        }
+        if (batch.empty())
+            return;
+        reading = true;
+        metadata_watcher.setFuture(QtConcurrent::run(
+            [reader = extractor, batch, cancel = cancel_reads] { return readMetadata(reader, batch, cancel); }));
+    }
+    void metadataRead() {
+        reading = false;
+        if (stopping)
+            return;
+        auto candidate = working ? *working : confirmed;
+        for (const auto& update : metadata_watcher.result()) {
+            const auto* record = candidate.find(update.id);
+            // Removed or relocated while reading: the result belongs to another file.
+            if (!record || record->source_path.native() != update.path.native())
+                continue;
+            if (update.metadata) {
+                const LibraryMetadata current{record->title, record->artist, record->album, record->duration_ms};
+                if (!(current == *update.metadata))
+                    static_cast<void>(candidate.setMetadata(update.id, *update.metadata));
+            }
+            if (candidate.find(update.id)->available != update.available)
+                static_cast<void>(candidate.setAvailable(update.id, update.available));
+        }
+        working = std::move(candidate);
+        if (!unsaved())
+            working.reset();
+        // Enrichment never retries a failed write by itself.
+        if (!save_failed)
+            save();
+        enrich();
+        emit owner.changed();
     }
     bool unsaved() const { return working && !(working->snapshot() == confirmed.snapshot()); }
 
@@ -84,6 +196,7 @@ struct LibraryBinding::Impl final {
         // New ingress is a fresh attempt, even after an earlier failure.
         save_failed = false;
         save();
+        enrich();
         emit owner.changed();
     }
     void save() {
@@ -133,6 +246,7 @@ struct LibraryBinding::Impl final {
         // A failure waits for new ingress or an explicit retry; it never loops.
         if (!stopping && !save_failed)
             save();
+        enrich();
         emit owner.changed();
     }
     void loaded(LibraryLoadResult result) {
@@ -181,9 +295,14 @@ LibraryBinding::LibraryBinding(std::shared_ptr<LibraryStore> store, QueueAppende
     : QObject(parent), impl_(std::make_unique<Impl>(*this, std::move(store), std::move(append_queue))) {}
 LibraryBinding::~LibraryBinding() {
     impl_->stopping = true;
+    impl_->cancel_reads->store(true);
+    impl_->metadata_watcher.waitForFinished();
     impl_->watcher.waitForFinished();
 }
 bool LibraryBinding::start() { return !impl_->ready && impl_->load(); }
+void LibraryBinding::setMetadataExtractor(std::shared_ptr<const MetadataExtractor> extractor) {
+    impl_->extractor = std::move(extractor);
+}
 void LibraryBinding::admit(Paths paths) { impl_->accept(std::move(paths), false); }
 void LibraryBinding::seed(Paths paths) { impl_->accept(std::move(paths), true); }
 void LibraryBinding::admitDownload(std::filesystem::path path, std::string job_id) {
@@ -244,5 +363,8 @@ bool LibraryBinding::remove(const QString& record_id) {
     return true;
 }
 bool LibraryBinding::retryLoad() { return !impl_->ready && impl_->load(); }
-void LibraryBinding::beginShutdown() { impl_->stopping = true; }
+void LibraryBinding::beginShutdown() {
+    impl_->stopping = true;
+    impl_->cancel_reads->store(true);
+}
 } // namespace music_player::m0

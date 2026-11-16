@@ -22,7 +22,8 @@ QString fileName(const std::filesystem::path& path) {
 #endif
 }
 QString durationText(const std::optional<std::uint64_t>& milliseconds) {
-    if (!milliseconds)
+    // 0 means the file was read but its duration is unknown.
+    if (!milliseconds || *milliseconds == 0)
         return {};
     const auto seconds = *milliseconds / 1000;
     const auto hours = seconds / 3600, minutes = (seconds / 60) % 60, rest = seconds % 60;

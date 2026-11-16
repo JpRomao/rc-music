@@ -12,6 +12,7 @@
 
 namespace music_player::m0 {
 class LibraryStore;
+class MetadataExtractor;
 
 // ADR-0019: owns the permanent "Minha música" catalog for the UI thread. Store
 // I/O runs on a worker. Admissions arrive at any time; the confirmed catalog
@@ -38,6 +39,10 @@ class LibraryBinding final : public QObject {
                             QObject* parent = nullptr);
     ~LibraryBinding() override;
     [[nodiscard]] bool start();
+    // Optional: reads tags and availability in the background, a bounded batch at a
+    // time, for records never read or currently unavailable. Each record is tried
+    // at most once per session. Set before start().
+    void setMetadataExtractor(std::shared_ptr<const MetadataExtractor> extractor);
     // Explicit local ingress (open, add, drop, forwarding, playlist). Idempotent by exact path.
     void admit(Paths paths);
     // First-use seed from existing queue and playlist references. Ignored once

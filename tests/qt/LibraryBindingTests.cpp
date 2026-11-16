@@ -1,11 +1,14 @@
 #include "m0/ports/LibraryStore.hpp"
+#include "m0/ports/MetadataExtractor.hpp"
 #include "presentation/LibraryBinding.hpp"
 #include "presentation/LibraryListModel.hpp"
 
 #include <QSignalSpy>
 #include <QTest>
 
+#include <atomic>
 #include <condition_variable>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -59,6 +62,30 @@ class FakeLibraryStore final : public LibraryStore {
     bool hold_saves_{};
     int loads_{};
 };
+
+// Thread-safe fake extractor: tags per path, or an error code.
+class FakeExtractor final : public MetadataExtractor {
+  public:
+    std::map<std::filesystem::path, MetadataReadResult> results;
+    mutable std::atomic<int> reads{};
+    MetadataReadResult read(const std::filesystem::path& path, const MetadataReadCancellation&) const override {
+        ++reads;
+        const auto found = results.find(path);
+        if (found == results.end())
+            return MetadataReadError{.code = MetadataReadErrorCode::SourceUnavailable};
+        return found->second;
+    }
+};
+TrackMetadata tagged(const Path& path, std::string title, std::string artist, std::string album,
+                     std::optional<std::int64_t> duration) {
+    TrackMetadata metadata;
+    metadata.source_path = path;
+    metadata.tags.title = std::move(title);
+    metadata.tags.artist = std::move(artist);
+    metadata.tags.album = std::move(album);
+    metadata.audio.duration_ms = duration;
+    return metadata;
+}
 
 struct Harness final {
     std::shared_ptr<FakeLibraryStore> store = std::make_shared<FakeLibraryStore>();
@@ -261,6 +288,55 @@ class LibraryBindingTests final : public QObject {
         QCOMPARE(h.store->saved().back().records.front().source_path, track(2));
         QVERIFY(!h.binding.remove(id));
         QVERIFY(h.enqueued.empty());
+    }
+    void tagsAreReadInTheBackgroundAndSaved() {
+        Harness h;
+        auto extractor = std::make_shared<FakeExtractor>();
+        extractor->results.emplace(track(1),
+                                   tagged(track(1), "Canção do Mar", "Lia Campos", "Depois da Chuva", 217'400));
+        extractor->results.emplace(track(3), tagged(track(3), "", "", "", std::nullopt)); // Readable, no tags.
+        // track(2) has no entry: the file is unreachable.
+        h.binding.setMetadataExtractor(extractor);
+        h.startAndWait();
+        h.binding.admit({track(1), track(2), track(3)});
+        QTRY_VERIFY(h.binding.count() == 3 && !h.binding.busy() && !h.binding.hasPendingChange() &&
+                    h.binding.confirmedSnapshot().records.front().duration_ms.has_value());
+        QTRY_VERIFY(!h.binding.busy());
+        const auto records = h.binding.confirmedSnapshot().records;
+        QCOMPARE(records[0].title, std::string{"Canção do Mar"});
+        QCOMPARE(records[0].artist, std::string{"Lia Campos"});
+        QCOMPARE(records[0].album, std::string{"Depois da Chuva"});
+        QCOMPARE(records[0].duration_ms, std::optional<std::uint64_t>{217'400});
+        QVERIFY(records[0].available);
+        QVERIFY(!records[1].available);
+        QVERIFY(records[1].title.empty());
+        // Read without a duration: marked as read (0) so it is not read on every start.
+        QCOMPARE(records[2].duration_ms, std::optional<std::uint64_t>{0});
+        QVERIFY(records[2].available);
+        auto* model = qobject_cast<LibraryListModel*>(h.binding.model());
+        QCOMPARE(model->data(model->index(0, 0), LibraryListModel::TitleRole).toString(),
+                 QStringLiteral("Canção do Mar"));
+        QCOMPARE(model->data(model->index(0, 0), LibraryListModel::DurationTextRole).toString(),
+                 QStringLiteral("3:37"));
+        QVERIFY(model->data(model->index(2, 0), LibraryListModel::DurationTextRole).toString().isEmpty());
+        // Each file is read once per session; the unreachable one is not retried in a loop.
+        QTest::qWait(100);
+        QCOMPARE(extractor->reads.load(), 3);
+    }
+    void onlyNewOrUnavailableRecordsAreReadAgain() {
+        Harness h;
+        h.store->setLoaded(
+            {.snapshot = {{{1, track(1), "Lida", "", "", 1000, true}, {2, track(2), "", "", "", std::nullopt, false}},
+                          3},
+             .status = LibraryLoadStatus::Loaded});
+        auto extractor = std::make_shared<FakeExtractor>();
+        extractor->results.emplace(track(2), tagged(track(2), "Voltou", "", "", 2000));
+        h.binding.setMetadataExtractor(extractor);
+        h.startAndWait();
+        // A reconnected drive makes the record available again.
+        QTRY_VERIFY(h.binding.confirmedSnapshot().records.back().available);
+        QCOMPARE(h.binding.confirmedSnapshot().records.back().title, std::string{"Voltou"});
+        QCOMPARE(extractor->reads.load(), 1);
     }
     void exitWaitsOnlyForAnActiveSave() {
         Harness h;

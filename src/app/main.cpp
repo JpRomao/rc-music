@@ -812,6 +812,10 @@ int main(int argc, char* argv[]) {
                          seed_library);
         QObject::connect(&application, &QCoreApplication::aboutToQuit, library_binding.get(),
                          &music_player::m0::LibraryBinding::beginShutdown);
+#ifdef M0_QT_COMBINED_AUDIO
+        // Tags and availability are read in the background, one bounded batch at a time.
+        library_binding->setMetadataExtractor(std::make_shared<music_player::m0::TagLibMetadataExtractor>());
+#endif
         static_cast<void>(library_binding->start());
         presenter.setPlaylistExitPreparationProbe([&] {
             if (!playlists_binding->hasPendingChange())

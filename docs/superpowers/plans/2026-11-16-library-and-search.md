@@ -48,9 +48,14 @@
 - Página `LibraryPanel` no modo Aurora, abrindo em Lista. Tem cabeçalho editorial, filtro, contador “N de M faixas”, colunas Nº / Faixa e artista / Álbum / Tempo, adicionar à fila e remover com confirmação que diz que o áudio fica. Estados distintos para vazio, sem resultado e falha de carga ou gravação. A entrada “Biblioteca” fica na lateral entre Início/Fila e Playlists.
 - Fica para L4b: metadados em segundo plano (hoje só aparecem tags para registros já preenchidos), visão em Capas, localizar arquivo indisponível, adicionar à playlist e a distinção na Atividade.
 
+## Contrato de L4b
+
+- Metadados em segundo plano: `LibraryBinding::setMetadataExtractor` (TagLib no app) lê lotes de até 64 registros nunca lidos ou indisponíveis. Cada registro é tentado no máximo uma vez por sessão. Arquivo inalcançável fica indisponível; formato ilegível continua listado. Duração 0 marca "lido, duração desconhecida", para não reler a cada início, e aparece em branco. O resultado só vale se o registro ainda existir no mesmo caminho, e o enriquecimento nunca repete sozinho uma gravação que falhou.
+
 ## Estado
 
 - L1 concluída: commit `d4cbc8c`.
 - L2 concluída: catálogo alimentado pelo ingresso local, com 704/704 CTest (sem a suíte Quick, sem mudança de QML).
 - L3 concluída: downloads nos dois destinos com registro de jobs, 707/707 CTest (sem a suíte Quick).
 - L4a concluída: página Biblioteca em Lista. Quick 527/527, contando os 6 casos de composição repetidos com `RC_MUSIC_UI_ARTIFACT_DIR`, que o CTest define.
+- L4b, parte 1 (metadados): 707/707 CTest.
