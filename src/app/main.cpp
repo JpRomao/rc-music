@@ -7,6 +7,9 @@
 #error The configured player downloads composition requires the Windows audio shell
 #endif
 #include "PlayerDownloadsBuildProfile.hpp"
+#include "adapters/WindowsYoutubeExecution.hpp"
+#include "adapters/YoutubeSearch.hpp"
+#include "presentation/OnlineSearchBinding.hpp"
 #endif
 #include "adapters/QtJsonLibraryStore.hpp"
 #include "adapters/QtJsonLyricsVariantsStore.hpp"
@@ -642,7 +645,16 @@ int main(int argc, char* argv[]) {
         // after the QML roots die. The legacy test composition owns its own
         // exit hook, so it can never coexist with this optional bootstrap.
         std::unique_ptr<music_player::m0::WindowsPlayerDownloads> player_downloads;
+        // ADR-0019: dies before the downloads owner whose YouTube admission it
+        // borrows, and after the QML roots that show it.
+        music_player::m0::OnlineSearchBinding online_search_binding;
         const auto compose_player_downloads = [&](music_player::m0::WindowsPlayerDownloadProfile profile) {
+            // The search uses the same verified runtime as YouTube downloads.
+            std::unique_ptr<music_player::m0::ThreadedYoutubeSearch> online_search;
+            if (profile.execution.youtube)
+                online_search = std::make_unique<music_player::m0::ThreadedYoutubeSearch>(
+                    music_player::m0::makeWindowsYoutubeBrokerSearchFactory(profile.execution.youtube->runtime,
+                                                                            profile.execution.youtube->environment));
             auto checkpoint_factory = music_player::m0::makePlayerDownloadCheckpointFactory(profile, config_root);
             profile.options.lyrics_writer = &lyrics_binding;
             profile.options.lyricfind = lyricfind;
@@ -652,6 +664,8 @@ int main(int argc, char* argv[]) {
                 std::move(profile.options));
             if (!player_downloads)
                 qInfo("The configured download profile is unavailable");
+            else if (online_search)
+                online_search_binding.setBackend(std::move(online_search), &player_downloads->youtubeSubmission());
         };
         // Both the timer's callbacks and the QML roots die before the retained
         // owner; presenter/session/lyrics dependencies outlive all of them.
@@ -892,6 +906,7 @@ int main(int argc, char* argv[]) {
 #ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
         if (player_downloads)
             initial_properties.insert(QStringLiteral("downloads"), QVariant::fromValue(player_downloads->binding()));
+        initial_properties.insert(QStringLiteral("onlineSearch"), QVariant::fromValue(&online_search_binding));
 #endif
         engine.setInitialProperties(initial_properties);
         engine.loadFromModule(QStringLiteral("MusicPlayer.M0"), QStringLiteral("Main"));

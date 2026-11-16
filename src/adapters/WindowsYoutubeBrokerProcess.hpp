@@ -10,6 +10,10 @@
 #include <optional>
 
 namespace music_player::m0 {
+// Resolve: one video ID, extractor plus Node for JavaScript challenges.
+// Search (ADR-0019): one normalized query sent as `--search <query>`. The
+// extractor lists metadata only, so a challenge frame fails and Node never runs.
+enum class WindowsYoutubeBrokerMode { Resolve, Search };
 struct WindowsYoutubeBrokerPreparedRuntime final {
     std::shared_ptr<const WindowsYoutubeRuntime> files{};
     // Trusted explicit environment; never inherited from the page or host.
@@ -26,7 +30,8 @@ struct WindowsYoutubeBrokerPreparedRuntime final {
 class WindowsYoutubeBrokerProcess final : public YoutubeResolverProcess {
   public:
     using Prepare = std::function<std::optional<WindowsYoutubeBrokerPreparedRuntime>()>;
-    explicit WindowsYoutubeBrokerProcess(Prepare prepare);
+    explicit WindowsYoutubeBrokerProcess(Prepare prepare,
+                                         WindowsYoutubeBrokerMode mode = WindowsYoutubeBrokerMode::Resolve);
     ~WindowsYoutubeBrokerProcess() override;
     [[nodiscard]] bool start(const QString& video_id, qint64 now_ms) override;
     [[nodiscard]] YoutubeResolverProcessUpdate poll(qint64 now_ms) override;

@@ -78,6 +78,9 @@ set_target_properties(rc_music_youtube_broker_protocol_tests PROPERTIES AUTOMOC 
 add_ui_test(rc_music_youtube_resolver_session_tests rc_music.youtube.resolver-session
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeResolverSessionTests.cpp" rc_music_youtube_resolution)
 set_target_properties(rc_music_youtube_resolver_session_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_youtube_search_tests rc_music.youtube.search
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeSearchTests.cpp" rc_music_youtube_resolution)
+set_target_properties(rc_music_youtube_search_tests PROPERTIES AUTOMOC ON)
 if(TARGET rc_music_browser_integration AND TARGET rc_music_download_documents)
     add_ui_test(rc_music_youtube_admission_tests rc_music.youtube.admission
         "${RC_MUSIC_SOURCE_ROOT}/tests/qt/YoutubeAudioAdmissionTests.cpp" rc_music_browser_integration)
@@ -104,6 +107,9 @@ set_target_properties(rc_music_library_store_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_library_binding_tests rc_music.library.binding
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/LibraryBindingTests.cpp" rc_music_library)
 set_target_properties(rc_music_library_binding_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_online_search_binding_tests rc_music.online-search.binding
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/OnlineSearchBindingTests.cpp" rc_music_online_search)
+set_target_properties(rc_music_online_search_binding_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_playlists_binding_tests rc_music.playlists.binding
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/PlaylistsBindingTests.cpp" rc_music_playlists)
 set_target_properties(rc_music_playlists_binding_tests PROPERTIES AUTOMOC ON)

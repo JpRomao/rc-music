@@ -39,6 +39,15 @@ target_link_libraries(rc_music_library PUBLIC rc_music_core Qt6::Core PRIVATE rc
 set_target_properties(rc_music_library PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_library)
 
+# ADR-0019: online search page (metadata only; downloads go through admission).
+add_library(rc_music_online_search STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/OnlineSearchBinding.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/OnlineSearchBinding.cpp")
+target_include_directories(rc_music_online_search PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src" "${RC_MUSIC_SOURCE_ROOT}/include")
+target_link_libraries(rc_music_online_search PUBLIC Qt6::Core)
+set_target_properties(rc_music_online_search PROPERTIES AUTOMOC ON)
+rc_music_configure_cpp(rc_music_online_search)
+
 # Reuse exactly the same presentation sources for production and the isolated
 # scenario-test variant. Each caller owns its plugin and QML output directory.
 function(rc_music_add_ui target support qml_output)
@@ -74,6 +83,8 @@ function(rc_music_add_ui target support qml_output)
             PlaylistsPanel.qml
             LibraryText.qml
             LibraryPanel.qml
+            SearchText.qml
+            SearchPanel.qml
             QueuePanel.qml
             QueueText.qml
             QueueActionButton.qml
@@ -147,6 +158,7 @@ function(rc_music_add_ui target support qml_output)
         rc_music_lyrics
         rc_music_playlists
         rc_music_library
+        rc_music_online_search
     )
     if(TARGET rc_music_browser_integration AND TARGET rc_music_downloads)
         target_sources(${target} PRIVATE

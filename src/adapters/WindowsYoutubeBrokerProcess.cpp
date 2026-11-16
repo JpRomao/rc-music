@@ -1,4 +1,5 @@
 #include "WindowsYoutubeBrokerProcess.hpp"
+#include "YoutubeSearch.hpp"
 
 #include "WindowsDownloadProcess.hpp"
 #include "YoutubeBrokerProtocol.hpp"
@@ -99,6 +100,7 @@ struct WindowsYoutubeBrokerProcess::Impl final {
         bool refused_start{};
     };
     Prepare prepare;
+    WindowsYoutubeBrokerMode mode{WindowsYoutubeBrokerMode::Resolve};
     std::optional<WindowsYoutubeBrokerPreparedRuntime> retained{};
     QString video_id{};
     QByteArray core{}, library{}, node_program{}, node_output{}, response{}, final_json{};
@@ -117,7 +119,8 @@ struct WindowsYoutubeBrokerProcess::Impl final {
     bool attempted{}, preparing{}, acknowledged{true}, stopping{}, user_cancelled{}, node_input_closed{},
         extractor_launch_pending{};
 
-    explicit Impl(Prepare source) : prepare(std::move(source)) {}
+    Impl(Prepare source, const WindowsYoutubeBrokerMode value) : prepare(std::move(source)), mode(value) {}
+    bool searching() const { return mode == WindowsYoutubeBrokerMode::Search; }
     void releaseRuntime() {
         // Raw process objects must already have acknowledged native exit and
         // every owned pipe before the authenticated tree may be released.
@@ -179,9 +182,10 @@ struct WindowsYoutubeBrokerProcess::Impl final {
         config.executable = owned(retained->files->artifactPath(role));
         // Both children live under the same authenticated, potentially deep lease.
         config.use_extended_executable_path = true;
-        config.arguments = role == WindowsYoutubeRuntimeRole::Extractor
-                               ? QStringList{owned(video_id)}
-                               : QStringList{QStringLiteral("--permission"), QStringLiteral("-")};
+        config.arguments = role != WindowsYoutubeRuntimeRole::Extractor
+                               ? QStringList{QStringLiteral("--permission"), QStringLiteral("-")}
+                           : searching() ? QStringList{QStringLiteral("--search"), owned(video_id)}
+                                         : QStringList{owned(video_id)};
         config.working_directory = retained->files->directory() + (role == WindowsYoutubeRuntimeRole::Extractor
                                                                        ? QStringLiteral("/extractor")
                                                                        : QStringLiteral("/javascript"));
@@ -276,7 +280,8 @@ struct WindowsYoutubeBrokerProcess::Impl final {
         auto& message = *decoded.message;
         switch (message.kind) {
         case YoutubeBrokerMessageKind::Challenge:
-            if (!message.challenge || native_terminal) {
+            // Search lists metadata only; it never needs a JavaScript solution.
+            if (!message.challenge || native_terminal || searching()) {
                 stop(DownloadFailure::InvalidResult);
                 return;
             }
@@ -502,8 +507,8 @@ struct WindowsYoutubeBrokerProcess::Impl final {
     }
 };
 
-WindowsYoutubeBrokerProcess::WindowsYoutubeBrokerProcess(Prepare prepare)
-    : impl_(std::make_unique<Impl>(std::move(prepare))) {}
+WindowsYoutubeBrokerProcess::WindowsYoutubeBrokerProcess(Prepare prepare, const WindowsYoutubeBrokerMode mode)
+    : impl_(std::make_unique<Impl>(std::move(prepare), mode)) {}
 WindowsYoutubeBrokerProcess::~WindowsYoutubeBrokerProcess() {
     if (impl_ && !impl_->drainForDestruction()) {
         // Best effort cancellation is not an ACK. Preserve both raw process
@@ -516,7 +521,9 @@ bool WindowsYoutubeBrokerProcess::start(const QString& video_id, const qint64 no
     if (value.attempted)
         return false;
     value.attempted = true;
-    if (now_ms < 0 || !validVideoId(video_id)) {
+    const bool valid = value.searching() ? !video_id.isEmpty() && normalizedYoutubeSearchQuery(video_id) == video_id
+                                         : validVideoId(video_id);
+    if (now_ms < 0 || !valid) {
         value.noNativeFailure(DownloadFailure::InvalidResult);
         return false;
     }
@@ -551,8 +558,11 @@ bool WindowsYoutubeBrokerProcess::start(const QString& video_id, const qint64 no
             value.noNativeFailure(DownloadFailure::Restricted);
             return false;
         }
-        auto error = readScript(value.retained->files->artifactPath(WindowsYoutubeRuntimeRole::EjsCore), value.core);
-        if (error == DownloadFailure::None)
+        auto error =
+            value.searching()
+                ? DownloadFailure::None
+                : readScript(value.retained->files->artifactPath(WindowsYoutubeRuntimeRole::EjsCore), value.core);
+        if (error == DownloadFailure::None && !value.searching())
             error =
                 readScript(value.retained->files->artifactPath(WindowsYoutubeRuntimeRole::EjsLibrary), value.library);
         if (!value.retained->files->unchanged())

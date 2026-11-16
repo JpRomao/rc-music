@@ -23,17 +23,15 @@ QProcessEnvironment copiedEnvironment(const QProcessEnvironment& source) {
         result.insert(owned(key), owned(source.value(key)));
     return result;
 }
-} // namespace
-
-YoutubeResolverProcessFactory makeWindowsYoutubeBrokerResolverFactory(WindowsYoutubeRuntimeConfig config,
-                                                                      QProcessEnvironment environment,
-                                                                      WindowsYoutubeRuntimePreparer prepare) {
+YoutubeResolverProcessFactory brokerFactory(WindowsYoutubeRuntimeConfig config, QProcessEnvironment environment,
+                                            WindowsYoutubeRuntimePreparer prepare,
+                                            const WindowsYoutubeBrokerMode mode) {
     // QString/QByteArray copies can still borrow fromRawData storage. Capture
     // owned bytes now, before the caller can release or mutate that storage.
     auto snapshot = copiedConfiguration(config);
     auto explicit_environment = copiedEnvironment(environment);
-    return [config = std::move(snapshot), environment = std::move(explicit_environment),
-            prepare = std::move(prepare)]() -> std::unique_ptr<YoutubeResolverProcess> {
+    return [config = std::move(snapshot), environment = std::move(explicit_environment), prepare = std::move(prepare),
+            mode]() -> std::unique_ptr<YoutubeResolverProcess> {
         // Constructing a broker remains passive. Neither a prepared lease nor
         // native resources are retained in this reusable outer factory.
         return std::make_unique<WindowsYoutubeBrokerProcess>(
@@ -44,7 +42,22 @@ YoutubeResolverProcessFactory makeWindowsYoutubeBrokerResolverFactory(WindowsYou
                 if (!files)
                     return {};
                 return WindowsYoutubeBrokerPreparedRuntime{std::move(files), environment};
-            });
+            },
+            mode);
     };
+}
+} // namespace
+
+YoutubeResolverProcessFactory makeWindowsYoutubeBrokerResolverFactory(WindowsYoutubeRuntimeConfig config,
+                                                                      QProcessEnvironment environment,
+                                                                      WindowsYoutubeRuntimePreparer prepare) {
+    return brokerFactory(std::move(config), std::move(environment), std::move(prepare),
+                         WindowsYoutubeBrokerMode::Resolve);
+}
+YoutubeResolverProcessFactory makeWindowsYoutubeBrokerSearchFactory(WindowsYoutubeRuntimeConfig config,
+                                                                    QProcessEnvironment environment,
+                                                                    WindowsYoutubeRuntimePreparer prepare) {
+    return brokerFactory(std::move(config), std::move(environment), std::move(prepare),
+                         WindowsYoutubeBrokerMode::Search);
 }
 } // namespace music_player::m0

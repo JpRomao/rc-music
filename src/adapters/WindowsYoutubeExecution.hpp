@@ -24,4 +24,9 @@ using WindowsYoutubeRuntimePreparer =
 [[nodiscard]] YoutubeResolverProcessFactory
 makeWindowsYoutubeBrokerResolverFactory(WindowsYoutubeRuntimeConfig config, QProcessEnvironment environment,
                                         WindowsYoutubeRuntimePreparer prepare = {});
+// ADR-0019 search counterpart: the same snapshot and per-search preparation,
+// with brokers in search mode (extractor only, `--search <query>`).
+[[nodiscard]] YoutubeResolverProcessFactory
+makeWindowsYoutubeBrokerSearchFactory(WindowsYoutubeRuntimeConfig config, QProcessEnvironment environment,
+                                      WindowsYoutubeRuntimePreparer prepare = {});
 } // namespace music_player::m0

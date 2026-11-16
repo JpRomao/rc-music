@@ -12,7 +12,8 @@ rc_music_configure_cpp(rc_music_youtube_codec)
 add_library(rc_music_youtube_resolution STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/YoutubeAudioResolution.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/YoutubeBrokerProtocol.cpp"
-    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/YoutubeResolverSession.cpp")
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/YoutubeResolverSession.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/YoutubeSearch.cpp")
 target_include_directories(rc_music_youtube_resolution PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
 target_link_libraries(rc_music_youtube_resolution PUBLIC rc_music_youtube_codec Qt6::Core PRIVATE rc_music_media_data)
 rc_music_configure_cpp(rc_music_youtube_resolution)

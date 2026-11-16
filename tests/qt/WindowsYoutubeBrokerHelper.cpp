@@ -141,7 +141,29 @@ int finishExtractor(const int sequence, const int exit_code = 0) {
         return 99;
     return exit_code;
 }
+int searchExtractor(const QString& test_case) {
+    if (QCoreApplication::arguments().mid(1) !=
+            QStringList{QStringLiteral("--search"), QStringLiteral("lia campos \u00e7\u00e3o")} ||
+        QFileInfo(QDir::currentPath()).fileName() != QLatin1String("extractor") ||
+        !report(QStringLiteral("extractor.pid.json"), QStringLiteral("extractor")))
+        return 70;
+    if (test_case == QLatin1String("search-challenge")) {
+        const QJsonArray requests{QJsonObject{{"type", "n"}, {"challenges", QJsonArray{QStringLiteral("a")}}}};
+        if (!writeBytes(frame({{"v", 1}, {"kind", "challenge"}, {"seq", 1}, {"player", "p"}, {"requests", requests}})))
+            return 78;
+        return readFrame() ? 82 : 0;
+    }
+    const QJsonObject data{{"entries", QJsonArray{QJsonObject{{"id", "testVideo01"},
+                                                              {"title", QStringLiteral("Can\u00e7\u00e3o")},
+                                                              {"channel", "Lia"},
+                                                              {"duration", 217}}}}};
+    if (!writeBytes(frame({{"v", 1}, {"kind", "result"}, {"seq", 1}, {"data", data}})))
+        return 79;
+    return 0;
+}
 int extractor(const QString& test_case) {
+    if (test_case.startsWith(QLatin1String("search")))
+        return searchExtractor(test_case);
     if (QCoreApplication::arguments().mid(1) != QStringList{QStringLiteral("testVideo01")} ||
         QFileInfo(QDir::currentPath()).fileName() != QLatin1String("extractor") ||
         !report(QStringLiteral("extractor.pid.json"), QStringLiteral("extractor")))

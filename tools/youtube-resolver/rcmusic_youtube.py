@@ -36,7 +36,7 @@ MAX_CHALLENGE_GROUPS = 8
 SEARCH_ARGUMENT = "--search"
 MAX_SEARCH_RESULTS = 12
 MAX_SEARCH_QUERY_BYTES = 400
-MAX_SEARCH_TEXT_BYTES = 1024
+MAX_SEARCH_TEXT_BYTES = 512  # Same cap as the player's decoder.
 PROJECTION_FIELDS = (
     "_type", "id", "extractor_key", "url", "title", "artist", "duration",
     "filesize", "filesize_approx", "ext", "acodec", "vcodec", "protocol",

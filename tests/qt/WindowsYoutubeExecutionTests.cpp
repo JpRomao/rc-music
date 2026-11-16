@@ -1,4 +1,7 @@
 #include "adapters/WindowsYoutubeExecution.hpp"
+#include "adapters/YoutubeSearch.hpp"
+
+#include <QJsonArray>
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -219,6 +222,26 @@ struct Drain final {
 class WindowsYoutubeExecutionTests final : public QObject {
     Q_OBJECT
   private slots:
+    void searchFactoryRunsTheExtractorInSearchModeOffTheUiThread() {
+        Fixture h;
+        QVERIFY(h.initialize());
+        h.environment.insert(QStringLiteral("RC_MUSIC_BROKER_TEST_CASE"), QStringLiteral("search"));
+        ThreadedYoutubeSearch search(makeWindowsYoutubeBrokerSearchFactory(h.config, h.environment));
+        QVERIFY(search.start("  lia   campos ção "));
+        std::optional<OnlineSearchOutcome> outcome;
+        QElapsedTimer elapsed;
+        elapsed.start();
+        while (!(outcome = search.poll()) && elapsed.elapsed() < 10000)
+            QTest::qWait(5);
+        QVERIFY(outcome);
+        QCOMPARE(outcome->error, OnlineSearchError::None);
+        QCOMPARE(outcome->results.size(), std::size_t{1});
+        QCOMPARE(outcome->results.front().title, std::string{"Canção"});
+        QCOMPARE(h.report(QStringLiteral("extractor.pid.json")).value("argv").toArray(),
+                 (QJsonArray{QStringLiteral("--search"), QStringLiteral("lia campos ção")}));
+        QVERIFY(h.report(QStringLiteral("node-1.pid.json")).isEmpty());
+        QVERIFY(h.clean());
+    }
     void factoryAndPassiveResolversNeverPrepareOrLaunch() {
         Fixture h;
         QVERIFY(h.initialize());

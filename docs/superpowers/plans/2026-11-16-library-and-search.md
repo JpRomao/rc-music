@@ -57,6 +57,13 @@
 - Capas: alternativa à Lista, que continua padrão. As capas são marcadores em tons do tema com a inicial do álbum ou do título. Arte real precisa de um cache de capas próprio, ainda pendente.
 - Pendente de L4b: Atividade distinguindo "MP3 pronto", "na biblioteca" e "na fila"; cache de capas; teste no app real.
 
+## Contrato de L5
+
+- Resolvedor: `--search <consulta>` é o único outro modo do entrypoint. A consulta chega normalizada (espaços colapsados, sem controle, até 400 bytes UTF-8). Só o `YoutubeSearchIE`, com extração plana `ytsearch12:`, sem player, formato ou JavaScript. Saída `{"entries": [...]}` com até 12 vídeos individuais: `id`, `title` e, quando houver, `channel` e `duration`. Canais, playlists, ao vivo, IDs inválidos ou repetidos e textos acima de 512 bytes ficam de fora.
+- Player: `WindowsYoutubeBrokerProcess` em modo `Search` passa `--search <consulta>` ao extractor do mesmo runtime verificado dos downloads, não lê o EJS e recusa qualquer frame de desafio, então o Node nunca roda. `YoutubeSearchSession` só publica resultados depois de saída 0 com pipes reconhecidos; o decodificador estrito recusa campo desconhecido, ID inválido ou repetido e lista longa. `ThreadedYoutubeSearch` roda uma busca por vez numa thread própria e drena a sessão no cancelamento e na destruição.
+- Página Buscar: entrada na lateral só quando a busca está disponível (componente de downloads YouTube ativo). Enter ou Buscar inicia; Cancelar interrompe. Mensagens distintas para buscando, sem resultado, cancelada, sem resposta, demora e resposta inesperada. Cada resultado tem Baixar, que manda um `YoutubeAudioRequest` comum por ID pela admissão existente (sem artista, porque canal não é artista); só IDs da lista atual podem ser pedidos, uma vez cada. O áudio segue para a biblioteca e a fila pelo caminho de downloads de L3.
+- Pendente de L5: reconstruir o runtime com o novo entrypoint e testar a busca real no app.
+
 ## Estado
 
 - L1 concluída: commit `d4cbc8c`.
@@ -65,3 +72,4 @@
 - L4a concluída: página Biblioteca em Lista. Quick 527/527, contando os 6 casos de composição repetidos com `RC_MUSIC_UI_ARTIFACT_DIR`, que o CTest define.
 - L4b, parte 1 (metadados): 707/707 CTest.
 - L4b concluída (metadados, localizar, playlist e Capas): CTest 707/707, Quick 530/530.
+- L5 concluída no código (resolvedor, broker, sessão, binding e página Buscar). A busca real depende do runtime reconstruído.

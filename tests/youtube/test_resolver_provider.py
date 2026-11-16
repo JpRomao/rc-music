@@ -719,6 +719,12 @@ class SearchModeTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(len(actual[0]["data"]["entries"]), resolver.MAX_SEARCH_RESULTS)
 
+    def test_text_over_the_player_limit_is_left_out(self):
+        entries = [search_entry(VIDEO, "x" * 513), search_entry("Zz9_-Yy8Xx7", "ç" * 256, channel="y" * 513)]
+        code, _bundle, actual, _raw = self.search("x", entries)
+        self.assertEqual(code, 0)
+        self.assertEqual(actual[0]["data"]["entries"], [{"id": "Zz9_-Yy8Xx7", "title": "ç" * 256}])
+
     def test_no_matches_is_an_empty_success(self):
         code, _bundle, actual, _raw = self.search("nada", [])
         self.assertEqual(code, 0)

@@ -1,5 +1,6 @@
 #include "adapters/WindowsYoutubeBrokerProcess.hpp"
 #include "adapters/YoutubeAudioResolution.hpp"
+#include "adapters/YoutubeSearch.hpp"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -226,6 +227,60 @@ class WindowsYoutubeBrokerProcessTests final : public QObject {
         QTest::newRow("option") << QStringLiteral("--exec=evil") << qint64{0};
         QTest::newRow("space") << QStringLiteral("test Video1") << qint64{0};
         QTest::newRow("negative clock") << video_id << qint64{-1};
+    }
+    void searchModeRunsOnlyTheExtractorWithTheQuery() {
+        Fixture h;
+        QVERIFY(h.initialize(QStringLiteral("search")));
+        WindowsYoutubeBrokerProcess process([&] { return h.prepare(); }, WindowsYoutubeBrokerMode::Search);
+        DrainGuard guard{&process, h};
+        const auto query = QStringLiteral("lia campos \u00e7\u00e3o");
+        QVERIFY(process.start(query, 0));
+        Collected result;
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.update.state, State::Exited);
+        QCOMPARE(result.update.exit_code, std::optional<int>{0});
+        const auto decoded = decodeYoutubeSearchResults(result.output);
+        QVERIFY(decoded);
+        QCOMPARE(decoded->size(), std::size_t{1});
+        QCOMPARE(decoded->front().title, QStringLiteral("Can\u00e7\u00e3o"));
+        verifyReport(h, QStringLiteral("extractor.pid.json"), QStringLiteral("extractor"),
+                     {QStringLiteral("--search"), query});
+        QCOMPARE(h.reports(), QStringList{QStringLiteral("extractor.pid.json")});
+        QVERIFY(h.lease.expired());
+        guard.process = nullptr;
+    }
+    void searchModeRefusesChallengeFramesWithoutLaunchingNode() {
+        Fixture h;
+        QVERIFY(h.initialize(QStringLiteral("search-challenge")));
+        WindowsYoutubeBrokerProcess process([&] { return h.prepare(); }, WindowsYoutubeBrokerMode::Search);
+        DrainGuard guard{&process, h};
+        QVERIFY(process.start(QStringLiteral("lia campos \u00e7\u00e3o"), 0));
+        Collected result;
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.update.state, State::Failed);
+        QCOMPARE(result.update.error, Failure::InvalidResult);
+        QVERIFY(result.output.isEmpty());
+        QCOMPARE(h.reports(), QStringList{QStringLiteral("extractor.pid.json")});
+        guard.process = nullptr;
+    }
+    void searchModeRejectsUnnormalizedQueriesAndVideoIdsMeanNothingSpecial_data() {
+        QTest::addColumn<QString>("query");
+        QTest::newRow("empty") << QString{};
+        QTest::newRow("padded") << QStringLiteral(" lia ");
+        QTest::newRow("double space") << QStringLiteral("lia  campos");
+        QTest::newRow("control") << QStringLiteral("a\u0001b");
+        QTest::newRow("too long") << QString(401, QLatin1Char('x'));
+    }
+    void searchModeRejectsUnnormalizedQueriesAndVideoIdsMeanNothingSpecial() {
+        QFETCH(QString, query);
+        Fixture h;
+        QVERIFY(h.initialize(QStringLiteral("search")));
+        WindowsYoutubeBrokerProcess process([&] { return h.prepare(); }, WindowsYoutubeBrokerMode::Search);
+        DrainGuard guard{&process, h};
+        QVERIFY(!process.start(query, 0));
+        QCOMPARE(process.poll(0).error, Failure::InvalidResult);
+        QCOMPARE(h.preparations, 0);
+        QVERIFY(h.reports().isEmpty());
     }
     void invalidIdentifiersAndNegativeClockNeverInvokePreparation() {
         QFETCH(QString, id);

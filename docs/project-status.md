@@ -40,7 +40,9 @@ Ficam pendentes nessa trilha: reconstruir o runtime do extractor (o seletor Opus
 - busca local sem acento e tags lidas em segundo plano;
 - localizar arquivo, adicionar à fila e à playlist, e remover só o registro.
 
-O plano está em [2026-11-16-library-and-search](superpowers/plans/2026-11-16-library-and-search.md). Falta ainda o teste no app real, o cache de capas e a busca online pelo yt-dlp (L5).
+A busca online pelo próprio yt-dlp (L5) também está no código: página Buscar com até 12 vídeos por consulta, só metadados, e Baixar enviando um pedido comum por ID. Ela usa o mesmo runtime verificado dos downloads e só aparece com o componente YouTube ativo.
+
+O plano está em [2026-11-16-library-and-search](superpowers/plans/2026-11-16-library-and-search.md). Falta ainda reconstruir o runtime (a busca real e o Opus dependem dele), o teste no app real e o cache de capas.
 
 A fundação `d4137db` e seu [instalador privado histórico](windows-installer.md#setup-aurora-de-d4137db) permanecem registrados, sem representar a fonte nova. A condição posterior do mantenedor bloqueia instaladores intermediários. Reprodução, dados, Qt Network, letras, downloads opcionais, playlists e stores foram preservados no recorte exercitado. Biblioteca permanente/ingresso, pesquisa/provider, paridade visual restante, instalação e gates de produção conservam seus próprios aceites.
 

@@ -13,6 +13,7 @@ ApplicationWindow {
     property var lyrics: null
     property var playlists: null
     property var library: null
+    property var onlineSearch: null
     property bool startupReady: true
     width: uiContract.clientWidth
     height: uiContract.clientHeight
@@ -43,13 +44,14 @@ ApplicationWindow {
     signal openAudioRequested
     property bool queueOpen: false
     readonly property bool inlinePages: !presenter.usesFrozenFixture
-    readonly property string currentPage: preferencesPanel.visible ? "preferences" : (libraryPanel.visible ? "library" : (playlistsPanel.visible ? "playlists" : (downloadsPanel.visible ? "downloads" : (queuePageActive ? "queue" : "home"))))
-    readonly property Item pageReturnFocusItem: inlinePages ? (currentPage === "preferences" ? preferencesPanel.lastFocusItem : (currentPage === "library" ? libraryPanel.lastFocusItem : (currentPage === "playlists" ? playlistsPanel.lastFocusItem : (currentPage === "downloads" ? downloadsPanel.lastFocusItem : null)))) : null
+    readonly property string currentPage: preferencesPanel.visible ? "preferences" : (libraryPanel.visible ? "library" : (searchPanel.visible ? "search" : (playlistsPanel.visible ? "playlists" : (downloadsPanel.visible ? "downloads" : (queuePageActive ? "queue" : "home")))))
+    readonly property Item pageReturnFocusItem: inlinePages ? (currentPage === "preferences" ? preferencesPanel.lastFocusItem : (currentPage === "library" ? libraryPanel.lastFocusItem : (currentPage === "search" ? searchPanel.lastFocusItem : (currentPage === "playlists" ? playlistsPanel.lastFocusItem : (currentPage === "downloads" ? downloadsPanel.lastFocusItem : null))))) : null
     readonly property bool queuePageActive: queueOpen && presenter.queueLoaded
     property alias queueButton: sideNavigation.queueButton
     property alias preferencesButton: sideNavigation.preferencesButton
     property alias playlistsButton: sideNavigation.playlistsButton
     property alias libraryButton: sideNavigation.libraryButton
+    property alias searchButton: sideNavigation.searchButton
     property alias downloadsButton: sideNavigation.downloadsButton
     property alias browserButton: sideNavigation.browserButton
     NavigationText {
@@ -73,7 +75,7 @@ ApplicationWindow {
         errorLabels: errorText
     }
     readonly property bool downloadFinalSaveDecisionRequired: downloads !== null && (downloads.canRetryFinalSave || downloads.canCloseAfterFinalSaveFailure)
-    readonly property bool windowShortcutsEnabled: (!playlistsPanel.visible || (inlinePages && !isInside(activeFocusItem, playlistsPanel.contentItem))) && (!libraryPanel.visible || !isInside(activeFocusItem, libraryPanel.contentItem)) && !libraryPanel.blockingUiOpen && !lyricsPanel.queryOpen && (!downloadsPanel.visible || (inlinePages && !isInside(activeFocusItem, downloadsPanel.contentItem))) && !playlistsPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool windowShortcutsEnabled: (!playlistsPanel.visible || (inlinePages && !isInside(activeFocusItem, playlistsPanel.contentItem))) && (!libraryPanel.visible || !isInside(activeFocusItem, libraryPanel.contentItem)) && (!searchPanel.visible || !isInside(activeFocusItem, searchPanel.contentItem)) && !libraryPanel.blockingUiOpen && !lyricsPanel.queryOpen && (!downloadsPanel.visible || (inlinePages && !isInside(activeFocusItem, downloadsPanel.contentItem))) && !playlistsPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && transport.enabled
     readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
     readonly property bool primaryKeysEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && !focusOwnsTextInput()
@@ -144,7 +146,7 @@ ApplicationWindow {
 
     function focusPlaybackPrimary(state) {
         if (window.inlinePages && window.currentPage !== "home" && window.currentPage !== "queue") {
-            const button = window.currentPage === "library" ? libraryButton : window.currentPage === "playlists" ? playlistsButton : (window.currentPage === "downloads" ? downloadsButton : preferencesButton);
+            const button = window.currentPage === "library" ? libraryButton : window.currentPage === "search" ? searchButton : window.currentPage === "playlists" ? playlistsButton : (window.currentPage === "downloads" ? downloadsButton : preferencesButton);
             if (button.visible && button.enabled)
                 button.forceActiveFocus(Qt.TabFocusReason);
             return;
@@ -261,6 +263,7 @@ ApplicationWindow {
             return;
         if (window.inlinePages && open) {
             libraryPanel.close();
+            searchPanel.close();
             playlistsPanel.close();
             downloadsPanel.close();
             preferencesPanel.close();
@@ -310,6 +313,7 @@ ApplicationWindow {
         queueOpen = false;
         if (window.inlinePages) {
             libraryPanel.close();
+            searchPanel.close();
             playlistsPanel.close();
             downloadsPanel.close();
             trackDetailsPanel.close();
@@ -330,6 +334,7 @@ ApplicationWindow {
             return;
         queueOpen = false;
         libraryPanel.close();
+        searchPanel.close();
         playlistsPanel.close();
         preferencesPanel.close();
         trackDetailsPanel.close();
@@ -340,6 +345,7 @@ ApplicationWindow {
             return;
         queueOpen = false;
         libraryPanel.close();
+        searchPanel.close();
         preferencesPanel.close();
         trackDetailsPanel.close();
         downloadsPanel.close();
@@ -353,7 +359,19 @@ ApplicationWindow {
         preferencesPanel.close();
         trackDetailsPanel.close();
         downloadsPanel.close();
+        searchPanel.close();
         libraryPanel.open();
+    }
+    function openSearch() {
+        if (onlineSearch === null || !onlineSearch.available || !window.inlinePages || presenter.exiting || presenter.selectingAudioFiles || presenter.locatingOccurrenceId.length > 0)
+            return;
+        queueOpen = false;
+        libraryPanel.close();
+        playlistsPanel.close();
+        preferencesPanel.close();
+        trackDetailsPanel.close();
+        downloadsPanel.close();
+        searchPanel.open();
     }
     function revealPlaylistExitRecovery() {
         if (!playlistExitRecoveryPending || !playlistsOpeningAllowed)
@@ -398,6 +416,7 @@ ApplicationWindow {
         exiting: window.presenter.exiting
         hasPlaylists: window.playlists !== null
         hasLibrary: window.library !== null
+        hasSearch: window.onlineSearch !== null && window.onlineSearch.available
         hasDownloads: window.downloads !== null
         hasBrowser: window.embeddedBrowser !== null
         downloadsExitRecovery: window.downloadFinalSaveDecisionRequired
@@ -405,6 +424,7 @@ ApplicationWindow {
         onNowRequested: {
             if (window.inlinePages) {
                 libraryPanel.close();
+                searchPanel.close();
                 playlistsPanel.close();
                 downloadsPanel.close();
                 preferencesPanel.close();
@@ -416,6 +436,7 @@ ApplicationWindow {
         onPreferencesRequested: window.openPreferences()
         onPlaylistsRequested: window.openPlaylists()
         onLibraryRequested: window.openLibrary()
+        onSearchRequested: window.openSearch()
         onDownloadsRequested: window.openDownloads()
         onThemeRequested: window.presenter.setThemePreference(window.uiContract.darkTheme ? PlayerPresenter.LightTheme : PlayerPresenter.DarkTheme)
         onBrowserRequested: {
@@ -433,7 +454,7 @@ ApplicationWindow {
         visible: window.inlinePages
         contract: window.uiContract
         compact: window.width <= window.uiContract.compactWidth
-        pageTitle: window.currentPage === "home" ? navigationText.home : (window.currentPage === "queue" ? window.uiContract.queueTitle : (window.currentPage === "library" ? navigationText.library : window.currentPage === "playlists" ? navigationText.playlists : (window.currentPage === "downloads" ? navigationText.activity : navigationText.settings)))
+        pageTitle: window.currentPage === "home" ? navigationText.home : (window.currentPage === "queue" ? window.uiContract.queueTitle : (window.currentPage === "library" ? navigationText.library : window.currentPage === "search" ? navigationText.search : window.currentPage === "playlists" ? navigationText.playlists : (window.currentPage === "downloads" ? navigationText.activity : navigationText.settings)))
     }
     ColumnLayout {
         id: mainLayout
@@ -868,8 +889,25 @@ ApplicationWindow {
         playlists: window.playlists
         enabled: !window.presenter.exiting
         onClosed: {
-            if (window.active && !window.presenter.exiting && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && libraryButton.visible)
+            if (window.active && !window.presenter.exiting && !searchPanel.visible && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && libraryButton.visible)
                 libraryButton.forceActiveFocus(Qt.TabFocusReason);
+        }
+    }
+    SearchPanel {
+        id: searchPanel
+        previousFocusItem: searchButton
+        nextFocusItem: transport.primaryControl.enabled ? transport.primaryControl : sideNavigation.nowButton
+        parent: window.contentItem
+        x: mainLayout.x + contentArea.x
+        y: mainLayout.y + contentArea.y
+        width: contentArea.width
+        height: contentArea.height
+        contract: window.uiContract
+        onlineSearch: window.onlineSearch
+        enabled: !window.presenter.exiting
+        onClosed: {
+            if (window.active && !window.presenter.exiting && !libraryPanel.visible && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && searchButton.visible)
+                searchButton.forceActiveFocus(Qt.TabFocusReason);
         }
     }
     PlaylistsPanel {
@@ -1154,6 +1192,7 @@ ApplicationWindow {
             if (window.inlinePageClosingAllowed) {
                 preferencesPanel.close();
                 libraryPanel.close();
+                searchPanel.close();
                 playlistsPanel.close();
                 downloadsPanel.close();
             } else {
