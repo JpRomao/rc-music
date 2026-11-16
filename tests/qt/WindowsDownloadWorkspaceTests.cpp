@@ -9,6 +9,9 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTest>
+#include <array>
+#include <atomic>
+#include <thread>
 
 #include <algorithm>
 #include <cstddef>
@@ -458,6 +461,49 @@ class WindowsDownloadWorkspaceTests final : public QObject {
         QCOMPARE(readFile(planned), QByteArray{"synthetic-mp3"});
     }
 
+    // L8: three lanes create, publish and clean their workspaces at the same
+    // time, under the same staging and publication folders and journal.
+    void parallelJobsShareTheFoldersAndJournal() {
+        Fixture fixture;
+        const auto journal_directory = fixture.root.filePath(QStringLiteral("private journal"));
+        QVERIFY(createPrivateJournalDirectory(journal_directory));
+        constexpr int lanes = 3, rounds = 4;
+        for (int round = 0; round < rounds; ++round) {
+            std::atomic<int> ready{0};
+            std::array<QString, lanes> failures;
+            std::vector<std::thread> threads;
+            for (int lane = 0; lane < lanes; ++lane) {
+                threads.emplace_back([&, lane] {
+                    const auto id = "job-" + std::to_string(round) + "-" + std::to_string(lane);
+                    auto config = fixture.config();
+                    config.publication_name = QString::fromStdString("Faixa " + id + ".mp3");
+                    WindowsDownloadOwnershipStore store(journal_directory);
+                    WindowsDownloadWorkspace workspace(config, id, store);
+                    ++ready;
+                    while (ready.load() < lanes)
+                        std::this_thread::yield();
+                    const auto step = [&](const char* name, bool ok) {
+                        if (!ok && failures[lane].isEmpty())
+                            failures[lane] = QStringLiteral("%1 failed at %2 (error %3)")
+                                                 .arg(QString::fromStdString(id), QLatin1String(name))
+                                                 .arg(static_cast<int>(workspace.error()));
+                        return ok;
+                    };
+                    if (step("create", workspace.create()) && step("seal", fillAndSeal(workspace)) &&
+                        step("publish", !workspace.validateAndPublish([](const QString&) { return true; }).isEmpty()))
+                        step("cleanup", workspace.cleanup());
+                });
+            }
+            for (auto& thread : threads)
+                thread.join();
+            for (const auto& failure : failures)
+                QVERIFY2(failure.isEmpty(), qPrintable(failure));
+        }
+        WindowsDownloadOwnershipStore reader(journal_directory);
+        const auto loaded = reader.load();
+        QVERIFY(loaded.journal);
+        QCOMPARE(loaded.journal->records.size(), std::size_t{lanes * rounds});
+    }
     void durableGatesCaptureActualIdentityBeforeSinksRenameAndImportableReturn() {
         Fixture fixture;
         OwnershipStore store;
