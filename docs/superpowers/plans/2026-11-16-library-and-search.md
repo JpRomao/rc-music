@@ -13,7 +13,11 @@
 | L3 | Importação de download nos dois destinos (biblioteca e fila) com recibos, sem refazer download nem ressuscitar remoção | importação/retry |
 | L4 | Página Biblioteca em Lista (Capas como alternativa), busca local sem acento, adicionar à fila/playlist, remover registro e localizar arquivo | Quick + modelo |
 | L5 | Busca online pelo yt-dlp, só metadados, seleção virando pedido de aquisição por ID | resolvedor + UI |
-| L6 | Retirada da extensão, do host Native Messaging e do empacotamento correspondente | frente própria |
+| L6 | Filtros da Atividade: com erro, concluídos, na fila e baixando | modelo + Quick |
+| L7 | Colar vários links do YouTube e do Letras de uma vez | parser + binding + Quick |
+| L8 | Até 3 downloads simultâneos, cada um com seu próprio job | serviço + executor + restart |
+
+A retirada da extensão saiu do plano (revisão do ADR-0019 em 2026-11-16). Ela fica para uma frente futura, com outro papel: mídias fora do YouTube e do Letras.
 
 ## Contrato de L1
 
@@ -64,7 +68,8 @@
 - Resolvedor: `--search <consulta>` é o único outro modo do entrypoint. A consulta chega normalizada (espaços colapsados, sem controle, até 400 bytes UTF-8). Só o `YoutubeSearchIE`, com extração plana `ytsearch12:`, sem player, formato ou JavaScript. Saída `{"entries": [...]}` com até 12 vídeos individuais: `id`, `title` e, quando houver, `channel` e `duration`. Canais, playlists, ao vivo, IDs inválidos ou repetidos e textos acima de 512 bytes ficam de fora.
 - Player: `WindowsYoutubeBrokerProcess` em modo `Search` passa `--search <consulta>` ao extractor do mesmo runtime verificado dos downloads, não lê o EJS e recusa qualquer frame de desafio, então o Node nunca roda. `YoutubeSearchSession` só publica resultados depois de saída 0 com pipes reconhecidos; o decodificador estrito recusa campo desconhecido, ID inválido ou repetido e lista longa. `ThreadedYoutubeSearch` roda uma busca por vez numa thread própria e drena a sessão no cancelamento e na destruição.
 - Página Buscar: entrada na lateral só quando a busca está disponível (componente de downloads YouTube ativo). Enter ou Buscar inicia; Cancelar interrompe. Mensagens distintas para buscando, sem resultado, cancelada, sem resposta, demora e resposta inesperada. Cada resultado tem Baixar, que manda um `YoutubeAudioRequest` comum por ID pela admissão existente (sem artista, porque canal não é artista); só IDs da lista atual podem ser pedidos, uma vez cada. O áudio segue para a biblioteca e a fila pelo caminho de downloads de L3.
-- Pendente de L5: reconstruir o runtime com o novo entrypoint e testar a busca real no app.
+- Teste real (2026-11-16): runtime `prod` reconstruído com yt-dlp 2026.10.26 (wheel conferido pelo hash do lock, venv sem rede, 36 arquivos), perfil de downloads com os workers do código atual e app Release montado por `New-RcMusicLocalRuntime.ps1`. No app, a busca "Asterisk Orange Range" trouxe 12 resultados com canal e duração. Baixar o primeiro publicou o MP3 em 13 s, e a Atividade mostrou "Concluído · MP3 pronto · Na fila de reprodução · Na biblioteca". O teste usou o perfil real do mantenedor, com cópia de segurança antes. O runtime ainda não está assinado (ADR-0020): o perfil usou os hashes do recibo.
+- Achado: um download antigo interrompido antes de criar arquivos (sem registro de propriedade) responde "A origem dos arquivos não pôde ser confirmada" em Verificar arquivos e não oferece como encerrar o item. Ele não bloqueia outros downloads, mas fica preso no histórico.
 
 ## Estado
 
@@ -74,5 +79,5 @@
 - L4a concluída: página Biblioteca em Lista. Quick 527/527, contando os 6 casos de composição repetidos com `RC_MUSIC_UI_ARTIFACT_DIR`, que o CTest define.
 - L4b, parte 1 (metadados): 707/707 CTest.
 - L4b concluída (metadados, localizar, playlist e Capas): CTest 707/707, Quick 530/530.
-- L5 concluída no código (resolvedor, broker, sessão, binding e página Buscar). A busca real depende do runtime reconstruído.
+- L5 concluída no código (resolvedor, broker, sessão, binding e página Buscar) e testada no app real com o runtime reconstruído.
 - L4b, restante: Atividade com destinos do MP3 (`63dc156`) e capas reais em memória.
