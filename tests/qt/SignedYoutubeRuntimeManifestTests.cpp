@@ -90,6 +90,29 @@ class SignedYoutubeRuntimeManifestTests final : public QObject {
         QCOMPARE(extractor.sha256, pin('a').toLatin1());
         QCOMPARE(result.manifest->artifacts.back().role, WindowsYoutubeRuntimeRole::Support);
     }
+    void acceptsWhatTheRepositorySigningToolProduces() {
+        // Produced once by tools/youtube-resolver/RcMusicRuntimeSigning.psm1 (.NET ECDsa) with a
+        // throwaway key that was deleted right after; only its public half is kept here.
+        const QByteArray manifest =
+            "{\"schemaVersion\":1,\"purpose\":\"rcmusic-youtube-runtime-v1\",\"sequence\":1,\"ytDlpVersion\":\"202"
+            "6.11.01\",\"artifacts\":[{\"role\":\"EjsCore\",\"path\":\"extractor/_internal/yt_dlp_ejs/yt/solver/c"
+            "ore.min.js\",\"bytes\":52,\"sha256\":\"3409221fd03cdfc738c6bd7e4c488b263a4e13776a93c1750c3e67f83"
+            "7e4a791\"},{\"role\":\"EjsLibrary\",\"path\":\"extractor/_internal/yt_dlp_ejs/yt/solver/lib.min.js"
+            "\",\"bytes\":51,\"sha256\":\"45b5999e86e154481cb0a26fb934db8b0850cb56b331e5839552a47deb7271bc\"},"
+            "{\"role\":\"Extractor\",\"path\":\"extractor/yt-dlp.exe\",\"bytes\":20,\"sha256\":\"e057b19926b3a0ec580"
+            "5ec658148a4622bfb84afad8c73742c754aaf2c25d0cb\"},{\"role\":\"Node\",\"path\":\"javascript/node.exe"
+            "\",\"bytes\":19,\"sha256\":\"4fbadcd8bb19c2d3b04de347d5be90e29f54adc08c9da7f6477a08094f730813\"}]"
+            "}";
+        const auto public_key = QByteArray::fromHex("a36edf231bceb3cf79372c9081ce2b78944f3209751b73c4174a4565447717ce"
+                                                    "e84e058948729f253e726865f2a9e1e52e26952d493a9b8ad274526873d3e867");
+        const auto signature = QByteArray::fromHex("ae1036f99d52935aabfeed6a4889a83e809a951997efa7845c95b992d3f2338f"
+                                                   "fc6407f5a7bd36cc41b1e71b58bac5568eb92442806e0f814afccb45c099071b");
+        const auto result = verifySignedYoutubeRuntimeManifest(manifest, signature, public_key, 1, prefix);
+        QCOMPARE(result.error, SignedYoutubeRuntimeManifestError::None);
+        QVERIFY(result.manifest);
+        QCOMPARE(result.manifest->artifacts.size(), std::size_t{4});
+        QCOMPARE(result.manifest->yt_dlp_version, QStringLiteral("2026.11.01"));
+    }
     void anyChangeToTheSignedBytesIsRefusedBeforeReadingThem() {
         SigningKey key;
         SigningKey other;

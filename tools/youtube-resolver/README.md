@@ -51,3 +51,29 @@ O alvo explícito `rc_music_youtube_runtime_smoke` é `EXCLUDE_FROM_ALL` e exist
 O segundo alvo explícito `rc_music_youtube_worker_runtime_smoke` aceita os mesmos argumentos e usa a nova factory e o executor misto reais. Seu consumidor local valida a capability e encerra deliberadamente com `Failed/UnsupportedMedia`, sem acessar a mídia. `success=true` nesse recibo significa somente que o ensaio de handoff e parada passou; `consumer_terminal`/`consumer_error` conservam essa distinção. O alvo e a macro `RC_MUSIC_YOUTUBE_WORKER_SMOKE` existem somente no build de testes, sem modo correspondente no produto.
 
 Os testes Python determinísticos usam `python -B -I -m unittest discover -s tests/youtube -p 'test_*.py'`. Contratos C++ e evidência real, comandos completos e gates pendentes estão no [guia do fluxo](../../docs/youtube-audio-and-lyrics.md#runtime-real-no-ensaio-offline).
+
+## Assinatura do runtime (ADR-0020)
+
+O [ADR-0020](../../docs/architecture/decisions/0020-signed-youtube-runtime-manifest.md) troca os hashes compilados do runtime por um manifesto assinado. [`RcMusicRuntimeSigning.psm1`](RcMusicRuntimeSigning.psm1) gera a chave e assina o inventário. Ele usa só o .NET do PowerShell 7.
+
+Criar a chave uma única vez. Ela fica protegida pela DPAPI da sua conta Windows e nunca entra no repositório nem no pacote:
+
+```powershell
+Import-Module ./tools/youtube-resolver/RcMusicRuntimeSigning.psm1
+New-RcMusicRuntimeSigningKey -KeyPath "$env:LOCALAPPDATA\RCMusic-signing\youtube-runtime.key"
+```
+
+O comando devolve a chave pública (128 caracteres hexadecimais) que o player compila. `Get-RcMusicRuntimePublicKey -KeyPath …` a mostra de novo.
+
+Assinar depois de montar `download-tools/youtube/` com o runtime novo:
+
+```powershell
+New-RcMusicSignedRuntimeManifest -RuntimeRoot <payload>\download-tools\youtube `
+    -KeyPath "$env:LOCALAPPDATA\RCMusic-signing\youtube-runtime.key" -Sequence <n> -YtDlpVersion <versão> -Replace
+```
+
+O comando percorre a árvore inteira, recusa links e reparse points, exige os quatro arquivos de papel fixo e respeita os limites do player (256 arquivos, 128 MiB por arquivo, 512 MiB no total). Ele escreve `youtube-runtime.json` e `youtube-runtime.sig` em `download-tools/`, fora da árvore do runtime. A assinatura é ECDSA P-256/SHA-256 em formato IEEE P1363 (64 bytes), conferida logo após ser gerada. Use uma `sequence` maior a cada versão publicada.
+
+Sem a chave não há como assinar runtimes novos: gere outra e recompile o player com a nova chave pública. Se a chave vazar, quem a tiver pode trocar o runtime até essa troca de chave.
+
+Checks: `pwsh -NoProfile -File tests/youtube/RuntimeSigning.Tests.ps1` usa árvores e chaves descartáveis em `out/product`. O teste C++ `SignedYoutubeRuntimeManifestTests::acceptsWhatTheRepositorySigningToolProduces` confere que o verificador do player aceita a saída desta ferramenta.
