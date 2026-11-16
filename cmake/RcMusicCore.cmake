@@ -20,6 +20,7 @@ add_library(rc_music_core STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/domain/AcquiredLyrics.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/domain/LyricsVariants.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/domain/PlaylistLibrary.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/domain/LocalLibrary.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/domain/Lyrics.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/application/LocalTrackSession.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/application/PlayerController.cpp"

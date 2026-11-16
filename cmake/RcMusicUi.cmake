@@ -26,6 +26,15 @@ target_link_libraries(rc_music_playlists PUBLIC rc_music_core Qt6::Core PRIVATE 
 set_target_properties(rc_music_playlists PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_playlists)
 
+# ADR-0019: permanent local library catalog (library.json v1).
+add_library(rc_music_library STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonLibraryStore.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonLibraryStore.cpp")
+target_include_directories(rc_music_library PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
+target_link_libraries(rc_music_library PUBLIC rc_music_core Qt6::Core PRIVATE rc_music_media_data)
+set_target_properties(rc_music_library PROPERTIES AUTOMOC ON)
+rc_music_configure_cpp(rc_music_library)
+
 # Reuse exactly the same presentation sources for production and the isolated
 # scenario-test variant. Each caller owns its plugin and QML output directory.
 function(rc_music_add_ui target support qml_output)
