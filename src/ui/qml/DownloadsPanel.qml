@@ -610,11 +610,22 @@ PageSurface {
                 width: jobsList.width
 
                 Rectangle {
+                    // Aurora: a list item on the canvas (focus ring only); legacy: a bordered card.
+                    objectName: "download-row-background"
                     anchors.fill: parent
                     border.color: row.cursorFocused ? root.contract.focusColor : root.contract.borderColor
-                    border.width: row.cursorFocused ? 3 : 1
-                    color: root.contract.surfaceColor
+                    border.width: row.cursorFocused ? 3 : (root.embedded ? 0 : 1)
+                    color: root.embedded ? "transparent" : root.contract.surfaceColor
                     radius: root.contract.radiusSmall
+                }
+                Rectangle {
+                    objectName: "download-row-divider"
+                    visible: root.embedded
+                    anchors.top: parent.top
+                    width: parent.width
+                    height: 1
+                    color: root.contract.highContrast ? root.contract.borderColor : root.contract.dividerColor
+                    Accessible.ignored: true
                 }
                 ColumnLayout {
                     id: rowLayout
@@ -630,7 +641,12 @@ PageSurface {
                         Accessible.role: Accessible.StaticText
                         Layout.fillWidth: true
                         color: root.contract.textPrimaryColor
-                        font.bold: true
+                        font: root.embedded ? Qt.font({
+                            family: root.contract.headingFontFamily,
+                            pixelSize: root.contract.typeSubtitle
+                        }) : Qt.font({
+                            bold: true
+                        })
                         objectName: "download-title"
                         text: row.title
                         textFormat: Text.PlainText
@@ -652,7 +668,7 @@ PageSurface {
                         Accessible.description: row.statusText
                         Accessible.name: labels.progress
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 12
+                        Layout.preferredHeight: root.embedded ? 4 : 12
                         from: 0
                         indeterminate: row.indeterminate
                         objectName: "download-progress"
@@ -660,11 +676,12 @@ PageSurface {
                         value: row.progressRatio
 
                         background: Rectangle {
+                            // Aurora: thin track in the divider tone; legacy: bordered 12 px bar.
                             border.color: root.contract.borderColor
-                            border.width: 1
-                            color: root.contract.surfaceRaisedColor
-                            implicitHeight: 12
-                            radius: 3
+                            border.width: root.embedded && !root.contract.highContrast ? 0 : 1
+                            color: root.embedded && !root.contract.highContrast ? root.contract.dividerColor : root.contract.surfaceRaisedColor
+                            implicitHeight: root.embedded ? 4 : 12
+                            radius: root.embedded ? 2 : 3
                         }
                         contentItem: Item {
                             property real sweep: 0
@@ -682,7 +699,7 @@ PageSurface {
                             Rectangle {
                                 color: root.contract.accentColor
                                 height: parent.height
-                                radius: 3
+                                radius: root.embedded ? 2 : 3
                                 width: progress.indeterminate ? parent.width / 3 : parent.width * progress.visualPosition
                                 x: progress.indeterminate ? parent.sweep : 0
                             }
@@ -1128,82 +1145,22 @@ PageSurface {
         contract: root.contract
         backend: root.lyricsBackend
     }
-    Popup {
+    DownloadConfirmation {
         id: archiveConfirmation
 
-        closePolicy: Popup.CloseOnEscape
-        dim: false
-        focus: true
-        height: archiveContent.implicitHeight + padding * 2
-        modal: true
         objectName: "downloads-archive-confirmation"
-        padding: root.contract.spacingUnit * 3
-        parent: root.parent
-        popupType: Popup.Item
-        width: Math.min(root.width, 560)
-        x: root.x + (root.width - width) / 2
-        y: root.y + (root.height - height) / 2
+        contract: root.contract
+        host: root
+        title: labels.archive
+        advice: labels.archiveAdvice
+        cancelText: labels.cancel
+        cancelObjectName: "downloads-cancel-archive"
+        confirmText: labels.confirmArchive
+        confirmObjectName: "downloads-confirm-archive"
+        confirmEnabled: root.archiveConsentCurrent
 
-        background: Rectangle {
-            border.color: root.contract.borderColor
-            border.width: root.contract.highContrast ? 2 : 1
-            color: root.contract.surfaceRaisedColor
-            radius: root.contract.radiusMedium
-        }
-        contentItem: ColumnLayout {
-            id: archiveContent
-
-            Accessible.name: labels.archive
-            Accessible.role: Accessible.Dialog
-            spacing: root.contract.spacingUnit * 3
-
-            Text {
-                Layout.fillWidth: true
-                color: root.contract.textPrimaryColor
-                font.bold: true
-                text: labels.archive
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-            }
-            Text {
-                Layout.fillWidth: true
-                color: root.contract.textPrimaryColor
-                text: labels.archiveAdvice
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-            }
-            RowLayout {
-                Layout.fillWidth: true
-
-                AccessibleTransportButton {
-                    id: cancelArchiveButton
-
-                    KeyNavigation.backtab: confirmArchiveButton
-                    KeyNavigation.tab: confirmArchiveButton
-                    contract: root.contract
-                    objectName: "downloads-cancel-archive"
-                    text: labels.cancel
-
-                    onClicked: root.invalidateArchiveConsent()
-                }
-                Item {
-                    Layout.fillWidth: true
-                }
-                AccessibleTransportButton {
-                    id: confirmArchiveButton
-
-                    KeyNavigation.backtab: cancelArchiveButton
-                    KeyNavigation.tab: cancelArchiveButton
-                    contract: root.contract
-                    enabled: root.archiveConsentCurrent
-                    objectName: "downloads-confirm-archive"
-                    text: labels.confirmArchive
-
-                    onClicked: root.confirmArchiveConsent()
-                }
-            }
-        }
-
+        onCancelRequested: root.invalidateArchiveConsent()
+        onConfirmRequested: root.confirmArchiveConsent()
         onClosed: {
             root.invalidateArchiveConsent();
             Qt.callLater(function () {
@@ -1213,86 +1170,25 @@ PageSurface {
                 target.forceActiveFocus(Qt.TabFocusReason);
             });
         }
-        onOpened: cancelArchiveButton.forceActiveFocus(Qt.TabFocusReason)
     }
-    Popup {
+
+    DownloadConfirmation {
         id: importConfirmation
 
-        closePolicy: Popup.CloseOnEscape
-        dim: false
-        focus: true
-        height: importContent.implicitHeight + padding * 2
-        modal: true
         objectName: "download-import-confirmation"
-        padding: root.contract.spacingUnit * 3
-        parent: root.parent
-        popupType: Popup.Item
-        width: Math.min(root.width, 560)
-        x: root.x + (root.width - width) / 2
-        y: root.y + (root.height - height) / 2
+        contract: root.contract
+        host: root
+        title: labels.importRecovered
+        advice: labels.importRecoveredAdvice
+        adviceObjectName: "download-import-advice"
+        cancelText: labels.cancel
+        cancelObjectName: "download-import-cancel"
+        confirmText: labels.importRecovered
+        confirmObjectName: "download-import-confirm"
+        confirmEnabled: root.importConsentCurrent
 
-        background: Rectangle {
-            border.color: root.contract.borderColor
-            border.width: root.contract.highContrast ? 2 : 1
-            color: root.contract.surfaceRaisedColor
-            radius: root.contract.radiusMedium
-        }
-        contentItem: ColumnLayout {
-            id: importContent
-
-            Accessible.name: labels.importRecovered
-            Accessible.role: Accessible.Dialog
-            spacing: root.contract.spacingUnit * 3
-
-            Text {
-                Layout.fillWidth: true
-                color: root.contract.textPrimaryColor
-                font.bold: true
-                text: labels.importRecovered
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-            }
-            Text {
-                Accessible.name: text
-                Accessible.role: Accessible.StaticText
-                Layout.fillWidth: true
-                color: root.contract.textPrimaryColor
-                objectName: "download-import-advice"
-                text: labels.importRecoveredAdvice
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-            }
-            RowLayout {
-                Layout.fillWidth: true
-
-                AccessibleTransportButton {
-                    id: cancelImportButton
-
-                    KeyNavigation.backtab: confirmImportButton
-                    KeyNavigation.tab: confirmImportButton
-                    contract: root.contract
-                    objectName: "download-import-cancel"
-                    text: labels.cancel
-
-                    onClicked: root.invalidateImportConsent()
-                }
-                Item {
-                    Layout.fillWidth: true
-                }
-                AccessibleTransportButton {
-                    id: confirmImportButton
-
-                    KeyNavigation.backtab: cancelImportButton
-                    KeyNavigation.tab: cancelImportButton
-                    contract: root.contract
-                    enabled: root.importConsentCurrent
-                    objectName: "download-import-confirm"
-                    text: labels.importRecovered
-
-                    onClicked: root.confirmImportConsent()
-                }
-            }
-        }
+        onCancelRequested: root.invalidateImportConsent()
+        onConfirmRequested: root.confirmImportConsent()
         onClosed: {
             root.invalidateImportConsent();
             const target = root.importRestoreFocusItem;
@@ -1304,86 +1200,25 @@ PageSurface {
                 }
             });
         }
-        onOpened: cancelImportButton.forceActiveFocus(Qt.TabFocusReason)
     }
-    Popup {
+
+    DownloadConfirmation {
         id: discardConfirmation
 
-        closePolicy: Popup.CloseOnEscape
-        dim: false
-        focus: true
-        height: discardContent.implicitHeight + padding * 2
-        modal: true
         objectName: "downloads-discard-confirmation"
-        padding: root.contract.spacingUnit * 3
-        parent: root.parent
-        popupType: Popup.Item
-        width: Math.min(root.width, 560)
-        x: root.x + (root.width - width) / 2
-        y: root.y + (root.height - height) / 2
+        contract: root.contract
+        host: root
+        title: labels.confirmDiscard
+        advice: root.discardConsentWithoutFiles ? labels.discardWithoutFilesAdvice : labels.discardPartialsAdvice
+        adviceObjectName: "download-discard-advice"
+        cancelText: labels.cancelDiscard
+        cancelObjectName: "download-discard-cancel"
+        confirmText: labels.confirmDiscard
+        confirmObjectName: "download-discard-confirm"
+        confirmEnabled: root.discardConsentCurrent
 
-        background: Rectangle {
-            border.color: root.contract.borderColor
-            border.width: root.contract.highContrast ? 2 : 1
-            color: root.contract.surfaceRaisedColor
-            radius: root.contract.radiusMedium
-        }
-        contentItem: ColumnLayout {
-            id: discardContent
-
-            Accessible.name: labels.confirmDiscard
-            Accessible.role: Accessible.Dialog
-            spacing: root.contract.spacingUnit * 3
-
-            Text {
-                Layout.fillWidth: true
-                color: root.contract.textPrimaryColor
-                font.bold: true
-                text: labels.confirmDiscard
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-            }
-            Text {
-                Accessible.name: text
-                Accessible.role: Accessible.StaticText
-                Layout.fillWidth: true
-                color: root.contract.textPrimaryColor
-                objectName: "download-discard-advice"
-                text: root.discardConsentWithoutFiles ? labels.discardWithoutFilesAdvice : labels.discardPartialsAdvice
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-            }
-            RowLayout {
-                Layout.fillWidth: true
-
-                AccessibleTransportButton {
-                    id: cancelDiscardButton
-
-                    KeyNavigation.backtab: confirmDiscardButton
-                    KeyNavigation.tab: confirmDiscardButton
-                    contract: root.contract
-                    objectName: "download-discard-cancel"
-                    text: labels.cancelDiscard
-
-                    onClicked: root.invalidateDiscardConsent()
-                }
-                Item {
-                    Layout.fillWidth: true
-                }
-                AccessibleTransportButton {
-                    id: confirmDiscardButton
-
-                    KeyNavigation.backtab: cancelDiscardButton
-                    KeyNavigation.tab: cancelDiscardButton
-                    contract: root.contract
-                    enabled: root.discardConsentCurrent
-                    objectName: "download-discard-confirm"
-                    text: labels.confirmDiscard
-
-                    onClicked: root.confirmDiscardConsent()
-                }
-            }
-        }
+        onCancelRequested: root.invalidateDiscardConsent()
+        onConfirmRequested: root.confirmDiscardConsent()
         onClosed: {
             root.invalidateDiscardConsent();
             const target = root.discardRestoreFocusItem;
@@ -1395,84 +1230,24 @@ PageSurface {
                 }
             });
         }
-        onOpened: cancelDiscardButton.forceActiveFocus(Qt.TabFocusReason)
     }
-    Popup {
+
+    DownloadConfirmation {
         id: exitConfirmation
 
-        closePolicy: Popup.CloseOnEscape
-        dim: false
-        focus: true
-        height: confirmationContent.implicitHeight + padding * 2
-        modal: true
         objectName: "downloads-exit-confirmation"
-        padding: root.contract.spacingUnit * 3
-        parent: root.parent
-        popupType: Popup.Item
-        width: Math.min(root.width, 560)
-        x: root.x + (root.width - width) / 2
-        y: root.y + (root.height - height) / 2
+        contract: root.contract
+        host: root
+        title: labels.closeWithoutSave
+        advice: labels.closeWithoutSaveAdvice
+        cancelText: labels.keepOpen
+        cancelObjectName: "downloads-cancel-close-without-save"
+        confirmText: labels.closeWithoutSave
+        confirmObjectName: "downloads-confirm-close-without-save"
+        confirmEnabled: root.closeWithoutSaveAvailable && root.closeConsentOwner === root.downloads && root.closeConsentWarning === root.warning
 
-        background: Rectangle {
-            border.color: root.contract.borderColor
-            border.width: root.contract.highContrast ? 2 : 1
-            color: root.contract.surfaceRaisedColor
-            radius: root.contract.radiusMedium
-        }
-        contentItem: ColumnLayout {
-            id: confirmationContent
-
-            Accessible.name: labels.closeWithoutSave
-            Accessible.role: Accessible.Dialog
-            spacing: root.contract.spacingUnit * 3
-
-            Text {
-                Layout.fillWidth: true
-                color: root.contract.textPrimaryColor
-                font.bold: true
-                text: labels.closeWithoutSave
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-            }
-            Text {
-                Layout.fillWidth: true
-                color: root.contract.textPrimaryColor
-                text: labels.closeWithoutSaveAdvice
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-            }
-            RowLayout {
-                Layout.fillWidth: true
-
-                AccessibleTransportButton {
-                    id: keepOpenButton
-
-                    KeyNavigation.backtab: confirmCloseButton
-                    KeyNavigation.tab: confirmCloseButton
-                    contract: root.contract
-                    objectName: "downloads-cancel-close-without-save"
-                    text: labels.keepOpen
-
-                    onClicked: root.invalidateCloseConsent()
-                }
-                Item {
-                    Layout.fillWidth: true
-                }
-                AccessibleTransportButton {
-                    id: confirmCloseButton
-
-                    KeyNavigation.backtab: keepOpenButton
-                    KeyNavigation.tab: keepOpenButton
-                    contract: root.contract
-                    enabled: root.closeWithoutSaveAvailable && root.closeConsentOwner === root.downloads && root.closeConsentWarning === root.warning
-                    objectName: "downloads-confirm-close-without-save"
-                    text: labels.closeWithoutSave
-
-                    onClicked: root.confirmCloseWithoutSave()
-                }
-            }
-        }
-
+        onCancelRequested: root.invalidateCloseConsent()
+        onConfirmRequested: root.confirmCloseWithoutSave()
         onClosed: {
             root.closeConsentOwner = null;
             root.closeConsentWarning = "";
@@ -1481,6 +1256,5 @@ PageSurface {
                     closeWithoutSaveButton.forceActiveFocus(Qt.TabFocusReason);
             });
         }
-        onOpened: keepOpenButton.forceActiveFocus(Qt.TabFocusReason)
     }
 }

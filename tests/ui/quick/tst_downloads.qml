@@ -127,6 +127,27 @@ TestCase {
         });
         return list.itemAtIndex(index);
     }
+    function test_auroraRowsSitOnTheCanvasWithAThinProgressBar() {
+        addJob("active", "downloading", "Baixando", true, false, false, 0.5);
+        const panel = openDownloads();
+        verify(panel.embedded);
+        const row = rowAt(0);
+        findChild(shell, "downloads-close").forceActiveFocus(Qt.TabFocusReason);
+        const card = findChild(row, "download-row-background");
+        verify(card);
+        compare(card.border.width, 0, "a job is a list item, not a bordered card");
+        compare(card.color.a, 0);
+        const divider = findChild(row, "download-row-divider");
+        verify(divider && divider.visible);
+        verify(Qt.colorEqual(divider.color, shell.uiContract.dividerColor));
+        const title = findChild(row, "download-title");
+        compare(title.font.family, shell.uiContract.headingFontFamily);
+        compare(title.font.pixelSize, shell.uiContract.typeSubtitle);
+        const progress = findChild(row, "download-progress");
+        compare(progress.height, 4);
+        compare(progress.background.border.width, 0);
+        verify(Qt.colorEqual(progress.background.color, shell.uiContract.dividerColor));
+    }
     function test_failedDownloadRetryUsesOnlyCurrentExactRowIdentity() {
         addJob("failed-a", "failed", "Falhou", false, false, false, 0);
         jobs.setProperty(0, "canRetryDownload", true);
@@ -723,9 +744,11 @@ TestCase {
         keyClick(Qt.Key_Tab);
         tryCompare(list, "activeFocus", true);
         const first = rowAt(0);
+        // Unfocused rows: no border on the Aurora canvas, a 1 px card in the legacy dialog.
+        const restingBorder = findChild(shell, "downloads-panel").embedded ? 0 : 1;
         const second = rowAt(1);
         compare(first.children[0].border.width, 3);
-        compare(second.children[0].border.width, 1);
+        compare(second.children[0].border.width, restingBorder);
         compare(first.Accessible.role, Accessible.ListItem);
         compare(first.Accessible.focused, true);
         compare(first.Accessible.name, "Áudio cancel-first");
@@ -733,7 +756,7 @@ TestCase {
 
         keyClick(Qt.Key_Down);
         tryCompare(list, "currentIndex", 1);
-        compare(first.children[0].border.width, 1);
+        compare(first.children[0].border.width, restingBorder);
         compare(second.children[0].border.width, 3);
         compare(first.Accessible.focused, false);
         compare(second.Accessible.focused, true);

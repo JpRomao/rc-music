@@ -76,6 +76,7 @@ function(rc_music_add_ui target support qml_output)
             TrackDetailsPanel.qml
             TrackDetailsText.qml
             DownloadsPanel.qml
+            DownloadConfirmation.qml
             DownloadLyricsPanel.qml
             BrowserText.qml
             DownloadText.qml)
