@@ -18,6 +18,7 @@ struct Job final {
 struct Buffered final {
     LibraryBinding::Paths paths;
     bool seed{};
+    std::string job_id{}; // Non-empty: one published download.
 };
 // Admissions held while the catalog is unreadable stay bounded.
 constexpr std::size_t maximum_buffered_paths = maximum_library_records;
@@ -40,9 +41,10 @@ struct LibraryBinding::Impl final {
     }
     bool unsaved() const { return working && !(working->snapshot() == confirmed.snapshot()); }
 
-    void apply(const Paths& paths) {
+    void apply(const Paths& paths, const std::string& job_id = {}) {
         auto candidate = working ? *working : confirmed;
-        if (!candidate.admit(paths)) {
+        const auto admitted = job_id.empty() ? candidate.admit(paths) : candidate.admitDownload(paths.front(), job_id);
+        if (!admitted) {
             notice =
                 LibraryBinding::tr("Não foi possível adicionar à biblioteca: limite atingido ou caminho inválido.");
             return;
@@ -51,19 +53,21 @@ struct LibraryBinding::Impl final {
         if (!unsaved())
             working.reset();
     }
-    void accept(Paths paths, const bool seed) {
+    void accept(Paths paths, const bool seed, std::string job_id = {}) {
         if (stopping || paths.empty())
             return;
         if (!ready) {
             if (paths.size() > maximum_buffered_paths - buffered_paths)
                 return;
             buffered_paths += paths.size();
-            buffered.push_back({std::move(paths), seed});
+            buffered.push_back({std::move(paths), seed, std::move(job_id)});
             return;
         }
         if (seed && !seed_allowed)
             return;
-        apply(paths);
+        apply(paths, job_id);
+        if (!unsaved())
+            return emit owner.changed();
         // New ingress is a fresh attempt, even after an earlier failure.
         save_failed = false;
         save();
@@ -140,7 +144,7 @@ struct LibraryBinding::Impl final {
         buffered_paths = 0;
         for (auto& batch : pending)
             if (!batch.seed || seed_allowed)
-                apply(batch.paths);
+                apply(batch.paths, batch.job_id);
     }
     void saved(const LibrarySaveStatus status, LibrarySnapshot written) {
         if (status == LibrarySaveStatus::Saved) {
@@ -167,6 +171,11 @@ LibraryBinding::~LibraryBinding() {
 bool LibraryBinding::start() { return !impl_->ready && impl_->load(); }
 void LibraryBinding::admit(Paths paths) { impl_->accept(std::move(paths), false); }
 void LibraryBinding::seed(Paths paths) { impl_->accept(std::move(paths), true); }
+void LibraryBinding::admitDownload(std::filesystem::path path, std::string job_id) {
+    if (job_id.empty())
+        return impl_->accept({std::move(path)}, false);
+    impl_->accept({std::move(path)}, false, std::move(job_id));
+}
 bool LibraryBinding::ready() const { return impl_->ready; }
 bool LibraryBinding::busy() const { return impl_->busy; }
 int LibraryBinding::count() const { return static_cast<int>(impl_->confirmed.snapshot().records.size()); }

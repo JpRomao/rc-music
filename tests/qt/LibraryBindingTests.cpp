@@ -164,6 +164,20 @@ class LibraryBindingTests final : public QObject {
         QVERIFY(h.store->saved().empty());
         QCOMPARE(h.binding.count(), 0);
     }
+    void aDownloadJobIsAdmittedOnceEvenWhenReplayed() {
+        Harness h;
+        QVERIFY(h.binding.start());
+        h.binding.admitDownload(track(1), "downloads-1"); // Before loading finishes.
+        QTRY_COMPARE(h.binding.count(), 1);
+        QCOMPARE(h.store->saved().back().download_jobs, std::vector<std::string>{"downloads-1"});
+        const auto writes = h.store->saved().size();
+        h.binding.admitDownload(track(1), "downloads-1");
+        h.binding.admitDownload(track(2), "downloads-1");
+        QVERIFY(!h.binding.hasPendingChange());
+        QTest::qWait(50);
+        QCOMPARE(h.store->saved().size(), writes);
+        QCOMPARE(h.binding.count(), 1);
+    }
     void exitWaitsOnlyForAnActiveSave() {
         Harness h;
         h.startAndWait();

@@ -34,7 +34,15 @@
 - Semente de primeiro uso: só quando `library.json` não existia, uma vez da fila e uma vez das playlists (`PlaylistsBinding::entryPaths`). Depois disso, sementes são ignoradas, então um registro removido não volta.
 - Biblioteca ilegível (inválida, versão futura, indisponível) nunca é sobrescrita; ingressos ficam em memória, com limite.
 
+## Contrato de L3
+
+- `library.json` guarda um registro limitado (`downloadJobs`, 1.024 jobs, o mais antigo sai primeiro) dos downloads já admitidos. `LocalLibrary::admitDownload` admite cada job uma vez; um job já registrado não muda nada, então um replay ou a reconciliação nunca ressuscita um registro removido. Um ingresso local explícito do mesmo arquivo continua funcionando.
+- `PlayerPresenter::setDownloadAdmissionObserver` informa cada importação de download confirmada na fila, com o ID do job no modo durável. Uma importação repetida não anexa de novo, então não é informada duas vezes.
+- Reconciliação a cada início: `downloadImportReceipts()` da sessão passa pela biblioteca. Um download cuja gravação na biblioteca se perdeu (falha ou queda entre as confirmações) entra na próxima abertura, sem refazer o download nem tocar na fila.
+- A ordem não é atômica entre os dois destinos: fila e biblioteca confirmam separadamente. A distinção desses estados na Atividade fica para L4.
+
 ## Estado
 
 - L1 concluída: commit `d4cbc8c`.
 - L2 concluída: catálogo alimentado pelo ingresso local, com 704/704 CTest (sem a suíte Quick, sem mudança de QML).
+- L3 concluída: downloads nos dois destinos com registro de jobs, 707/707 CTest (sem a suíte Quick).

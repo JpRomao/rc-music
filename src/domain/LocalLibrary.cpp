@@ -25,14 +25,23 @@ std::size_t payloadBytes(const LibraryRecord& record) {
     return record.source_path.native().size() * sizeof(std::filesystem::path::value_type) + record.title.size() +
            record.artist.size() + record.album.size();
 }
+bool validJobId(const std::string& id) {
+    return !id.empty() && id.size() <= maximum_library_job_id_bytes &&
+           std::all_of(id.begin(), id.end(), [](const char c) { return c > 0x20 && c < 0x7f; });
+}
 std::uint64_t followingId(const std::uint64_t value) noexcept {
     return value == std::numeric_limits<std::uint64_t>::max() ? 1 : value + 1;
 }
 } // namespace
 
 bool isValidLibrarySnapshot(const LibrarySnapshot& snapshot) {
-    if (snapshot.next_id == 0 || snapshot.records.size() > maximum_library_records)
+    if (snapshot.next_id == 0 || snapshot.records.size() > maximum_library_records ||
+        snapshot.download_jobs.size() > maximum_library_download_jobs)
         return false;
+    std::unordered_set<std::string> jobs;
+    for (const auto& job : snapshot.download_jobs)
+        if (!validJobId(job) || !jobs.insert(job).second)
+            return false;
     std::unordered_set<std::uint64_t> ids;
     ids.reserve(snapshot.records.size());
     std::unordered_set<std::filesystem::path::string_type> paths;
@@ -93,6 +102,27 @@ std::optional<LibraryAdmission> LocalLibrary::admit(const std::vector<std::files
     if (!isValidLibrarySnapshot(candidate))
         return std::nullopt;
     snapshot_ = std::move(candidate);
+    return result;
+}
+
+std::optional<LibraryAdmission> LocalLibrary::admitDownload(const std::filesystem::path& source_path,
+                                                            const std::string& job_id) {
+    if (!validJobId(job_id) || !validPath(source_path))
+        return std::nullopt;
+    if (std::find(snapshot_.download_jobs.begin(), snapshot_.download_jobs.end(), job_id) !=
+        snapshot_.download_jobs.end())
+        return LibraryAdmission{};
+    const auto saved = snapshot_;
+    auto result = admit({source_path});
+    if (!result)
+        return std::nullopt;
+    if (snapshot_.download_jobs.size() >= maximum_library_download_jobs)
+        snapshot_.download_jobs.erase(snapshot_.download_jobs.begin());
+    snapshot_.download_jobs.push_back(job_id);
+    if (!isValidLibrarySnapshot(snapshot_)) {
+        snapshot_ = saved;
+        return std::nullopt;
+    }
     return result;
 }
 

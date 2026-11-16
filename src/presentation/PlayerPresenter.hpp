@@ -361,6 +361,13 @@ class PlayerPresenter final : public QObject {
     // ADR-0019: receives the paths of every accepted local ingress (open, add,
     // drop/forwarding, playlist) after the queue commits. Exceptions are contained.
     void setLocalAdmissionObserver(std::function<void(const std::vector<std::filesystem::path>&)> observer);
+    // ADR-0019: a committed download import, with its job ID when the import is
+    // durable. A replayed import never appends again, so it is not reported twice.
+    void
+    setDownloadAdmissionObserver(std::function<void(const std::filesystem::path&, const std::string* job_id)> observer);
+    // Copies of the session's durable download receipts, for the library's
+    // startup reconciliation.
+    [[nodiscard]] std::vector<DownloadImportReceipt> downloadImportReceipts() const;
     void cancelPendingPlaylistExit();
     // A complete pair or an empty pair is accepted before its first begin only.
     // An active/used gate cannot be detached or replaced to bypass preparation.
@@ -663,6 +670,7 @@ class PlayerPresenter final : public QObject {
     std::function<bool()> source_exit_drained_probe_{};
     std::function<ExitPreparationState()> playlist_exit_preparation_probe_{};
     std::function<void(const std::vector<std::filesystem::path>&)> local_admission_observer_{};
+    std::function<void(const std::filesystem::path&, const std::string*)> download_admission_observer_{};
     std::optional<PlaybackEvent> deferred_playback_event_{};
     WindowNotice window_notice_{WindowNotice::NoNotice};
     bool tray_notice_enabled_{true};

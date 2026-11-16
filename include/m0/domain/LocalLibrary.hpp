@@ -17,6 +17,9 @@ inline constexpr std::size_t maximum_library_text_bytes = 512;
 inline constexpr std::size_t maximum_library_path_units = 32'768;
 // UTF-8 text bytes + native path code-unit bytes, excluding container overhead.
 inline constexpr std::size_t maximum_library_payload_bytes = 24 * 1024 * 1024;
+// Download jobs already admitted, newest last; older entries are evicted.
+inline constexpr std::size_t maximum_library_download_jobs = 1024;
+inline constexpr std::size_t maximum_library_job_id_bytes = 256;
 
 struct LibraryMetadata final {
     std::string title{};
@@ -43,6 +46,9 @@ struct LibrarySnapshot final {
     std::vector<LibraryRecord> records{};
     // Persisted so a removed record's ID is never handed to another file.
     std::uint64_t next_id{1};
+    // Ledger of admitted download jobs: a replayed or reconciled import never
+    // resurrects a record the user removed.
+    std::vector<std::string> download_jobs{};
     [[nodiscard]] bool operator==(const LibrarySnapshot&) const = default;
 };
 
@@ -67,6 +73,10 @@ class LocalLibrary final {
     // Idempotent by exact path. Transactional: an invalid path or exceeding the
     // record limit refuses the whole batch.
     [[nodiscard]] std::optional<LibraryAdmission> admit(const std::vector<std::filesystem::path>& source_paths);
+    // A published download: admitted once per job ID. A job already in the
+    // ledger returns an empty admission and changes nothing.
+    [[nodiscard]] std::optional<LibraryAdmission> admitDownload(const std::filesystem::path& source_path,
+                                                                const std::string& job_id);
     // Removes only the catalog record; a later explicit admission adds it again.
     [[nodiscard]] bool remove(std::uint64_t id);
     [[nodiscard]] bool setMetadata(std::uint64_t id, LibraryMetadata metadata);

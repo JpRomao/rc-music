@@ -10,6 +10,7 @@
 #include <QLockFile>
 #include <QSaveFile>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -117,8 +118,12 @@ QByteArray encode(const LibrarySnapshot& snapshot) {
              record.duration_ms ? QJsonValue(QString::number(*record.duration_ms)) : QJsonValue(QJsonValue::Null)},
             {QStringLiteral("available"), record.available}});
     }
+    QJsonArray jobs;
+    for (const auto& job : snapshot.download_jobs)
+        jobs.push_back(QString::fromLatin1(job.data(), static_cast<qsizetype>(job.size())));
     const auto bytes = QJsonDocument(QJsonObject{{QStringLiteral("schemaVersion"), 1},
                                                  {QStringLiteral("nextId"), QString::number(snapshot.next_id)},
+                                                 {QStringLiteral("downloadJobs"), jobs},
                                                  {QStringLiteral("records"), records}})
                            .toJson(QJsonDocument::Compact);
     return bytes.size() > QtJsonLibraryStore::maximum_file_size ? QByteArray{} : bytes;
@@ -137,14 +142,27 @@ InspectedFile decode(QByteArray bytes) {
     if (version.toDouble() > 1)
         return {.status = FileStatus::FutureVersion};
     const auto next_id = decodeDecimal(root.value(QStringLiteral("nextId")));
-    if (!detail::strictJsonPreflight(bytes, 4) || root.size() != 3 || !next_id ||
-        !root.value(QStringLiteral("records")).isArray())
+    if (!detail::strictJsonPreflight(bytes, 4) || root.size() != 4 || !next_id ||
+        !root.value(QStringLiteral("records")).isArray() || !root.value(QStringLiteral("downloadJobs")).isArray())
+        return {.status = FileStatus::Invalid};
+    const auto jobs = root.value(QStringLiteral("downloadJobs")).toArray();
+    if (static_cast<std::size_t>(jobs.size()) > maximum_library_download_jobs)
         return {.status = FileStatus::Invalid};
     const auto records = root.value(QStringLiteral("records")).toArray();
     if (static_cast<std::size_t>(records.size()) > maximum_library_records)
         return {.status = FileStatus::Invalid};
     LibrarySnapshot snapshot;
     snapshot.next_id = *next_id;
+    for (const auto& job : jobs) {
+        // Domain validation below accepts printable ASCII only, so Latin-1 is exact.
+        if (!job.isString())
+            return {.status = FileStatus::Invalid};
+        const auto text = job.toString();
+        if (text.size() > static_cast<qsizetype>(maximum_library_job_id_bytes) ||
+            std::any_of(text.begin(), text.end(), [](QChar c) { return c.unicode() > 0x7e; }))
+            return {.status = FileStatus::Invalid};
+        snapshot.download_jobs.push_back(text.toLatin1().toStdString());
+    }
     snapshot.records.reserve(static_cast<std::size_t>(records.size()));
     for (const auto& value : records) {
         if (!value.isObject())

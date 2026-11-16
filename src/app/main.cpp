@@ -484,7 +484,7 @@ int main(int argc, char* argv[]) {
 #endif
         std::unique_ptr<music_player::m0::PlaylistsBinding> playlists_binding;
         std::unique_ptr<music_player::m0::LibraryBinding> library_binding;
-        bool library_queue_seeded{}, library_playlists_seeded{};
+        bool library_queue_seeded{}, library_playlists_seeded{}, library_downloads_reconciled{};
 #ifdef M0_QT_COMBINED_AUDIO
         auto artwork_cache = std::make_shared<music_player::m0::ArtworkImageCache>();
         music_player::m0::QtMultimediaPlaybackBackend backend;
@@ -774,11 +774,23 @@ int main(int argc, char* argv[]) {
             if (library_binding)
                 library_binding->admit(paths);
         });
+        presenter.setDownloadAdmissionObserver([&](const std::filesystem::path& path, const std::string* job_id) {
+            if (library_binding)
+                library_binding->admitDownload(path, job_id ? *job_id : std::string{});
+        });
         // First use only (the binding ignores seeds once library.json exists):
         // adopt the references already in the queue and in the playlists, once each.
         auto seed_library = [&] {
             if (!library_binding || !library_binding->ready())
                 return;
+            // Every start: a download whose library write was lost (failure or
+            // crash) is admitted from its session receipt. The job ledger keeps
+            // a record the user removed from coming back.
+            if (!library_downloads_reconciled) {
+                library_downloads_reconciled = true;
+                for (auto& receipt : presenter.downloadImportReceipts())
+                    library_binding->admitDownload(std::move(receipt.source_path), std::move(receipt.job_id));
+            }
             if (!library_queue_seeded) {
                 library_queue_seeded = true;
                 auto snapshot = presenter.playlistQueueSnapshot();

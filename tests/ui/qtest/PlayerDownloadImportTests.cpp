@@ -449,6 +449,7 @@ class PlayerDownloadImportTests final : public QObject {
     void existingPlaybackIsPreserved_data();
     void existingPlaybackIsPreserved();
     void replayAndConflictingPathsNeverCreateAnotherOccurrence();
+    void publishedDownloadsReachTheLibraryObserverOnce();
     void distinctJobsKeepDuplicatePathsAsDistinctOccurrences();
     void invalidIdentifiers_data();
     void invalidIdentifiers();
@@ -594,6 +595,36 @@ void PlayerDownloadImportTests::replayAndConflictingPathsNeverCreateAnotherOccur
     QVERIFY(importer.accept("job-1", path));
     QVERIFY(!importer.accept("job-1", publishedPath(u8"Outra.mp3")));
     QCOMPARE(h.model()->rowCount(), 0);
+}
+
+void PlayerDownloadImportTests::publishedDownloadsReachTheLibraryObserverOnce() {
+    // ADR-0019: a committed download import feeds the library with its job ID.
+    std::vector<std::pair<std::filesystem::path, std::string>> seen;
+    auto observe = [&](const std::filesystem::path& path, const std::string* job) {
+        seen.emplace_back(path, job ? *job : std::string{"<none>"});
+    };
+    DurableHarness durable;
+    durable.presenter.setDownloadAdmissionObserver(observe);
+    PlayerDownloadImport importer(durable.presenter, {}, PlayerDownloadImportPersistence::Session);
+    const auto path = publishedPath();
+    QCOMPARE(importer.begin("durable-1", path), DownloadImportState::Pending);
+    static_cast<void>(importer.begin("durable-1", path)); // A replay never appends again.
+    QCOMPARE(seen.size(), std::size_t{1});
+    QCOMPARE(seen.front().first, path);
+    QCOMPARE(seen.front().second, std::string{"durable-1"});
+    const auto receipts = durable.presenter.downloadImportReceipts();
+    QCOMPARE(receipts.size(), std::size_t{1});
+    QCOMPARE(receipts.front().job_id, std::string{"durable-1"});
+    QCOMPARE(receipts.front().source_path, path);
+
+    seen.clear();
+    Harness transient;
+    transient.presenter.setDownloadAdmissionObserver(observe);
+    PlayerDownloadImport volatile_importer(transient.presenter);
+    QVERIFY(volatile_importer.accept("job-1", path));
+    QVERIFY(volatile_importer.accept("job-1", path));
+    QCOMPARE(seen.size(), std::size_t{1});
+    QCOMPARE(seen.front().second, std::string{"<none>"});
 }
 
 void PlayerDownloadImportTests::distinctJobsKeepDuplicatePathsAsDistinctOccurrences() {

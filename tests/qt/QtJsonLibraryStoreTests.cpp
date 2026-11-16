@@ -17,6 +17,7 @@ LibrarySnapshot sample() {
         {7, std::filesystem::path(L"C:/Música/日本/canção.mp3"), "Canção 日本", "Artista", "Álbum", 183'000, true});
     snapshot.records.push_back({9, std::filesystem::path(L"D:/Removível/song.flac"), "", "", "", std::nullopt, false});
     snapshot.next_id = 12; // Higher than every live ID: removed IDs are never reused.
+    snapshot.download_jobs = {"downloads-1", "downloads-2"};
     return snapshot;
 }
 QByteArray read(const QString& path) {
@@ -88,10 +89,18 @@ class QtJsonLibraryStoreTests final : public QObject {
         const QByteArray record =
             R"({"id":"1","sourcePath":"C:/a.mp3","title":"","artist":"","album":"","durationMs":null,"available":true})";
         auto document = [](const QByteArray& records, const QByteArray& next = "\"2\"") {
-            return R"({"schemaVersion":1,"nextId":)" + next + R"(,"records":[)" + records + "]}";
+            return R"({"schemaVersion":1,"nextId":)" + next + R"(,"downloadJobs":[],"records":[)" + records + "]}";
         };
         QTest::newRow("valid control") << QByteArray{};
-        QTest::newRow("extra root key") << QByteArray(R"({"schemaVersion":1,"nextId":"2","records":[],"x":1})");
+        QTest::newRow("extra root key") << QByteArray(
+            R"({"schemaVersion":1,"nextId":"2","downloadJobs":[],"records":[],"x":1})");
+        QTest::newRow("missing job ledger") << QByteArray(R"({"schemaVersion":1,"nextId":"2","records":[]})");
+        QTest::newRow("numeric job") << QByteArray(
+            R"({"schemaVersion":1,"nextId":"2","downloadJobs":[7],"records":[]})");
+        QTest::newRow("duplicate job") << QByteArray(
+            R"({"schemaVersion":1,"nextId":"2","downloadJobs":["a","a"],"records":[]})");
+        QTest::newRow("job with space") << QByteArray(
+            R"({"schemaVersion":1,"nextId":"2","downloadJobs":["a b"],"records":[]})");
         QTest::newRow("leading zero id") << document(QByteArray(record).replace(R"("id":"1")", R"("id":"01")"));
         QTest::newRow("zero next id") << document(record, "\"0\"");
         QTest::newRow("numeric id") << document(QByteArray(record).replace(R"("id":"1")", R"("id":1)"));
@@ -111,11 +120,13 @@ class QtJsonLibraryStoreTests final : public QObject {
         QtJsonLibraryStore store(root.path());
         if (document.isEmpty()) {
             write(root.filePath(QStringLiteral("library.json")),
-                  R"({"schemaVersion":1,"nextId":"2","records":[{"id":"1","sourcePath":"C:/a.mp3","title":"",)"
+                  R"({"schemaVersion":1,"nextId":"2","downloadJobs":["downloads-3"],"records":[{"id":"1",)"
+                  R"("sourcePath":"C:/a.mp3","title":"",)"
                   R"("artist":"","album":"","durationMs":"5","available":true}]})");
             const auto result = store.load();
             QCOMPARE(result.status, LibraryLoadStatus::Loaded);
             QCOMPARE(result.snapshot.records.front().duration_ms, std::optional<std::uint64_t>{5});
+            QCOMPARE(result.snapshot.download_jobs, std::vector<std::string>{"downloads-3"});
             return;
         }
         write(root.filePath(QStringLiteral("library.json")), document);

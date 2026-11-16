@@ -36,6 +36,8 @@ class LibraryBinding final : public QObject {
     // First-use seed from existing queue and playlist references. Ignored once
     // library.json exists, so a removed record never comes back this way.
     void seed(Paths paths);
+    // A published download, admitted once per job (a replay never resurrects a removal).
+    void admitDownload(std::filesystem::path path, std::string job_id);
     [[nodiscard]] bool ready() const;
     [[nodiscard]] bool busy() const;
     // Confirmed (Saved) records only.

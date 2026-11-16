@@ -1613,6 +1613,11 @@ void PlayerPresenter::setLocalAdmissionObserver(
     std::function<void(const std::vector<std::filesystem::path>&)> observer) {
     local_admission_observer_ = std::move(observer);
 }
+void PlayerPresenter::setDownloadAdmissionObserver(
+    std::function<void(const std::filesystem::path&, const std::string* job_id)> observer) {
+    download_admission_observer_ = std::move(observer);
+}
+std::vector<DownloadImportReceipt> PlayerPresenter::downloadImportReceipts() const { return download_import_receipts_; }
 void PlayerPresenter::notifyLocalAdmission(const std::vector<std::filesystem::path>& paths) noexcept {
     if (!local_admission_observer_ || paths.empty())
         return;
@@ -1965,7 +1970,16 @@ bool PlayerPresenter::appendPlaylistSources(std::vector<std::filesystem::path> p
 }
 bool PlayerPresenter::appendPublishedAudioImpl(const std::filesystem::path& path, bool& committed,
                                                const std::string* download_job_id) {
-    return appendLocalSourcesWithoutPlayback({path}, committed, download_job_id);
+    const QPointer<PlayerPresenter> guard{this};
+    const auto accepted = appendLocalSourcesWithoutPlayback({path}, committed, download_job_id);
+    if (committed && guard && download_admission_observer_) {
+        try {
+            download_admission_observer_(path, download_job_id);
+        } catch (...) {
+            // The library is a separate destination; it never undoes the queue commit.
+        }
+    }
+    return accepted;
 }
 bool PlayerPresenter::appendLocalSourcesWithoutPlayback(std::vector<std::filesystem::path> paths, bool& committed,
                                                         const std::string* download_job_id) {

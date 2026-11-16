@@ -128,4 +128,50 @@ TEST_CASE("restore accepts only consistent snapshots", "[library]") {
         CHECK(other.snapshot().records.empty());
     }
 }
+TEST_CASE("a download job is admitted once and a later removal stays removed", "[library]") {
+    LocalLibrary library;
+    const auto first = library.admitDownload(track(1), "downloads-7");
+    REQUIRE(first);
+    CHECK(first->added == 1);
+    const auto id = first->ids.front();
+    REQUIRE(library.remove(id));
+    // Replaying the same job (a retry or the startup reconciliation) must not resurrect it.
+    const auto replay = library.admitDownload(track(1), "downloads-7");
+    REQUIRE(replay);
+    CHECK(replay->added == 0);
+    CHECK(replay->ids.empty());
+    CHECK(library.findByPath(track(1)) == nullptr);
+    // An explicit local ingress of the same file still works.
+    REQUIRE(library.admit({track(1)}));
+    CHECK(library.findByPath(track(1)) != nullptr);
+}
+
+TEST_CASE("a new job for a known path reuses its record", "[library]") {
+    auto library = withTracks(1);
+    const auto existing = library.findByPath(track(0))->id;
+    const auto result = library.admitDownload(track(0), "downloads-1");
+    REQUIRE(result);
+    CHECK(result->added == 0);
+    CHECK(result->ids == std::vector<std::uint64_t>{existing});
+    CHECK(library.snapshot().download_jobs == std::vector<std::string>{"downloads-1"});
+}
+
+TEST_CASE("the download job ledger is bounded and validated", "[library]") {
+    LocalLibrary library;
+    CHECK_FALSE(library.admitDownload(track(1), ""));
+    CHECK_FALSE(library.admitDownload(track(1), "with space"));
+    CHECK_FALSE(library.admitDownload(track(1), std::string(maximum_library_job_id_bytes + 1, 'a')));
+    CHECK(library.snapshot().records.empty());
+    for (std::size_t index = 0; index <= maximum_library_download_jobs; ++index)
+        REQUIRE(library.admitDownload(track(1), "job-" + std::to_string(index)));
+    const auto jobs = library.snapshot().download_jobs;
+    CHECK(jobs.size() == maximum_library_download_jobs);
+    CHECK(jobs.front() == "job-1"); // The oldest entry was evicted.
+    CHECK(jobs.back() == "job-" + std::to_string(maximum_library_download_jobs));
+    auto duplicate = library.snapshot();
+    duplicate.download_jobs.push_back(duplicate.download_jobs.front());
+    LocalLibrary other;
+    CHECK_FALSE(other.restore(duplicate));
+}
+
 } // namespace music_player::m0::test
