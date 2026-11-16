@@ -1,4 +1,5 @@
 import QtQuick
+import QtQml.Models
 import QtQuick.Controls
 import QtQuick.Layouts
 import MusicPlayer.M0
@@ -33,6 +34,8 @@ PageSurface {
     readonly property bool closeWithoutSaveAvailable: downloads !== null && downloads.canCloseAfterFinalSaveFailure
     required property ShellUiContract contract
     property var downloads: null
+    // 0 all, 1 with errors, 2 completed, 3 queued, 4 downloading.
+    property int jobFilter: 0
     // ADR-0019: the library's confirmed download ledger, for the destinations line.
     property var library: null
     readonly property bool openFolderAvailable: downloads !== null && typeof downloads.openDownloadDirectory === "function" && typeof downloads.downloadDirectoryText === "string" && downloads.downloadDirectoryText.length > 0
@@ -294,12 +297,51 @@ PageSurface {
         closeConsentWarning = warning;
         exitConfirmation.open();
     }
+    // Activity filters: each job state belongs to at most one filter; cancelled
+    // jobs appear only when every job is shown.
+    function jobMatchesFilter(state) {
+        switch (jobFilter) {
+        case 1:
+            return state === "failed" || state === "import_failed" || state === "interrupted";
+        case 2:
+            return state === "completed" || state === "importing" || state === "imported";
+        case 3:
+            return state === "queued";
+        case 4:
+            return state === "downloading" || state === "converting" || state === "publishing" || state === "cancelling";
+        }
+        return true;
+    }
+    // The filter group is a single Tab stop (the active filter); the arrow keys
+    // move between filters, as in a radio group.
+    function filterButtons() {
+        return [filterAllButton, filterErrorsButton, filterCompletedButton, filterQueuedButton, filterActiveButton];
+    }
+    function moveFilter(step) {
+        const buttons = filterButtons();
+        const index = (jobFilter + step + buttons.length) % buttons.length;
+        jobFilter = index;
+        buttons[index].forceActiveFocus(Qt.TabFocusReason);
+    }
+    function emptyText() {
+        switch (jobFilter) {
+        case 1:
+            return labels.emptyErrors;
+        case 2:
+            return labels.emptyCompleted;
+        case 3:
+            return labels.emptyQueued;
+        case 4:
+            return labels.emptyActive;
+        }
+        return labels.empty;
+    }
     function showRow(index) {
         jobsList.currentIndex = index;
         jobsList.positionViewAtIndex(index, ListView.Contain);
     }
     function topControls() {
-        return [closeButton, openFolderButton, lyricsButton, archiveButton, retryStartupButton, renewNamespaceButton, retryAdmissionButton, retryFinalSaveButton, closeWithoutSaveButton].filter(function (item) {
+        return [closeButton, openFolderButton, lyricsButton, archiveButton, retryStartupButton, renewNamespaceButton, retryAdmissionButton, retryFinalSaveButton, closeWithoutSaveButton, filterButtons()[jobFilter]].filter(function (item) {
             return item && item.visible && item.enabled;
         });
     }
@@ -532,6 +574,95 @@ PageSurface {
 
             onClicked: root.requestCloseWithoutSave()
         }
+        Flow {
+            Accessible.name: labels.filterChoice
+            Accessible.role: Accessible.Grouping
+            Layout.fillWidth: true
+            objectName: "downloads-filters"
+            spacing: root.contract.spacingUnit
+            visible: root.downloads !== null
+
+            AccessibleTransportButton {
+                id: filterAllButton
+
+                KeyNavigation.backtab: root.nextTopControl(filterAllButton, true)
+                KeyNavigation.tab: root.nextTopControl(filterAllButton, false)
+                checkable: true
+                checked: root.jobFilter === 0
+                contract: root.contract
+                flat: true
+                objectName: "downloads-filter-all"
+                text: labels.filterAll
+
+                Keys.onLeftPressed: root.moveFilter(-1)
+                Keys.onRightPressed: root.moveFilter(1)
+                onClicked: root.jobFilter = 0
+            }
+            AccessibleTransportButton {
+                id: filterErrorsButton
+
+                KeyNavigation.backtab: root.nextTopControl(filterErrorsButton, true)
+                KeyNavigation.tab: root.nextTopControl(filterErrorsButton, false)
+                checkable: true
+                checked: root.jobFilter === 1
+                contract: root.contract
+                flat: true
+                objectName: "downloads-filter-errors"
+                text: labels.filterErrors
+
+                Keys.onLeftPressed: root.moveFilter(-1)
+                Keys.onRightPressed: root.moveFilter(1)
+                onClicked: root.jobFilter = 1
+            }
+            AccessibleTransportButton {
+                id: filterCompletedButton
+
+                KeyNavigation.backtab: root.nextTopControl(filterCompletedButton, true)
+                KeyNavigation.tab: root.nextTopControl(filterCompletedButton, false)
+                checkable: true
+                checked: root.jobFilter === 2
+                contract: root.contract
+                flat: true
+                objectName: "downloads-filter-completed"
+                text: labels.filterCompleted
+
+                Keys.onLeftPressed: root.moveFilter(-1)
+                Keys.onRightPressed: root.moveFilter(1)
+                onClicked: root.jobFilter = 2
+            }
+            AccessibleTransportButton {
+                id: filterQueuedButton
+
+                KeyNavigation.backtab: root.nextTopControl(filterQueuedButton, true)
+                KeyNavigation.tab: root.nextTopControl(filterQueuedButton, false)
+                checkable: true
+                checked: root.jobFilter === 3
+                contract: root.contract
+                flat: true
+                objectName: "downloads-filter-queued"
+                text: labels.filterQueued
+
+                Keys.onLeftPressed: root.moveFilter(-1)
+                Keys.onRightPressed: root.moveFilter(1)
+                onClicked: root.jobFilter = 3
+            }
+            AccessibleTransportButton {
+                id: filterActiveButton
+
+                KeyNavigation.backtab: root.nextTopControl(filterActiveButton, true)
+                KeyNavigation.tab: root.nextTopControl(filterActiveButton, false)
+                checkable: true
+                checked: root.jobFilter === 4
+                contract: root.contract
+                flat: true
+                objectName: "downloads-filter-active"
+                text: labels.filterActive
+
+                Keys.onLeftPressed: root.moveFilter(-1)
+                Keys.onRightPressed: root.moveFilter(1)
+                onClicked: root.jobFilter = 4
+            }
+        }
         ListView {
             id: jobsList
 
@@ -549,7 +680,7 @@ PageSurface {
             activeFocusOnTab: true
             clip: true
             keyNavigationWraps: true
-            model: root.downloads !== null ? root.downloads.jobsModel : null
+            model: root.downloads !== null && !!root.downloads.jobsModel ? filteredJobs : null
             objectName: "downloads-list"
             spacing: root.contract.spacingUnit * 2
 
@@ -973,7 +1104,8 @@ PageSurface {
                 anchors.centerIn: parent
                 color: root.contract.textSecondaryColor
                 horizontalAlignment: Text.AlignHCenter
-                text: labels.empty
+                objectName: "downloads-empty"
+                text: root.emptyText()
                 textFormat: Text.PlainText
                 visible: jobsList.count === 0
                 width: parent.width
@@ -1038,6 +1170,7 @@ PageSurface {
     }
     blockingUiOpen: archiveConfirmation.visible || discardConfirmation.visible || importConfirmation.visible || exitConfirmation.visible || informationDialog.visible || lyricsDialog.visible
     onSurfaceOpened: closeButton.forceActiveFocus(Qt.TabFocusReason)
+    onJobFilterChanged: jobStateFilter.invalidate()
     onWarningChanged: invalidateCloseConsent()
 
     NavigationText {
@@ -1045,6 +1178,31 @@ PageSurface {
     }
     DownloadText {
         id: labels
+    }
+    // The proxy accepts only item models, so it never receives null.
+    ListModel {
+        id: noJobs
+    }
+    SortFilterProxyModel {
+        id: filteredJobs
+
+        model: root.downloads !== null && !!root.downloads.jobsModel ? root.downloads.jobsModel : noJobs
+
+        filters: [
+            FunctionFilter {
+                id: jobStateFilter
+
+                enabled: root.jobFilter !== 0
+
+                function filter(data: RoleData): bool {
+                    return root.jobMatchesFilter(data.state);
+                }
+            }
+        ]
+    }
+
+    component RoleData: QtObject {
+        property string state
     }
     Connections {
         target: root.downloads !== null ? root.downloads.jobsModel : null

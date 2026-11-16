@@ -71,6 +71,12 @@ A retirada da extensão saiu do plano (revisão do ADR-0019 em 2026-11-16). Ela 
 - Teste real (2026-11-16): runtime `prod` reconstruído com yt-dlp 2026.10.26 (wheel conferido pelo hash do lock, venv sem rede, 36 arquivos), perfil de downloads com os workers do código atual e app Release montado por `New-RcMusicLocalRuntime.ps1`. No app, a busca "Asterisk Orange Range" trouxe 12 resultados com canal e duração. Baixar o primeiro publicou o MP3 em 13 s, e a Atividade mostrou "Concluído · MP3 pronto · Na fila de reprodução · Na biblioteca". O teste usou o perfil real do mantenedor, com cópia de segurança antes. O runtime ainda não está assinado (ADR-0020): o perfil usou os hashes do recibo.
 - Achado: um download antigo interrompido antes de criar arquivos (sem registro de propriedade) responde "A origem dos arquivos não pôde ser confirmada" em Verificar arquivos e não oferece como encerrar o item. Ele não bloqueia outros downloads, mas fica preso no histórico.
 
+## Contrato de L6
+
+- A Atividade ganha os filtros Todos, Com erro, Concluídos, Na fila e Baixando, acima da lista. Com erro reúne falhou, importação falhou e interrompido; Concluídos reúne concluído, importando e importado; Na fila é só a fila; Baixando reúne baixando, convertendo, publicando e cancelando. Cancelados aparecem só em Todos.
+- O filtro é um `SortFilterProxyModel` do QtQml.Models sobre o mesmo modelo de jobs, com `FunctionFilter` pelo papel `state`. Um job que muda de estado troca de filtro sozinho. As ações continuam usando o ID estável do job, não a posição na lista filtrada.
+- Teclado: o grupo é uma parada do Tab (o filtro ativo), e as setas trocam de filtro, como num grupo de opções. Cada filtro tem sua mensagem de lista vazia.
+
 ## Estado
 
 - L1 concluída: commit `d4cbc8c`.
@@ -80,4 +86,5 @@ A retirada da extensão saiu do plano (revisão do ADR-0019 em 2026-11-16). Ela 
 - L4b, parte 1 (metadados): 707/707 CTest.
 - L4b concluída (metadados, localizar, playlist e Capas): CTest 707/707, Quick 530/530.
 - L5 concluída no código (resolvedor, broker, sessão, binding e página Buscar) e testada no app real com o runtime reconstruído.
+- L6 concluída: filtros da Atividade.
 - L4b, restante: Atividade com destinos do MP3 (`63dc156`) e capas reais em memória.

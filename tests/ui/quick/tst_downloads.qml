@@ -478,6 +478,97 @@ TestCase {
         shell.library = null;
         tryCompare(findChild(rowAt(0), "download-destinations"), "text", "MP3 pronto · Na fila de reprodução");
     }
+    function shownJobIds() {
+        const list = findChild(shell, "downloads-list");
+        verify(waitForPolish(shell));
+        const ids = [];
+        for (let index = 0; index < list.count; ++index)
+            ids.push(rowAt(index).jobId);
+        return ids;
+    }
+    function test_activityFiltersByErrorsCompletedQueuedAndDownloading() {
+        addJob("failed", "failed", "Falhou", false, false, false, 0);
+        addJob("done", "completed", "Concluído", false, false, false, 1);
+        addJob("waiting", "queued", "Na fila", true, false, true, 0);
+        addJob("running", "downloading", "Baixando", true, false, false, 0.3);
+        addJob("imported", "imported", "Já importado na fila", false, false, false, 1);
+        addJob("stuck", "interrupted", "Interrompido; revisão necessária", false, false, false, 0);
+        addJob("broken-import", "import_failed", "Arquivo pronto; importação pendente", false, true, false, 1);
+        addJob("converting", "converting", "Convertendo", true, false, true, 0);
+        openDownloads();
+        const all = findChild(shell, "downloads-filter-all");
+        const errors = findChild(shell, "downloads-filter-errors");
+        const completed = findChild(shell, "downloads-filter-completed");
+        const queued = findChild(shell, "downloads-filter-queued");
+        const active = findChild(shell, "downloads-filter-active");
+        for (const button of [all, errors, completed, queued, active])
+            verifyTarget(button);
+        compare([all.text, errors.text, completed.text, queued.text, active.text], ["Todos", "Com erro", "Concluídos", "Na fila", "Baixando"]);
+        verify(all.checked);
+        compare(shownJobIds().length, 8);
+
+        clickVisible(errors);
+        verify(errors.checked && !all.checked);
+        compare(shownJobIds(), ["failed", "stuck", "broken-import"]);
+        clickVisible(completed);
+        compare(shownJobIds(), ["done", "imported"]);
+        clickVisible(queued);
+        compare(shownJobIds(), ["waiting"]);
+        clickVisible(active);
+        compare(shownJobIds(), ["running", "converting"]);
+
+        // A job that changes state follows its new filter.
+        jobs.setProperty(3, "state", "completed");
+        tryCompare(findChild(shell, "downloads-list"), "count", 1);
+        compare(shownJobIds(), ["converting"]);
+
+        clickVisible(queued);
+        jobs.setProperty(2, "state", "downloading");
+        tryCompare(findChild(shell, "downloads-list"), "count", 0);
+        compare(findChild(shell, "downloads-empty").text, "Nenhum download na fila.");
+        clickVisible(errors);
+        tryCompare(findChild(shell, "downloads-empty"), "visible", false);
+
+        // Actions keep using the stable job ID of the filtered row.
+        clickVisible(active);
+        compare(shownJobIds(), ["waiting", "converting"]);
+        const cancel = findChild(rowAt(1), "download-cancel");
+        clickVisible(cancel);
+        compare(jobs.cancelledIds, ["converting"]);
+
+        clickVisible(all);
+        compare(shownJobIds().length, 8);
+    }
+    function test_activityFiltersAreOneTabStopWithArrowKeys() {
+        addJob("failed", "failed", "Falhou", false, false, false, 0);
+        addJob("done", "completed", "Concluído", false, false, false, 1);
+        openDownloads();
+        const list = findChild(shell, "downloads-list");
+        findChild(shell, "downloads-open-folder").forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        tryCompare(findChild(shell, "downloads-filter-all"), "activeFocus", true);
+        keyClick(Qt.Key_Right);
+        const errors = findChild(shell, "downloads-filter-errors");
+        tryCompare(errors, "activeFocus", true);
+        verify(errors.checked);
+        compare(shownJobIds(), ["failed"]);
+        keyClick(Qt.Key_Right);
+        tryCompare(findChild(shell, "downloads-filter-completed"), "activeFocus", true);
+        compare(shownJobIds(), ["done"]);
+        keyClick(Qt.Key_Left);
+        keyClick(Qt.Key_Left);
+        keyClick(Qt.Key_Left);
+        tryCompare(findChild(shell, "downloads-filter-active"), "activeFocus", true);
+        compare(shownJobIds().length, 0);
+        compare(findChild(shell, "downloads-empty").text, "Nenhum download em andamento.");
+        keyClick(Qt.Key_Right);
+        keyClick(Qt.Key_Right);
+        tryCompare(findChild(shell, "downloads-filter-errors"), "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        tryCompare(list, "activeFocus", true);
+        keyClick(Qt.Key_Backtab);
+        tryCompare(errors, "activeFocus", true);
+    }
     function test_importedHistoryIsFinalWithoutActionsOrFileCapability() {
         addJob("history", "imported", "Já importado na fila", false, false, false, 1);
         openDownloads();
@@ -759,6 +850,8 @@ TestCase {
         keyClick(Qt.Key_Tab);
         tryCompare(findChild(shell, "downloads-open-folder"), "activeFocus", true);
         keyClick(Qt.Key_Tab);
+        tryCompare(findChild(shell, "downloads-filter-all"), "activeFocus", true);
+        keyClick(Qt.Key_Tab);
         tryCompare(list, "activeFocus", true);
         const first = rowAt(0);
         // Unfocused rows: no border on the Aurora canvas, a 1 px card in the legacy dialog.
@@ -795,6 +888,8 @@ TestCase {
         const list = findChild(shell, "downloads-list");
         keyClick(Qt.Key_Tab);
         tryCompare(findChild(shell, "downloads-open-folder"), "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        tryCompare(findChild(shell, "downloads-filter-all"), "activeFocus", true);
         keyClick(Qt.Key_Tab);
         tryCompare(list, "activeFocus", true);
         verify(list.itemAtIndex(count - 1) === null);
@@ -906,8 +1001,13 @@ TestCase {
         recover.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Tab);
         tryVerify(function () {
+            return findChild(shell, "downloads-filter-all").activeFocus;
+        });
+        keyClick(Qt.Key_Tab);
+        tryVerify(function () {
             return findChild(shell, "downloads-list").activeFocus;
         });
+        keyClick(Qt.Key_Backtab);
         keyClick(Qt.Key_Backtab);
         tryVerify(function () {
             return recover.activeFocus;
