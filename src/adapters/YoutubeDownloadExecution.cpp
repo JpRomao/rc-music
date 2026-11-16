@@ -52,6 +52,7 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
             fail(DownloadFailure::InvalidResult);
             return false;
         }
+        video_ = video;
         try {
             if (item.youtube) {
                 const auto& youtube = *item.youtube;
@@ -61,23 +62,11 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
                 if (youtube.file_name.empty() && !publication_.metadata.artist.isEmpty())
                     publication_.file_name += QStringLiteral(" - ") + publication_.metadata.artist;
             }
-            process_ = source_factory_(); // Passive construction on the worker.
-            if (!process_) {
-                fail(DownloadFailure::Unavailable);
-                return false;
-            }
-            resolver_ = std::make_unique<YoutubeResolverSession>(*process_, limits_);
-            if (!resolver_->start(id, video, now_ms, clock_())) {
-                fail(DownloadFailure::InvalidResult);
-                return false;
-            }
         } catch (...) {
-            // Factories are passive. The session catches uncertainty once a
-            // process start is attempted and owns it through its terminal ACK.
             fail(DownloadFailure::Unavailable);
             return false;
         }
-        return true;
+        return startResolver(now_ms);
     }
     void cancel() override {
         if (terminal(update_.state))
@@ -163,8 +152,21 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
             return update_; // A malformed DTO cannot acknowledge this owner.
         }
         if (!terminal(child.state)) {
-            if (!stopping)
+            // After a new resolution the transfer restarts from zero; the reported
+            // progress holds until the new attempt passes it, so it never goes back.
+            if (!stopping && (child.phase > update_.phase ||
+                              (child.phase == update_.phase && child.completed_units >= update_.completed_units)))
                 update_ = child;
+            return update_;
+        }
+        // A refused stream URL (HTTP 401/403) usually expired or was bound to another
+        // session: resolve the video once more and download it again from the start.
+        if (child.state == DownloadExecutionState::Failed && child.error == DownloadFailure::SourceRejected &&
+            !stopping && !resolved_again_) {
+            resolved_again_ = true;
+            destination_.reset(); // Terminal, so its native work is already acknowledged.
+            destination_stop_requested_ = false;
+            static_cast<void>(startResolver(now_ms));
             return update_;
         }
         // A publication racing cancellation remains evidence for the existing
@@ -186,6 +188,27 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
     }
 
   private:
+    bool startResolver(const qint64 now_ms) {
+        try {
+            resolver_.reset();            // Before its process: the session borrows it.
+            process_ = source_factory_(); // Passive construction on the worker.
+            if (!process_) {
+                fail(DownloadFailure::Unavailable);
+                return false;
+            }
+            resolver_ = std::make_unique<YoutubeResolverSession>(*process_, limits_);
+            if (!resolver_->start(update_.job_id, video_, now_ms, clock_())) {
+                fail(DownloadFailure::InvalidResult);
+                return false;
+            }
+        } catch (...) {
+            // Factories are passive. The session catches uncertainty once a
+            // process start is attempted and owns it through its terminal ACK.
+            fail(DownloadFailure::Unavailable);
+            return false;
+        }
+        return true;
+    }
     void fail(DownloadFailure error) {
         update_.state = DownloadExecutionState::Failed;
         update_.error = error;
@@ -211,8 +234,9 @@ class YoutubeSessionTask final : public WindowsDownloadTask {
     DownloadExecutionUpdate update_;
     std::filesystem::path retained_;
     YoutubePublication publication_;
+    QString video_;
     DownloadFailure stop_error_{DownloadFailure::None};
-    bool started_{}, cancelled_{}, destination_stop_requested_{}, destination_start_refused_{};
+    bool started_{}, cancelled_{}, destination_stop_requested_{}, destination_start_refused_{}, resolved_again_{};
 };
 class RoutedSessionTask final : public WindowsDownloadTask {
   public:

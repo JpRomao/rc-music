@@ -32,7 +32,7 @@ O protocolo privado com o worker de rede leva o intervalo opcional: o byte de ve
 
 ## Recusa da fonte e bloqueio próprio (2026-11-16)
 
-HTTP 401/403 termina como `DownloadFailure::SourceRejected` (`source-rejected` no checkpoint), separado de `Restricted`, que fica reservado às verificações do próprio RC Music: alvo, DNS privado, redirect, isolamento e inventário. A UI mostra "A fonte recusou o acesso ao áudio…" para a recusa e "Bloqueado pelas verificações de segurança do RC Music…" para o bloqueio próprio. O observador privado `on_restricted` continua recebendo a causa exata nos dois casos. O novo valor foi acrescentado ao fim do enum e dos nomes persistidos, mantendo as posições anteriores; checkpoints antigos continuam válidos.
+HTTP 401/403 termina como `DownloadFailure::SourceRejected` (`source-rejected` no checkpoint), separado de `Restricted`, que fica reservado às verificações do próprio RC Music: alvo, DNS privado, redirect, isolamento e inventário. A UI mostra "A fonte recusou o acesso ao áudio…" para a recusa e "Bloqueado pelas verificações de segurança do RC Music…" para o bloqueio próprio. O observador privado `on_restricted` continua recebendo a causa exata nos dois casos. Quando o download do YouTube termina em `SourceRejected`, a tarefa resolve o vídeo mais uma vez e baixa de novo desde o início, uma única vez por job; uma segunda recusa chega à UI. O progresso informado fica parado até a nova tentativa passar do ponto anterior, para nunca regredir. O novo valor foi acrescentado ao fim do enum e dos nomes persistidos, mantendo as posições anteriores; checkpoints antigos continuam válidos.
 
 ## Hint User-Agent temporário e default mínimo
 

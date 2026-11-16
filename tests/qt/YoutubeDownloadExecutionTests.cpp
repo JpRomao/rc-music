@@ -26,6 +26,10 @@ struct State final {
     std::atomic_bool force_destination_terminal{};
     std::atomic_int invalid_destination_polls{};
     std::atomic_int invalid_destination_kind{};
+    // Each destination consumes one refusal (HTTP 401/403) before publishing.
+    std::atomic_int source_rejections{};
+    std::atomic_bool report_progress{};
+    std::atomic_int attempts{};
     std::mutex preparation_mutex;
     std::condition_variable preparation_changed;
     QString stream;
@@ -72,6 +76,9 @@ class Destination final : public WindowsDownloadTask {
     std::shared_ptr<State> state_;
     std::string id_;
     bool cancelled_{};
+    int polls_{};
+    int attempt_{};
+    bool rejects_{};
 
   public:
     explicit Destination(std::shared_ptr<State> state) : state_(std::move(state)) {}
@@ -128,6 +135,15 @@ class Destination final : public WindowsDownloadTask {
         }
         if (state_->await_destination_cancel)
             return {.job_id = id_};
+        if (polls_++ == 0) {
+            attempt_ = ++state_->attempts;
+            rejects_ = state_->source_rejections.fetch_sub(1) > 0;
+            if (state_->report_progress)
+                // The second attempt restarts from zero bytes.
+                return {.job_id = id_, .completed_units = attempt_ == 1 ? 6u : 2u, .total_units = 10};
+        }
+        if (rejects_)
+            return {.job_id = id_, .state = DownloadExecutionState::Failed, .error = DownloadFailure::SourceRejected};
         ++state_->transfer_starts;
         return {.job_id = id_,
                 .state = DownloadExecutionState::Published,
@@ -156,6 +172,49 @@ void stop(WindowsDownloadExecution& value) {
 class YoutubeDownloadExecutionTests final : public QObject {
     Q_OBJECT
   private slots:
+    void sourceRefusalResolvesTheVideoAgainOnce() {
+        auto state = std::make_shared<State>();
+        state->source_rejections = 1;
+        auto value = execution(state);
+        QVERIFY(value->start("job_1", watch));
+        QTRY_COMPARE(value->poll("job_1").state, DownloadExecutionState::Published);
+        QCOMPARE(state->resolver_starts.load(), 2);
+        QCOMPARE(state->destination_starts.load(), 2);
+        stop(*value);
+    }
+    void aSecondRefusalIsReportedWithoutAnotherResolution() {
+        auto state = std::make_shared<State>();
+        state->source_rejections = 2;
+        auto value = execution(state);
+        QVERIFY(value->start("job_1", watch));
+        QTRY_COMPARE(value->poll("job_1").state, DownloadExecutionState::Failed);
+        QCOMPARE(value->poll("job_1").error, DownloadFailure::SourceRejected);
+        QCOMPARE(state->resolver_starts.load(), 2);
+        QCOMPARE(state->destination_starts.load(), 2);
+        stop(*value);
+    }
+    void reportedProgressNeverGoesBackAfterANewResolution() {
+        auto state = std::make_shared<State>();
+        state->source_rejections = 1;
+        state->report_progress = true;
+        auto value = execution(state);
+        QVERIFY(value->start("job_1", watch));
+        QTRY_VERIFY(value->poll("job_1").state != DownloadExecutionState::Running);
+        QCOMPARE(value->poll("job_1").state, DownloadExecutionState::Published);
+        QCOMPARE(state->attempts.load(), 2);
+        stop(*value);
+    }
+    void otherFailuresAreNotResolvedAgain() {
+        auto state = std::make_shared<State>();
+        state->malformed = false;
+        state->invalid_destination_state = true;
+        state->invalid_destination_kind = 2;
+        auto value = execution(state);
+        QVERIFY(value->start("job_1", watch));
+        QTRY_COMPARE(value->poll("job_1").state, DownloadExecutionState::Failed);
+        QCOMPARE(state->resolver_starts.load(), 1);
+        stop(*value);
+    }
     void legacyDirectExecutionRefusesYoutubeContextBeforeCopyingIt() {
         auto state = std::make_shared<State>();
         WindowsDownloadExecution legacy([state] { return std::make_unique<Destination>(state); });
