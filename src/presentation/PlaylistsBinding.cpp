@@ -353,6 +353,12 @@ bool PlaylistsBinding::addQueueToPlaylist(const QString& value) {
     return alive && paths &&
            impl_->mutate([&](auto& candidate) { return candidate.append(*id, std::move(*paths)); }, *id);
 }
+bool PlaylistsBinding::appendToPlaylist(const QString& value, Paths paths) {
+    const auto id = identifier(value);
+    if (!id || paths.empty() || !impl_->editable() || !impl_->library.find(*id))
+        return false;
+    return impl_->mutate([&](auto& candidate) { return candidate.append(*id, std::move(paths)); }, impl_->selected);
+}
 bool PlaylistsBinding::requestAddFiles(const QString& value) {
     const auto id = identifier(value);
     if (!id || *id != impl_->selected || !canAddFiles())

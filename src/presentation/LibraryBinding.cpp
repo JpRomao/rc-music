@@ -115,6 +115,7 @@ struct LibraryBinding::Impl final {
     std::unordered_set<std::uint64_t> attempted;
     bool reading{};
     AudioFileLocator* locator{};
+    PlaylistAppender playlist_appender;
     std::uint64_t locate_generation{};
     bool locating{};
 
@@ -345,6 +346,18 @@ void LibraryBinding::setMetadataExtractor(std::shared_ptr<const MetadataExtracto
     impl_->extractor = std::move(extractor);
 }
 void LibraryBinding::setFileLocator(AudioFileLocator* locator) { impl_->locator = locator; }
+void LibraryBinding::setPlaylistAppender(PlaylistAppender appender) { impl_->playlist_appender = std::move(appender); }
+bool LibraryBinding::addToPlaylist(const QString& record_id, const QString& playlist_id) {
+    const auto id = recordId(record_id);
+    const auto* record = id ? impl_->confirmed.find(*id) : nullptr;
+    if (!record || playlist_id.isEmpty() || !impl_->playlist_appender || impl_->stopping)
+        return false;
+    try {
+        return impl_->playlist_appender(playlist_id, {record->source_path});
+    } catch (...) {
+        return false;
+    }
+}
 bool LibraryBinding::canLocate() const {
     return impl_->locator && impl_->ready && !impl_->locating && !impl_->stopping;
 }

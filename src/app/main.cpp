@@ -820,6 +820,9 @@ int main(int argc, char* argv[]) {
         library_binding->setMetadataExtractor(std::make_shared<music_player::m0::TagLibMetadataExtractor>());
         library_binding->setFileLocator(&library_audio_locator);
 #endif
+        library_binding->setPlaylistAppender([&](const QString& playlist_id, auto paths) {
+            return playlists_binding && playlists_binding->appendToPlaylist(playlist_id, std::move(paths));
+        });
         static_cast<void>(library_binding->start());
         presenter.setPlaylistExitPreparationProbe([&] {
             if (!playlists_binding->hasPendingChange())

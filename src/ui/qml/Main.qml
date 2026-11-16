@@ -865,6 +865,7 @@ ApplicationWindow {
         height: contentArea.height
         contract: window.uiContract
         library: window.library
+        playlists: window.playlists
         enabled: !window.presenter.exiting
         onClosed: {
             if (window.active && !window.presenter.exiting && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && libraryButton.visible)

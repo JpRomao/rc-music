@@ -49,6 +49,9 @@ class PlaylistsBinding final : public QObject {
     [[nodiscard]] bool hasPendingChange() const;
     // Paths of every confirmed entry (empty until loaded), for the library's first-use seed.
     [[nodiscard]] Paths entryPaths() const;
+    // Appends files to a saved playlist (for the library page). Confirmed only by
+    // Saved, like every edit here; the page's current selection is kept.
+    [[nodiscard]] bool appendToPlaylist(const QString& playlist_id, Paths paths);
     Q_INVOKABLE bool selectPlaylist(const QString& id);
     Q_INVOKABLE bool createPlaylist(const QString& name);
     Q_INVOKABLE bool renamePlaylist(const QString& id, const QString& name);

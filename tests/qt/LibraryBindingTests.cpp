@@ -417,6 +417,25 @@ class LibraryBindingTests final : public QObject {
         QCOMPARE(h.binding.confirmedSnapshot().records.size(), std::size_t{1});
         QVERIFY(!h.binding.locate(QStringLiteral("999")));
     }
+    void addingToAPlaylistSendsTheRecordsFile() {
+        Harness h;
+        std::vector<std::pair<QString, LibraryBinding::Paths>> sent;
+        h.binding.setPlaylistAppender([&](const QString& playlist, LibraryBinding::Paths paths) {
+            sent.emplace_back(playlist, std::move(paths));
+            return true;
+        });
+        h.startAndWait();
+        h.binding.admit({track(1)});
+        QTRY_COMPARE(h.binding.count(), 1);
+        const auto id = QString::number(h.binding.confirmedSnapshot().records.front().id);
+        QVERIFY(h.binding.addToPlaylist(id, QStringLiteral("4")));
+        QCOMPARE(sent.size(), std::size_t{1});
+        QCOMPARE(sent.front().first, QStringLiteral("4"));
+        QCOMPARE(sent.front().second, LibraryBinding::Paths{track(1)});
+        QVERIFY(!h.binding.addToPlaylist(QStringLiteral("999"), QStringLiteral("4")));
+        QVERIFY(!h.binding.addToPlaylist(id, QString{}));
+        QCOMPARE(h.binding.count(), 1);
+    }
     void exitWaitsOnlyForAnActiveSave() {
         Harness h;
         h.startAndWait();

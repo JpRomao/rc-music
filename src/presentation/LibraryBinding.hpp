@@ -36,6 +36,8 @@ class LibraryBinding final : public QObject {
     using Paths = std::vector<std::filesystem::path>;
     // Appends to the queue without playback (the playlist path of the presenter).
     using QueueAppender = std::function<bool(Paths)>;
+    // Appends to a saved playlist by its ID (the playlists binding).
+    using PlaylistAppender = std::function<bool(const QString&, Paths)>;
     // Passive construction; start() begins loading.
     explicit LibraryBinding(std::shared_ptr<LibraryStore> store, QueueAppender append_queue = {},
                             QObject* parent = nullptr);
@@ -47,6 +49,7 @@ class LibraryBinding final : public QObject {
     void setMetadataExtractor(std::shared_ptr<const MetadataExtractor> extractor);
     // Optional, borrowed for the binding's lifetime: the dialog used to locate a moved file.
     void setFileLocator(AudioFileLocator* locator);
+    void setPlaylistAppender(PlaylistAppender appender);
     // Explicit local ingress (open, add, drop, forwarding, playlist). Idempotent by exact path.
     void admit(Paths paths);
     // First-use seed from existing queue and playlist references. Ignored once
@@ -72,6 +75,8 @@ class LibraryBinding final : public QObject {
     // Removes only the catalog record; the audio file, queue, playlists and
     // playback are untouched.
     Q_INVOKABLE bool remove(const QString& record_id);
+    // Adds the record's file to the end of a saved playlist; the library is unchanged.
+    Q_INVOKABLE bool addToPlaylist(const QString& record_id, const QString& playlist_id);
     [[nodiscard]] bool canLocate() const;
     // Asks the user for the record's new location. The ID, tags and playlists stay
     // as they are; a path that belongs to another record is reported as a conflict.

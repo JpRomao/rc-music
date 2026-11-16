@@ -122,6 +122,24 @@ class PlaylistsBindingTests final : public QObject {
         load(binding);
         QCOMPARE(binding.entryPaths(), (PlaylistsBinding::Paths{a, b, a}));
     }
+    void libraryFilesAreAppendedOnlyAfterSavedKeepingTheSelection() {
+        auto store = std::make_shared<Store>();
+        const std::filesystem::path a{L"C:/Música/a.mp3"}, b{L"D:/b.flac"};
+        store->disk = {{{{3, "Primeira", {{1, a}}}, {4, "Segunda", {}}}}, PlaylistLoadStatus::Loaded};
+        PlaylistsBinding binding(store, [] { return PlaylistsBinding::Paths{}; }, [](auto) { return true; });
+        load(binding);
+        QVERIFY(binding.selectPlaylist(QStringLiteral("3")));
+        store->release = false;
+        QVERIFY(binding.appendToPlaylist(QStringLiteral("4"), {b}));
+        QVERIFY(binding.hasPendingChange());
+        QCOMPARE(binding.entryPaths(), (PlaylistsBinding::Paths{a})); // Not saved yet.
+        store->release = true;
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QCOMPARE(binding.entryPaths(), (PlaylistsBinding::Paths{a, b}));
+        QCOMPARE(binding.selectedPlaylistId(), QStringLiteral("3"));
+        QVERIFY(!binding.appendToPlaylist(QStringLiteral("99"), {b}));
+        QVERIFY(!binding.appendToPlaylist(QStringLiteral("4"), {}));
+    }
     void aPlaylistIsPublishedOnlyAfterSavedAndEditingDoesNotTouchTheQueue() {
         auto store = std::make_shared<Store>();
         int appends{};

@@ -18,6 +18,8 @@ PageSurface {
     objectName: "library-panel"
     required property ShellUiContract contract
     property var library: null
+    property var playlists: null
+    readonly property var playlistChoices: playlists !== null && playlists.ready ? playlists.playlists : []
     property string removeId: ""
     property string removeTitle: ""
     property string notice: ""
@@ -38,10 +40,15 @@ PageSurface {
     }
     onClosed: {
         removeConfirmation.close();
+        playlistMenu.close();
         if (library !== null)
             library.cancelLocate();
     }
 
+    function addToPlaylist(recordId, title, playlistId, playlistName) {
+        showStatus = false;
+        notice = library.addToPlaylist(recordId, playlistId) ? libraryText.addedToPlaylist.arg(title).arg(playlistName) : libraryText.addToPlaylistFailed;
+    }
     function requestRemove(recordId, title) {
         removeId = recordId;
         removeTitle = title;
@@ -306,6 +313,20 @@ PageSurface {
                         }
                     }
                     AccessibleTransportButton {
+                        id: playlistButton
+                        objectName: "library-add-to-playlist"
+                        contract: root.contract
+                        flat: true
+                        iconName: "playlist"
+                        enabled: root.playlistChoices.length > 0
+                        accessibleName: libraryText.addToPlaylist.arg(row.title)
+                        onClicked: {
+                            playlistMenu.recordId = row.recordId;
+                            playlistMenu.recordTitle = row.title;
+                            playlistMenu.popup(playlistButton, 0, playlistButton.height);
+                        }
+                    }
+                    AccessibleTransportButton {
                         objectName: "library-remove"
                         contract: root.contract
                         flat: true
@@ -318,6 +339,21 @@ PageSurface {
         }
         Item {
             Layout.fillHeight: true
+        }
+    }
+    Menu {
+        id: playlistMenu
+        objectName: "library-playlist-menu"
+        property string recordId: ""
+        property string recordTitle: ""
+        Repeater {
+            model: root.playlistChoices
+            delegate: MenuItem {
+                required property var modelData
+                objectName: "library-playlist-choice-" + modelData.id
+                text: modelData.name
+                onTriggered: root.addToPlaylist(playlistMenu.recordId, playlistMenu.recordTitle, modelData.id, modelData.name)
+            }
         }
     }
     DownloadConfirmation {

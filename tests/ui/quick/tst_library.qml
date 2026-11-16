@@ -47,6 +47,7 @@ TestCase {
         property var enqueued: []
         property var removed: []
         property var located: []
+        property var playlistAdds: []
         property bool canLocate: true
         function enqueue(id) {
             enqueued = enqueued.concat([id]);
@@ -63,10 +64,40 @@ TestCase {
         }
         function cancelLocate() {
         }
+        function addToPlaylist(id, playlist) {
+            playlistAdds = playlistAdds.concat([id + ":" + playlist]);
+            return true;
+        }
         function retryLoad() {
             return true;
         }
         function retrySave() {
+            return true;
+        }
+    }
+    QtObject {
+        id: lists
+        property bool ready: true
+        property bool busy: false
+        property bool interactionAllowed: true
+        property bool hasPendingChange: false
+        property bool canRetrySave: false
+        property bool canAddFiles: true
+        property bool canReplaceFile: true
+        property string statusText: ""
+        property string selectedPlaylistId: ""
+        property var playlists: [
+            {
+                id: "7",
+                name: "Favoritas 日本",
+                count: 0
+            }
+        ]
+        property var entries: []
+        function selectPlaylist(id) {
+            return true;
+        }
+        function retryLoad() {
             return true;
         }
     }
@@ -76,6 +107,7 @@ TestCase {
             uiContract: testCase.contract
             presenter: testCase.presenter
             library: catalog
+            playlists: lists
         }
     }
     function init() {
@@ -87,6 +119,7 @@ TestCase {
         catalog.enqueued = [];
         catalog.removed = [];
         catalog.located = [];
+        catalog.playlistAdds = [];
         catalog.statusText = "Sua biblioteca está pronta.";
         shell = createTemporaryObject(shellComponent, null);
         verify(shell);
@@ -164,6 +197,17 @@ TestCase {
         compare(catalog.located, ["4"]);
         tryVerify(() => findChild(panel, "library-status").visible);
         compare(findChild(panel, "library-status").text, "Arquivo localizado.");
+    }
+    function test_aTrackCanBeAddedToASavedPlaylist() {
+        const panel = openLibrary();
+        mouseClick(findChild(row(panel, "3"), "library-add-to-playlist"));
+        const menu = findChild(panel, "library-playlist-menu");
+        tryCompare(menu, "opened", true);
+        const choice = findChild(menu.contentItem, "library-playlist-choice-7");
+        verify(choice);
+        mouseClick(choice);
+        compare(catalog.playlistAdds, ["3:7"]);
+        verify(findChild(panel, "library-notice").text.indexOf("Favoritas") >= 0);
     }
     function test_typingFiltersThroughTheBinding() {
         const panel = openLibrary();
