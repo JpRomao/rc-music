@@ -161,9 +161,21 @@ int searchExtractor(const QString& test_case) {
         return 79;
     return 0;
 }
+int lookupExtractor() {
+    if (QCoreApplication::arguments().mid(1) !=
+            QStringList{QStringLiteral("--lookup"), QStringLiteral("testVideo01,testVideo02")} ||
+        QFileInfo(QDir::currentPath()).fileName() != QLatin1String("extractor") ||
+        !report(QStringLiteral("extractor.pid.json"), QStringLiteral("extractor")))
+        return 70;
+    const QJsonObject data{{"entries", QJsonArray{QJsonObject{{"id", "testVideo01"}, {"title", "Primeiro"}},
+                                                  QJsonObject{{"id", "testVideo02"}, {"title", "Segundo"}}}}};
+    return writeBytes(frame({{"v", 1}, {"kind", "result"}, {"seq", 1}, {"data", data}})) ? 0 : 79;
+}
 int extractor(const QString& test_case) {
     if (test_case.startsWith(QLatin1String("search")))
         return searchExtractor(test_case);
+    if (test_case == QLatin1String("lookup"))
+        return lookupExtractor();
     if (QCoreApplication::arguments().mid(1) != QStringList{QStringLiteral("testVideo01")} ||
         QFileInfo(QDir::currentPath()).fileName() != QLatin1String("extractor") ||
         !report(QStringLiteral("extractor.pid.json"), QStringLiteral("extractor")))

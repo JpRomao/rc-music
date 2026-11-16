@@ -120,7 +120,10 @@ struct WindowsYoutubeBrokerProcess::Impl final {
         extractor_launch_pending{};
 
     Impl(Prepare source, const WindowsYoutubeBrokerMode value) : prepare(std::move(source)), mode(value) {}
-    bool searching() const { return mode == WindowsYoutubeBrokerMode::Search; }
+    // Search and lookup list metadata only: extractor alone, no EJS or Node.
+    bool searching() const {
+        return mode == WindowsYoutubeBrokerMode::Search || mode == WindowsYoutubeBrokerMode::Lookup;
+    }
     void releaseRuntime() {
         // Raw process objects must already have acknowledged native exit and
         // every owned pipe before the authenticated tree may be released.
@@ -184,8 +187,11 @@ struct WindowsYoutubeBrokerProcess::Impl final {
         config.use_extended_executable_path = true;
         config.arguments = role != WindowsYoutubeRuntimeRole::Extractor
                                ? QStringList{QStringLiteral("--permission"), QStringLiteral("-")}
-                           : searching() ? QStringList{QStringLiteral("--search"), owned(video_id)}
-                                         : QStringList{owned(video_id)};
+                           : searching()
+                               ? QStringList{mode == WindowsYoutubeBrokerMode::Lookup ? QStringLiteral("--lookup")
+                                                                                      : QStringLiteral("--search"),
+                                             owned(video_id)}
+                               : QStringList{owned(video_id)};
         config.working_directory = retained->files->directory() + (role == WindowsYoutubeRuntimeRole::Extractor
                                                                        ? QStringLiteral("/extractor")
                                                                        : QStringLiteral("/javascript"));
@@ -521,8 +527,15 @@ bool WindowsYoutubeBrokerProcess::start(const QString& video_id, const qint64 no
     if (value.attempted)
         return false;
     value.attempted = true;
-    const bool valid = value.searching() ? !video_id.isEmpty() && normalizedYoutubeSearchQuery(video_id) == video_id
-                                         : validVideoId(video_id);
+    const bool valid = value.mode == WindowsYoutubeBrokerMode::Lookup
+                           ? !video_id.isEmpty() && youtubeLookupArgument([&video_id] {
+                                                        std::vector<std::string> ids;
+                                                        for (const auto& id : video_id.split(QLatin1Char(',')))
+                                                            ids.push_back(id.toStdString());
+                                                        return ids;
+                                                    }()) == video_id
+                       : value.searching() ? !video_id.isEmpty() && normalizedYoutubeSearchQuery(video_id) == video_id
+                                           : validVideoId(video_id);
     if (now_ms < 0 || !valid) {
         value.noNativeFailure(DownloadFailure::InvalidResult);
         return false;

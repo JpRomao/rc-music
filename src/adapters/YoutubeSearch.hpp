@@ -17,6 +17,8 @@ inline constexpr std::size_t youtube_search_max_results = 12;
 inline constexpr qsizetype youtube_search_max_query_bytes = 400;
 inline constexpr qsizetype youtube_search_max_text_bytes = 512;
 inline constexpr int youtube_search_max_duration_seconds = 7 * 24 * 3600;
+// L7 lookup mode (`--lookup <id1,id2,...>`): titles of pasted links.
+inline constexpr std::size_t youtube_lookup_max_ids = 20;
 
 struct YoutubeSearchResult final {
     QString video_id{}, title{}, channel{};
@@ -30,13 +32,18 @@ struct YoutubeSearchResult final {
 [[nodiscard]] QString normalizedYoutubeSearchQuery(const QString& text);
 // Strict decode of the resolver's `{"entries": [...]}` data. Metadata only: an
 // unknown field, duplicate or invalid ID, or too many entries fails the list.
-[[nodiscard]] std::optional<std::vector<YoutubeSearchResult>> decodeYoutubeSearchResults(const QByteArray& json);
+[[nodiscard]] std::optional<std::vector<YoutubeSearchResult>>
+decodeYoutubeSearchResults(const QByteArray& json, std::size_t max_entries = youtube_search_max_results);
+// The resolver's lookup argument: 1 to 20 unique valid IDs joined by commas.
+// Empty when the list is not acceptable.
+[[nodiscard]] QString youtubeLookupArgument(const std::vector<std::string>& video_ids);
 
 enum class YoutubeSearchState { Idle, Searching, Stopping, Ready, Failed, Cancelled };
 struct YoutubeSearchLimits final {
     quint64 max_stdout_bytes{256 * 1024};
     quint64 max_stderr_bytes{128 * 1024};
     qint64 total_timeout_ms{30 * 1000};
+    std::size_t max_results{youtube_search_max_results};
 };
 struct YoutubeSearchSnapshot final {
     YoutubeSearchState state{YoutubeSearchState::Idle};
@@ -66,11 +73,15 @@ class YoutubeSearchSession final {
 class ThreadedYoutubeSearch final : public OnlineSearch {
   public:
     using ProcessFactory = std::function<std::unique_ptr<YoutubeResolverProcess>()>;
-    explicit ThreadedYoutubeSearch(ProcessFactory factory, YoutubeSearchLimits limits = {});
+    // The lookup factory starts a resolver in lookup mode; without it, lookup()
+    // is unavailable.
+    explicit ThreadedYoutubeSearch(ProcessFactory factory, YoutubeSearchLimits limits = {},
+                                   ProcessFactory lookup_factory = {});
     ~ThreadedYoutubeSearch() override;
     ThreadedYoutubeSearch(const ThreadedYoutubeSearch&) = delete;
     ThreadedYoutubeSearch& operator=(const ThreadedYoutubeSearch&) = delete;
     [[nodiscard]] std::optional<std::uint64_t> start(const std::string& query) override;
+    [[nodiscard]] std::optional<std::uint64_t> lookup(const std::vector<std::string>& video_ids) override;
     [[nodiscard]] std::optional<OnlineSearchOutcome> poll() override;
     void cancel() override;
 

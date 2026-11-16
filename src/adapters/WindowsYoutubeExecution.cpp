@@ -60,4 +60,10 @@ YoutubeResolverProcessFactory makeWindowsYoutubeBrokerSearchFactory(WindowsYoutu
     return brokerFactory(std::move(config), std::move(environment), std::move(prepare),
                          WindowsYoutubeBrokerMode::Search);
 }
+YoutubeResolverProcessFactory makeWindowsYoutubeBrokerLookupFactory(WindowsYoutubeRuntimeConfig config,
+                                                                    QProcessEnvironment environment,
+                                                                    WindowsYoutubeRuntimePreparer prepare) {
+    return brokerFactory(std::move(config), std::move(environment), std::move(prepare),
+                         WindowsYoutubeBrokerMode::Lookup);
+}
 } // namespace music_player::m0

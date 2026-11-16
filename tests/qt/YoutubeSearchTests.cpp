@@ -238,6 +238,48 @@ class YoutubeSearchTests final : public QObject {
         QCOMPARE(update.state, YoutubeSearchState::Cancelled);
         QVERIFY(update.results.empty());
     }
+    void lookupArgumentsAreUniqueValidIdsJoinedByCommas() {
+        QCOMPARE(youtubeLookupArgument({first.toStdString(), second.toStdString()}), first + "," + second);
+        QVERIFY(youtubeLookupArgument({}).isEmpty());
+        QVERIFY(youtubeLookupArgument({first.toStdString(), first.toStdString()}).isEmpty());
+        QVERIFY(youtubeLookupArgument({"bad"}).isEmpty());
+        QVERIFY(youtubeLookupArgument({"aB0-_Cd1EF2,x"}).isEmpty());
+        std::vector<std::string> many;
+        for (int index = 0; index < 20; ++index)
+            many.push_back(QStringLiteral("%1").arg(index, 11, 10, QLatin1Char('0')).toStdString());
+        QVERIFY(!youtubeLookupArgument(many).isEmpty());
+        many.push_back("aB0-_Cd1EF9");
+        QVERIFY(youtubeLookupArgument(many).isEmpty());
+    }
+    void lookupDecodesUpToTwentyEntries() {
+        QJsonArray twenty;
+        for (int index = 0; index < 20; ++index)
+            twenty.append(entry(QStringLiteral("%1").arg(index, 11, 10, QLatin1Char('0')), QStringLiteral("Faixa")));
+        QVERIFY(!decodeYoutubeSearchResults(entries(twenty)));
+        QCOMPARE(decodeYoutubeSearchResults(entries(twenty), youtube_lookup_max_ids)->size(), std::size_t{20});
+        twenty.append(entry(QStringLiteral("aB0-_Cd1EF9"), QStringLiteral("Demais")));
+        QVERIFY(!decodeYoutubeSearchResults(entries(twenty), youtube_lookup_max_ids));
+    }
+    void threadedLookupUsesItsOwnProcessAndTheIdList() {
+        Script searches, lookups;
+        lookups.output = entries({entry(second, QStringLiteral("Segundo")), entry(first, QStringLiteral("Primeiro"))});
+        ThreadedYoutubeSearch search([&] { return std::make_unique<ScriptedProcess>(searches); }, {},
+                                     [&] { return std::make_unique<ScriptedProcess>(lookups); });
+        QVERIFY(!search.lookup({}));
+        QVERIFY(!search.lookup({"bad"}));
+        const auto ticket = search.lookup({first.toStdString(), second.toStdString()});
+        QVERIFY(ticket);
+        const auto outcome = waitOutcome(search);
+        QCOMPARE(outcome->ticket, *ticket);
+        QCOMPARE(outcome->error, OnlineSearchError::None);
+        QCOMPARE(outcome->results.size(), std::size_t{2});
+        QCOMPARE(lookups.argument, first + "," + second);
+        QCOMPARE(lookups.created.load(), 1);
+        QCOMPARE(searches.created.load(), 0);
+        // Without a lookup runtime, pasted links cannot be looked up.
+        ThreadedYoutubeSearch searchOnly([&] { return std::make_unique<ScriptedProcess>(searches); });
+        QVERIFY(!searchOnly.lookup({first.toStdString()}));
+    }
     void threadedSearchRunsOneSearchAtATime() {
         Script script;
         script.release = false;

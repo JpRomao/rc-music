@@ -6,6 +6,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSet>
+#include <QStringList>
 #include <QThread>
 
 #include <atomic>
@@ -67,7 +68,23 @@ QString normalizedYoutubeSearchQuery(const QString& text) {
     return query;
 }
 
-std::optional<std::vector<YoutubeSearchResult>> decodeYoutubeSearchResults(const QByteArray& json) {
+QString youtubeLookupArgument(const std::vector<std::string>& video_ids) {
+    if (video_ids.empty() || video_ids.size() > youtube_lookup_max_ids)
+        return {};
+    QStringList ids;
+    QSet<QString> seen;
+    for (const auto& value : video_ids) {
+        const auto id = QString::fromStdString(value);
+        if (!validVideoId(id) || seen.contains(id))
+            return {};
+        seen.insert(id);
+        ids.append(id);
+    }
+    return ids.join(QLatin1Char(','));
+}
+
+std::optional<std::vector<YoutubeSearchResult>> decodeYoutubeSearchResults(const QByteArray& json,
+                                                                           const std::size_t max_entries) {
     QJsonParseError error{};
     const auto document = QJsonDocument::fromJson(json, &error);
     if (error.error != QJsonParseError::NoError || !document.isObject())
@@ -76,7 +93,7 @@ std::optional<std::vector<YoutubeSearchResult>> decodeYoutubeSearchResults(const
     if (root.size() != 1 || !root.value(QStringLiteral("entries")).isArray())
         return std::nullopt;
     const auto entries = root.value(QStringLiteral("entries")).toArray();
-    if (static_cast<std::size_t>(entries.size()) > youtube_search_max_results)
+    if (static_cast<std::size_t>(entries.size()) > std::min(max_entries, youtube_lookup_max_ids))
         return std::nullopt;
     static const QSet<QString> allowed{QStringLiteral("id"), QStringLiteral("title"), QStringLiteral("channel"),
                                        QStringLiteral("duration")};
@@ -160,7 +177,8 @@ bool YoutubeSearchSession::start(const QString& query, const qint64 now_ms) {
     if (state.update.state != YoutubeSearchState::Idle || now_ms < 0 || query.isEmpty() ||
         normalizedYoutubeSearchQuery(query) != query || state.limits.max_stdout_bytes == 0 ||
         state.limits.max_stdout_bytes > 1024 * 1024 || state.limits.max_stderr_bytes == 0 ||
-        state.limits.max_stderr_bytes > 128 * 1024 || state.limits.total_timeout_ms <= 0)
+        state.limits.max_stderr_bytes > 128 * 1024 || state.limits.total_timeout_ms <= 0 ||
+        state.limits.max_results == 0 || state.limits.max_results > youtube_lookup_max_ids)
         return false;
     state.query = QString(query.constData(), query.size());
     state.started_ms = state.previous_ms = now_ms;
@@ -222,7 +240,7 @@ YoutubeSearchSnapshot YoutubeSearchSession::poll(const qint64 now_ms) {
         return state.update;
     }
     try {
-        auto decoded = decodeYoutubeSearchResults(state.output);
+        auto decoded = decodeYoutubeSearchResults(state.output, state.limits.max_results);
         state.output.clear();
         if (!decoded) {
             state.update.error = DownloadFailure::InvalidResult;
@@ -253,7 +271,7 @@ void YoutubeSearchSession::cancel() {
 YoutubeSearchSnapshot YoutubeSearchSession::snapshot() const { return impl_->update; }
 
 struct ThreadedYoutubeSearch::Impl final {
-    ProcessFactory factory;
+    ProcessFactory factory, lookup_factory;
     YoutubeSearchLimits limits;
     std::mutex mutex;
     std::unique_ptr<QThread> worker;
@@ -262,8 +280,8 @@ struct ThreadedYoutubeSearch::Impl final {
     std::uint64_t serial{0};
     bool running{false};
 
-    Impl(ProcessFactory source, const YoutubeSearchLimits configuration)
-        : factory(std::move(source)), limits(configuration) {}
+    Impl(ProcessFactory source, const YoutubeSearchLimits configuration, ProcessFactory lookup_source)
+        : factory(std::move(source)), lookup_factory(std::move(lookup_source)), limits(configuration) {}
     void publish(OnlineSearchOutcome outcome) {
         std::lock_guard lock(mutex);
         finished = std::move(outcome);
@@ -281,12 +299,13 @@ struct ThreadedYoutubeSearch::Impl final {
     }
     // Worker thread. The process and session live and die here, after the
     // session reached a terminal state that acknowledges the native exit.
-    void run(const QString& query, const std::uint64_t ticket) {
+    void run(const QString& query, const std::uint64_t ticket, const ProcessFactory& source,
+             const YoutubeSearchLimits session_limits) {
         OnlineSearchOutcome outcome{.ticket = ticket};
         std::unique_ptr<YoutubeResolverProcess> process;
         try {
-            if (factory)
-                process = factory();
+            if (source)
+                process = source();
         } catch (...) {
             process.reset();
         }
@@ -297,7 +316,7 @@ struct ThreadedYoutubeSearch::Impl final {
         }
         YoutubeSearchSnapshot snapshot;
         {
-            YoutubeSearchSession session(*process, limits);
+            YoutubeSearchSession session(*process, session_limits);
             QElapsedTimer clock;
             clock.start();
             if (!session.start(query, 0)) {
@@ -333,10 +352,35 @@ struct ThreadedYoutubeSearch::Impl final {
             worker.reset();
         }
     }
+    std::optional<std::uint64_t> begin(const QString& argument, const bool lookup) {
+        if (running || argument.isEmpty() || (lookup && !lookup_factory))
+            return std::nullopt;
+        join();
+        const auto ticket = ++serial;
+        {
+            std::lock_guard lock(mutex);
+            finished.reset();
+        }
+        cancel_requested = false;
+        running = true;
+        auto session_limits = limits;
+        if (lookup)
+            session_limits.max_results = youtube_lookup_max_ids;
+        worker.reset(QThread::create([this, argument, ticket, lookup, session_limits] {
+            run(argument, ticket, lookup ? lookup_factory : factory, session_limits);
+        }));
+        worker->start();
+        return ticket;
+    }
 };
 
-ThreadedYoutubeSearch::ThreadedYoutubeSearch(ProcessFactory factory, const YoutubeSearchLimits limits)
-    : impl_(std::make_unique<Impl>(std::move(factory), limits)) {}
+ThreadedYoutubeSearch::ThreadedYoutubeSearch(ProcessFactory factory, const YoutubeSearchLimits limits,
+                                             ProcessFactory lookup_factory)
+    : impl_(std::make_unique<Impl>(std::move(factory), limits, std::move(lookup_factory))) {}
+
+std::optional<std::uint64_t> ThreadedYoutubeSearch::lookup(const std::vector<std::string>& video_ids) {
+    return impl_->begin(youtubeLookupArgument(video_ids), true);
+}
 
 ThreadedYoutubeSearch::~ThreadedYoutubeSearch() {
     impl_->cancel_requested = true;
@@ -344,23 +388,9 @@ ThreadedYoutubeSearch::~ThreadedYoutubeSearch() {
 }
 
 std::optional<std::uint64_t> ThreadedYoutubeSearch::start(const std::string& text) {
-    auto& state = *impl_;
-    if (state.running)
+    if (impl_->running)
         return std::nullopt;
-    const auto query = normalizedYoutubeSearchQuery(QString::fromStdString(text));
-    if (query.isEmpty())
-        return std::nullopt;
-    state.join();
-    const auto ticket = ++state.serial;
-    {
-        std::lock_guard lock(state.mutex);
-        state.finished.reset();
-    }
-    state.cancel_requested = false;
-    state.running = true;
-    state.worker.reset(QThread::create([&state, query, ticket] { state.run(query, ticket); }));
-    state.worker->start();
-    return ticket;
+    return impl_->begin(normalizedYoutubeSearchQuery(QString::fromStdString(text)), false);
 }
 
 std::optional<OnlineSearchOutcome> ThreadedYoutubeSearch::poll() {

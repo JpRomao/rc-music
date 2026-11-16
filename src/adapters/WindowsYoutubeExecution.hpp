@@ -29,4 +29,9 @@ makeWindowsYoutubeBrokerResolverFactory(WindowsYoutubeRuntimeConfig config, QPro
 [[nodiscard]] YoutubeResolverProcessFactory
 makeWindowsYoutubeBrokerSearchFactory(WindowsYoutubeRuntimeConfig config, QProcessEnvironment environment,
                                       WindowsYoutubeRuntimePreparer prepare = {});
+// L7 lookup counterpart: brokers in lookup mode (`--lookup <ids>`), for the
+// titles of pasted links.
+[[nodiscard]] YoutubeResolverProcessFactory
+makeWindowsYoutubeBrokerLookupFactory(WindowsYoutubeRuntimeConfig config, QProcessEnvironment environment,
+                                      WindowsYoutubeRuntimePreparer prepare = {});
 } // namespace music_player::m0

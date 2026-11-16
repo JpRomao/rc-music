@@ -13,7 +13,9 @@ namespace music_player::m0 {
 // Resolve: one video ID, extractor plus Node for JavaScript challenges.
 // Search (ADR-0019): one normalized query sent as `--search <query>`. The
 // extractor lists metadata only, so a challenge frame fails and Node never runs.
-enum class WindowsYoutubeBrokerMode { Resolve, Search };
+// Lookup (L7): 1 to 20 video IDs joined by commas, sent as `--lookup <ids>`,
+// with the same metadata-only rules as the search.
+enum class WindowsYoutubeBrokerMode { Resolve, Search, Lookup };
 struct WindowsYoutubeBrokerPreparedRuntime final {
     std::shared_ptr<const WindowsYoutubeRuntime> files{};
     // Trusted explicit environment; never inherited from the page or host.

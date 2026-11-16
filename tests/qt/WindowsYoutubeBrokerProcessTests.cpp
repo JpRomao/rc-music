@@ -263,6 +263,42 @@ class WindowsYoutubeBrokerProcessTests final : public QObject {
         QCOMPARE(h.reports(), QStringList{QStringLiteral("extractor.pid.json")});
         guard.process = nullptr;
     }
+    void lookupModeRunsOnlyTheExtractorWithTheIdList() {
+        Fixture h;
+        QVERIFY(h.initialize(QStringLiteral("lookup")));
+        WindowsYoutubeBrokerProcess process([&] { return h.prepare(); }, WindowsYoutubeBrokerMode::Lookup);
+        DrainGuard guard{&process, h};
+        const auto ids = QStringLiteral("testVideo01,testVideo02");
+        QVERIFY(process.start(ids, 0));
+        Collected result;
+        QVERIFY(collect(process, result));
+        QCOMPARE(result.update.state, State::Exited);
+        const auto decoded = decodeYoutubeSearchResults(result.output, youtube_lookup_max_ids);
+        QVERIFY(decoded);
+        QCOMPARE(decoded->size(), std::size_t{2});
+        verifyReport(h, QStringLiteral("extractor.pid.json"), QStringLiteral("extractor"),
+                     {QStringLiteral("--lookup"), ids});
+        QCOMPARE(h.reports(), QStringList{QStringLiteral("extractor.pid.json")});
+        guard.process = nullptr;
+    }
+    void lookupModeRejectsAnythingButAnIdList_data() {
+        QTest::addColumn<QString>("ids");
+        QTest::newRow("empty") << QString{};
+        QTest::newRow("query") << QStringLiteral("lia campos");
+        QTest::newRow("duplicate") << QStringLiteral("testVideo01,testVideo01");
+        QTest::newRow("trailing comma") << QStringLiteral("testVideo01,");
+        QTest::newRow("URL") << QStringLiteral("https://youtube.com/watch?v=testVideo01");
+    }
+    void lookupModeRejectsAnythingButAnIdList() {
+        QFETCH(QString, ids);
+        Fixture h;
+        QVERIFY(h.initialize(QStringLiteral("lookup")));
+        WindowsYoutubeBrokerProcess process([&] { return h.prepare(); }, WindowsYoutubeBrokerMode::Lookup);
+        DrainGuard guard{&process, h};
+        QVERIFY(!process.start(ids, 0));
+        QCOMPARE(process.poll(0).error, Failure::InvalidResult);
+        QCOMPARE(h.preparations, 0);
+    }
     void searchModeRejectsUnnormalizedQueriesAndVideoIdsMeanNothingSpecial_data() {
         QTest::addColumn<QString>("query");
         QTest::newRow("empty") << QString{};

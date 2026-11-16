@@ -32,7 +32,13 @@ class OnlineSearch {
     // A ticket, or nothing when a search is still running or the query is not
     // searchable (blank, control characters or too long).
     [[nodiscard]] virtual std::optional<std::uint64_t> start(const std::string& query) = 0;
-    // Nonblocking. Returns each finished search exactly once.
+    // Titles of pasted links, by video ID (1 to 20 unique IDs), with the same
+    // metadata-only results. Nothing when unsupported, invalid or busy.
+    [[nodiscard]] virtual std::optional<std::uint64_t> lookup(const std::vector<std::string>& video_ids) {
+        static_cast<void>(video_ids);
+        return std::nullopt;
+    }
+    // Nonblocking. Returns each finished search or lookup exactly once.
     [[nodiscard]] virtual std::optional<OnlineSearchOutcome> poll() = 0;
     // Asks the running search to stop; its outcome still arrives through poll.
     virtual void cancel() = 0;
