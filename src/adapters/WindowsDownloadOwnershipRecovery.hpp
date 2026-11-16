@@ -67,11 +67,14 @@ struct DownloadFinalPinResult final {
 class WindowsDownloadOwnershipRecovery final {
   public:
     // Reuse a job ID only after proving the prior attempt left no files.
-    // Otherwise retire at most one proven-clean archived row when the journal is full.
+    // Otherwise retire proven-clean archived rows until `headroom` rows are
+    // free (one per parallel lane, at most parallel_reserve). Callers in this
+    // process take turns, so two lanes never race for the same row.
     [[nodiscard]] static DownloadOwnershipCapacity ensureCapacity(const WindowsDownloadWorkspaceConfig& config,
                                                                   WindowsDownloadOwnershipStore& store,
                                                                   const ArchivedDownloadJobEvidence& evidence,
-                                                                  std::string_view job_id = {}) noexcept;
+                                                                  std::string_view job_id = {},
+                                                                  std::size_t headroom = 1) noexcept;
     [[nodiscard]] static DownloadOwnershipAssessment assess(const WindowsDownloadWorkspaceConfig& config,
                                                             const DownloadOwnershipRecord& record) noexcept;
     // Read-only review of a cleaned record under freshly pinned configured roots.

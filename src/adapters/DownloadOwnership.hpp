@@ -41,6 +41,9 @@ struct DownloadOwnershipRecord final {
 
 struct DownloadOwnershipJournal final {
     static constexpr std::size_t maximum_records = 128;
+    // L8: rows a near-full journal may release so that every parallel lane
+    // (at most three) still finds room for its planned row.
+    static constexpr std::size_t parallel_reserve = 3;
     std::vector<DownloadOwnershipRecord> records{};
     friend bool operator==(const DownloadOwnershipJournal&, const DownloadOwnershipJournal&) = default;
 };

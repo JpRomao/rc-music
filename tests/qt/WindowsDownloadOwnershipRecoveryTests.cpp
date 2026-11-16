@@ -573,6 +573,47 @@ class WindowsDownloadOwnershipRecoveryTests final : public QObject {
         QVERIFY(!QFile::exists(f.final));
     }
 
+    // L8: parallel lanes each record a planned row after this check, so the
+    // check leaves one free row per lane.
+    void headroomReclaimsUntilEveryLaneHasARow() {
+        Fixture f;
+        QVERIFY(f.initialized);
+        f.record.cleanup_complete = true;
+        auto before = journalWith(f.record);
+        std::vector<std::string> ids{f.record.job_id};
+        for (std::size_t index = 1; index <= 3; ++index) {
+            before.records[index].cleanup_complete = true;
+            ids.push_back(before.records[index].job_id);
+        }
+        const auto directory = seedJournal(f, DownloadOwnershipJson::encode(before));
+        QVERIFY(!directory.isEmpty());
+        WindowsDownloadOwnershipStore store(directory);
+        QCOMPARE(WindowsDownloadOwnershipRecovery::ensureCapacity(f.config(), store, {ids, {}}, {}, 3),
+                 DownloadOwnershipCapacity::Available);
+        const auto loaded = store.load();
+        QVERIFY(loaded.journal);
+        QCOMPARE(loaded.journal->records.size(), DownloadOwnershipJournal::maximum_records - 3);
+        // With room for every lane, nothing else is rewritten.
+        const auto bytes = readFile(directory + QStringLiteral("/download-ownership.json"));
+        QCOMPARE(WindowsDownloadOwnershipRecovery::ensureCapacity(f.config(), store, {ids, {}}, {}, 3),
+                 DownloadOwnershipCapacity::Available);
+        QCOMPARE(readFile(directory + QStringLiteral("/download-ownership.json")), bytes);
+    }
+    void headroomStillAdmitsAJobWhenFewerRowsAreReclaimable() {
+        Fixture f;
+        QVERIFY(f.initialized);
+        f.record.cleanup_complete = true;
+        const auto before = journalWith(f.record);
+        const auto directory = seedJournal(f, DownloadOwnershipJson::encode(before));
+        QVERIFY(!directory.isEmpty());
+        WindowsDownloadOwnershipStore store(directory);
+        const std::array ids{f.record.job_id};
+        QCOMPARE(WindowsDownloadOwnershipRecovery::ensureCapacity(f.config(), store, {ids, {}}, {}, 3),
+                 DownloadOwnershipCapacity::Available);
+        const auto loaded = store.load();
+        QVERIFY(loaded.journal);
+        QCOMPARE(loaded.journal->records.size(), DownloadOwnershipJournal::maximum_records - 1);
+    }
     void capacityDoesNotRewriteSmallOrUnknownHistory_data() {
         QTest::addColumn<bool>("future");
         QTest::newRow("space-available") << false;

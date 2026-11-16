@@ -28,7 +28,8 @@ class WindowsDownloadOwnershipStore final : public DownloadOwnershipStore {
   private:
     friend class WindowsDownloadOwnershipRecovery;
     // Compare the exact settled record and recheck its pinned proof while the
-    // journal is locked. Only a full journal can release one record.
+    // journal is locked. Only a journal within parallel_reserve rows of full
+    // can release one record.
     [[nodiscard]] DownloadCheckpointSaveStatus reclaimAtCapacity(const DownloadOwnershipRecord& expected,
                                                                  const std::function<bool()>& still_reclaimable);
     [[nodiscard]] DownloadCheckpointSaveStatus retireUnpublishedAttempt(const DownloadOwnershipRecord& expected,

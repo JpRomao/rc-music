@@ -127,7 +127,8 @@ WindowsDownloadOwnershipStore::changeCleanedRecord(const DownloadOwnershipRecord
                 return blocked;
             auto decoded = DownloadOwnershipJson::decode(current.bytes);
             if (decoded.status != DownloadCheckpointLoadStatus::Loaded || !decoded.journal ||
-                (reclaim && decoded.journal->records.size() != DownloadOwnershipJournal::maximum_records))
+                (reclaim && decoded.journal->records.size() + DownloadOwnershipJournal::parallel_reserve <=
+                                DownloadOwnershipJournal::maximum_records))
                 return blocked;
             auto& records = decoded.journal->records;
             const auto found = std::ranges::find(records, expected);

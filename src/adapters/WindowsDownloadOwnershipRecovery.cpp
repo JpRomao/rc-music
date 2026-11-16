@@ -11,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <cstring>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -503,8 +504,12 @@ struct WindowsPinnedDownloadFinal::Impl {
 DownloadOwnershipCapacity WindowsDownloadOwnershipRecovery::ensureCapacity(const WindowsDownloadWorkspaceConfig& config,
                                                                            WindowsDownloadOwnershipStore& store,
                                                                            const ArchivedDownloadJobEvidence& evidence,
-                                                                           const std::string_view job_id) noexcept {
+                                                                           const std::string_view job_id,
+                                                                           const std::size_t headroom) noexcept {
     try {
+        static std::mutex turns;
+        const std::lock_guard turn(turns);
+        const auto room = std::clamp<std::size_t>(headroom, 1, DownloadOwnershipJournal::parallel_reserve);
         const auto loaded = store.load();
         if (loaded.status == DownloadCheckpointLoadStatus::Missing && !loaded.journal)
             return DownloadOwnershipCapacity::Available;
@@ -523,9 +528,10 @@ DownloadOwnershipCapacity WindowsDownloadOwnershipRecovery::ensureCapacity(const
             return saved == DownloadCheckpointSaveStatus::Saved ? DownloadOwnershipCapacity::Available
                                                                 : DownloadOwnershipCapacity::ReclaimUnconfirmed;
         }
-        if (records.size() < DownloadOwnershipJournal::maximum_records)
-            return DownloadOwnershipCapacity::Available;
+        auto count = records.size();
         for (const auto& record : records) {
+            if (count + room <= DownloadOwnershipJournal::maximum_records)
+                break;
             if (!record.cleanup_complete ||
                 std::ranges::find(evidence.archived_job_ids, record.job_id) == evidence.archived_job_ids.end())
                 continue;
@@ -536,10 +542,13 @@ DownloadOwnershipCapacity WindowsDownloadOwnershipRecovery::ensureCapacity(const
                 continue;
             const auto saved =
                 store.reclaimAtCapacity(record, [&] { return reclaimProofStillValid(workspace, record); });
-            return saved == DownloadCheckpointSaveStatus::Saved ? DownloadOwnershipCapacity::Available
-                                                                : DownloadOwnershipCapacity::ReclaimUnconfirmed;
+            if (saved != DownloadCheckpointSaveStatus::Saved)
+                return DownloadOwnershipCapacity::ReclaimUnconfirmed;
+            --count;
         }
-        return DownloadOwnershipCapacity::Full;
+        // At least this job's row fits, even if fewer rows could be released.
+        return count < DownloadOwnershipJournal::maximum_records ? DownloadOwnershipCapacity::Available
+                                                                 : DownloadOwnershipCapacity::Full;
     } catch (...) {
         return DownloadOwnershipCapacity::HistoryUnavailable;
     }
