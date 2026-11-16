@@ -25,6 +25,8 @@ PageSurface {
     property string notice: ""
     // After a locate request, the binding's own outcome is shown.
     property bool showStatus: false
+    // ADR-0019: the library opens in List; Covers is the alternative.
+    property bool showCovers: false
     readonly property bool ready: library !== null && library.ready
     readonly property int total: library !== null ? library.count : 0
     readonly property int visibleTotal: library !== null ? library.visibleCount : 0
@@ -113,14 +115,45 @@ PageSurface {
             Accessible.name: libraryText.filterName
             onTextEdited: root.library.filterText = text
         }
-        Text {
-            objectName: "library-count"
+        RowLayout {
+            Layout.fillWidth: true
             visible: root.ready && root.total > 0
-            text: libraryText.countText.arg(root.visibleTotal).arg(root.total)
-            textFormat: Text.PlainText
-            color: root.contract.textPrimaryColor
-            font.family: root.contract.bodyFontFamily
-            font.pixelSize: root.contract.typeCaption
+            Text {
+                objectName: "library-count"
+                Layout.fillWidth: true
+                text: libraryText.countText.arg(root.visibleTotal).arg(root.total)
+                textFormat: Text.PlainText
+                color: root.contract.textPrimaryColor
+                font.family: root.contract.bodyFontFamily
+                font.pixelSize: root.contract.typeCaption
+            }
+            RowLayout {
+                spacing: root.contract.spacingUnit
+                Accessible.role: Accessible.Grouping
+                Accessible.name: libraryText.viewChoice
+                AccessibleTransportButton {
+                    objectName: "library-view-covers"
+                    contract: root.contract
+                    flat: true
+                    checkable: true
+                    checked: root.showCovers
+                    iconName: "library"
+                    iconWithText: true
+                    text: libraryText.coversView
+                    onClicked: root.showCovers = true
+                }
+                AccessibleTransportButton {
+                    objectName: "library-view-list"
+                    contract: root.contract
+                    flat: true
+                    checkable: true
+                    checked: !root.showCovers
+                    iconName: "queue"
+                    iconWithText: true
+                    text: libraryText.listView
+                    onClicked: root.showCovers = false
+                }
+            }
         }
         Text {
             objectName: "library-notice"
@@ -168,7 +201,7 @@ PageSurface {
         }
         RowLayout {
             objectName: "library-columns"
-            visible: root.ready && root.visibleTotal > 0
+            visible: root.ready && root.visibleTotal > 0 && !root.showCovers
             Layout.fillWidth: true
             spacing: root.contract.spacingUnit * 2
             Repeater {
@@ -191,10 +224,96 @@ PageSurface {
                 Layout.preferredWidth: 80
             }
         }
+        GridView {
+            id: grid
+            objectName: "library-grid"
+            visible: root.ready && root.visibleTotal > 0 && root.showCovers
+            Layout.fillWidth: true
+            Layout.preferredHeight: Math.min(contentHeight, 640)
+            clip: true
+            reuseItems: true
+            activeFocusOnTab: true
+            keyNavigationEnabled: true
+            cellWidth: Math.max(160, Math.floor(width / Math.max(1, Math.floor(width / 184))))
+            cellHeight: cellWidth + 64
+            model: visible && root.library !== null ? root.library.model : null
+            Accessible.role: Accessible.List
+            Accessible.name: navigationLabels.library
+            delegate: Item {
+                id: card
+                required property int index
+                required property string recordId
+                required property string title
+                required property string artist
+                required property string album
+                required property bool available
+                objectName: "library-card-" + recordId
+                width: grid.cellWidth
+                height: grid.cellHeight
+                Accessible.role: Accessible.ListItem
+                Accessible.name: title + (artist.length > 0 ? ", " + artist : "") + (available ? "" : ", " + libraryText.unavailable)
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: root.contract.spacingUnit
+                    spacing: root.contract.spacingUnit / 2
+                    Rectangle {
+                        // Placeholder cover in theme tones until artwork is cached.
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: width
+                        radius: root.contract.radiusMedium
+                        color: Qt.alpha(root.contract.accentColor, 0.10 + (card.index % 4) * 0.06)
+                        opacity: card.available ? 1 : 0.55
+                        Text {
+                            anchors.centerIn: parent
+                            text: (card.album.length > 0 ? card.album : card.title).charAt(0).toUpperCase()
+                            textFormat: Text.PlainText
+                            color: root.contract.accentColor
+                            font.family: root.contract.headingFontFamily
+                            font.pixelSize: root.contract.typeDisplay
+                            Accessible.ignored: true
+                        }
+                        AccessibleTransportButton {
+                            objectName: "library-card-enqueue"
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.margins: root.contract.spacingUnit
+                            contract: root.contract
+                            iconName: "plus"
+                            enabled: card.available
+                            accessibleName: libraryText.enqueue.arg(card.title)
+                            onClicked: {
+                                root.showStatus = false;
+                                root.notice = root.library.enqueue(card.recordId) ? libraryText.enqueued.arg(card.title) : libraryText.enqueueFailed;
+                            }
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: card.title
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        color: root.contract.textPrimaryColor
+                        font.family: root.contract.bodyFontFamily
+                        font.pixelSize: root.contract.typeBody
+                        Accessible.ignored: true
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: card.available ? (card.artist.length > 0 ? card.artist : libraryText.unknownArtist) : libraryText.unavailable
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        color: root.contract.textSecondaryColor
+                        font.family: root.contract.bodyFontFamily
+                        font.pixelSize: root.contract.typeCaption
+                        Accessible.ignored: true
+                    }
+                }
+            }
+        }
         ListView {
             id: list
             objectName: "library-list"
-            visible: root.ready && root.visibleTotal > 0
+            visible: root.ready && root.visibleTotal > 0 && !root.showCovers
             Layout.fillWidth: true
             Layout.preferredHeight: Math.min(contentHeight, 640)
             clip: true

@@ -52,6 +52,11 @@
 
 - Metadados em segundo plano: `LibraryBinding::setMetadataExtractor` (TagLib no app) lê lotes de até 64 registros nunca lidos ou indisponíveis. Cada registro é tentado no máximo uma vez por sessão. Arquivo inalcançável fica indisponível; formato ilegível continua listado. Duração 0 marca "lido, duração desconhecida", para não reler a cada início, e aparece em branco. O resultado só vale se o registro ainda existir no mesmo caminho, e o enriquecimento nunca repete sozinho uma gravação que falhou.
 
+- Localizar: faixa indisponível ganha "Localizar", com escolha de arquivo própria da biblioteca. O ID e as tags ficam, e o registro volta a ficar disponível. Um caminho de outra faixa é conflito, sem mudança. Fechar a página cancela o pedido, e respostas tardias para registros removidos são ignoradas.
+- Adicionar à playlist: menu por linha com as playlists salvas, via `PlaylistsBinding::appendToPlaylist`. Só `Saved` confirma, e a seleção da página Playlists não muda.
+- Capas: alternativa à Lista, que continua padrão. As capas são marcadores em tons do tema com a inicial do álbum ou do título. Arte real precisa de um cache de capas próprio, ainda pendente.
+- Pendente de L4b: Atividade distinguindo "MP3 pronto", "na biblioteca" e "na fila"; cache de capas; teste no app real.
+
 ## Estado
 
 - L1 concluída: commit `d4cbc8c`.
@@ -59,3 +64,4 @@
 - L3 concluída: downloads nos dois destinos com registro de jobs, 707/707 CTest (sem a suíte Quick).
 - L4a concluída: página Biblioteca em Lista. Quick 527/527, contando os 6 casos de composição repetidos com `RC_MUSIC_UI_ARTIFACT_DIR`, que o CTest define.
 - L4b, parte 1 (metadados): 707/707 CTest.
+- L4b concluída (metadados, localizar, playlist e Capas): CTest 707/707, Quick 530/530.

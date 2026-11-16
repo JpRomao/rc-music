@@ -33,7 +33,14 @@ A fatia 1 da paridade visual adicionou ao contrato os tokens Seleção, Hover e 
 - aceitar Opus/WebM quando não houver AAC;
 - trocar os hashes compilados do runtime YouTube por um manifesto assinado ([ADR-0020](architecture/decisions/0020-signed-youtube-runtime-manifest.md)).
 
-Ficam pendentes nessa trilha: reconstruir o runtime do extractor (o seletor Opus só vale depois dele), integrar o modo assinado ao instalador e validar um download real no app. Próxima frente: biblioteca permanente e busca interna (ADR-0019).
+Ficam pendentes nessa trilha: reconstruir o runtime do extractor (o seletor Opus só vale depois dele), integrar o modo assinado ao instalador e validar um download real no app. A biblioteca permanente do [ADR-0019](architecture/decisions/0019-internal-search-library-and-extension-retirement.md) já está no app:
+- `library.json` com registro por caminho exato;
+- ingresso local e downloads entram nela, sem ressuscitar remoções;
+- página Biblioteca em Lista, com Capas como alternativa;
+- busca local sem acento e tags lidas em segundo plano;
+- localizar arquivo, adicionar à fila e à playlist, e remover só o registro.
+
+O plano está em [2026-11-16-library-and-search](superpowers/plans/2026-11-16-library-and-search.md). Falta ainda o teste no app real, o cache de capas e a busca online pelo yt-dlp (L5).
 
 A fundação `d4137db` e seu [instalador privado histórico](windows-installer.md#setup-aurora-de-d4137db) permanecem registrados, sem representar a fonte nova. A condição posterior do mantenedor bloqueia instaladores intermediários. Reprodução, dados, Qt Network, letras, downloads opcionais, playlists e stores foram preservados no recorte exercitado. Biblioteca permanente/ingresso, pesquisa/provider, paridade visual restante, instalação e gates de produção conservam seus próprios aceites.
 

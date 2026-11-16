@@ -209,6 +209,25 @@ TestCase {
         compare(catalog.playlistAdds, ["3:7"]);
         verify(findChild(panel, "library-notice").text.indexOf("Favoritas") >= 0);
     }
+    function test_listIsTheDefaultAndCoversIsTheAlternative() {
+        const panel = openLibrary();
+        verify(findChild(panel, "library-view-list").checked);
+        verify(!findChild(panel, "library-grid").visible);
+        mouseClick(findChild(panel, "library-view-covers"));
+        tryVerify(() => findChild(panel, "library-grid").visible);
+        verify(!findChild(panel, "library-list").visible);
+        verify(!findChild(panel, "library-columns").visible);
+        const grid = findChild(panel, "library-grid");
+        tryCompare(grid, "count", 2);
+        // Switching views relayouts the page; wait until the grid has its real size.
+        tryVerify(() => grid.width > 0 && grid.height > 0);
+        tryVerify(() => findChild(grid, "library-card-3") !== null);
+        mouseClick(findChild(findChild(grid, "library-card-3"), "library-card-enqueue"));
+        compare(catalog.enqueued, ["3"]);
+        verify(!findChild(findChild(grid, "library-card-4"), "library-card-enqueue").enabled);
+        mouseClick(findChild(panel, "library-view-list"));
+        tryVerify(() => findChild(panel, "library-list").visible);
+    }
     function test_typingFiltersThroughTheBinding() {
         const panel = openLibrary();
         const field = findChild(panel, "library-filter");
