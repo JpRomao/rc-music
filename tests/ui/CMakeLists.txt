@@ -107,6 +107,9 @@ set_target_properties(rc_music_playlists_store_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_profile_store_tests rc_music.profile.store
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtJsonProfileStoreTests.cpp" rc_music_profile)
 set_target_properties(rc_music_profile_store_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_room_roster_store_tests rc_music.room.roster-store
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtJsonRoomRosterStoreTests.cpp" rc_music_profile)
+set_target_properties(rc_music_room_roster_store_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_avatar_image_tests rc_music.profile.avatar-image
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtAvatarImageTests.cpp" rc_music_profile)
 set_target_properties(rc_music_avatar_image_tests PROPERTIES AUTOMOC ON)

@@ -19,6 +19,8 @@ rc_music_configure_cpp(rc_music_lyrics)
 add_library(rc_music_profile STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonProfileStore.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonProfileStore.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonRoomRosterStore.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonRoomRosterStore.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtAvatarImage.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtAvatarImage.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ProfileBinding.hpp"
