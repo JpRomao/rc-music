@@ -23,6 +23,7 @@ add_library(rc_music_core STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/domain/ListenerProfile.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/domain/RoomInviteLink.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/domain/RoomRoster.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/domain/ListeningRoom.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/domain/LocalLibrary.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/domain/Lyrics.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/application/LocalTrackSession.cpp"
