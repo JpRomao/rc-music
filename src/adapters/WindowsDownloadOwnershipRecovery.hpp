@@ -75,6 +75,12 @@ class WindowsDownloadOwnershipRecovery final {
                                                                   const ArchivedDownloadJobEvidence& evidence,
                                                                   std::string_view job_id = {},
                                                                   std::size_t headroom = 1) noexcept;
+    // Only the prior-attempt part of ensureCapacity, for a new attempt inside
+    // the same job: Available when there is no row for job_id or it was a
+    // proven-clean unpublished attempt that is now retired.
+    [[nodiscard]] static DownloadOwnershipCapacity retirePriorAttempt(const WindowsDownloadWorkspaceConfig& config,
+                                                                      WindowsDownloadOwnershipStore& store,
+                                                                      std::string_view job_id) noexcept;
     [[nodiscard]] static DownloadOwnershipAssessment assess(const WindowsDownloadWorkspaceConfig& config,
                                                             const DownloadOwnershipRecord& record) noexcept;
     // Read-only review of a cleaned record under freshly pinned configured roots.
@@ -95,6 +101,11 @@ class WindowsDownloadOwnershipRecovery final {
     [[nodiscard]] static DownloadOwnershipDiscardOutcome discardPartials(const WindowsDownloadWorkspaceConfig& config,
                                                                          const DownloadOwnershipRecord& record,
                                                                          DownloadOwnershipStore& store) noexcept;
+
+  private:
+    [[nodiscard]] static DownloadOwnershipCapacity retirePrior(const WindowsDownloadWorkspaceConfig& config,
+                                                               WindowsDownloadOwnershipStore& store,
+                                                               const DownloadOwnershipRecord& prior);
 };
 
 } // namespace music_player::m0

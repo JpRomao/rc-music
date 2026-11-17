@@ -89,7 +89,8 @@ A retirada da extensão saiu do plano (revisão do ADR-0019 em 2026-11-16). Ela 
 ## Contrato de L8
 
 - [ADR-0021](../../architecture/decisions/0021-parallel-downloads.md): até três downloads ao mesmo tempo. O serviço tem `max_active_jobs`, de 1 a 3, e o executor do Windows tem uma pista por vaga, cada uma com sua thread. As gravações do checkpoint e do diário de propriedade passam por uma fila no processo antes do lock de arquivo. O app usa 3.
-- Pendente: teste real com vários downloads simultâneos no app, depois de reconstruir o runtime.
+- Teste real (2026-11-16), com o runtime reconstruído: três yt-dlp e dois workers de rede rodaram juntos. Os três problemas encontrados estão no ADR-0021 e foram corrigidos com testes. Nas rodadas seguintes, os três downloads foram publicados, importados para a fila e para a biblioteca, e a sessão foi salva.
+- Pendente: uma falha intermitente na criação do workspace, vista uma vez com três jobs criando ao mesmo tempo.
 
 ## Estado
 

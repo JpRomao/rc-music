@@ -4,6 +4,7 @@
 #include "WindowsDownloadArtifactPins.hpp"
 #include "WindowsDownloadExecutionValidation.hpp"
 #include "WindowsDownloadMediaProfileStore.hpp"
+#include "WindowsDownloadOwnershipRecovery.hpp"
 #include "WindowsDownloadOwnershipStore.hpp"
 #include "WindowsMediaProfileOwner.hpp"
 #include "YoutubeAudioResolution.hpp"
@@ -195,6 +196,19 @@ class PreparedSessionTask final : public WindowsDownloadTask {
                     return false;
                 }
                 job_.ownership_store = ownership_store_.get();
+                // A new attempt inside the same job (a refused stream resolved
+                // again) first retires the earlier attempt's row when it left
+                // no files; otherwise its planned row could not be recorded.
+                switch (WindowsDownloadOwnershipRecovery::retirePriorAttempt(job_.workspace, *ownership_store_, id)) {
+                case DownloadOwnershipCapacity::Available:
+                    break;
+                case DownloadOwnershipCapacity::HistoryUnavailable:
+                    fail(DownloadFailure::InvalidResult);
+                    return false;
+                default:
+                    fail(DownloadFailure::Publication);
+                    return false;
+                }
             }
             if (media_profile_factory_ && !prepareMediaProfile(id)) {
                 fail(DownloadFailure::Unavailable);

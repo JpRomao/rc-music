@@ -30,7 +30,11 @@ O serviço de downloads rodava um job por vez. Ele tinha uma única vaga de exec
 
 - Até três jobs consomem rede, CPU de conversão e espaço de workspace ao mesmo tempo, cada um dentro do limite que já tinha.
 - A ordem de término deixa de seguir a ordem da fila. A fila de reprodução recebe cada MP3 quando a importação dele termina.
-- O teste real com vários downloads simultâneos no app ainda falta e depende do runtime reconstruído.
+- O teste real (2026-11-16) mostrou três problemas, todos corrigidos com testes:
+  - as pistas disputavam o mesmo registro antigo do diário cheio; a verificação de capacidade passou a rodar uma pista por vez, deixando uma vaga por pista;
+  - o workspace e os pins de artefatos prendiam as pastas ancestrais, entre elas a de configuração, sem compartilhar escrita. O Windows recusava então a troca atômica do `session.json.bak` enquanto outro download rodava, e a importação ficava pendente. As ancestrais passaram a compartilhar escrita e continuam negando exclusão;
+  - depois de um HTTP 403, a nova resolução dentro do mesmo job não conseguia gravar o registro novo, porque o da primeira tentativa continuava no diário. A tarefa agora aposenta a tentativa anterior que não deixou arquivos.
+- Ficou uma falha intermitente na criação do workspace com três jobs criando ao mesmo tempo. Ela apareceu uma vez e não voltou em quatro rodadas seguidas.
 
 ## Critérios de revisão
 

@@ -573,6 +573,42 @@ class WindowsDownloadOwnershipRecoveryTests final : public QObject {
         QVERIFY(!QFile::exists(f.final));
     }
 
+    // A new attempt inside the same job (a source that refused the stream is
+    // resolved again) reuses the job ID: a prior attempt that left no files is
+    // retired so the new attempt can record its planned row.
+    void aCleanPriorAttemptOfTheSameJobIsRetired() {
+        Fixture f;
+        QVERIFY(f.initialized);
+        f.record.cleanup_complete = true;
+        const auto directory = seedJournal(f, DownloadOwnershipJson::encode(journalWith(f.record, 2)));
+        QVERIFY(!directory.isEmpty());
+        WindowsDownloadOwnershipStore store(directory);
+        QCOMPARE(WindowsDownloadOwnershipRecovery::retirePriorAttempt(f.config(), store, f.record.job_id),
+                 DownloadOwnershipCapacity::Available);
+        const auto loaded = store.load();
+        QVERIFY(loaded.journal);
+        QCOMPARE(loaded.journal->records.size(), std::size_t{1});
+        QVERIFY(loaded.journal->records.front().job_id != f.record.job_id);
+        // Without a prior row there is nothing to do.
+        const auto bytes = readFile(directory + QStringLiteral("/download-ownership.json"));
+        QCOMPARE(WindowsDownloadOwnershipRecovery::retirePriorAttempt(f.config(), store, f.record.job_id),
+                 DownloadOwnershipCapacity::Available);
+        QCOMPARE(readFile(directory + QStringLiteral("/download-ownership.json")), bytes);
+    }
+    void aPublishedPriorAttemptIsNeverRetired() {
+        Fixture f;
+        QVERIFY(f.ready());
+        QVERIFY(f.publish());
+        QVERIFY(f.removeTemps());
+        f.record.cleanup_complete = true;
+        const auto before = DownloadOwnershipJson::encode(journalWith(f.record, 1));
+        const auto directory = seedJournal(f, before);
+        QVERIFY(!directory.isEmpty());
+        WindowsDownloadOwnershipStore store(directory);
+        QCOMPARE(WindowsDownloadOwnershipRecovery::retirePriorAttempt(f.config(), store, f.record.job_id),
+                 DownloadOwnershipCapacity::PriorAttemptUnresolved);
+        QCOMPARE(readFile(directory + QStringLiteral("/download-ownership.json")), before);
+    }
     // L8: parallel lanes each record a planned row after this check, so the
     // check leaves one free row per lane.
     void headroomReclaimsUntilEveryLaneHasARow() {

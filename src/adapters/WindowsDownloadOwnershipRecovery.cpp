@@ -501,6 +501,37 @@ struct WindowsPinnedDownloadFinal::Impl {
     Impl(const WindowsDownloadWorkspaceConfig& settings, const DownloadOwnershipRecord& evidence)
         : config(settings), record(evidence) {}
 };
+// The row of an earlier attempt of this job may be retired only while it was
+// never published and its workspace is proven absent.
+DownloadOwnershipCapacity WindowsDownloadOwnershipRecovery::retirePrior(const WindowsDownloadWorkspaceConfig& config,
+                                                                        WindowsDownloadOwnershipStore& store,
+                                                                        const DownloadOwnershipRecord& prior) {
+    Workspace workspace;
+    if ((prior.stage != DownloadOwnershipStage::Planned && prior.stage != DownloadOwnershipStage::WorkspaceReady) ||
+        !pinCleanedAbsence(config, prior, workspace))
+        return DownloadOwnershipCapacity::PriorAttemptUnresolved;
+    const auto saved = store.retireUnpublishedAttempt(prior, [&] { return removedUnderPinnedParents(workspace); });
+    return saved == DownloadCheckpointSaveStatus::Saved ? DownloadOwnershipCapacity::Available
+                                                        : DownloadOwnershipCapacity::ReclaimUnconfirmed;
+}
+
+DownloadOwnershipCapacity
+WindowsDownloadOwnershipRecovery::retirePriorAttempt(const WindowsDownloadWorkspaceConfig& config,
+                                                     WindowsDownloadOwnershipStore& store,
+                                                     const std::string_view job_id) noexcept {
+    try {
+        const auto loaded = store.load();
+        if (loaded.status == DownloadCheckpointLoadStatus::Missing && !loaded.journal)
+            return DownloadOwnershipCapacity::Available;
+        if (loaded.status != DownloadCheckpointLoadStatus::Loaded || !loaded.journal)
+            return DownloadOwnershipCapacity::HistoryUnavailable;
+        const auto& records = loaded.journal->records;
+        const auto prior = std::ranges::find(records, job_id, &DownloadOwnershipRecord::job_id);
+        return prior == records.end() ? DownloadOwnershipCapacity::Available : retirePrior(config, store, *prior);
+    } catch (...) {
+        return DownloadOwnershipCapacity::HistoryUnavailable;
+    }
+}
 DownloadOwnershipCapacity WindowsDownloadOwnershipRecovery::ensureCapacity(const WindowsDownloadWorkspaceConfig& config,
                                                                            WindowsDownloadOwnershipStore& store,
                                                                            const ArchivedDownloadJobEvidence& evidence,
@@ -517,17 +548,8 @@ DownloadOwnershipCapacity WindowsDownloadOwnershipRecovery::ensureCapacity(const
             return DownloadOwnershipCapacity::HistoryUnavailable;
         const auto& records = loaded.journal->records;
         const auto prior = std::ranges::find(records, job_id, &DownloadOwnershipRecord::job_id);
-        if (prior != records.end()) {
-            Workspace workspace;
-            if ((prior->stage != DownloadOwnershipStage::Planned &&
-                 prior->stage != DownloadOwnershipStage::WorkspaceReady) ||
-                !pinCleanedAbsence(config, *prior, workspace))
-                return DownloadOwnershipCapacity::PriorAttemptUnresolved;
-            const auto saved =
-                store.retireUnpublishedAttempt(*prior, [&] { return removedUnderPinnedParents(workspace); });
-            return saved == DownloadCheckpointSaveStatus::Saved ? DownloadOwnershipCapacity::Available
-                                                                : DownloadOwnershipCapacity::ReclaimUnconfirmed;
-        }
+        if (prior != records.end())
+            return retirePrior(config, store, *prior);
         auto count = records.size();
         for (const auto& record : records) {
             if (count + room <= DownloadOwnershipJournal::maximum_records)
