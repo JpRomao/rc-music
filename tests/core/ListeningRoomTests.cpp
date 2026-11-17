@@ -260,4 +260,41 @@ TEST_CASE("authorize: a full queue refuses additions", "[core][listening-room][r
     REQUIRE(room.authorize("fp-dj", upload, snapshotWithItems(maximum_room_queue_items)) == IntentRejection::QueueFull);
 }
 
+TEST_CASE("authorize: one shape per AddItems intent", "[core][listening-room][room]") {
+    RoomRoster roster;
+    RoomPermissionSet upload_only;
+    upload_only.set(static_cast<std::size_t>(RoomPermission::UploadOwnTracks));
+    RoomPermissionSet add_only;
+    add_only.set(static_cast<std::size_t>(RoomPermission::AddFromRoom));
+    const auto uploader_role = roster.createRole("Uploader", upload_only);
+    const auto adder_role = roster.createRole("Adder", add_only);
+    REQUIRE(uploader_role.has_value());
+    REQUIRE(adder_role.has_value());
+    roster.remember("fp-up", "Up", *uploader_role);
+    roster.remember("fp-add", "Add", *adder_role);
+    ListeningRoom room(4, listener_role, roster);
+    REQUIRE(room.requestJoin(candidate("fp-up")) == JoinDecision::Admitted);
+    REQUIRE(room.requestJoin(candidate("fp-add")) == JoinDecision::Admitted);
+    const auto snap = snapshotWithItems(0);
+
+    auto mixed = intent(RoomIntentKind::AddItems);
+    mixed.catalog_entry_ids = {1, 2};
+    mixed.uploaded = RoomItem{};
+    REQUIRE(room.authorize("fp-up", mixed, snap) == IntentRejection::InvalidArgument);
+    REQUIRE(room.authorize("fp-add", mixed, snap) == IntentRejection::InvalidArgument);
+
+    auto upload = intent(RoomIntentKind::AddItems);
+    upload.uploaded = RoomItem{};
+    REQUIRE(room.authorize("fp-add", upload, snap) == IntentRejection::MissingPermission);
+    REQUIRE_FALSE(room.authorize("fp-up", upload, snap).has_value());
+
+    auto catalog = intent(RoomIntentKind::AddItems);
+    catalog.catalog_entry_ids = {1};
+    REQUIRE(room.authorize("fp-up", catalog, snap) == IntentRejection::MissingPermission);
+    REQUIRE_FALSE(room.authorize("fp-add", catalog, snap).has_value());
+
+    REQUIRE(room.requestJoin(candidate("fp-pending")) == JoinDecision::Pending);
+    REQUIRE(room.authorize("fp-pending", mixed, snap) == IntentRejection::NotAdmitted);
+}
+
 } // namespace music_player::m0::test

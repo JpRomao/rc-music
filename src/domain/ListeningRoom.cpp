@@ -3,6 +3,7 @@
 #include "m0/domain/ListeningRoomLimits.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace music_player::m0 {
 
@@ -107,6 +108,10 @@ std::optional<IntentRejection> ListeningRoom::authorize(const std::string_view f
     });
     if (member == members_.end())
         return IntentRejection::NotAdmitted;
+    // One shape per AddItems intent: catalog entries or one upload, never both. Checked before the
+    // permission bit so a mixed intent cannot ride on a single permission (InvalidArgument for anyone admitted).
+    if (intent.kind == RoomIntentKind::AddItems && !intent.catalog_entry_ids.empty() && intent.uploaded.has_value())
+        return IntentRejection::InvalidArgument;
     if (!roster_.effectivePermissions(fingerprint).test(static_cast<std::size_t>(requiredPermission(intent))))
         return IntentRejection::MissingPermission;
 
