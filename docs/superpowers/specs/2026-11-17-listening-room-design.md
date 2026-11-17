@@ -2,7 +2,7 @@
 
 ## Estado
 
-**Em revisão (2026-11-17).** Desenho escrito a partir da conversa com o mantenedor e revisado por um leitor independente. As escolhas do mantenedor aparecem como decisões; as minhas, como "proposta" ou "minha decisão". Nada foi implementado. O ADR correspondente (ADR-0022) só é aceito depois que este documento for aprovado.
+**Aprovado pelo mantenedor em 2026-11-17** ("Aprovar"). Desenho escrito a partir da conversa com o mantenedor e revisado por um leitor independente. As escolhas do mantenedor aparecem como decisões; as minhas, como "proposta" ou "minha decisão", e a aprovação cobre as duas. O plano de execução está em [2026-11-17-listening-room.md](../plans/2026-11-17-listening-room.md).
 
 ## Intenção
 
