@@ -25,6 +25,7 @@ function(rc_music_add_core_tests target test_prefix test_labels)
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/AcquiredLyricsTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/PlaylistLibraryTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/ListenerProfileTests.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/core/RoomInviteLinkTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/RoomRosterTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/LocalLibraryTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/LyricsTests.cpp"
