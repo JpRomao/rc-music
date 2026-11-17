@@ -3,6 +3,7 @@
 #include "adapters/QtAvatarImage.hpp"
 
 #include <QDir>
+#include <QFile>
 #include <QRandomGenerator>
 
 #include <utility>
@@ -88,12 +89,27 @@ bool ProfileBinding::chooseCustomAvatar(const QUrl& file) {
     const auto png = normalizeAvatarImage(file.toLocalFile());
     if (!png.has_value())
         return false;
+    // The profile may still point at the current custom.png: keep its bytes to restore them if the profile
+    // save fails, so the saved digest always describes the file on disk.
+    const auto path = QDir{config_directory_}.filePath(QStringLiteral("avatars/custom.png"));
+    std::optional<QByteArray> previous;
+    if (QFile current{path}; current.exists()) {
+        if (!current.open(QIODevice::ReadOnly))
+            return false;
+        previous = current.readAll();
+    }
     const auto sha256 = saveCustomAvatar(config_directory_, *png);
     if (sha256.isEmpty())
         return false;
     auto candidate = profile_;
     candidate.avatar = {AvatarKind::Custom, 0, sha256.toStdString()};
-    return commit(std::move(candidate));
+    if (commit(std::move(candidate)))
+        return true;
+    if (previous.has_value() && !previous->isEmpty())
+        static_cast<void>(saveCustomAvatar(config_directory_, *previous));
+    else
+        QFile::remove(path);
+    return false;
 }
 
 bool ProfileBinding::commit(ListenerProfile candidate) {

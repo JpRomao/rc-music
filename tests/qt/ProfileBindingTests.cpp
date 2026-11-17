@@ -206,6 +206,40 @@ class ProfileBindingTests final : public QObject {
         QCOMPARE(store->saved.back().avatar.custom_sha256.size(), std::size_t{64});
         QCOMPARE(store->saved.back().nickname, std::string{"Bia"});
     }
+    void failedProfileSaveKeepsThePreviousCustomAvatarFile() {
+        QTemporaryDir dir;
+        const auto custom = QDir{dir.path()}.filePath(QStringLiteral("avatars/custom.png"));
+        QVERIFY(QDir{dir.path()}.mkpath(QStringLiteral("avatars")));
+        const QByteArray previous{"previous avatar bytes"};
+        QVERIFY(writeBytes(custom, previous));
+        const std::string previous_sha(64, 'b');
+        auto store = loadedStore({"Bia", {AvatarKind::Custom, 0, previous_sha}});
+        store->next_save = ProfileSaveStatus::Failed;
+        const auto binding = makeBinding(store, dir.path());
+        const auto source = binding->avatarSource();
+        const auto png = dir.filePath(QStringLiteral("photo.png"));
+        QImage image(64, 64, QImage::Format_RGB32);
+        image.fill(QColor(200, 80, 40));
+        QVERIFY(image.save(png, "PNG"));
+        QVERIFY(!binding->chooseCustomAvatar(QUrl::fromLocalFile(png)));
+        QFile file(custom);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), previous);
+        QCOMPARE(binding->avatarSource(), source);
+    }
+    void failedProfileSaveLeavesNoOrphanCustomAvatar() {
+        QTemporaryDir dir;
+        auto store = loadedStore({"Bia", {AvatarKind::Bundled, 4, {}}});
+        store->next_save = ProfileSaveStatus::Failed;
+        const auto binding = makeBinding(store, dir.path());
+        const auto png = dir.filePath(QStringLiteral("photo.png"));
+        QImage image(64, 64, QImage::Format_RGB32);
+        image.fill(QColor(200, 80, 40));
+        QVERIFY(image.save(png, "PNG"));
+        QVERIFY(!binding->chooseCustomAvatar(QUrl::fromLocalFile(png)));
+        QCOMPARE(binding->avatarIndex(), 4);
+        QVERIFY(!QFileInfo::exists(QDir{dir.path()}.filePath(QStringLiteral("avatars/custom.png"))));
+    }
     void loadedCustomAvatarPointsAtTheSavedFile() {
         QTemporaryDir dir;
         const std::string sha(64, 'a');
