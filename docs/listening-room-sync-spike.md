@@ -7,7 +7,18 @@
 
 **p95 com correção: (b) 11,9 ms e (c) 12,0 ms.** Os dois ficam abaixo de 100 ms. Pelo gate da S1, a sala **segue com o `QMediaPlayer`**.
 
-O resultado vale para dois players no mesmo PC e na mesma saída. Entre PCs, somam-se o erro do relógio e a diferença de latência de cada saída, que este spike não mede. A S9.2 mede isso no teste real.
+Esses números são uma diferença no mesmo PC. `eA − eB` cancela tudo o que atinge os dois players ao mesmo tempo: a mixagem, a thread principal e os inícios atrasados em conjunto, como em b-3, s-16, e2-15 e e2-19.
+
+Para estimar players independentes, comparei todos os pares de players das janelas com correção, inclusive de execuções diferentes: `|e_i − e_j|`. Esse indicador é pessimista:
+
+| Cenário | Pares | p50 | p95 | máx. |
+|---|---|---|---|---|
+| (b) | 780 | 7,9 | 40,6 | 68,1 |
+| (c) | 780 | 8,7 | 41,1 | 57,1 |
+
+O gate continua aprovado por esse indicador.
+
+O resultado vale para uma única saída. Entre PCs, somam-se o erro do relógio e a diferença de latência de cada saída, que este spike não mede. A S9.2 mede isso no teste real.
 
 Riscos para a S9:
 
@@ -18,7 +29,12 @@ Riscos para a S9:
    O ajuste fino por velocidade só serve com `setPitchCompensation(false)`.
 2. **Inícios atrasados:** em 9 de 216 inícios (4,2%), o som chegou 127 a 391 ms depois de T, contra cerca de 70 ms no caso normal. Só a correção com seek resolve.
 3. **Seeks falsos:** pausas de 127 a 641 ms na thread principal atrasaram os `positionChanged`. O corretor tratou valores velhos como atraso real e fez seeks sem necessidade.
-4. **Saltos invisíveis:** em cerca de 1.150 s de áudio sem comandos houve 6 saltos de +8 a +533 ms no som. O `position()` não mostrou nenhum deles, então a correção do convidado não os enxerga.
+4. **Saltos pequenos e invisíveis:** em cerca de 1.150 s de áudio sem comandos houve 6 saltos de +8 a +533 ms no som, sempre atrasando.
+   - O salto de 533 ms aparece em `position()` (−499 ms) e a correção o resolve com seek.
+   - O de 46 ms aparece pela metade (−27 ms).
+   - Os de 8 a 33 ms ficam invisíveis: `position()` mudou no máximo 5 ms.
+
+   Como nunca adiantam, os saltos invisíveis podem se somar ao longo de uma faixa. Na medição, eles somaram cerca de 106 ms em 1.151 s, perto de 5,5 ms/min, todos com outro aplicativo tocando alto. A recomendação para a S9 está em [Limiares](#limiares-escolhidos).
 
 ## Ambiente
 
@@ -83,7 +99,11 @@ Todos os valores estão em ms e são valores absolutos de `eA − eB`.
   - de `position()` contra o QPC, −0,02 e +0,12 ms/min.
 
   O relógio do dispositivo anda cerca de 9 ppm à frente do QPC, e `position()` não vê essa diferença. Numa faixa de 4 min, isso dá cerca de 2 ms.
-- **(s) precisão do seek:** depois de `setPosition(ideal)` com a música tocando, o `e` de B ficou entre −69,8 e −51,6 ms (p50 −62,5). O seek cai de 0 a 18 ms à frente do regime normal, cerca de −70 ms. O seek causa de 20 a 25 ms de silêncio (sonda de tom dos pilotos).
+- **(s) precisão do seek:** depois de `setPosition(ideal)` com a música tocando, o `e` de B ficou entre −69,8 e −51,6 ms (p50 −62,5).
+  - Em (b), b-3 ficou em −101 ms nos dois players depois dos seeks.
+  - No som, o seek cai, portanto, entre 18 ms adiantado e 31 ms atrasado em relação ao regime normal, de cerca de −70 ms.
+  - Para `position()`, o seek cai a até 6 ms do alvo (b-3: −6 e −4 ms).
+  - O seek causa de 20 a 25 ms de silêncio (sonda de tom dos pilotos).
 - **(e) velocidade 1,01 e depois 0,99 por 2 s em B**, com compensação de tom no padrão:
   - o deslocamento líquido de B, já de volta a 1,0, foi de +20,04 e −19,93 ms (p50), contra ±20 esperados;
   - o erro absoluto ficou em p50 0,07, p95 25,3 e máximo 28,0 ms (n = 38). Os desvios grandes vêm dos saltos espontâneos de e-15 e e-17, conferidos nos cliques brutos.
@@ -92,13 +112,28 @@ Todos os valores estão em ms e são valores absolutos de `eA − eB`.
   - os desvios grandes vêm de saltos espontâneos em e2-0, e2-10 e e2-11. Em e2-10, um salto de 533 ms atingiu os dois players ao mesmo tempo.
 - **Saltos espontâneos:** em 1.151 s de canais sem comando (A em a, d, e, e2 e s; B em a e d), houve saltos de +8, +14, +32, +33, +46 e +533 ms, sempre com o som atrasando.
   - Todos aconteceram na segunda execução, com outro aplicativo tocando alto. A causa não foi isolada.
-  - Em e-15, `position()` seguiu liso durante o salto.
+  - Para medir o efeito em `position()`, comparei a média de `posição − ideal` nas amostras de 10 ms antes do salto (−1.000 a −100 ms) e depois do clique seguinte (+1.300 a +1.650 ms). Usei só o player A, em velocidade 1,0.
+  - Variação de `position()` em cada salto:
+
+    | Execução | Salto | Variação de `position()` |
+    |---|---|---|
+    | e2-10 | +533 | −499 |
+    | e2-0 | +46 | −27 |
+    | e-15 | +32 | +3 |
+    | e2-11 | +33 | +1 |
+    | e-17 | +14 | −5 |
+    | s-15 | +8 | −4 |
+  - Só os saltos grandes chegam a `position()`.
 
 ### Granularidade de `position()`
 
 - `position()` muda em degraus de 48 ms (às vezes 72 ms), cerca de uma vez a cada 50 ms. Nas 63.170 mudanças das duas execuções, o intervalo teve p50 de 50,0 ms e p95 de 50,9 ms.
 - O sinal `positionChanged` segue o mesmo ritmo: p50 de 50,0 ms e p95 de 50,8 ms (piloto 3, n = 2.521).
-- Os dois players mostram os mesmos valores. `position()` fica de 67 a 104 ms à frente do que chega à mixagem (p50 77 ms, n = 80). A variação entre inícios é de cerca de ±15 ms.
+- Os dois players mostram os mesmos valores.
+- `position()` fica de 67 a 104 ms à frente do que chega à mixagem (p50 77 ms, p95 96 ms, n = 80). Essa folga muda a cada início, e `position()` não a enxerga.
+  - Entre dois players, essa parte invisível chegou a 37 ms, com p95 de 25 a 27 ms nos pares de (b) e (c).
+  - Nas janelas com correção, o `e` de cada player foi de −128,5 a −53,6 ms. Exemplos: b-4 B −128,5; c-14 −110,7 e −109,1.
+- No indicador de players independentes, a parte que `position()` vê, `|est_i − est_j|`, teve p95 de 21,4 ms em (b) e 30,4 ms em (c), com máximo de 41,5. Ela fica limitada pela faixa morta de ajuste.
 - O estimador de erro, a mediana de 500 ms dos `positionChanged`, tem ruído p95 de 3,8 ms (piloto 3, n = 180).
 - A thread principal parou de 127 a 641 ms em 6 de 138 execuções. Durante essas pausas, os valores chegaram atrasados. Isso causou 6 seeks falsos em b-1 e 2 em b-2.
 - Duas dessas pausas coincidiram com falhas no som: a de 579 ms com o salto de 533 ms de e2-10, e a de 272 ms com o início atrasado de e2-15. Isso indica travamentos do sistema inteiro, não só da thread de interface.
@@ -125,21 +160,27 @@ A sonda tocou um seno de 1 kHz em um player. A frequência medida é a mediana d
 
 ## Limiares escolhidos
 
-- **`room_drift_nudge_ms` = 30.** Abaixo de 30 ms, o erro visto por `position()` se confunde com três fontes de ruído:
-  - o ruído do estimador, p95 de 3,8 ms;
-  - os degraus de 10 ms do início;
-  - a variação de cerca de ±15 ms entre `position()` e o som de cada início.
-
-  Corrigir abaixo disso só persegue ruído. No mesmo PC, sem correção, a mediana do início fica entre 0 e 6 ms, e o p95 de (a) e (c) fica entre 10 e 16 ms.
+- **`room_drift_nudge_ms` = 20**, revisado. A medição usou 30.
+  - O erro entre dois players independentes tem duas partes.
+  - A parte invisível vem da folga entre `position()` e o som. Ela chegou a 37 ms (p95 de 25 a 27 ms), e nenhum limiar a corrige.
+  - A parte visível fica dentro da faixa morta. Com 30 ms, dois players nos lados opostos podem ficar a até 60 ms; nos dados, o p95 foi de 21 a 30 ms e o máximo de 42 ms.
+  - Com 20 ms, esse limite cai para 40 ms. Ainda fica 5 vezes acima do ruído do estimador (p95 de 3,8 ms) e dos degraus de 10 ms do início.
+  - Com o ajuste parando na metade do limiar (10 ms), o corretor não persegue ruído.
+  - O valor de 20 não foi exercitado nesta medição. A S9.2 precisa confirmar que ele não gera ajustes demais.
 - **`room_drift_seek_ms` = 100**, abaixo dos 120 ms usados na medição:
   - acima de 100 ms, o erro já passou da meta da sala, e o seek corrige em menos de 1 s;
-  - o seek cai a até 18 ms do alvo, dentro da faixa morta de 30 ms, sem oscilar;
-  - entre 30 e 100 ms, o ajuste de 1% (10 ms/s) leva no máximo cerca de 7 s;
+  - para `position()`, o seek cai a até 6 ms do alvo, dentro da faixa morta, então não oscila;
+  - no som, o seek cai de 18 ms adiantado a 31 ms atrasado em relação ao regime normal; essa parte é invisível e não dispara ajustes;
+  - entre 20 e 100 ms, o ajuste de 1% (10 ms/s) leva no máximo cerca de 9 s;
   - na medição, nenhum erro ficou entre 100 e 120 ms; os seeks ocorreram com erros de 133 a 496 ms.
 - **Condições para a S9:**
   - ajustar a velocidade só com `setPitchCompensation(false)`; se a compensação precisar ficar ligada, corrigir só por seek;
   - descartar estimativas quando o último `positionChanged` tiver mais de 150 ms;
-  - exigir duas avaliações seguidas acima do limiar antes de um seek.
+  - exigir duas avaliações seguidas acima do limiar antes de um seek;
+  - aceitar os saltos pequenos e invisíveis dentro de uma faixa e zerar o acúmulo na troca de faixa, que começa com um novo início agendado.
+    - Não fazer seek periódico por padrão: cada um custa 20 a 25 ms de silêncio, e `position()` não indica quando ele é necessário.
+    - Com cerca de 5,5 ms/min medidos sob carga, uma faixa de 4 min acumula por volta de 20 ms.
+    - Se o teste real da S9 mostrar faixas longas fora da meta, refazer o seek no ponto esperado num trecho de baixo volume.
 
 ## Desvios do plano
 
