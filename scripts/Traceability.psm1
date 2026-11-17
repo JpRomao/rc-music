@@ -71,7 +71,7 @@ function Get-RcMusicTraceabilityReport {
     }
     if ($requirements.Count -eq 0) { throw 'Empty requirement inventory' }
     $planText = Read-TraceFile $root $manifest.planFile
-    $start = $planText.IndexOf('### 15.1 Destino individual dos 86 requisitos', [StringComparison]::Ordinal)
+    $start = $planText.IndexOf('### 15.1 Destino individual dos 94 requisitos', [StringComparison]::Ordinal)
     $end = $planText.IndexOf('## 16. Lacunas que o plano fecha explicitamente', [StringComparison]::Ordinal)
     if ($start -lt 0 -or $end -le $start) { throw 'Plan matrix unavailable' }
     $destinations = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)

@@ -47,6 +47,8 @@ O plano está em [2026-11-16-library-and-search](superpowers/plans/2026-11-16-li
 
 A fundação `d4137db` e seu [instalador privado histórico](windows-installer.md#setup-aurora-de-d4137db) permanecem registrados, sem representar a fonte nova. A condição posterior do mantenedor bloqueia instaladores intermediários. Reprodução, dados, Qt Network, letras, downloads opcionais, playlists e stores foram preservados no recorte exercitado. Biblioteca permanente/ingresso, pesquisa/provider, paridade visual restante, instalação e gates de produção conservam seus próprios aceites.
 
+A **sala de escuta** (ouvir junto com amigos) foi aceita em 2026-11-17 no [ADR-0022](architecture/decisions/0022-listening-room.md), com os requisitos FR-057–063 e NFR-LIMIT-005 e a exceção limitada de rede em NFR-PRIV-004. O [plano de execução](superpowers/plans/2026-11-17-listening-room.md) existe, mas nenhuma fatia além da S0 (documentação) foi feita: não há código, servidor nem protótipo. A fatia S1 mede a sincronia antes do resto e pode devolver a decisão ao mantenedor. Fica sujeita ao bloqueio de instalador acima: o teste com amigos depende dele.
+
 ### Continuidade preservada: navegador → aplicativo
 
 O objetivo do mantenedor é navegar no Brave/Chromium, selecionar a mídia da página pela extensão e acompanhar sua aquisição no RC Music, com entrega final em MP3. Quando a fonte for MP4, extrair e converter seu áudio; não salvar o vídeo como resultado alternativo. O exemplo indicado é a [página de Bleach no Letras](https://www.letras.mus.br/bleach/1222774/). A aceitação deve exercitar a jornada completa, não apenas o popup simulado ou o recebimento de um pedido.

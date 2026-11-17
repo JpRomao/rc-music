@@ -58,3 +58,15 @@ Domínio deve cobrir CRUD, IDs, ordem, duplicatas, Unicode, limites e rejeição
 Binding deve testar publicação somente após Saved, tentativa repetida do mesmo candidato, recarga após resultado ambíguo, fila preservada e preparação de saída. Quick deve exercitar os componentes reais do painel com backend falso: confirmações, identidade obsoleta, teclado/foco, texto simples, duplicatas e geometria mínima. Builds Lite/Completa e grafo de produção têm checks próprios.
 
 As evidências e contagens finais pertencem ao [guia](../../playlists.md#evidência-de-implementação). Fonte implementada e testes determinísticos não comprovam aceitação nativa, filesystem após perda de energia, Linux ou instalador atualizado. Revisar este ADR antes de adicionar M3U8, substituição automática da fila, importação de URLs, outro formato de persistência, sincronização ou limites maiores.
+
+## Revisão de 2026-11-17: visibilidade para a sala
+
+O [ADR-0022](0022-listening-room.md) aceita a sala de escuta. Para ela, cada playlist ganha o campo `visibility`, e só as playlists do host podem ficar visíveis para a sala (FR-062).
+
+1. `visibility` vale `private` (padrão) ou `room`. Uma playlist privada nunca aparece aos convidados, nem seu nome nem suas faixas são enviados.
+2. O documento `playlists.json` ganha uma nova versão de esquema. Arquivos antigos carregam como privadas. Os limites e as regras de backup, lock e confirmação de gravação das decisões 7 a 12 valem sem mudança.
+3. O convidado vê apenas o nome e as faixas (metadados limitados, sem caminhos) das playlists `room`, enquanto estiver na sala. Mudar a visibilidade durante a sala atualiza na hora o que os convidados veem.
+4. Convidados não têm playlists visíveis para a sala. Trazem músicas próprias uma a uma, com a permissão de envio (FR-063).
+5. A visibilidade não altera fila, seleção, reprodução nem a regra de que excluir uma playlist não apaga áudios.
+
+Esta revisão não reabre as demais decisões deste ADR. A implementação segue a fatia S11 do plano da sala.

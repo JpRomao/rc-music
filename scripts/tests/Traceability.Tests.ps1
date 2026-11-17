@@ -53,7 +53,7 @@ Assert-SafeTestRoot
 $null = New-Item -ItemType Directory -Path (Join-Path $testRoot 'docs/quality'), (Join-Path $testRoot 'docs/product'), (Join-Path $testRoot 'tests'), (Join-Path $testRoot 'src')
 try {
     $requirements = "| FR-001 | P0 | Open |`n| UX-001 | P0 | Empty state |"
-    $plan = '### 15.1 Destino individual dos 86 requisitos' + "`n" + '| `FR-001` | M2.1 | Test |' + "`n" + '| `UX-001` | M3.8 | Test |' + "`n## 16. Lacunas que o plano fecha explicitamente"
+    $plan = '### 15.1 Destino individual dos 94 requisitos' + "`n" + '| `FR-001` | M2.1 | Test |' + "`n" + '| `UX-001` | M3.8 | Test |' + "`n## 16. Lacunas que o plano fecha explicitamente"
     [IO.File]::WriteAllText((Join-Path $testRoot 'docs/product/requirements.md'), $requirements)
     [IO.File]::WriteAllText((Join-Path $testRoot 'docs/development-plan.md'), $plan)
     [IO.File]::WriteAllText((Join-Path $testRoot 'tests/example.cpp'), 'TEST_CASE("opens one file") {}')

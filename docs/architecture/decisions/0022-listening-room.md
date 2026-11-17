@@ -1,0 +1,77 @@
+# ADR-0022: sala de escuta para ouvir junto
+
+**Estado:** Aceito
+
+**Data:** 2026-11-17
+
+**Decisão de escopo:** o mantenedor aprovou o [desenho da sala de escuta](../../superpowers/specs/2026-11-17-listening-room-design.md) em 2026-11-17 ("Aprovar"). O [plano de execução](../../superpowers/plans/2026-11-17-listening-room.md) organiza a entrega em fatias. Esta decisão abre uma exceção limitada ao local-first e não implementa nada: nenhuma fatia além da S0 (documentação) está concluída.
+
+**Relaciona-se a:** [ADR-0003](0003-local-first-and-remote-sources.md) (local-first e fontes remotas), [ADR-0005](0005-windows-product-stack.md) (stack do produto) e [ADR-0015](0015-named-playlists.md) (playlists, que ganham visibilidade para a sala).
+
+## Contexto
+
+O mantenedor quer ouvir música com amigos que moram em outras cidades, cada um no próprio computador. Pedido de 2026-11-17:
+
+> Teremos 1 host que envia um link e com esse link as pessoas se conectam e escutam juntos (cada um no seu volume, porém as mesmas músicas).
+
+Uma pessoa é o host, e a sala funciona como um "streaming" pessoal da biblioteca dela. Os convidados também podem trazer músicas próprias, se o host der a permissão. Todos têm o RC Music instalado. A meta de sincronia é abaixo de 100 ms entre participantes, e 150 ms ainda é aceitável.
+
+Isso conflita com duas regras vigentes: `agents.md` §10 proíbe integrar outros serviços remotos, e NFR-PRIV-004 limita a rede à ação solicitada. O mantenedor aceitou um servidor de apresentação "se não for custar nada". Anti-objetivos: a música passar por servidor de terceiros ou ficar guardada nele, o app depender de rede para tocar música local fora da sala, caminhos, biblioteca completa ou playlists privadas chegarem aos convidados, e qualquer custo financeiro.
+
+## Decisão
+
+1. **Caminho A: o arquivo chega antes e cada um toca no horário combinado.** A música inteira vai para um cache temporário do convidado, e a próxima é enviada durante a atual. Os apps acertam o relógio e tocam o arquivo local no instante marcado pelo host. Nada depende da rede na hora de tocar.
+2. **Estrela com o host no centro.** Cada convidado se conecta só ao host por WebRTC (data channels `control` e `media`, confiáveis e ordenados). Não há conexão entre convidados. O estado da sala é autoritativo no host; convidados enviam intenções, e o host confere a permissão antes de aplicar.
+3. **libdatachannel** para a conexão P2P, apenas com data channels, sem trilhas de mídia. STUN gratuito da Cloudflare (`stun.cloudflare.com:3478`) e nenhum TURN nesta frente.
+4. **Servidor de apresentação no plano gratuito do Cloudflare Workers**, em `services/room-signaling/`: um Worker e um Durable Object por sala. Ele só repassa mensagens de apresentação entre o host e cada convidado, nunca a música, e não guarda nada. Limites: mensagens de 16 KiB, 20 por segundo por socket, 11 sockets por sala; a sala fecha após 10 minutos sem o host. A conta e o `wrangler deploy` são passos do mantenedor.
+5. **Cifragem ponta a ponta das mensagens de apresentação**, com chave derivada do segredo do convite (HKDF e AES-GCM). O servidor vê blocos opacos e não troca as impressões digitais dos certificados. O segredo fica depois do `#` do link e nunca chega ao servidor.
+6. **Identidade sem conta.** O ID da pessoa é a impressão digital do certificado autoassinado gerado no primeiro uso (chave privada protegida pela DPAPI). O link carrega o ID da sala, o segredo do convite e a impressão digital do host.
+7. **Entrada com aprovação dos novos.** Quem o host já aceitou antes entra direto; pessoas novas ficam em "Aguardando o host" até ele aceitar ou recusar; bloqueados são recusados sem pedido. Assim, um link vazado não basta para ouvir a biblioteca do host.
+8. **"Abrir sala" é explícito.** A sala só existe entre "Abrir sala" e "Encerrar sala" (ou o fechamento do app). O convite "até revogar" fica salvo no perfil, mas a sala nunca abre sozinha. Revogar encerra a sala, desconecta todos e invalida o segredo.
+9. **Lotação de 1 a 10 pessoas** (padrão 5). Versões de protocolo diferentes são recusadas com "Atualize o RC Music para entrar nesta sala".
+10. **O que viaja:** metadados limitados, capa reduzida, a letra escolhida pelo host (até 64 KiB) e o arquivo de áudio por conteúdo (SHA-256). Nunca caminhos ou nomes de arquivo locais. Só as playlists do host marcadas como visíveis para a sala aparecem aos convidados (revisão no ADR-0015).
+11. **Limites fixos** nos valores de NFR-LIMIT-005: mensagem de controle de 256 KiB, bloco de arquivo de 64 KiB, envio de convidado de 50 MiB, cache do convidado de 1 GiB apagado ao sair, antecipação de 3 itens.
+12. **Abrir o app não conecta a nada.** A rede existe só entre "Abrir sala" e "Encerrar sala", ou entre "Entrar com link" e "Sair da sala". O app continua inteiro sem rede, e nenhum teste depende de internet.
+
+## Alternativas
+
+- **B, transmissão ao vivo como rádio:** o host decodificaria e codificaria em Opus pela trilha de áudio do WebRTC. Cada convidado ouviria com 150 a 300 ms de atraso diferente, o que estoura a meta, e exigiria um codificador novo. Descartada.
+- **C, sincronizar só a posição com cada um tocando a própria cópia:** só funciona se todos tiverem o mesmo arquivo, e os amigos não compartilham bibliotecas. Fica como caso particular futuro para itens do YouTube. Descartada.
+- **ntfy.sh com mensagens cifradas:** depende de um terceiro e dos limites de uso dele. Descartada.
+- **Troca manual de código:** cada amigo teria de devolver um código ao host. Descartada.
+- **TURN:** relé para quando a conexão direta falhar. Adiado; o TURN da Cloudflare (1.000 GB gratuitos por mês) pode entrar depois, com credenciais temporárias emitidas pelo Worker.
+
+## Consequências
+
+- **O endereço IP fica visível entre os pares**, como em chamadas de voz. O app avisa uma vez, ao criar ou entrar na primeira sala.
+- **O host envia os arquivos.** Com 10 pessoas e músicas grandes, a internet de envio do host pode atrasar a primeira música; a antecipação reduz, mas não elimina.
+- **Cópias temporárias:** cada convidado guarda um cache temporário das músicas do host, apagado ao sair e na abertura seguinte do app se sobrar de uma queda. Os arquivos não entram na biblioteca nem na fila local. A responsabilidade pelo conteúdo compartilhado é de quem hospeda, e o guia do usuário vai dizer isso.
+- Sem TURN, a conexão direta pode falhar (CGNAT simétrico, redes móveis ou corporativas); a sala mostra "Não foi possível conectar diretamente ao host".
+- O plano gratuito do Workers tem limites fixos: ao passar deles, as salas novas falham até o dia seguinte (UTC), sem cobrança.
+- Exceção explícita ao local-first: `agents.md` §10 e NFR-PRIV-004 passam a admitir o servidor de apresentação, só enquanto uma sala está aberta e só com mensagens cifradas. Nenhuma outra rede remota é autorizada.
+- A precisão do `QMediaPlayer` pode impedir a meta de 100 ms. A fatia S1 (protótipo descartável) mede isso antes do resto, e a decisão volta ao mantenedor se 150 ms não for alcançável.
+
+## Licenças e dependências
+
+Dependências novas exigem autorização explícita do mantenedor no momento da tarefa, com nome, origem e tamanho.
+
+| Componente | Licença | Observação |
+| --- | --- | --- |
+| libdatachannel | MPL-2.0 | conexão P2P por data channels; copyleft por arquivo, sem contaminar o código do app |
+| libjuice | MPL-2.0 | ICE usado pela libdatachannel |
+| usrsctp | BSD-3-Clause | SCTP dos data channels |
+| plog | MIT | log interno da libdatachannel |
+| Pilha TLS/DTLS | a definir | OpenSSL, GnuTLS ou MbedTLS; a escolha e sua licença entram na fatia S6 |
+
+O Worker usa pacotes npm próprios, também sujeitos à mesma autorização e ao registro da licença. Os termos do plano gratuito do Cloudflare Workers são condição de operação, não dependência do app.
+
+## Critérios de revisão
+
+Revisar este ADR se:
+
+- a fatia S1 reprovar a meta de sincronia com o `QMediaPlayer` e o caminho próprio de saída (FFmpeg com `QAudioSink`) for necessário;
+- o plano gratuito do Cloudflare Workers se mostrar insuficiente ou mudar de condições;
+- TURN se tornar necessário por falhas de conexão frequentes;
+- o mantenedor pedir itens do YouTube na sala, chat, voz, Linux ou outro limite de pessoas.
+
+Fonte, testes e a aceitação com amigos (fatia S13, dependente do instalador) têm evidência própria. Aceitar este ADR não afirma desempenho, sincronia, segurança verificada ou release.

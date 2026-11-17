@@ -34,6 +34,7 @@ ADRs registram escolhas que alteram estrutura, dependências, distribuição ou 
 | [0019](0019-internal-search-library-and-extension-retirement.md) | Aceito | Busca online pelo próprio yt-dlp (só metadados), biblioteca permanente aprovada abrindo em Lista e retirada da extensão quando o app cobrir a jornada |
 | [0020](0020-signed-youtube-runtime-manifest.md) | Aceito | Inventário do runtime YouTube em manifesto assinado (ECDSA P-256, chave pública compilada), atualizando o yt-dlp sem recompilar o player |
 | [0021](0021-parallel-downloads.md) | Aceito | Até três downloads ao mesmo tempo: vagas no serviço, pistas no executor e gravações dos documentos privados em fila no processo |
+| [0022](0022-listening-room.md) | Aceito | Sala de escuta: host em estrela, arquivo antes e tocar no horário, libdatachannel, apresentação cifrada no Cloudflare Workers gratuito e exceção limitada ao local-first |
 
 ## Processo
 

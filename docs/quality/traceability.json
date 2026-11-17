@@ -2475,6 +2475,104 @@
       ]
     },
     {
+      "id": "FR-057",
+      "plan": "Backlog",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        { "path": "docs/product/requirements.md", "marker": "### 2.10 Sala de escuta" },
+        { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
+      ],
+      "remaining": [
+        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Perfil: domínio, store com backup, diálogo da primeira abertura, avatares e identidade com DPAPI (fatia S2)."
+      ]
+    },
+    {
+      "id": "FR-058",
+      "plan": "Backlog",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        { "path": "docs/product/requirements.md", "marker": "### 2.10 Sala de escuta" },
+        { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
+      ],
+      "remaining": [
+        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Convite, abertura, encerramento, revogação, lotação, convite persistente e reconexão, com o servidor de apresentação (fatias S5 a S7)."
+      ]
+    },
+    {
+      "id": "FR-059",
+      "plan": "Backlog",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        { "path": "docs/product/requirements.md", "marker": "### 2.10 Sala de escuta" },
+        { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
+      ],
+      "remaining": [
+        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Aprovação dos novos, lista de aceitos, expulsar e bloquear (fatias S7 e S10)."
+      ]
+    },
+    {
+      "id": "FR-060",
+      "plan": "Backlog",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        { "path": "docs/product/requirements.md", "marker": "### 2.10 Sala de escuta" },
+        { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
+      ],
+      "remaining": [
+        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Protótipo de sincronia (S1, ponto de decisão) e sincronia real com medição abaixo de 100 ms (S9); a precisão do QMediaPlayer ainda não foi medida."
+      ]
+    },
+    {
+      "id": "FR-061",
+      "plan": "Backlog",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        { "path": "docs/product/requirements.md", "marker": "### 2.10 Sala de escuta" },
+        { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
+      ],
+      "remaining": [
+        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Domínio de permissões e cargos, persistência em room-roles.json e interface (fatias S3 e S10)."
+      ]
+    },
+    {
+      "id": "FR-062",
+      "plan": "Backlog",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        { "path": "docs/product/requirements.md", "marker": "### 2.10 Sala de escuta" },
+        { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
+      ],
+      "remaining": [
+        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Campo visibility nas playlists, visão do convidado e atualização ao vivo (fatia S11)."
+      ]
+    },
+    {
+      "id": "FR-063",
+      "plan": "Backlog",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        { "path": "docs/product/requirements.md", "marker": "### 2.10 Sala de escuta" },
+        { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
+      ],
+      "remaining": [
+        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Envio, validação no host e distribuição das músicas de convidados (fatia S12)."
+      ]
+    },
+    {
       "id": "UX-001",
       "plan": "M0.2–M0.4, M1.10, M2.7, M3.8",
       "status": "em andamento",
@@ -3454,6 +3552,20 @@
       ]
     },
     {
+      "id": "NFR-LIMIT-005",
+      "plan": "Backlog",
+      "status": "planejado",
+      "verification": "future",
+      "tests": [],
+      "evidence": [
+        { "path": "docs/product/requirements.md", "marker": "### 2.10 Sala de escuta" },
+        { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
+      ],
+      "remaining": [
+        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Constantes de limites no domínio, codecs com recusa de mensagens acima do limite, testes de fronteira e limites do Worker (fatias S3 a S8)."
+      ]
+    },
+    {
       "id": "NFR-PRIV-001",
       "plan": "M0.9, M4.8",
       "status": "em andamento",
@@ -3657,7 +3769,7 @@
       "evidence": [
         {
           "path": "docs/development-plan.md",
-          "marker": "### 15.1 Destino individual dos 86 requisitos"
+          "marker": "### 15.1 Destino individual dos 94 requisitos"
         },
         {
           "path": "docs/quality/traceability.md",

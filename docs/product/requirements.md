@@ -156,6 +156,22 @@ Refinamento posterior explícito: no fluxo YouTube → MP3, usar Letras.mus.br c
 
 Pedido do mantenedor em 2026-11-04: playlists foram antecipadas como prioridade em M6.6. A primeira entrega trata listas salvas do próprio app, separadas da fila de reprodução e de sua restauração de sessão. A seleção de uma playlist não inicia áudio automaticamente; o ingresso na fila reutiliza os casos de uso locais. Falha de gravação ou dados inválidos deve ser acionável e preservar as listas saudáveis, sem anunciar salvamento não confirmado. O [ADR-0015](../architecture/decisions/0015-named-playlists.md) registra o domínio, o documento JSON separado com backup e a confirmação assíncrona de escrita, sem banco, conta ou rede. Importação/exportação M3U8 permanece evolução posterior.
 
+### 2.10 Sala de escuta
+
+Decidida no [ADR-0022](../architecture/decisions/0022-listening-room.md) a partir do [desenho de 2026-11-17](../superpowers/specs/2026-11-17-listening-room-design.md). Um host abre uma sala e compartilha um link; os convidados ouvem as mesmas músicas ao mesmo tempo, cada um com o próprio volume. Os critérios abaixo são de aceitação futura: nenhuma fatia além da documentação está implementada. Os limites estão em NFR-LIMIT-005.
+
+| ID | Prioridade | Origem | Requisito e critério principal |
+|---|---:|---|---|
+| FR-057 | P1 | Confirmado | Perfil local com apelido e avatar. Na primeira abertura o app pede o apelido (1 a 32 caracteres Unicode, sem caracteres de controle) e sorteia um avatar de uma lista do app. A pessoa pode trocá-lo por outro da lista ou por uma imagem própria (PNG ou JPEG de até 2 MiB, recortada e reduzida a 256 × 256 px; só a versão reduzida é guardada e enviada). O ID da pessoa é a impressão digital de um certificado próprio gerado no primeiro uso, com a chave privada protegida pela DPAPI. O perfil persiste em JSON com backup e gravação confirmada e funciona sem rede. |
+| FR-058 | P1 | Confirmado | Criar, abrir, encerrar e revogar a sala. O convite é um link com ID da sala, segredo e impressão digital do host, com lotação de 1 a 10 pessoas (padrão 5), duração "termina quando eu fechar o app" (padrão) ou "fica ativo até eu revogar" e cargo inicial. A sala só existe entre "Abrir sala" e "Encerrar sala" ou o fechamento do app, e um convite "até revogar" nunca reabre a sala sozinho. Revogar encerra a sala, desconecta todos e invalida o segredo. Sala cheia e versão de protocolo incompatível são recusadas com mensagem clara. Se o host sai, a sala acaba para todos; um convidado desconectado tenta voltar por 30 s e depois oferece "Entrar de novo". Abrir o app não conecta a nada. |
+| FR-059 | P1 | Confirmado | Entrada com aprovação dos novos. Quem o host já aceitou antes entra direto; uma pessoa nova fica em "Aguardando o host" e o host vê avatar e apelido para aceitar ou recusar; pessoas bloqueadas são recusadas sem pedido. Quem aguarda não recebe estado, fila nem arquivos. O host pode expulsar e bloquear, e os bloqueios e as pessoas aceitas persistem no perfil dele. Um link vazado não basta para ouvir a biblioteca do host. |
+| FR-060 | P1 | Confirmado | Reprodução sincronizada e ajuste de atraso. Todos tocam a mesma música no mesmo ponto, com diferença abaixo de 100 ms entre participantes com saída com fio (até 150 ms é aceitável). O arquivo chega antes ao cache temporário do convidado e o host marca o instante de tocar, cerca de 300 ms à frente, num relógio acertado por amostras; o app corrige derivas continuamente. Cada pessoa controla só o próprio volume e mudo, e tem um ajuste de atraso de saída de −500 a +500 ms. Arquivo atrasado mostra "Carregando…" e entra no ponto certo. A letra escolhida pelo host (até 64 KiB) chega aos convidados. A interface de desenvolvedor registra a diferença estimada. |
+| FR-061 | P1 | Confirmado | Permissões, cargos e ajustes individuais. As permissões são Pular, Pausar, Adicionar da sala, Adicionar playlist, Editar fila, Enviar músicas próprias e Adicionar do YouTube (reservada). O host cria, renomeia e exclui cargos (iniciais "Ouvinte", sem permissões, e "DJ", todas) e pode liberar ou negar uma permissão por pessoa, vencendo o cargo. Criar cargos, mudar cargo, expulsar, bloquear, mudar a lotação e revogar são só do host. O host confere cada intenção do convidado, que recebe "Sem permissão" quando recusada, e a interface esconde ou desabilita os controles sem permissão na hora. Cargos, pessoas aceitas e bloqueios persistem em `room-roles.json`. |
+| FR-062 | P1 | Confirmado | Visibilidade das playlists do host. Cada playlist é `private` por padrão e pode ficar `room`. Só as playlists do host entram na sala. O convidado vê apenas o nome e as faixas (metadados limitados, sem caminhos) das playlists `room`, enquanto estiver na sala, e a mudança de visibilidade atualiza isso na hora. Arquivos de playlists anteriores carregam como privadas. Ver [ADR-0015](../architecture/decisions/0015-named-playlists.md). |
+| FR-063 | P1 | Confirmado | Músicas enviadas por convidados. Com a permissão Enviar músicas próprias, o convidado coloca na fila um arquivo que o host não tem. O arquivo sobe primeiro ao host, que recusa o que passar de 50 MiB ou não for áudio válido pelas mesmas regras e pelo mesmo probe da importação local, e só então o enfileira e o distribui. A música continua na fila se o dono sair. Nenhum caminho ou nome de arquivo local é enviado, e os convidados guardam só cópias temporárias, apagadas ao sair da sala. |
+
+Anti-objetivos que valem para todos os requisitos da sala: a música não passa por servidor de terceiros nem fica guardada nele; o app não depende de internet fora da sala; caminhos, a biblioteca completa e playlists privadas do host não chegam aos convidados; uma pessoa sem permissão não muda a fila nem a reprodução; o convidado não fica com cópias permanentes; a função não gera custo financeiro. Fora do escopo agora: chat, voz, vídeo, entrada pelo navegador, itens do YouTube tocados sem baixar, Linux, TURN e contas. A sincronia depende do protótipo da fatia S1, que pode devolver a decisão ao mantenedor.
+
 ## 3. Requisitos de UX e acessibilidade
 
 | ID | Prioridade | Requisito |
@@ -227,6 +243,7 @@ Limites iniciais, revisáveis somente com corpus e medição:
 | NFR-LIMIT-002 | Metadata retida, sem arte: até 256 KiB no total e 16 KiB por campo usado pelo produto. Campos acima do limite são ignorados/truncados com diagnóstico. |
 | NFR-LIMIT-003 | Probe de metadata tem budget interativo inicial de 2 s. Ao trocar de faixa ou estourar o budget, o resultado fica cancelado/descartado; o M0 deve provar que trabalho subjacente não acumula. |
 | NFR-LIMIT-004 | Um comando IPC aceita no máximo 1.000 paths e 1 MiB serializado. Lotes maiores são divididos/rejeitados com mensagem, sem bloquear a UI. |
+| NFR-LIMIT-005 | Limites da sala de escuta (ADR-0022). Protocolo: versão **1**; mensagem de controle de até **256 KiB**; bloco de arquivo de **64 KiB**; letra de até **64 KiB**; fila de até **500** itens; antecipação de **3** itens. Pessoas: **1 a 10** convidados, padrão **5**. Arquivos: envio de convidado de até **50 MiB**; cache do convidado de até **1 GiB**. Perfil: apelido de até **32** pontos de código; avatar próprio de até **2 MiB** de entrada, reduzido a **256 px**. Tempo: início **300 ms** à frente, **8** amostras de relógio, nova amostra a cada **5000 ms**, janela de reconexão de **30000 ms** e ajuste de saída de **−500 a +500 ms**. Servidor de apresentação (Worker): mensagens de até **16 KiB**, **20** mensagens por segundo por socket, **11** sockets por sala e sala fechada após **10 min** sem o host. Mensagens inválidas ou acima do limite são recusadas sem encerrar a sala. |
 
 ### 4.4 Privacidade e rede
 
@@ -235,7 +252,7 @@ Limites iniciais, revisáveis somente com corpus e medição:
 | NFR-PRIV-001 | O MVP funciona integralmente offline e não coleta telemetria. |
 | NFR-PRIV-002 | Histórico, fila e paths permanecem apenas no dispositivo. |
 | NFR-PRIV-003 | Logs locais não incluem conteúdo de arquivos ou URL completa por padrão e possuem limite de retenção. |
-| NFR-PRIV-004 | Qualquer rede futura é explícita, cancelável e limitada à ação solicitada. |
+| NFR-PRIV-004 | Qualquer rede futura é explícita, cancelável e limitada à ação solicitada. Exceção do [ADR-0022](../architecture/decisions/0022-listening-room.md): a rede da sala de escuta só existe enquanto a pessoa hospeda ou participa de uma sala, entre "Abrir sala" e "Encerrar sala" ou entre "Entrar com link" e "Sair da sala". Abrir o app não conecta a nada, o app continua inteiro sem rede e o servidor de apresentação só repassa mensagens cifradas. |
 
 ### 4.5 Manutenibilidade
 
@@ -311,3 +328,4 @@ O [manifesto executável](../quality/traceability.json) mantém uma entrada por 
 | Progresso arrastável | FR-012, FR-014–015 |
 | Saltos ±5 configuráveis | FR-013 |
 | Temas claro/escuro e possível edição | FR-040–041 |
+| Ouvir junto com amigos em uma sala | FR-057–063, NFR-LIMIT-005, NFR-PRIV-004 |

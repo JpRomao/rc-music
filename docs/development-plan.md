@@ -719,7 +719,7 @@ Repetição entre marcos é intencional: M0 prova viabilidade, M1 cria contratos
 | Backlog | FR-025 | exclusão intencional documentada |
 | R1 | FR-050–053, FR-055, NFR-PRIV-004 | threat model, política e harness; FR-055/R1.11 fora de escopo pela retirada Lidarr no ADR-0018 |
 
-### 15.1 Destino individual dos 86 requisitos
+### 15.1 Destino individual dos 94 requisitos
 
 Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica onde o requisito é primeiro provado ou deliberadamente descartado; não significa que o teste já exista. O [manifesto de M1.2](quality/traceability.json) mantém uma linha por ID, links para testes/evidências, lacunas e estado (`planejado`, `em andamento`, `comprovado`, `excepcionado` ou `fora de escopo`). O [validador integrado ao runner](quality/traceability.md) confere inventário, destinos e referências literais, com consulta inversa por teste/evidência; não executa os testes citados nem comprova automaticamente seus critérios. `Excepcionado` vale somente para gates/desvios que o contrato permita; P0 funcional falho precisa ser corrigido ou alterado/repriorizado antes do RC.
 
@@ -769,6 +769,13 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 | `FR-054` | M3.9 | letras locais/online acima do progresso, confirmação dos metadados, sincronização e falhas isoladas |
 | `FR-055` | R1.11 | fora de escopo por retirada integral do Lidarr do app; decisão documental no ADR-0018, sem apagar histórico ou promover checks antigos |
 | `FR-056` | M6.6 | playlists nomeadas persistentes, CRUD/ordem/duplicatas, ingresso explícito na fila e proteção contra perda de dados |
+| `FR-057` | Backlog | sala de escuta (ADR-0022), fatia S2: perfil, avatares e identidade; sem etapa do plano de marcos |
+| `FR-058` | Backlog | sala de escuta (ADR-0022), fatias S5–S7: convite, abertura, revogação e reconexão; sem etapa do plano de marcos |
+| `FR-059` | Backlog | sala de escuta (ADR-0022), fatias S7 e S10: aprovação dos novos, expulsar e bloquear; sem etapa do plano de marcos |
+| `FR-060` | Backlog | sala de escuta (ADR-0022), fatias S1 e S9: protótipo e sincronia real; sem etapa do plano de marcos |
+| `FR-061` | Backlog | sala de escuta (ADR-0022), fatias S3 e S10: permissões, cargos e ajustes; sem etapa do plano de marcos |
+| `FR-062` | Backlog | sala de escuta (ADR-0022), fatia S11: visibilidade das playlists do host; sem etapa do plano de marcos |
+| `FR-063` | Backlog | sala de escuta (ADR-0022), fatias S8 e S12: transferência e músicas de convidados; sem etapa do plano de marcos |
 | `UX-001` | M0.2–M0.4, M1.10, M2.7, M3.8 | estado vazio e jornada de uma interação |
 | `UX-002` | M0.2–M0.4, M1.10, M2.7, M3.8 | controles principais sempre visíveis |
 | `UX-003` | M0.2–M0.4, M1.10, M2.7, M3.4, M3.8 | informação essencial e detalhes sob demanda |
@@ -802,6 +809,7 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 | `NFR-LIMIT-002` | M0.5–M0.8, M2.6 | metadata abaixo/no/acima e diagnóstico |
 | `NFR-LIMIT-003` | M0.5–M0.8, M2.6 | timeout/cancelamento e nenhum acúmulo de jobs |
 | `NFR-LIMIT-004` | M1.8, M4.3 | boundary com 0/1/1.000/1.001 paths e bytes abaixo/no/acima de 1 MiB |
+| `NFR-LIMIT-005` | Backlog | sala de escuta (ADR-0022), fatias S3–S8: limites de protocolo, arquivos, cache, tempo e Worker, com testes de fronteira |
 | `NFR-PRIV-001` | M0.9, M4.8 | smoke offline, deny/captura de egress e inspeção de dependências |
 | `NFR-PRIV-002` | M1.9, M4.1, M4.8 | persistência somente local e inspeção do pacote |
 | `NFR-PRIV-003` | M1.9, M4.8, M5.7 | conteúdo/path/URL redigidos e rotação/retenção abaixo/no/acima |
