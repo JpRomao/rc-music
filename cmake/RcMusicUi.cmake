@@ -16,6 +16,16 @@ target_link_libraries(rc_music_lyrics PUBLIC rc_music_core Qt6::Core Qt6::Networ
 set_target_properties(rc_music_lyrics PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_lyrics)
 
+add_library(rc_music_profile STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonProfileStore.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonProfileStore.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtAvatarImage.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtAvatarImage.cpp")
+target_include_directories(rc_music_profile PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
+target_link_libraries(rc_music_profile PUBLIC rc_music_core Qt6::Core Qt6::Gui PRIVATE rc_music_media_data)
+set_target_properties(rc_music_profile PROPERTIES AUTOMOC ON)
+rc_music_configure_cpp(rc_music_profile)
+
 add_library(rc_music_playlists STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.cpp"
