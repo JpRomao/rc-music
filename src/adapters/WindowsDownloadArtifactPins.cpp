@@ -295,8 +295,10 @@ bool pinAncestors(const QString& path, std::vector<Handle>& pins) {
                 prefix += QLatin1Char('/');
             prefix += components.at(index - 1);
         }
+        // Deny DELETE sharing (no rename/removal of the ancestor) but share
+        // WRITE, so files beside it can still be replaced atomically.
         Handle handle(CreateFileW(nativePath(prefix).c_str(), FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY,
-                                  FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                  FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
                                   FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
         FILE_ID_INFO identity{};
         if (!handle.valid() || !information(handle.get(), true, identity))

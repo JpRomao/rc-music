@@ -1,3 +1,4 @@
+#include "adapters/WindowsDownloadArtifactPins.hpp"
 #include "adapters/WindowsDownloadOwnershipRecovery.hpp"
 #include "adapters/WindowsDownloadOwnershipStore.hpp"
 #include "adapters/WindowsDownloadReadInput.hpp"
@@ -7,6 +8,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QTemporaryDir>
 #include <QTest>
 #include <array>
@@ -461,6 +463,44 @@ class WindowsDownloadWorkspaceTests final : public QObject {
         QCOMPARE(readFile(planned), QByteArray{"synthetic-mp3"});
     }
 
+    // A running download pins the folders above its workspace, which include
+    // the app's config folder. Saving the session or preferences there must
+    // still replace files atomically while the download runs (L8 found it).
+    void filesNextToTheWorkspaceFoldersCanStillBeReplacedAtomically() {
+        Fixture fixture;
+        const auto document = fixture.root.filePath(QStringLiteral("session.json"));
+        QVERIFY(writeFile(document, "old"));
+        WindowsDownloadWorkspace workspace(fixture.config());
+        QVERIFY(workspace.create());
+        QSaveFile replacement(document);
+        replacement.setDirectWriteFallback(false);
+        QVERIFY(replacement.open(QIODevice::WriteOnly));
+        QCOMPARE(replacement.write("new"), qint64{3});
+        QVERIFY2(replacement.commit(), qPrintable(replacement.errorString()));
+        QCOMPARE(readFile(document), QByteArray{"new"});
+        // The folders above the workspace still cannot be renamed away.
+        const auto moved = fixture.root.filePath(QStringLiteral("moved"));
+        QVERIFY(!QDir().rename(fixture.staging, moved));
+        QVERIFY(workspace.cleanup());
+    }
+    // Runtime artifacts pin their ancestors too, for a whole download.
+    void filesNextToPinnedArtifactAncestorsCanStillBeReplacedAtomically() {
+        Fixture fixture;
+        const auto document = fixture.root.filePath(QStringLiteral("preferences.json"));
+        QVERIFY(writeFile(document, "old"));
+        const auto artifact = QDir::cleanPath(fixture.staging + QStringLiteral("/runtime/tool.exe"));
+        QVERIFY(QDir().mkpath(QFileInfo(artifact).path()));
+        QVERIFY(writeFile(artifact, "tool"));
+        std::vector<download_artifacts::Handle> pins;
+        QVERIFY(download_artifacts::pinAncestors(artifact, pins));
+        QSaveFile replacement(document);
+        replacement.setDirectWriteFallback(false);
+        QVERIFY(replacement.open(QIODevice::WriteOnly));
+        QCOMPARE(replacement.write("new"), qint64{3});
+        QVERIFY2(replacement.commit(), qPrintable(replacement.errorString()));
+        QCOMPARE(readFile(document), QByteArray{"new"});
+        QVERIFY(!QDir().rename(fixture.staging, fixture.root.filePath(QStringLiteral("moved"))));
+    }
     // L8: three lanes create, publish and clean their workspaces at the same
     // time, under the same staging and publication folders and journal.
     void parallelJobsShareTheFoldersAndJournal() {

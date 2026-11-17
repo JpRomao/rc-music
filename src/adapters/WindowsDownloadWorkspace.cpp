@@ -198,10 +198,15 @@ Handle pinDirectory(const QString& path, BY_HANDLE_FILE_INFORMATION* identity = 
     return handle;
 }
 
+// Ancestors deny DELETE sharing, so they cannot be renamed or removed while a
+// job runs, but they share WRITE: files next to them (the session, library and
+// preferences in the config folder) must still be replaced atomically.
+constexpr DWORD ancestor_sharing = FILE_SHARE_READ | FILE_SHARE_WRITE;
+
 bool pinParent(const QString& parent, std::vector<Handle>& pins, BY_HANDLE_FILE_INFORMATION& identity,
                DWORD leaf_sharing = FILE_SHARE_READ, DWORD leaf_access = 0) {
     QString prefix = parent.left(3);
-    auto drive = pinDirectory(prefix);
+    auto drive = pinDirectory(prefix, nullptr, 0, ancestor_sharing);
     if (!drive.valid()) {
         return false;
     }
@@ -212,7 +217,7 @@ bool pinParent(const QString& parent, std::vector<Handle>& pins, BY_HANDLE_FILE_
         }
         prefix += component;
         auto directory = pinDirectory(prefix, &identity, prefix == parent ? leaf_access : 0,
-                                      prefix == parent ? leaf_sharing : FILE_SHARE_READ);
+                                      prefix == parent ? leaf_sharing : ancestor_sharing);
         if (!directory.valid()) {
             return false;
         }
