@@ -9,6 +9,7 @@ function(rc_music_link_shell target ui support)
         m0_qt_shell_platform
         m0_qt_system_appearance
         m0_qt_shell_bootstrap
+        rc_music_profile
         ${support}
         ${ui}
         ${ui}plugin

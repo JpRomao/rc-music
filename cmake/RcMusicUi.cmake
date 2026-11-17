@@ -20,7 +20,9 @@ add_library(rc_music_profile STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonProfileStore.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonProfileStore.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtAvatarImage.hpp"
-    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtAvatarImage.cpp")
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtAvatarImage.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ProfileBinding.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ProfileBinding.cpp")
 target_include_directories(rc_music_profile PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
 target_link_libraries(rc_music_profile PUBLIC rc_music_core Qt6::Core Qt6::Gui PRIVATE rc_music_media_data)
 set_target_properties(rc_music_profile PROPERTIES AUTOMOC ON)
@@ -125,7 +127,11 @@ function(rc_music_add_ui target support qml_output)
             DownloadConfirmation.qml
             DownloadLyricsPanel.qml
             BrowserText.qml
-            DownloadText.qml)
+            DownloadText.qml
+            ProfileText.qml
+            ListenerAvatar.qml
+            AvatarPicker.qml
+            ProfileSetupDialog.qml)
         set(qml_source "${RC_MUSIC_SOURCE_ROOT}/src/ui/qml/${qml_file}")
         set_source_files_properties("${qml_source}" PROPERTIES QT_RESOURCE_ALIAS "${qml_file}")
         list(APPEND qml_files "${qml_source}")
@@ -212,8 +218,14 @@ function(rc_music_add_ui target support qml_output)
         get_filename_component(icon_name "${icon_file}" NAME)
         set_source_files_properties("${icon_file}" PROPERTIES QT_RESOURCE_ALIAS "icons/${icon_name}")
     endforeach()
+    # Listening-room avatars: 20 original geometric shapes in Aurora colors (24 px grid, full color).
+    file(GLOB rc_music_avatar_files CONFIGURE_DEPENDS "${RC_MUSIC_SOURCE_ROOT}/assets/avatars/*.svg")
+    foreach(avatar_file IN LISTS rc_music_avatar_files)
+        get_filename_component(avatar_name "${avatar_file}" NAME)
+        set_source_files_properties("${avatar_file}" PROPERTIES QT_RESOURCE_ALIAS "avatars/${avatar_name}")
+    endforeach()
     qt_add_resources(${target} rc_music_shell_icons
         PREFIX "/rc_music"
-        FILES ${rc_music_icon_files}
+        FILES ${rc_music_icon_files} ${rc_music_avatar_files}
     )
 endfunction()

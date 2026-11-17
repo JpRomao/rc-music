@@ -85,6 +85,12 @@ Título, artista, álbum, número da faixa, ano e capa aparecem quando disponív
 
 Abra **Detalhes da faixa** para ver nome, caminho, tamanho, modificação em UTC e propriedades conhecidas de áudio, como contêiner, codec, bitrate, taxa de amostragem, canais e profundidade de bits. **Mostrar diagnóstico** explica problemas de leitura e apresentação. **Copiar caminho** e **Copiar diagnóstico** copiam apenas após sua ação; revise o conteúdo antes de compartilhá-lo. O app não oferece edição de tags ou capa.
 
+## Perfil
+
+Na primeira abertura, o app pede um **apelido** e mostra um avatar sorteado entre os 20 do app. O apelido tem de 1 a 32 caracteres, numa linha só, sem espaços repetidos nem caracteres especiais; se ele não servir, o diálogo explica o motivo e **Continuar** fica desabilitado. Antes de continuar, você pode trocar o avatar na grade: **Tab** passa do campo para a grade e dela para **Continuar**, as setas percorrem os avatares e **Espaço** ou **Enter** escolhe o que está em foco. O app só volta a pedir se o perfil sumir.
+
+Depois, mude apelido e avatar em **Configurações → Perfil**. **Usar imagem própria…** aceita PNG ou JPEG de até 2 MiB; o app recorta a imagem em quadrado, reduz para 256 × 256 px e guarda só essa cópia. O perfil fica em `profile.json`, no diretório de configuração, e serve para a futura sala de escuta. Se o arquivo foi criado por uma versão mais recente ou não pôde ser lido, o app não pede um perfil novo nem altera o arquivo, e a seção Perfil avisa isso.
+
 ## Preferências, bandeja e restauração
 
 As alterações válidas são salvas automaticamente; não há botão Aplicar.

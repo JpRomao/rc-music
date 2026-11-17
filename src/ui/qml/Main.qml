@@ -14,6 +14,7 @@ ApplicationWindow {
     property var playlists: null
     property var library: null
     property var onlineSearch: null
+    property var profile: null
     property bool startupReady: true
     width: uiContract.clientWidth
     height: uiContract.clientHeight
@@ -75,7 +76,8 @@ ApplicationWindow {
         errorLabels: errorText
     }
     readonly property bool downloadFinalSaveDecisionRequired: downloads !== null && (downloads.canRetryFinalSave || downloads.canCloseAfterFinalSaveFailure)
-    readonly property bool windowShortcutsEnabled: (!playlistsPanel.visible || (inlinePages && !isInside(activeFocusItem, playlistsPanel.contentItem))) && (!libraryPanel.visible || !isInside(activeFocusItem, libraryPanel.contentItem)) && (!searchPanel.visible || !isInside(activeFocusItem, searchPanel.contentItem)) && !libraryPanel.blockingUiOpen && !lyricsPanel.queryOpen && (!downloadsPanel.visible || (inlinePages && !isInside(activeFocusItem, downloadsPanel.contentItem))) && !playlistsPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool profileSetupRequired: profile !== null && profile.needsSetup === true && startupReady && !presenter.exiting
+    readonly property bool windowShortcutsEnabled: !profileSetupDialog.visible && (!playlistsPanel.visible || (inlinePages && !isInside(activeFocusItem, playlistsPanel.contentItem))) && (!libraryPanel.visible || !isInside(activeFocusItem, libraryPanel.contentItem)) && (!searchPanel.visible || !isInside(activeFocusItem, searchPanel.contentItem)) && !libraryPanel.blockingUiOpen && !lyricsPanel.queryOpen && (!downloadsPanel.visible || (inlinePages && !isInside(activeFocusItem, downloadsPanel.contentItem))) && !playlistsPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && transport.enabled
     readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
     readonly property bool primaryKeysEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && !focusOwnsTextInput()
@@ -96,6 +98,15 @@ ApplicationWindow {
     Component.onCompleted: {
         previousPlaybackState = presenter.playbackState;
         revealDownloadFinalSaveFailure();
+        syncProfileSetup();
+    }
+    onProfileSetupRequiredChanged: syncProfileSetup()
+
+    function syncProfileSetup() {
+        if (profileSetupRequired && !profileSetupDialog.visible)
+            profileSetupDialog.open();
+        else if (!profileSetupRequired && profileSetupDialog.visible)
+            profileSetupDialog.close();
     }
     onActiveFocusItemChanged: {
         sideNavigation.revealFocus(activeFocusItem);
@@ -820,6 +831,7 @@ ApplicationWindow {
         contract: window.uiContract
         presenter: window.presenter
         downloads: window.downloads
+        profile: window.profile
         onClosed: {
             if (!window.presenter.exiting) {
                 if (windowNotice.visible)
@@ -1176,6 +1188,16 @@ ApplicationWindow {
         autoRepeat: false
         enabled: window.primaryKeysEnabled
         onActivated: queuePanel.toggleShuffle()
+    }
+    ProfileSetupDialog {
+        id: profileSetupDialog
+        parent: window.contentItem
+        width: Math.min(window.width - window.uiContract.spacingUnit * 6, 680)
+        x: (window.width - width) / 2
+        y: Math.max(0, (window.height - height) / 2)
+        contract: window.uiContract
+        profile: window.profile
+        fallbackFocusItem: sideNavigation.nowButton
     }
     Shortcut {
         sequence: "F2"

@@ -15,6 +15,7 @@
 #include "adapters/QtJsonLibraryStore.hpp"
 #include "adapters/QtJsonLyricsVariantsStore.hpp"
 #include "adapters/QtJsonPlaylistStore.hpp"
+#include "adapters/QtJsonProfileStore.hpp"
 #include "adapters/QtLyricsRomanizer.hpp"
 #include "adapters/QtLyricsService.hpp"
 #include "adapters/QtShellPlatform.hpp"
@@ -53,6 +54,7 @@
 #include "presentation/LyricsBinding.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #include "presentation/PlaylistsBinding.hpp"
+#include "presentation/ProfileBinding.hpp"
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 #include "presentation/PlayerPresenterScenarioControl.hpp"
 #endif
@@ -493,6 +495,7 @@ int main(int argc, char* argv[]) {
 #endif
         std::unique_ptr<music_player::m0::PlaylistsBinding> playlists_binding;
         std::unique_ptr<music_player::m0::LibraryBinding> library_binding;
+        std::unique_ptr<music_player::m0::ProfileBinding> profile_binding;
         bool library_queue_seeded{}, library_playlists_seeded{}, library_downloads_reconciled{};
 #ifdef M0_QT_COMBINED_AUDIO
         auto artwork_cache = std::make_shared<music_player::m0::ArtworkImageCache>();
@@ -793,6 +796,9 @@ int main(int argc, char* argv[]) {
             [&](auto paths) { return presenter.appendPlaylistSources(std::move(paths)); }, nullptr, playlist_picker,
             playlist_locator);
         static_cast<void>(playlists_binding->retryLoad());
+        // Listening room: profile.json and avatars/ live next to the playlists; loading never writes.
+        profile_binding = std::make_unique<music_player::m0::ProfileBinding>(
+            std::make_shared<music_player::m0::QtJsonProfileStore>(playlists_config_root), playlists_config_root);
         // ADR-0019: the permanent library sits next to the playlists in the configuration root.
         library_binding = std::make_unique<music_player::m0::LibraryBinding>(
             std::make_shared<music_player::m0::QtJsonLibraryStore>(playlists_config_root),
@@ -910,6 +916,7 @@ int main(int argc, char* argv[]) {
                                        {QStringLiteral("lyrics"), QVariant::fromValue(&lyrics_binding)},
                                        {QStringLiteral("playlists"), QVariant::fromValue(playlists_binding.get())},
                                        {QStringLiteral("library"), QVariant::fromValue(library_binding.get())},
+                                       {QStringLiteral("profile"), QVariant::fromValue(profile_binding.get())},
                                        {QStringLiteral("startupReady"), false}};
 #ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
         initial_properties.insert(QStringLiteral("embeddedBrowser"), QVariant::fromValue(&embedded_browser));

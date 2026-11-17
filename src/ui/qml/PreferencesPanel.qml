@@ -10,11 +10,19 @@ PageSurface {
     required property ShellUiContract contract
     required property PlayerPresenter presenter
     property var downloads: null
+    property var profile: null
     property int section: 0
+    property bool profileNicknameRejected: false
+    property bool profileNicknameSaved: false
+    property bool customAvatarRejected: false
     property var directoryChoiceOwner: null
     property string announcedDefaultAppsSettingsFeedback: ""
     property bool audioOutputSelectionRejected: false
     readonly property bool downloadFolderAvailable: downloads !== null && typeof downloads.setDownloadDirectory === "function" && typeof downloads.downloadDirectoryText === "string" && downloads.downloadDirectoryText.length > 0
+    readonly property bool profileSectionAvailable: profile !== null
+    readonly property bool profileEditable: profileSectionAvailable && profile.available === true
+    readonly property bool profileDraftValid: profileEditable && profile.acceptsNickname(profileNicknameField.text)
+    readonly property bool profileDraftInvalid: profileEditable && profileNicknameField.text.length > 0 && !profileDraftValid
     readonly property var audioOutputDevices: presenter.audioOutputSelectionSupported ? presenter.audioOutputDevices : []
     readonly property int selectedAudioOutputIndex: {
         const id = presenter.selectedAudioOutputId;
@@ -69,6 +77,34 @@ PageSurface {
             }
         });
     }
+    function resetProfileDraft() {
+        profileNicknameField.text = profileEditable ? profile.nickname : "";
+        profileNicknameRejected = false;
+        profileNicknameSaved = false;
+        customAvatarRejected = false;
+    }
+    function saveProfileNickname() {
+        if (!opened || section !== 4 || !profileDraftValid || presenter.exiting)
+            return;
+        profileNicknameRejected = !profile.setNickname(profileNicknameField.text);
+        profileNicknameSaved = !profileNicknameRejected;
+        if (profileNicknameSaved)
+            profileNicknameField.text = profile.nickname;
+    }
+    function chooseCustomAvatar() {
+        if (!opened || section !== 4 || !profileEditable || avatarImagePicker.visible || presenter.exiting)
+            return;
+        customAvatarRejected = false;
+        avatarImagePicker.open();
+    }
+    function finishCustomAvatarChoice(file) {
+        if (file !== null && opened && section === 4 && profileEditable && !presenter.exiting)
+            customAvatarRejected = !profile.chooseCustomAvatar(file);
+        Qt.callLater(function () {
+            if (root.opened && root.section === 4 && !avatarImagePicker.visible)
+                customAvatarButton.forceActiveFocus(Qt.TabFocusReason);
+        });
+    }
     function selectAudioOutput(index) {
         if (!opened || section !== 1 || !presenter.audioOutputSelectionSupported || presenter.exiting || index < 0 || index > audioOutputDevices.length)
             return;
@@ -91,10 +127,23 @@ PageSurface {
         audioOutputSelectionRejected = false;
         backwardField.resetDraft();
         forwardField.resetDraft();
+        resetProfileDraft();
     }
-    blockingUiOpen: downloadDirectoryPicker.visible
+    blockingUiOpen: downloadDirectoryPicker.visible || avatarImagePicker.visible
     onSurfaceOpened: focusFirst()
-    onAboutToHide: cancelDownloadDirectoryChoice()
+    onAboutToHide: {
+        cancelDownloadDirectoryChoice();
+        if (avatarImagePicker.visible)
+            avatarImagePicker.close();
+    }
+    onProfileEditableChanged: {
+        if (!profileSectionAvailable && section === 4) {
+            section = 0;
+            if (opened)
+                focusFirst();
+        }
+        resetProfileDraft();
+    }
     onDownloadsChanged: cancelDownloadDirectoryChoice()
     onSectionChanged: {
         if (section !== 3)
@@ -126,6 +175,23 @@ PageSurface {
             root.directoryChoiceOwner = null;
             root.restoreDownloadDirectoryFocus();
         }
+    }
+    NativeDialogs.FileDialog {
+        id: avatarImagePicker
+
+        objectName: "preferences-avatar-image-picker"
+        modality: Qt.WindowModal
+        parentWindow: root.parent ? root.parent.Window.window : null
+        popupType: Popup.Item
+        title: profileLabels.chooseCustomAvatar
+        nameFilters: [profileLabels.customAvatarFilter]
+        fileMode: NativeDialogs.FileDialog.OpenFile
+
+        onAccepted: root.finishCustomAvatarChoice(selectedFile)
+        onRejected: root.finishCustomAvatarChoice(null)
+    }
+    ProfileText {
+        id: profileLabels
     }
     background: Rectangle {
         // Inline Aurora pages sit on the canvas; the legacy dialog keeps its card.
@@ -228,6 +294,20 @@ PageSurface {
                 Accessible.checkable: true
                 Accessible.checked: checked
                 onClicked: root.section = 3
+            }
+            AccessibleTransportButton {
+                objectName: "preferences-profile"
+                flat: root.embedded
+                Layout.fillWidth: true
+                contract: root.contract
+                text: profileLabels.section
+                visible: root.profileSectionAvailable
+                checkable: true
+                autoExclusive: true
+                checked: root.section === 4
+                Accessible.checkable: true
+                Accessible.checked: checked
+                onClicked: root.section = 4
             }
         }
         StackLayout {
@@ -545,6 +625,179 @@ PageSurface {
                     textFormat: Text.PlainText
                     visible: text.length > 0
                     wrapMode: Text.Wrap
+                }
+                Item {
+                    Layout.fillHeight: true
+                }
+            }
+            ColumnLayout {
+                spacing: root.contract.spacingUnit
+                Text {
+                    objectName: "preferences-section-title-profile"
+                    visible: root.embedded
+                    Layout.fillWidth: true
+                    Layout.topMargin: root.contract.spacingUnit * 2
+                    text: profileLabels.section
+                    textFormat: Text.PlainText
+                    font.family: root.contract.headingFontFamily
+                    font.pixelSize: root.contract.typeSection
+                    color: root.contract.textPrimaryColor
+                    Accessible.role: Accessible.Heading
+                    Accessible.name: text
+                }
+                Rectangle {
+                    visible: root.embedded
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    Layout.bottomMargin: root.contract.spacingUnit * 2
+                    color: root.contract.highContrast ? root.contract.borderColor : root.contract.dividerColor
+                    Accessible.ignored: true
+                }
+                Text {
+                    objectName: "preferences-profile-unavailable"
+                    Layout.fillWidth: true
+                    visible: root.profileSectionAvailable && !root.profileEditable
+                    text: profileLabels.unavailable
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WordWrap
+                    color: root.contract.textSecondaryColor
+                    Accessible.role: Accessible.StaticText
+                    Accessible.id: objectName
+                    Accessible.name: text
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: root.profileEditable
+                    spacing: root.contract.spacingUnit * 2
+                    ListenerAvatar {
+                        objectName: "preferences-profile-avatar"
+                        size: 56
+                        source: root.profileEditable ? root.profile.avatarSource : ""
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: root.contract.spacingUnit
+                        Text {
+                            Layout.fillWidth: true
+                            text: profileLabels.nickname
+                            textFormat: Text.PlainText
+                            color: root.contract.textPrimaryColor
+                            Accessible.ignored: true
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            TextField {
+                                id: profileNicknameField
+                                objectName: "preferences-profile-nickname"
+                                Layout.fillWidth: true
+                                implicitHeight: root.contract.controlTargetPreferred
+                                maximumLength: 128
+                                selectByMouse: true
+                                activeFocusOnTab: true
+                                color: root.contract.textPrimaryColor
+                                selectionColor: root.contract.accentColor
+                                selectedTextColor: root.contract.accentTextColor
+                                Accessible.role: Accessible.EditableText
+                                Accessible.id: objectName
+                                Accessible.name: profileLabels.nickname
+                                Accessible.description: profileFeedback.visible ? profileFeedback.text : ""
+                                Accessible.focusable: enabled
+                                Accessible.focused: activeFocus
+                                onTextEdited: {
+                                    root.profileNicknameRejected = false;
+                                    root.profileNicknameSaved = false;
+                                }
+                                onAccepted: root.saveProfileNickname()
+                                background: Rectangle {
+                                    color: root.contract.surfaceColor
+                                    radius: root.contract.radiusSmall
+                                    border.width: profileNicknameField.activeFocus ? 3 : 1
+                                    border.color: profileNicknameField.activeFocus ? root.contract.focusColor : (root.profileDraftInvalid ? root.contract.errorColor : root.contract.borderColor)
+                                }
+                            }
+                            AccessibleTransportButton {
+                                objectName: "preferences-profile-save"
+                                contract: root.contract
+                                text: profileLabels.saveNickname
+                                accessibleName: profileLabels.saveNickname
+                                enabled: root.profileDraftValid && profileNicknameField.text !== root.profile.nickname && !root.presenter.exiting
+                                onClicked: root.saveProfileNickname()
+                            }
+                        }
+                    }
+                }
+                Text {
+                    id: profileFeedback
+                    objectName: "preferences-profile-feedback"
+                    Layout.fillWidth: true
+                    visible: root.profileEditable && text.length > 0
+                    text: root.profileNicknameRejected ? profileLabels.saveFailed : (root.profileDraftInvalid ? profileLabels.nicknameInvalid : (root.profileNicknameSaved ? profileLabels.nicknameSaved : ""))
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: root.contract.typeCaption
+                    color: root.profileNicknameRejected || root.profileDraftInvalid ? root.contract.errorColor : root.contract.textSecondaryColor
+                    Accessible.role: Accessible.AlertMessage
+                    Accessible.id: objectName
+                    Accessible.name: text
+                }
+                Text {
+                    Layout.fillWidth: true
+                    Layout.topMargin: root.contract.spacingUnit
+                    visible: root.profileEditable
+                    text: profileLabels.avatar
+                    textFormat: Text.PlainText
+                    color: root.contract.textPrimaryColor
+                    Accessible.ignored: true
+                }
+                Text {
+                    objectName: "preferences-profile-custom-avatar-note"
+                    Layout.fillWidth: true
+                    visible: root.profileEditable && root.profile.avatarIndex < 0
+                    text: profileLabels.customAvatarActive
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: root.contract.typeCaption
+                    color: root.contract.textSecondaryColor
+                    Accessible.role: Accessible.StaticText
+                    Accessible.id: objectName
+                    Accessible.name: text
+                }
+                AvatarPicker {
+                    objectName: "preferences-profile-avatar-picker"
+                    visible: root.profileEditable
+                    Layout.preferredWidth: implicitWidth
+                    Layout.preferredHeight: implicitHeight
+                    contract: root.contract
+                    optionObjectName: "preferences-"
+                    avatarCount: root.profileEditable ? root.profile.avatarCount : 0
+                    selectedIndex: root.profileEditable ? root.profile.avatarIndex : -1
+                    onAvatarChosen: index => {
+                        if (root.opened && root.section === 4 && root.profileEditable && !root.presenter.exiting)
+                            root.profile.chooseBundledAvatar(index);
+                    }
+                }
+                AccessibleTransportButton {
+                    id: customAvatarButton
+                    objectName: "preferences-profile-custom-avatar"
+                    visible: root.profileEditable
+                    contract: root.contract
+                    text: profileLabels.customAvatar
+                    accessibleName: profileLabels.customAvatar
+                    enabled: root.profileEditable && !avatarImagePicker.visible && !root.presenter.exiting
+                    onClicked: root.chooseCustomAvatar()
+                }
+                Text {
+                    objectName: "preferences-profile-custom-avatar-feedback"
+                    Layout.fillWidth: true
+                    visible: root.profileEditable && root.customAvatarRejected
+                    text: profileLabels.customAvatarRejected
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: root.contract.typeCaption
+                    color: root.contract.errorColor
+                    Accessible.role: Accessible.AlertMessage
+                    Accessible.id: objectName
+                    Accessible.name: text
                 }
                 Item {
                     Layout.fillHeight: true
