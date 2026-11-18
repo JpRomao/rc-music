@@ -113,6 +113,14 @@ set_target_properties(rc_music_room_roster_store_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_room_protocol_tests rc_music.room.protocol
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/RoomProtocolCodecTests.cpp" rc_music_room_protocol)
 set_target_properties(rc_music_room_protocol_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_room_cache_tests rc_music.room.cache
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/RoomCacheTests.cpp" rc_music_room_transfer)
+set_target_properties(rc_music_room_cache_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_room_file_transfer_tests rc_music.room.file-transfer
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/RoomFileTransferTests.cpp" rc_music_room_transfer)
+set_target_properties(rc_music_room_file_transfer_tests PROPERTIES AUTOMOC ON)
+target_compile_definitions(rc_music_room_file_transfer_tests PRIVATE
+    RC_MUSIC_TEST_AUDIO_FIXTURES="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid")
 add_ui_test(rc_music_room_track_catalog_tests rc_music.room.track-catalog
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtRoomTrackCatalogTests.cpp" rc_music_room_catalog)
 set_target_properties(rc_music_room_track_catalog_tests PROPERTIES AUTOMOC ON)

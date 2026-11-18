@@ -38,6 +38,16 @@ target_include_directories(rc_music_room_protocol PUBLIC "${RC_MUSIC_SOURCE_ROOT
 target_link_libraries(rc_music_room_protocol PUBLIC rc_music_core Qt6::Core PRIVATE rc_music_media_data)
 rc_music_configure_cpp(rc_music_room_protocol)
 
+# ADR-0022: hash-addressed file transfer over a room link and the disposable room cache.
+add_library(rc_music_room_transfer STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/RoomCache.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/RoomCache.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/RoomFileTransfer.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/RoomFileTransfer.cpp")
+target_include_directories(rc_music_room_transfer PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
+target_link_libraries(rc_music_room_transfer PUBLIC rc_music_core Qt6::Core)
+rc_music_configure_cpp(rc_music_room_transfer)
+
 # ADR-0022: host tracks described for the listening room (hash, tags, chosen lyrics) off the UI thread.
 add_library(rc_music_room_catalog STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtRoomTrackCatalog.hpp"
