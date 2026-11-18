@@ -7,7 +7,8 @@ cmake_path(ABSOLUTE_PATH BUILD_DIRECTORY NORMALIZE OUTPUT_VARIABLE build_root)
 # libdatachannel reaches a command through its usage requirements (RTC_ENABLE_*
 # definitions, the installed include directory) or through datachannel.lib/dll.
 set(datachannel_pattern "RTC_ENABLE_|[Dd]ata[Cc]hannel")
-set(runtime_copy_pattern "copy_if_different (\"[^\"]*|[^ ]*)[Dd]ata[Cc]hannel[.]dll\"?")
+set(dll_path "(\"[^\"]*|[^ ]*)[Dd]ata[Cc]hannel[.]dll\"?")
+set(runtime_copy_pattern "-E copy ${dll_path} ${dll_path}")
 
 function(read_commands out)
     execute_process(COMMAND "${NINJA_COMMAND}" -C "${build_root}" -t commands ${ARGN}

@@ -46,7 +46,24 @@ cmake -S libdatachannel-src-0.24.6 -B libdatachannel-build-0.24.6 -G Ninja -DCMA
 cmake --build libdatachannel-build-0.24.6; cmake --install libdatachannel-build-0.24.6
 ```
 
-O arquivo de configuração de usuário do Mbed TLS contém apenas `#define MBEDTLS_SSL_DTLS_SRTP`. A libdatachannel 0.24.6 chama `mbedtls_ssl_conf_dtls_srtp_protection_profiles()` no transporte DTLS mesmo com `NO_MEDIA=ON`. Mbed TLS e `datachannel.dll` precisam ser compilados com o mesmo arquivo. Versões, commits, hashes e licenças estão no ADR-0022.
+O arquivo `mbedtls-3.6.8/config/rc_music_mbedtls_user_config.h` precisa existir antes do primeiro configure e contém exatamente duas linhas de configuração:
+
+```c
+#define MBEDTLS_SSL_DTLS_SRTP
+#undef MBEDTLS_SSL_PROTO_TLS1_3
+```
+
+- `MBEDTLS_SSL_DTLS_SRTP`: a libdatachannel 0.24.6 chama `mbedtls_ssl_conf_dtls_srtp_protection_profiles()` no transporte DTLS mesmo com `NO_MEDIA=ON`.
+- `#undef MBEDTLS_SSL_PROTO_TLS1_3`: o Mbed TLS fica sem `MBEDTLS_THREADING_C`. Não há backend de threads no Windows, e o Mbed TLS está estático dentro do `datachannel.dll`, sem como chamar `mbedtls_threading_set_alt`. O TLS 1.3 depende do estado global do PSA; por isso fica desligado, assim como `MBEDTLS_USE_PSA_CRYPTO`, que já vem desligado por padrão. O wss usa TLS 1.2, e o DTLS usa a versão 1.2, ambos com contextos próprios.
+
+Mbed TLS e `datachannel.dll` precisam ser compilados com o mesmo arquivo. A configuração do Mbed TLS não chega aos consumidores, porque os headers da libdatachannel não incluem o Mbed TLS. Por isso, a conferência é feita na receita, depois do build. Nos dois comandos abaixo, o `dumpbin` não pode listar símbolos `psa_` não resolvidos:
+
+```powershell
+dumpbin /symbols mbedtls-3.6.8/lib/mbedtls.lib | Select-String 'UNDEF.*\| psa_'
+dumpbin /symbols mbedtls-3.6.8/lib/mbedx509.lib | Select-String 'UNDEF.*\| psa_'
+```
+
+Versões, commits, hashes e licenças estão no ADR-0022.
 
 Versões desta receita:
 

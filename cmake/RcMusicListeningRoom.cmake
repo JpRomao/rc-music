@@ -23,11 +23,20 @@ rc_music_configure_cpp(rc_music_listening_room)
 set_target_properties(rc_music_listening_room PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
 
 # Release runtime: datachannel.dll (Mbed TLS linked in statically) sits beside the executable.
+# The copy depends on the installed DLL, so a rebuilt libdatachannel refreshes it without a relink.
 function(rc_music_copy_listening_room_runtime target)
-    add_custom_command(TARGET ${target} POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-            "$<TARGET_FILE:LibDataChannel::LibDataChannel>" "$<TARGET_FILE_DIR:${target}>"
-    )
+    get_target_property(directory ${target} RUNTIME_OUTPUT_DIRECTORY)
+    if(NOT directory)
+        set(directory "${CMAKE_CURRENT_BINARY_DIR}")
+    endif()
+    set(runtime "${directory}/datachannel.dll")
+    add_custom_command(OUTPUT "${runtime}"
+        COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:LibDataChannel::LibDataChannel>" "${runtime}"
+        DEPENDS "$<TARGET_FILE:LibDataChannel::LibDataChannel>"
+        COMMENT "Copy datachannel.dll beside ${target}"
+        VERBATIM)
+    add_custom_target(${target}_listening_room_runtime DEPENDS "${runtime}")
+    add_dependencies(${target} ${target}_listening_room_runtime)
 endfunction()
 
 if(BUILD_TESTING)

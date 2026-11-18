@@ -77,7 +77,17 @@ Em 2026-11-18, o mantenedor escolheu **Mbed TLS 3.6.8** em vez de OpenSSL 3.5 LT
 
 Os submódulos `deps/json` e `deps/libsrtp` não foram baixados: sem mídia e sem exemplos, o build não os usa.
 
-O Mbed TLS usa o mecanismo documentado `MBEDTLS_USER_CONFIG_FILE` com uma única opção fora do padrão, `MBEDTLS_SSL_DTLS_SRTP`. A libdatachannel 0.24.6 chama `mbedtls_ssl_conf_dtls_srtp_protection_profiles()` no transporte DTLS mesmo com `NO_MEDIA=ON`. Por isso, o Mbed TLS e a `datachannel.dll` são compilados com o mesmo arquivo. A receita está em [Comandos de desenvolvimento](../../development-commands.md#libdatachannel-da-sala-de-escuta).
+O Mbed TLS usa o mecanismo documentado `MBEDTLS_USER_CONFIG_FILE` com duas mudanças em relação ao padrão. O Mbed TLS e a `datachannel.dll` são compilados com o mesmo arquivo. A receita está em [Comandos de desenvolvimento](../../development-commands.md#libdatachannel-da-sala-de-escuta).
+
+- **`MBEDTLS_SSL_DTLS_SRTP` ligado:** a libdatachannel 0.24.6 chama `mbedtls_ssl_conf_dtls_srtp_protection_profiles()` no transporte DTLS mesmo com `NO_MEDIA=ON`.
+- **`MBEDTLS_SSL_PROTO_TLS1_3` desligado:** o Mbed TLS fica sem `MBEDTLS_THREADING_C`. Não há backend de threads no Windows, e o Mbed TLS está estático dentro do `datachannel.dll`, sem como chamar `mbedtls_threading_set_alt`. Por isso, o TLS 1.3 fica desligado, assim como `MBEDTLS_USE_PSA_CRYPTO`, que já vem desligado por padrão. O wss usa TLS 1.2, e o DTLS usa a versão 1.2, ambos com contextos próprios.
+
+A conferência foi feita nas fontes da v0.24.6. Fora dos testes, a única chamada PSA da libdatachannel é `psa_crypto_init()`, em `src/impl/tlstransport.cpp`. No build com TLS 1.3 desligado, `mbedtls.lib` e `mbedx509.lib` não têm referências não resolvidas a `psa_*`. O estado global do PSA só é tocado por esse `psa_crypto_init()`, que é idempotente.
+
+- **Risco residual:** corrida no primeiro `psa_crypto_init()` se duas conexões TLS abrirem ao mesmo tempo.
+- **Requisito para a S6.3:** no máximo um WebSocket seguro de sinalização por processo, aberto a partir de uma única thread.
+
+Se o projeto voltar a precisar de TLS 1.3 ou de PSA, este ponto deve ser revisto antes.
 
 As licenças e os avisos de libdatachannel e libjuice (MPL-2.0), usrsctp (BSD-3-Clause), plog (MIT) e Mbed TLS (Apache-2.0) precisam acompanhar o instalador. Essa entrega fica para a fatia S13.
 
