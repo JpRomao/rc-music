@@ -173,6 +173,11 @@ if ($nativeEnabled) {
 $qt = [IO.Path]::GetFullPath((Join-Path $cache.Qt6_DIR '../../..'))
 $multimedia = [IO.Path]::GetFullPath((Join-Path $cache.Qt6Multimedia_DIR '../../..'))
 $taglib = [IO.Path]::GetFullPath((Join-Path $cache.TagLib_DIR '../../..'))
+# ADR-0022: the listening room links libdatachannel; datachannel.dll (Mbed TLS inside) comes from its prefix.
+$datachannel = if ($cache.ContainsKey('LibDataChannel_DIR') -and $cache.LibDataChannel_DIR -and
+    $cache.LibDataChannel_DIR -notmatch '-NOTFOUND$') {
+    [IO.Path]::GetFullPath((Join-Path $cache.LibDataChannel_DIR '../../..'))
+} else { $null }
 $payload = Join-Path $OutputDirectory 'app'
 $ffmpeg = Get-RcMusicFfmpegRuntime -ManifestPath (Join-Path $PSScriptRoot 'ffmpeg-runtime.v1.json') `
     -DllDirectory (Join-Path $multimedia 'bin') `
@@ -263,6 +268,7 @@ foreach ($module in $modules) {
 $external = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $reports = [Collections.Generic.List[object]]::new()
 $dllRoots = @((Join-Path $qt 'bin'), (Join-Path $multimedia 'bin'), (Join-Path $taglib 'bin'))
+if ($datachannel) { $dllRoots += Join-Path $datachannel 'bin' }
 while ($peQueue.Count -gt 0) {
     $entry = $peQueue.Dequeue()
     $report = ConvertFrom-QtShellPeReport (Invoke-RuntimeTool $dumpbin @('/headers', '/dependents', $entry.source))
@@ -276,7 +282,7 @@ while ($peQueue.Count -gt 0) {
             $null = $external.Add($dependency)
             continue
         }
-        if ($dependency -match '^(?i:Qt6|tag\.|avcodec-|avformat-|avutil-|swresample-|swscale-)') {
+        if ($dependency -match '^(?i:Qt6|tag\.|datachannel\.|avcodec-|avformat-|avutil-|swresample-|swscale-)') {
             throw "Required application dependency is absent from its configured origin: $dependency"
         }
         $systemLibrary = Join-Path ([Environment]::SystemDirectory) $dependency
@@ -308,6 +314,7 @@ if ($componentEnabled) {
     Assert-DownloadPackageUnchanged
 }
 $allowedRoots = @($qt, $multimedia, $taglib, $BuildDirectory, $PSScriptRoot)
+if ($datachannel) { $allowedRoots += $datachannel }
 if ($configuration.browser_sdk_root) { $allowedRoots += $configuration.browser_sdk_root }
 if ($componentEnabled) { $allowedRoots += $downloadComponent.package_root }
 if ($nativeEnabled) {

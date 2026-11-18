@@ -691,6 +691,11 @@ void PlayerPresenter::initializePersistedSession(const PlayerPresenterPreference
 }
 
 SessionSnapshot PlayerPresenter::currentSessionSnapshot() const {
+    auto live = liveSessionSnapshot();
+    return room_session_gate_.filter ? room_session_gate_.filter(std::move(live)) : live;
+}
+
+SessionSnapshot PlayerPresenter::liveSessionSnapshot() const {
     SessionSnapshot result{.queue = local_queue_.snapshot(),
                            .position_ms = currentSessionPosition(),
                            .download_import_receipts = download_import_receipts_,
@@ -774,7 +779,8 @@ void PlayerPresenter::sessionStructureDidChange() {
 
 void PlayerPresenter::observeSessionPosition(const bool checkpoint) {
     discardStaleRestoredSessionState();
-    if (session_autosave_ == nullptr || uses_frozen_fixture_ || exiting_ || restored_position_.has_value())
+    if (session_autosave_ == nullptr || uses_frozen_fixture_ || exiting_ || restored_position_.has_value() ||
+        roomHoldsPosition())
         return;
     const auto position_ms = currentSessionPosition();
     if (checkpoint)
@@ -821,7 +827,7 @@ void PlayerPresenter::reconcileRestoredPosition() {
             restored_eof_generation_ = restored.generation;
         }
         restored_position_.reset();
-        if (session_autosave_ != nullptr)
+        if (session_autosave_ != nullptr && !roomHoldsPosition())
             static_cast<void>(session_autosave_->checkpointConfirmedPosition(snapshot.position_ms));
         return;
     }
@@ -830,7 +836,7 @@ void PlayerPresenter::reconcileRestoredPosition() {
             restored.seek_requested = true;
         else if (!recovery_error_pending()) {
             restored_position_.reset();
-            if (session_autosave_ != nullptr)
+            if (session_autosave_ != nullptr && !roomHoldsPosition())
                 static_cast<void>(session_autosave_->checkpointConfirmedPosition(snapshot.position_ms));
         }
     }
@@ -1935,6 +1941,72 @@ bool PlayerPresenter::appendPublishedAudio(const std::filesystem::path& path, bo
     return appendPublishedAudioImpl(path, committed, nullptr);
 }
 LocalFileQueueSnapshot PlayerPresenter::playlistQueueSnapshot() const { return local_queue_.snapshot(); }
+void PlayerPresenter::setRoomPlayOrder(const bool enabled) noexcept { room_play_order_ = enabled; }
+void PlayerPresenter::setRoomSessionGate(PlayerPresenterRoomSessionGate gate) { room_session_gate_ = std::move(gate); }
+void PlayerPresenter::refreshRoomSession() {
+    if (session_autosave_ == nullptr || uses_frozen_fixture_ || exiting_)
+        return;
+    static_cast<void>(session_autosave_->scheduleStructural(currentSessionSnapshot()));
+    reconcileTimer();
+}
+bool PlayerPresenter::restoreRoomSession(const SessionSnapshot& snapshot) {
+    if (QThread::currentThread() != thread() || uses_frozen_fixture_ || exiting_ || download_append_in_progress_ ||
+        sourceImportActive() || !isValidSessionSnapshot(snapshot))
+        return false;
+    if (local_queue_.snapshot() == snapshot.queue)
+        return true;
+    LocalFileQueue candidate;
+    if (!candidate.restore(snapshot.queue))
+        return false;
+    const auto current = candidate.currentIndex();
+    if (!current.has_value() && local_track_session_->hasTrack() && !local_track_session_->unload())
+        return false;
+    local_queue_ = std::move(candidate);
+    if (!local_queue_model_.replace(local_queue_))
+        throw std::logic_error{"a restored room session could not be projected"};
+    navigation_items_ = navigationItems(local_queue_);
+    local_recovery_intent_.reset();
+    restored_position_.reset();
+    restored_eof_generation_.reset();
+    if (current.has_value() &&
+        local_track_session_->open(local_queue_.items()[*current].source_path, LocalTrackStartIntent::RestorePaused)) {
+        restored_position_ = RestoredPosition{.generation = local_track_session_->playbackGeneration(),
+                                              .target_ms = snapshot.position_ms};
+        artwork_cache_->beginGeneration(local_track_session_->metadataGeneration());
+    } else {
+        artwork_cache_->beginGeneration(MetadataGeneration{});
+    }
+    controller_.applyBackendSnapshot(backend_.snapshot());
+    initializeShuffleRound();
+    const QPointer<PlayerPresenter> guard{this};
+    sessionStructureDidChange();
+    reconcileTimer();
+    emit stateChanged();
+    if (guard)
+        emit playbackChanged();
+    return true;
+}
+std::optional<LocalQueueOccurrenceId> PlayerPresenter::appendRoomSource(const std::filesystem::path& source) {
+    if (QThread::currentThread() != thread() || download_import_call_in_progress_)
+        return std::nullopt;
+    bool committed{};
+    const auto before = local_queue_.size();
+    if (!appendLocalSourcesWithoutPlayback({source}, committed, nullptr) || !committed ||
+        local_queue_.size() != before + 1)
+        return std::nullopt;
+    return local_queue_.items().back().occurrence_id;
+}
+const PlaybackSnapshot& PlayerPresenter::confirmedPlayback() const noexcept { return controller_.confirmedSnapshot(); }
+bool PlayerPresenter::roomPrivacyNoticeShown() const noexcept { return preferences().room_privacy_notice_shown; }
+bool PlayerPresenter::markRoomPrivacyNoticeShown() {
+    if (exiting_ || !controller_.setRoomPrivacyNoticeShown(true))
+        return false;
+    preferenceDidChange();
+    return true;
+}
+bool PlayerPresenter::roomHoldsPosition() const {
+    return room_session_gate_.hold_position && room_session_gate_.hold_position();
+}
 QString PlayerPresenter::queuedLyricsSource(const QString& occurrence_id) const {
     if (uses_frozen_fixture_ || exiting_)
         return {};
@@ -2980,6 +3052,17 @@ bool PlayerPresenter::requestExit() {
         showPlaylistExitRecovery();
         return false;
     }
+    if (room_session_gate_.before_exit) {
+        // Leave or close the listening room while the queue can still change, so the final save
+        // sees the restored (guest) or guest-free (host) session.
+        const auto leave_room = room_session_gate_.before_exit;
+        try {
+            leave_room();
+        } catch (...) {
+        }
+        if (!guard || exiting_)
+            return false;
+    }
 
     const bool selection_was_pending = selectingAudioFiles() || file_location_request_.has_value();
     cancelAudioFileSelection();
@@ -3432,7 +3515,9 @@ PlayerPresenter::LocalAdvanceResult PlayerPresenter::advanceLocalOccurrence(cons
         return LocalAdvanceResult::Rejected;
 
     bool starts_new_round = false;
-    if (shuffleQueueEnabled()) {
+    // While a listening room is open the queue order is the play order (RoomHostPlayer).
+    const bool random_pick = shuffleQueueEnabled() && !room_play_order_;
+    if (random_pick) {
         std::vector<std::size_t> candidates;
         const auto collect = [&](const bool allow_visited) {
             const auto first = repeatQueueEnabled() ? 0 : *previous_index + 1;
@@ -3458,7 +3543,7 @@ PlayerPresenter::LocalAdvanceResult PlayerPresenter::advanceLocalOccurrence(cons
     // The engine must accept before we consume eligibility or change the visible queue.
     if (!loadLocalOccurrence(*next, start_intent))
         return LocalAdvanceResult::Rejected;
-    if (shuffleQueueEnabled()) {
+    if (random_pick) {
         if (starts_new_round)
             shuffle_round_visited_.clear();
         shuffle_round_visited_.insert(selected_id.value);
@@ -3482,7 +3567,7 @@ PlayerPresenter::LocalAdvanceResult PlayerPresenter::advanceLocalOccurrence(cons
         return guard && !exiting_ && backend_.snapshot().generation == generation &&
                local_queue_.snapshot() == expected_queue;
     };
-    if (shuffleQueueEnabled() && selected_id != *previous_id) {
+    if (random_pick && selected_id != *previous_id) {
         // Move the chosen occurrence next to the current one, keeping every unchosen
         // occurrence pending. A circular selection from the prefix starts at index zero.
         const auto destination = *next > *previous_index ? *previous_index + 1 : 0;

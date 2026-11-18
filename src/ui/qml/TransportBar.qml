@@ -18,6 +18,9 @@ GridLayout {
     property int queueCount: 0
     property bool queueAvailable: false
     property bool lyricsAvailable: false
+    // ADR-0022: the listening room binding; the badge shows only while in a room.
+    property var room: null
+    readonly property bool inRoom: room !== null && room.available && room.role !== 0
     signal queueRequested
     signal lyricsRequested
     columns: editorial ? 2 : 1
@@ -28,6 +31,9 @@ GridLayout {
     }
     TransportText {
         id: labels
+    }
+    RoomText {
+        id: roomLabels
     }
     readonly property bool playbackEnabled: presenter.playbackState === PlayerPresenter.Playing || presenter.playbackState === PlayerPresenter.Paused || presenter.playbackState === PlayerPresenter.Ready
     enabled: playbackEnabled || presenter.canGoPrevious || presenter.canGoNext
@@ -324,6 +330,45 @@ GridLayout {
         RowLayout {
             Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
             spacing: 4
+            // A status chip, not a control: the side navigation opens the room page.
+            Rectangle {
+                id: roomBadge
+                objectName: "player-room-badge"
+                readonly property string text: !root.inRoom ? "" : (root.room.role === 1 ? roomLabels.badgeSelf.arg(root.room.memberCount) : roomLabels.badge.arg(root.room.hostNickname).arg(root.room.memberCount))
+                visible: root.inRoom
+                Layout.alignment: Qt.AlignVCenter
+                Layout.maximumWidth: 260
+                implicitWidth: badgeRow.implicitWidth + 20
+                implicitHeight: 28
+                radius: height / 2
+                color: root.contract.selectionColor
+                border.width: root.contract.highContrast ? 1 : 0
+                border.color: root.contract.borderColor
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
+                RowLayout {
+                    id: badgeRow
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    spacing: 6
+                    ShellIcon {
+                        iconName: "people"
+                        size: 16
+                        color: root.contract.textPrimaryColor
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: roomBadge.text
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        font.family: root.contract.bodyFontFamily
+                        font.pixelSize: root.contract.typeCaption
+                        color: root.contract.textPrimaryColor
+                        Accessible.ignored: true
+                    }
+                }
+            }
             AccessibleTransportButton {
                 objectName: "player-lyrics"
                 flat: true

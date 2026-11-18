@@ -141,6 +141,10 @@ set_target_properties(rc_music_avatar_image_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_profile_binding_tests rc_music.profile.binding
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/ProfileBindingTests.cpp" rc_music_profile)
 set_target_properties(rc_music_profile_binding_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_listening_room_binding_tests rc_music.room.binding
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/ListeningRoomBindingTests.cpp" rc_music_room_ui)
+set_target_properties(rc_music_listening_room_binding_tests PROPERTIES AUTOMOC ON)
+set_property(TEST rc_music.room.binding APPEND PROPERTY LABELS "listening-room")
 add_ui_test(rc_music_library_store_tests rc_music.library.store
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtJsonLibraryStoreTests.cpp" rc_music_library rc_music_media_data)
 set_target_properties(rc_music_library_store_tests PROPERTIES AUTOMOC ON)

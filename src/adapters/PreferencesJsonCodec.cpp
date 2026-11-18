@@ -183,6 +183,8 @@ QByteArray PreferencesJsonCodec::encode(const Preferences& preferences) {
     if (!preferences.download_directory.empty())
         object.insert(QStringLiteral("downloadDirectory"), QString::fromStdString(preferences.download_directory));
     object.insert(QStringLiteral("lyricsTextSize"), preferences.lyrics_text_size);
+    if (preferences.room_privacy_notice_shown)
+        object.insert(QStringLiteral("roomPrivacyNoticeShown"), true);
     return QJsonDocument{object}.toJson(QJsonDocument::Compact);
 }
 
@@ -229,6 +231,7 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
     const auto size_value = object.value(QStringLiteral("lyricsTextSize"));
     const auto lyrics_text_size =
         size_value.isUndefined() ? std::optional<int>{18} : decodeBoundedInteger(size_value, 14, 30);
+    const QJsonValue room_privacy_notice = object.value(QStringLiteral("roomPrivacyNoticeShown"));
 
     if (!theme.has_value() || !motion.has_value() || !volume_value.isDouble() || !std::isfinite(volume) ||
         volume < 0.0 || volume > 1.0 || !muted_value.isBool() || !skip_backward.has_value() ||
@@ -236,6 +239,7 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
         !start_minimized_value.isBool() || !queue_end_behavior.has_value() || !window_placement.valid ||
         (!repeat_queue.isUndefined() && !repeat_queue.isBool()) ||
         (!shuffle_queue.isUndefined() && !shuffle_queue.isBool()) || !lyrics_text_size ||
+        (!room_privacy_notice.isUndefined() && !room_privacy_notice.isBool()) ||
         (!directory_value.isUndefined() && (!directory_value.isString() || !validDownloadDirectory(directory) ||
                                             QString::fromStdString(directory) != directory_value.toString()))) {
         return {};
@@ -256,7 +260,8 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
                                        .repeat_queue_enabled = repeat_queue.toBool(false),
                                        .shuffle_queue_enabled = shuffle_queue.toBool(false),
                                        .download_directory = std::move(directory),
-                                       .lyrics_text_size = *lyrics_text_size}};
+                                       .lyrics_text_size = *lyrics_text_size,
+                                       .room_privacy_notice_shown = room_privacy_notice.toBool(false)}};
 }
 
 } // namespace music_player::m0

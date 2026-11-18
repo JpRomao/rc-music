@@ -73,7 +73,7 @@ O agente não faz o deploy. O mantenedor:
 1. cria a conta gratuita da Cloudflare (plano Workers Free, sem cartão);
 2. dentro de `services/room-signaling`, roda `npx wrangler login`;
 3. roda `npx wrangler deploy`;
-4. copia a URL `https://<nome>.<subdomínio>.workers.dev` exibida no fim do deploy para a configuração de build `RC_MUSIC_ROOM_SIGNALING_ORIGIN`. Essa opção será criada pelas fatias seguintes; esta fatia não muda o CMake.
+4. copia a URL `https://<nome>.<subdomínio>.workers.dev` exibida no fim do deploy para a variável de cache `RC_MUSIC_ROOM_SIGNALING_ORIGIN` ao configurar o build do produto, por exemplo `cmake -DRC_MUSIC_ROOM_SIGNALING_ORIGIN=https://<nome>.<subdomínio>.workers.dev ...`. Ela vira uma definição de compilação só do `m0_qt_shell` e aceita `https://<host>` (ou `http://127.0.0.1:<porta>` para um relay local). O padrão é vazio: a página **Ouvir junto** mostra "Sala indisponível neste build" e o app não cria identidade, transporte nem conexão. Os shells de teste nunca recebem a origem.
 
 No plano gratuito, ao passar dos limites diários, as salas novas falham até o dia seguinte (UTC), sem cobrança. Não ative Workers Logs, Logpush nem `wrangler tail` neste Worker.
 

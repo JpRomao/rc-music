@@ -48,6 +48,15 @@ class QtShellPlatformTests final : public QObject {
         QApplication::setQuitOnLastWindowClosed(false);
     }
 
+    void notificationsNeedAnAvailableTray() {
+        bool available{false};
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player"), labels(), [&] { return available; }, [] {});
+        QVERIFY(!platform.trayAvailable());
+        QVERIFY(!platform.showNotification("Ouvir junto", "Bia quer entrar na sala"));
+        platform.trayIcon()->hide();
+        available = true;
+        QVERIFY(!platform.showNotification("Ouvir junto", "Bia quer entrar na sala"));
+    }
     void createsOwnedTrayAndMenuWithStableActions() {
         QtShellPlatform platform(testIcon(), QStringLiteral("Player M0"), labels(), [] { return true; }, [] {});
 

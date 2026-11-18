@@ -42,6 +42,12 @@ ProfileBinding::ProfileBinding(std::shared_ptr<ProfileStore> store, QString conf
 
 bool ProfileBinding::needsSetup() const noexcept { return needs_setup_; }
 bool ProfileBinding::available() const noexcept { return available_; }
+
+std::optional<ListenerProfile> ProfileBinding::profile() const {
+    if (!available_ || needs_setup_)
+        return std::nullopt;
+    return profile_;
+}
 QString ProfileBinding::nickname() const { return QString::fromStdString(profile_.nickname); }
 
 QUrl ProfileBinding::avatarSource() const {

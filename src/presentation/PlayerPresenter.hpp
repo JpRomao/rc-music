@@ -76,6 +76,17 @@ struct PlayerPresenterPreferences final {
 
 enum class ExitPreparationState { Pending, Ready, Failed };
 
+// Listening-room seam over session persistence (ADR-0022, S7.3). Every member is optional.
+// filter maps the live session before it reaches the autosave (host: withoutGuestItems; guest:
+// sessionForAutosave). While hold_position returns true, confirmed positions are not fed to the
+// autosave. before_exit runs once per exit decision, before the final session save, so the room is
+// left (guest) or closed (host) while the queue can still change.
+struct PlayerPresenterRoomSessionGate final {
+    std::function<SessionSnapshot(SessionSnapshot)> filter{};
+    std::function<bool()> hold_position{};
+    std::function<void()> before_exit{};
+};
+
 // One optional application-thread participant. begin is irreversible for the
 // participant, while a failed/timed-out player exit remains locally reversible.
 // Polling Ready proves both durable preparation and physical worker drain.
@@ -428,6 +439,25 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] LocalFileQueueSnapshot playlistQueueSnapshot() const;
     [[nodiscard]] bool appendPlaylistSources(std::vector<std::filesystem::path> source_paths);
     [[nodiscard]] QString queuedLyricsSource(const QString& occurrence_id) const;
+    // Listening room (C++ composition only, never QML). While the room play order is on, shuffle mode
+    // never picks the next track at random: the queue order (physically shuffled when shuffle was
+    // enabled) is the play order, as RoomHostPlayer requires.
+    void setRoomPlayOrder(bool enabled) noexcept;
+    void setRoomSessionGate(PlayerPresenterRoomSessionGate gate);
+    // Schedules the (filtered) session again: the room changed what the gate filters, e.g. the host
+    // learned that an item it just enqueued is a guest's.
+    void refreshRoomSession();
+    // The live session, before the room gate filters it.
+    [[nodiscard]] SessionSnapshot liveSessionSnapshot() const;
+    // Puts back a session captured by liveSessionSnapshot (the guest leaving a room): its queue and
+    // current item, loaded paused at its position. No-op when the queue already matches.
+    [[nodiscard]] bool restoreRoomSession(const SessionSnapshot& snapshot);
+    // Appends one file without playback, library admission or download receipt; its new occurrence.
+    [[nodiscard]] std::optional<LocalQueueOccurrenceId> appendRoomSource(const std::filesystem::path& source);
+    [[nodiscard]] const PlaybackSnapshot& confirmedPlayback() const noexcept;
+    // The one-time IP privacy notice of the listening room (FR-058), kept with the preferences.
+    [[nodiscard]] bool roomPrivacyNoticeShown() const noexcept;
+    bool markRoomPrivacyNoticeShown();
     [[nodiscard]] bool downloadImportRetirementPending() const noexcept;
     [[nodiscard]] bool openSourcePaths(std::vector<std::filesystem::path> source_paths, std::size_t insertion_index);
     Q_INVOKABLE bool importDroppedUrls(const QList<QUrl>& urls, int insertion_index);
@@ -534,6 +564,7 @@ class PlayerPresenter final : public QObject {
     void showPlaylistExitRecovery();
     [[nodiscard]] ExitPreparationState pollExitPreparation();
     [[nodiscard]] bool beginPersistenceExit();
+    [[nodiscard]] bool roomHoldsPosition() const;
     void completeExit();
     void cancelPendingExit();
     void completeDefaultAppsSettingsLaunch(DefaultAppsSettingsLaunchResult result, std::uint64_t generation);
@@ -604,6 +635,8 @@ class PlayerPresenter final : public QObject {
     LocalFileQueue local_queue_;
     std::mt19937 queue_shuffle_random_;
     std::unordered_set<std::uint64_t> shuffle_round_visited_;
+    bool room_play_order_{false};
+    PlayerPresenterRoomSessionGate room_session_gate_{};
     struct OccurrenceRetry final {
         LocalQueueOccurrenceId occurrence_id;
         std::uint64_t generation;

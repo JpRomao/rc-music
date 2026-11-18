@@ -38,6 +38,10 @@ endif()
 
 option(RC_MUSIC_BUILD_DESKTOP "Build the Windows RC Music desktop application" OFF)
 option(RC_MUSIC_LISTENING_ROOM "Build the desktop listening room transport (requires libdatachannel)" ON)
+# ADR-0022: "https://<worker>" of the room signaling relay (docs/room-signaling.md). Empty (the
+# default): the "Ouvir junto" page says the room is unavailable in this build and nothing
+# network-related is ever built.
+set(RC_MUSIC_ROOM_SIGNALING_ORIGIN "" CACHE STRING "Listening room signaling relay origin (https://<host>)")
 if(RC_MUSIC_BUILD_DESKTOP)
     if(NOT WIN32)
         message(FATAL_ERROR "The product desktop build currently targets Windows; Linux validation is deferred")

@@ -270,6 +270,14 @@ void QtShellPlatform::handleTrayHostRestart() {
 }
 
 QMenu* QtShellPlatform::menu() const noexcept { return menu_.get(); }
+
+bool QtShellPlatform::showNotification(const std::string& title, const std::string& message) {
+    if (!trayAvailable())
+        return false;
+    tray_icon_->showMessage(QString::fromStdString(title), QString::fromStdString(message),
+                            QSystemTrayIcon::Information);
+    return true;
+}
 QSystemTrayIcon* QtShellPlatform::trayIcon() const noexcept { return tray_icon_; }
 
 bool QtShellPlatform::trayAvailable() const noexcept {

@@ -102,6 +102,8 @@ struct Preferences final {
     bool shuffle_queue_enabled{false};
     std::string download_directory{};
     int lyrics_text_size{18};
+    // The listening room's one-time IP privacy notice (FR-058) was shown.
+    bool room_privacy_notice_shown{false};
 
     [[nodiscard]] bool operator==(const Preferences&) const noexcept = default;
 };

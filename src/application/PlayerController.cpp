@@ -250,6 +250,12 @@ void PlayerController::applyBackendSnapshot(PlaybackSnapshot snapshot) {
 void PlayerController::setTheme(const ThemeMode theme) { preferences_.theme = theme; }
 
 void PlayerController::setMotionMode(const MotionMode motion) { preferences_.motion = motion; }
+bool PlayerController::setRoomPrivacyNoticeShown(const bool shown) {
+    if (shown == preferences_.room_privacy_notice_shown)
+        return false;
+    preferences_.room_privacy_notice_shown = shown;
+    return true;
+}
 bool PlayerController::setLyricsTextSize(const int size) {
     if (size < 14 || size > 30 || size == preferences_.lyrics_text_size)
         return false;

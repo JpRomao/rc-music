@@ -202,6 +202,30 @@ class PreferencesJsonCodecTests final : public QObject {
         }
     }
 
+    void roomPrivacyNoticeFlagIsOptionalAndOnlyWrittenOnceShown() {
+        auto object = validObject();
+        object.insert(u"roomPrivacyNoticeShown"_s, true);
+        const auto decoded = PreferencesJsonCodec::decode(bytes(object));
+        QCOMPARE(decoded.status, PreferencesJsonDecodeStatus::Valid);
+        QVERIFY(decoded.preferences.has_value());
+        QVERIFY(decoded.preferences->room_privacy_notice_shown);
+        const auto encoded = QJsonDocument::fromJson(PreferencesJsonCodec::encode(*decoded.preferences)).object();
+        QCOMPARE(encoded.value(u"roomPrivacyNoticeShown"_s), QJsonValue{true});
+        for (const auto& legacy : {validVersionOneObject(), validObject()}) {
+            const auto old = PreferencesJsonCodec::decode(bytes(legacy));
+            QVERIFY(old.preferences.has_value());
+            QVERIFY(!old.preferences->room_privacy_notice_shown);
+            QVERIFY(!QJsonDocument::fromJson(PreferencesJsonCodec::encode(*old.preferences))
+                         .object()
+                         .contains(u"roomPrivacyNoticeShown"_s));
+        }
+        for (const auto& value : {QJsonValue{QJsonValue::Null}, QJsonValue{1}, QJsonValue{u"true"_s}}) {
+            auto invalid = validObject();
+            invalid.insert(u"roomPrivacyNoticeShown"_s, value);
+            QCOMPARE(PreferencesJsonCodec::decode(bytes(invalid)).status, PreferencesJsonDecodeStatus::Invalid);
+        }
+    }
+
     void rejectsInvalidShuffleQueueValue() {
         auto object = validObject();
         object.insert(u"shuffleQueueEnabled"_s, u"true"_s);

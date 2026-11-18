@@ -43,6 +43,8 @@
 #ifndef M0_QT_COMBINED_AUDIO
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #endif
+#include "adapters/QtJsonRoomRosterStore.hpp"
+#include "adapters/QtRoomTrackCatalog.hpp"
 #include "m0/domain/WindowPlacement.hpp"
 #include "presentation/ApplicationIdentity.hpp"
 #include "presentation/ApplicationText.hpp"
@@ -51,10 +53,23 @@
 #include "presentation/LibraryArtworkProvider.hpp"
 #include "presentation/LibraryBinding.hpp"
 #include "presentation/LifecycleText.hpp"
+#include "presentation/ListeningRoomBinding.hpp"
 #include "presentation/LyricsBinding.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #include "presentation/PlaylistsBinding.hpp"
+#include "presentation/PresenterRoomHostPlayer.hpp"
 #include "presentation/ProfileBinding.hpp"
+#ifdef RC_MUSIC_LISTENING_ROOM_AVAILABLE
+#include "adapters/DataChannelRoomTransport.hpp"
+#include "adapters/WindowsRoomIdentity.hpp"
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrentRun>
+#endif
+#include <QClipboard>
+#include <QDir>
+#include <QRandomGenerator>
+#include <QScopeGuard>
+#include <chrono>
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
 #include "presentation/PlayerPresenterScenarioControl.hpp"
 #endif
@@ -476,8 +491,9 @@ int main(int argc, char* argv[]) {
 #endif
         const auto lyricfind = music_player::m0::QtLyricsService::loadLyricFindOptions(lyrics_config_root);
         lyrics_service.configureLyricFind(lyricfind);
-        music_player::m0::LyricsBinding lyrics_binding(
-            lyrics_service, std::make_shared<music_player::m0::QtJsonLyricsVariantsStore>(lyrics_config_root));
+        const auto lyrics_variants_store =
+            std::make_shared<music_player::m0::QtJsonLyricsVariantsStore>(lyrics_config_root);
+        music_player::m0::LyricsBinding lyrics_binding(lyrics_service, lyrics_variants_store);
         lyrics_binding.setJapaneseRomanizer(music_player::m0::makeQtLyricsRomanizer(lyrics_config_root));
 #ifdef M0_QT_COMBINED_AUDIO
         music_player::m0::QtAudioFilesPicker playlist_audio_picker(
@@ -911,12 +927,105 @@ int main(int argc, char* argv[]) {
         QObject::connect(&application, &QCoreApplication::aboutToQuit, &lyrics_binding,
                          &music_player::m0::LyricsBinding::beginShutdown);
         update_lyrics();
+        // ADR-0022 (S7.3): "Ouvir junto". Without a signaling origin (the default build) the page says the
+        // room is unavailable and nothing network-related is ever built.
+        music_player::m0::PresenterRoomHostPlayer room_host_player(presenter);
+        music_player::m0::QtJsonRoomRosterStore room_roster(playlists_config_root);
+        music_player::m0::ListeningRoomBindingDependencies room_dependencies;
+#if defined(RC_MUSIC_LISTENING_ROOM_AVAILABLE) && defined(M0_QT_COMBINED_AUDIO)
+        // Its own extractor: the catalog reads tags on its worker, the library on another.
+        music_player::m0::QtRoomTrackCatalog room_catalog(std::make_shared<music_player::m0::TagLibMetadataExtractor>(),
+                                                          lyrics_variants_store);
+        QObject* room_network_context = nullptr;
+        room_dependencies.signaling_origin = QStringLiteral(RC_MUSIC_ROOM_SIGNALING_ORIGIN);
+        room_dependencies.catalog = &room_catalog;
+        // The identity (DPAPI, key generation) loads off the UI thread; the transport is built back on it.
+        // The watcher belongs to the binding, so a load still running when it goes calls nobody.
+        room_dependencies.load_network = [&room_network_context, origin = room_dependencies.signaling_origin,
+                                          root = playlists_config_root](auto done) {
+            using Identity = std::optional<music_player::m0::RoomIdentity>;
+            auto* const watcher = new QFutureWatcher<Identity>(room_network_context);
+            QObject::connect(
+                watcher, &QFutureWatcherBase::finished, watcher, [watcher, origin, done = std::move(done)] {
+                    watcher->deleteLater();
+                    // A failed load or transport construction is "identity unavailable", never an
+                    // exception escaping the event loop; done runs exactly once, outside the try.
+                    std::optional<music_player::m0::ListeningRoomNetwork> network;
+                    try {
+                        if (auto identity = watcher->result()) {
+                            network.emplace();
+                            network->fingerprint = identity->fingerprint;
+                            network->host_endpoint =
+                                std::make_unique<music_player::m0::DataChannelRoomHostEndpoint>(origin, *identity);
+                            network->guest_connector =
+                                std::make_unique<music_player::m0::DataChannelRoomGuestConnector>(origin,
+                                                                                                  std::move(*identity));
+                        }
+                    } catch (...) {
+                        network.reset();
+                    }
+                    done(std::move(network));
+                });
+            watcher->setFuture(QtConcurrent::run([root] { return music_player::m0::loadOrCreateRoomIdentity(root); }));
+        };
+#endif
+        room_dependencies.host_player = &room_host_player;
+        room_dependencies.roster_store = &room_roster;
+        room_dependencies.profile = [&profile_binding] {
+            return profile_binding ? profile_binding->profile() : std::optional<music_player::m0::ListenerProfile>{};
+        };
+        room_dependencies.custom_avatar_sha256 = [root = playlists_config_root] {
+            return music_player::m0::ListeningRoomBinding::fileSha256(
+                QDir{root}.filePath(QStringLiteral("avatars/custom.png")));
+        };
+        room_dependencies.capture_session = [&presenter] { return presenter.liveSessionSnapshot(); };
+        room_dependencies.restore_session = [&presenter](const music_player::m0::SessionSnapshot& snapshot) {
+            static_cast<void>(presenter.restoreRoomSession(snapshot));
+        };
+        room_dependencies.set_room_play_order = [&presenter](const bool enabled) {
+            presenter.setRoomPlayOrder(enabled);
+        };
+        room_dependencies.session_changed = [&presenter] { presenter.refreshRoomSession(); };
+        room_dependencies.clock_ms = [] {
+            return static_cast<std::int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                 std::chrono::steady_clock::now().time_since_epoch())
+                                                 .count());
+        };
+        room_dependencies.random_bytes = [](std::span<std::uint8_t> bytes) {
+            for (auto& byte : bytes)
+                byte = static_cast<std::uint8_t>(QRandomGenerator::system()->bounded(256U));
+        };
+        room_dependencies.privacy_notice_shown = [&presenter] { return presenter.roomPrivacyNoticeShown(); };
+        room_dependencies.mark_privacy_notice_shown = [&presenter] { presenter.markRoomPrivacyNoticeShown(); };
+        room_dependencies.app_active = [] { return QGuiApplication::applicationState() == Qt::ApplicationActive; };
+        room_dependencies.notify = [&platform](const std::string& title, const std::string& message) {
+            static_cast<void>(platform.showNotification(title, message));
+        };
+        room_dependencies.copy_text = [](const QString& text) {
+            if (auto* const clipboard = QGuiApplication::clipboard())
+                clipboard->setText(text);
+        };
+        // Declared after the presenter, so it goes first; the guard below unhooks the presenter before.
+        music_player::m0::ListeningRoomBinding room_binding(std::move(room_dependencies));
+#if defined(RC_MUSIC_LISTENING_ROOM_AVAILABLE) && defined(M0_QT_COMBINED_AUDIO)
+        room_network_context = &room_binding;
+#endif
+        // Autosave stores what the room allows (never guest items; a guest's own pre-room session);
+        // leaving or closing runs in requestExit before the final save.
+        presenter.setRoomSessionGate({.filter =
+                                          [&room_binding](music_player::m0::SessionSnapshot live) {
+                                              return room_binding.sessionForAutosave(std::move(live));
+                                          },
+                                      .hold_position = [&room_binding] { return room_binding.holdsLocalSession(); },
+                                      .before_exit = [&room_binding] { room_binding.shutdown(); }});
+        const auto unhook_room = qScopeGuard([&presenter] { presenter.setRoomSessionGate({}); });
         QVariantMap initial_properties{{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
                                        {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
                                        {QStringLiteral("lyrics"), QVariant::fromValue(&lyrics_binding)},
                                        {QStringLiteral("playlists"), QVariant::fromValue(playlists_binding.get())},
                                        {QStringLiteral("library"), QVariant::fromValue(library_binding.get())},
                                        {QStringLiteral("profile"), QVariant::fromValue(profile_binding.get())},
+                                       {QStringLiteral("room"), QVariant::fromValue(&room_binding)},
                                        {QStringLiteral("startupReady"), false}};
 #ifdef RC_MUSIC_EMBEDDED_BROWSER_AVAILABLE
         initial_properties.insert(QStringLiteral("embeddedBrowser"), QVariant::fromValue(&embedded_browser));

@@ -89,7 +89,11 @@ Abra **Detalhes da faixa** para ver nome, caminho, tamanho, modificação em UTC
 
 Na primeira abertura, o app pede um **apelido** e mostra um avatar sorteado entre os 20 do app. O apelido tem de 1 a 32 caracteres, numa linha só, sem espaços repetidos nem caracteres especiais; se ele não servir, o diálogo explica o motivo e **Continuar** fica desabilitado. Antes de continuar, você pode trocar o avatar na grade: **Tab** passa do campo para a grade e dela para **Continuar**, as setas percorrem os avatares e **Espaço** ou **Enter** escolhe o que está em foco. O app só volta a pedir se o perfil sumir.
 
-Depois, mude apelido e avatar em **Configurações → Perfil**. **Usar imagem própria…** aceita PNG ou JPEG de até 2 MiB; o app recorta a imagem em quadrado, reduz para 256 × 256 px e guarda só essa cópia. O perfil fica em `profile.json`, no diretório de configuração, e serve para a futura sala de escuta. Se o arquivo foi criado por uma versão mais recente ou não pôde ser lido, o app não pede um perfil novo nem altera o arquivo, e a seção Perfil avisa isso.
+Depois, mude apelido e avatar em **Configurações → Perfil**. **Usar imagem própria…** aceita PNG ou JPEG de até 2 MiB; o app recorta a imagem em quadrado, reduz para 256 × 256 px e guarda só essa cópia. O perfil fica em `profile.json`, no diretório de configuração, e é como você aparece na página **Ouvir junto**. Se o arquivo foi criado por uma versão mais recente ou não pôde ser lido, o app não pede um perfil novo nem altera o arquivo, e a seção Perfil avisa isso.
+
+## Ouvir junto
+
+A página **Ouvir junto** abre uma sala para ouvir a mesma fila com outras pessoas. **Criar sala** pede quantas pessoas podem entrar (de 1 a 10; padrão 5) e quanto o convite dura: **Termina quando eu fechar o app** (padrão) ou **Vale até eu revogar**. Depois, copie o link de convite e mande para quem você quiser. Cada pedido para entrar aparece com **Aceitar** e **Recusar**; com o app em segundo plano, o pedido também vira uma notificação do sistema. **Entrar com link** usa o convite que alguém mandou para você. Durante a sala, a barra do player mostra quem é o anfitrião e quantas pessoas estão na sala. Na primeira sala, o app avisa uma vez que, como em chamadas de voz, os participantes ficam sabendo o endereço IP uns dos outros. Um build sem o servidor de apresentação da sala mostra "Sala indisponível neste build".
 
 ## Preferências, bandeja e restauração
 

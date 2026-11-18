@@ -46,6 +46,17 @@ target_include_directories(rc_music_room_catalog PUBLIC "${RC_MUSIC_SOURCE_ROOT}
 target_link_libraries(rc_music_room_catalog PUBLIC rc_music_core Qt6::Core PRIVATE Qt6::Concurrent)
 rc_music_configure_cpp(rc_music_room_catalog)
 
+# ADR-0022: "Ouvir junto" for QML (host and guest use cases); transport-agnostic, no libdatachannel.
+add_library(rc_music_room_ui STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ListeningRoomBinding.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ListeningRoomBinding.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomMembersModel.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomMembersModel.cpp")
+target_include_directories(rc_music_room_ui PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
+target_link_libraries(rc_music_room_ui PUBLIC rc_music_core Qt6::Core)
+set_target_properties(rc_music_room_ui PROPERTIES AUTOMOC ON)
+rc_music_configure_cpp(rc_music_room_ui)
+
 add_library(rc_music_playlists STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.cpp"
@@ -125,6 +136,8 @@ function(rc_music_add_ui target support qml_output)
             LibraryPanel.qml
             SearchText.qml
             SearchPanel.qml
+            RoomText.qml
+            ListeningRoomPanel.qml
             QueuePanel.qml
             QueueText.qml
             QueueActionButton.qml
@@ -168,6 +181,8 @@ function(rc_music_add_ui target support qml_output)
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ApplicationText.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerPresenter.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PlayerPresenter.cpp"
+            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PresenterRoomHostPlayer.hpp"
+            "${RC_MUSIC_SOURCE_ROOT}/src/presentation/PresenterRoomHostPlayer.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.hpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/LyricsBinding.cpp"
             "${RC_MUSIC_SOURCE_ROOT}/src/presentation/DownloadLyricsBinding.hpp"

@@ -249,4 +249,13 @@ endif()
 include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicListeningRoom.cmake")
 if(TARGET rc_music_listening_room AND TARGET m0_qt_shell)
     rc_music_copy_listening_room_runtime(m0_qt_shell)
+    # Only the product executable reaches the real transport; test shells keep the room unavailable.
+    if(NOT RC_MUSIC_ROOM_SIGNALING_ORIGIN STREQUAL "" AND
+       NOT RC_MUSIC_ROOM_SIGNALING_ORIGIN MATCHES "^(https://[A-Za-z0-9.-]+(:[0-9]+)?|http://127[.]0[.]0[.]1:[0-9]+)$")
+        message(FATAL_ERROR "RC_MUSIC_ROOM_SIGNALING_ORIGIN must be https://<host> (or http://127.0.0.1:<port>)")
+    endif()
+    find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Concurrent)
+    target_link_libraries(m0_qt_shell PRIVATE rc_music_listening_room Qt6::Concurrent)
+    target_compile_definitions(m0_qt_shell PRIVATE RC_MUSIC_LISTENING_ROOM_AVAILABLE
+        "RC_MUSIC_ROOM_SIGNALING_ORIGIN=\"${RC_MUSIC_ROOM_SIGNALING_ORIGIN}\"")
 endif()

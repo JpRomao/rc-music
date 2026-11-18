@@ -18,6 +18,7 @@ Rectangle {
     property bool hasPlaylists: false
     property bool hasLibrary: false
     property bool hasSearch: false
+    property bool hasRoom: false
     property bool hasDownloads: false
     property bool hasBrowser: false
     property bool downloadsExitRecovery: false
@@ -28,6 +29,7 @@ Rectangle {
     property alias playlistsButton: playlistsAction
     property alias libraryButton: libraryAction
     property alias searchButton: searchAction
+    property alias roomButton: roomAction
     property alias downloadsButton: downloadsAction
     property alias browserButton: browserAction
     property alias themeButton: themeAction
@@ -37,6 +39,7 @@ Rectangle {
     signal playlistsRequested
     signal libraryRequested
     signal searchRequested
+    signal roomRequested
     signal downloadsRequested
     signal browserRequested
     signal themeRequested
@@ -211,6 +214,25 @@ Rectangle {
                 Accessible.checkable: true
                 Accessible.checked: checked
                 onClicked: root.searchRequested()
+            }
+            NavigationButton {
+                id: roomAction
+                iconName: "people"
+                editorial: root.editorial
+                compact: root.compact
+                objectName: "room"
+                KeyNavigation.tab: null
+                KeyNavigation.backtab: null
+                Layout.fillWidth: true
+                contract: root.contract
+                text: labels.listenTogether
+                checkable: true
+                checked: root.activePage === "room"
+                visible: root.hasRoom && root.editorial
+                enabled: visible && !root.exiting
+                Accessible.checkable: true
+                Accessible.checked: checked
+                onClicked: root.roomRequested()
             }
             NavigationButton {
                 id: libraryAction

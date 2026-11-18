@@ -80,6 +80,8 @@ class QtShellPlatform final : public QObject, public PlatformIntegration {
     void minimizeWindow() override;
     void showAndActivateWindow() override;
     void requestExit() override;
+    // Shown as a tray message, only while the tray is available.
+    bool showNotification(const std::string& title, const std::string& message) override;
 
   signals:
     void playPauseRequested();

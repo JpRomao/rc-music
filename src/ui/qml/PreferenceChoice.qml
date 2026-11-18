@@ -13,6 +13,7 @@ ColumnLayout {
     required property int selected
     property string unselectedText: ""
     property string accessibleDescription: ""
+    readonly property alias control: control
     signal valueActivated(int index)
     spacing: contract.spacingUnit
     onOptionsChanged: {

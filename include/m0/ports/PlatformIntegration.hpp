@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <string>
 
 namespace music_player::m0 {
 
@@ -29,6 +30,12 @@ class PlatformIntegration {
     virtual void minimizeWindow() = 0;
     virtual void showAndActivateWindow() = 0;
     virtual void requestExit() = 0;
+    // A native, non-blocking system notification (UTF-8 text). false when none can be shown.
+    virtual bool showNotification(const std::string& title, const std::string& message) {
+        static_cast<void>(title);
+        static_cast<void>(message);
+        return false;
+    }
 };
 
 } // namespace music_player::m0

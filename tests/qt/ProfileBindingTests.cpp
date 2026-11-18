@@ -114,6 +114,19 @@ class ProfileBindingTests final : public QObject {
         QCOMPARE(binding->avatarIndex(), 4);
         QCOMPARE(binding->avatarSource(), QUrl{QStringLiteral("qrc:/rc_music/avatars/avatar-05.svg")});
     }
+    void theRoomSeesTheProfileOnlyOnceItIsSetUp() {
+        QTemporaryDir dir;
+        auto store = std::make_shared<FakeProfileStore>();
+        const auto binding = makeBinding(store, dir.path());
+        QVERIFY(!binding->profile().has_value());
+        QVERIFY(binding->setNickname(QStringLiteral("Ana")));
+        QCOMPARE(binding->profile(), std::optional<ListenerProfile>{store->saved.back()});
+        store->loaded = {std::nullopt, ProfileLoadStatus::Unavailable};
+        QVERIFY(!makeBinding(store, dir.path())->profile().has_value());
+        const auto loaded = makeBinding(loadedStore({"Bia", {AvatarKind::Bundled, 4, {}}}), dir.path());
+        QCOMPARE(loaded->profile(),
+                 (std::optional<ListenerProfile>{ListenerProfile{"Bia", {AvatarKind::Bundled, 4, {}}}}));
+    }
     void invalidProfileWithoutBackupNeedsSetup() {
         QTemporaryDir dir;
         auto store = std::make_shared<FakeProfileStore>();

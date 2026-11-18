@@ -1,4 +1,9 @@
+#include "../../support/FakeRoomHost.hpp"
+#include "../../support/FakeRoomTransport.hpp"
+
 #include "m0/adapters/fixture/FixtureRepository.hpp"
+#include "m0/application/ListeningRoomGuest.hpp"
+#include "m0/application/ListeningRoomHost.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
 #include "m0/application/SessionAutosave.hpp"
 #include "m0/domain/ArtworkLimits.hpp"
@@ -12,6 +17,7 @@
 #include "presentation/ArtworkImageProvider.hpp"
 #include "presentation/PlayerPresenterScenarioControl.hpp"
 #include "presentation/PlayerPresenterTestAccess.hpp"
+#include "presentation/PresenterRoomHostPlayer.hpp"
 
 #include <QAbstractItemModelTester>
 #include <QColor>
@@ -573,6 +579,14 @@ class PlayerPresenterTests final : public QObject {
     void shuffleQueueModeVisitsEveryRemainingOccurrence_data();
     void shuffleQueueModeVisitsEveryRemainingOccurrence();
     void shuffleQueueModeRejectedNextPreservesOrderAndEligibility();
+    void roomPlayOrderAdvancesInQueueOrderWhileShuffled();
+    void roomHostPlayerDelegatesQueueAndTransportToThePresenter();
+    void roomSessionGateFiltersTheSavedSessionAndHoldsItsPosition();
+    void roomSessionGateLeavesTheRoomBeforeTheFinalExitSave();
+    void restoredRoomSessionPutsBackTheQueuePaused();
+    void hostRoomSessionExcludesGuestItems();
+    void guestRoomSessionKeepsThePreRoomSession();
+    void roomPrivacyNoticeIsMarkedOnceAndPersisted();
     void disablingShuffleFromAnOrderObserverStopsThePendingPermutation();
     void removingCurrentUsesAForwardSuccessorOrLeavesPlaybackEmpty();
     void removingPausedCurrentKeepsTheSuccessorReady();
@@ -9513,6 +9527,357 @@ void PlayerPresenterTests::exitPublishesItsGuardAndStopsTicksBeforeRequestingThe
     QVERIFY(!presenter.togglePlayback());
     QVERIFY(!presenter.togglePlayback());
     QVERIFY(!timer->isActive());
+}
+
+namespace {
+[[nodiscard]] std::vector<std::filesystem::path> roomSources(const int count) {
+    std::vector<std::filesystem::path> sources;
+    for (int index = 0; index < count; ++index) {
+        std::u8string name{u8"Sala "};
+        name.push_back(static_cast<char8_t>(u8'A' + index));
+        name += u8".wav";
+        sources.push_back(localTestPath(name));
+    }
+    return sources;
+}
+} // namespace
+
+void PlayerPresenterTests::roomPlayOrderAdvancesInQueueOrderWhileShuffled() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    PresenterMetadataReader metadata;
+    const auto sources = roomSources(7);
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    presenter.setQueueShuffleSeedForTest(47);
+    QVERIFY(presenter.toggleShuffleQueue());
+    // While a room is open the queue order is the play order: shuffle is only the physical
+    // reorder made when it was enabled, never a random pick at advance time.
+    presenter.setRoomPlayOrder(true);
+    for (int step = 0; step < 5; ++step) {
+        const auto before = queueOccurrenceIds(*presenter.queueModelObject());
+        const auto expected = before[presenter.currentQueueIndex() + 1];
+        if (step % 2 == 0) {
+            QVERIFY(presenter.nextTrack());
+        } else {
+            backend.publishEvent(PlaybackEventType::Ended, {.status = PlaybackStatus::Paused,
+                                                            .position_ms = 2'000,
+                                                            .duration_ms = 2'000,
+                                                            .seekable = true,
+                                                            .generation = backend.snapshot().generation});
+        }
+        QTRY_COMPARE(presenter.currentOccurrenceId(), expected);
+        QCOMPARE(queueOccurrenceIds(*presenter.queueModelObject()), before);
+    }
+    presenter.setRoomPlayOrder(false);
+}
+
+void PlayerPresenterTests::roomHostPlayerDelegatesQueueAndTransportToThePresenter() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    PresenterMetadataReader metadata;
+    const auto sources = roomSources(3);
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    PresenterRoomHostPlayer player{presenter};
+    int changes = 0;
+    player.onChanged = [&changes] { ++changes; };
+
+    const auto initial = player.state();
+    QCOMPARE(initial.queue, presenter.playlistQueueSnapshot());
+    QCOMPARE(initial.queue.items.size(), std::size_t{3});
+    QCOMPARE(initial.status, PlaybackStatus::Ready);
+
+    const auto extra = localTestPath(u8"Sala extra.wav");
+    const auto added = player.enqueue(extra);
+    QVERIFY(added.has_value());
+    QVERIFY(changes > 0);
+    QCOMPARE(player.state().queue.items.back().occurrence_id, *added);
+    QCOMPARE(player.state().queue.items.back().source_path, extra);
+    QCOMPARE(player.state().queue.current_occurrence_id, initial.queue.current_occurrence_id);
+    QVERIFY(!player.enqueue(std::filesystem::path{}).has_value());
+
+    QVERIFY(player.move(*added, 1));
+    QCOMPARE(player.state().queue.items[1].occurrence_id, *added);
+    QVERIFY(!player.move(LocalQueueOccurrenceId{999}, 0));
+    QVERIFY(player.remove(*added));
+    QCOMPARE(player.state().queue.items.size(), std::size_t{3});
+    QVERIFY(!player.remove(*added));
+
+    changes = 0;
+    QVERIFY(player.next());
+    QCOMPARE(player.state().queue.current_occurrence_id, std::optional{initial.queue.items[1].occurrence_id});
+    QVERIFY(changes > 0);
+    QVERIFY(player.previous());
+    QCOMPARE(player.state().queue.current_occurrence_id, std::optional{initial.queue.items[0].occurrence_id});
+    // The presenter's own commands reach the room too.
+    changes = 0;
+    QVERIFY(presenter.nextTrack());
+    QVERIFY(changes > 0);
+
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 1'000,
+                     .duration_ms = 10'000,
+                     .seekable = true,
+                     .generation = backend.snapshot().generation});
+    QTRY_COMPARE(player.state().status, PlaybackStatus::Playing);
+    QCOMPARE(player.state().position_ms, 1'000);
+    QVERIFY(player.seek(4'000));
+    QCOMPARE(backend.seek_positions.back(), 4'000);
+    const auto pauses = backend.pause_calls;
+    QVERIFY(player.pause());
+    QCOMPARE(backend.pause_calls, pauses + 1);
+}
+
+void PlayerPresenterTests::roomSessionGateFiltersTheSavedSessionAndHoldsItsPosition() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesClock clock;
+    PresenterPreferencesWriter preferences_writer;
+    PreferencesAutosave preferences_autosave{preferences_writer, {}, {.now = [&clock] { return clock.now(); }}};
+    PresenterSessionWriter session_writer;
+    SessionAutosave session_autosave{session_writer, {}, {.now = [&clock] { return clock.now(); }}};
+    const auto sources = roomSources(3);
+    PlayerPresenter presenter(
+        platform, backend, metadata, [sources] { return sources; },
+        PlayerPresenterPreferences{
+            .autosave = &preferences_autosave,
+            .session = {.autosave = &session_autosave, .now = [&clock] { return clock.now(); }}});
+    QVERIFY(presenter.openAudio());
+    QCOMPARE(session_autosave.flush(), SessionSaveStatus::Saved);
+    const SessionSnapshot pre_room = session_writer.flushes.back().snapshot;
+
+    bool hold = true;
+    presenter.setRoomSessionGate(
+        {.filter = [&pre_room](SessionSnapshot) { return pre_room; }, .hold_position = [&hold] { return hold; }});
+    QVERIFY(presenter.appendPlaylistSources({localTestPath(u8"Sala da sala.wav")}));
+    backend.publish({.status = PlaybackStatus::Playing,
+                     .position_ms = 30'000,
+                     .duration_ms = 60'000,
+                     .seekable = true,
+                     .generation = backend.snapshot().generation});
+    QTRY_COMPARE(presenter.confirmedPositionMs(), 30'000);
+    QVERIFY(presenter.pause());
+    QCOMPARE(session_autosave.flush(), SessionSaveStatus::Saved);
+    QCOMPARE(session_writer.flushes.back().snapshot, pre_room);
+
+    presenter.setRoomSessionGate({});
+    QVERIFY(presenter.appendPlaylistSources({localTestPath(u8"Depois da sala.wav")}));
+    QCOMPARE(session_autosave.flush(), SessionSaveStatus::Saved);
+    QCOMPARE(session_writer.flushes.back().snapshot.queue.items.size(), std::size_t{5});
+}
+
+void PlayerPresenterTests::roomSessionGateLeavesTheRoomBeforeTheFinalExitSave() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesClock clock;
+    PresenterPreferencesWriter preferences_writer;
+    PreferencesAutosave preferences_autosave{preferences_writer, {}, {.now = [&clock] { return clock.now(); }}};
+    PresenterSessionWriter session_writer;
+    SessionAutosave session_autosave{session_writer, {}, {.now = [&clock] { return clock.now(); }}};
+    const auto sources = roomSources(3);
+    PlayerPresenter presenter(
+        platform, backend, metadata, [sources] { return sources; },
+        PlayerPresenterPreferences{
+            .autosave = &preferences_autosave,
+            .session = {.autosave = &session_autosave, .now = [&clock] { return clock.now(); }}});
+    QVERIFY(presenter.openAudio());
+    const auto guest_item = localTestPath(u8"Sala convidado.wav");
+    QVERIFY(presenter.appendPlaylistSources({guest_item}));
+    const auto guest_id = presenter.playlistQueueSnapshot().items.back().occurrence_id;
+    int leaves = 0;
+    presenter.setRoomSessionGate({.before_exit = [&] {
+        ++leaves;
+        // Like ListeningRoomHost::close(): the guest items leave the player's queue.
+        QVERIFY(presenter.removeQueueOccurrence(LocalQueueListModel::occurrenceId(guest_id)));
+    }});
+    QVERIFY(presenter.requestExit());
+    QCOMPARE(leaves, 1);
+    QVERIFY(!session_writer.starts.empty());
+    const auto saved = session_writer.starts.back().snapshot;
+    QCOMPARE(saved.queue.items.size(), std::size_t{3});
+    for (const auto& item : saved.queue.items)
+        QVERIFY(item.source_path != guest_item);
+}
+
+void PlayerPresenterTests::restoredRoomSessionPutsBackTheQueuePaused() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    PresenterMetadataReader metadata;
+    const auto sources = roomSources(3);
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    QVERIFY(presenter.nextTrack());
+    const auto saved = presenter.liveSessionSnapshot();
+    QCOMPARE(saved.queue.current_occurrence_id, std::optional{saved.queue.items[1].occurrence_id});
+
+    QVERIFY(presenter.clearQueue());
+    QVERIFY(presenter.appendPlaylistSources({localTestPath(u8"Sala outra.wav")}));
+    const auto loads = backend.loaded_paths.size();
+    QVERIFY(presenter.restoreRoomSession(saved));
+    QCOMPARE(presenter.playlistQueueSnapshot(), saved.queue);
+    QCOMPARE(presenter.currentOccurrenceId(), LocalQueueListModel::occurrenceId(saved.queue.items[1].occurrence_id));
+    QCOMPARE(backend.loaded_paths.size(), loads + 1);
+    QCOMPARE(backend.loaded_paths.back(), sources[1]);
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 3);
+    // Restoring the session it already has changes nothing.
+    QVERIFY(presenter.restoreRoomSession(saved));
+    QCOMPARE(backend.loaded_paths.size(), loads + 1);
+}
+
+void PlayerPresenterTests::hostRoomSessionExcludesGuestItems() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesClock clock;
+    PresenterPreferencesWriter preferences_writer;
+    PreferencesAutosave preferences_autosave{preferences_writer, {}, {.now = [&clock] { return clock.now(); }}};
+    PresenterSessionWriter session_writer;
+    SessionAutosave session_autosave{session_writer, {}, {.now = [&clock] { return clock.now(); }}};
+    const auto sources = roomSources(3);
+    PlayerPresenter presenter(
+        platform, backend, metadata, [sources] { return sources; },
+        PlayerPresenterPreferences{
+            .autosave = &preferences_autosave,
+            .session = {.autosave = &session_autosave, .now = [&clock] { return clock.now(); }}});
+    QVERIFY(presenter.openAudio());
+
+    PresenterRoomHostPlayer player{presenter};
+    testing::InMemoryRoomRosterStore roster;
+    roster.stored.listeners.push_back(KnownListener{"fp-dj", "Dj", 2, {}, false});
+    roster.status = RoomRosterLoadStatus::Loaded;
+    testing::FakeRoomHostEndpoint endpoint;
+    testing::FakeRoomTrackCatalog catalog;
+    std::uint8_t next_random = 1;
+    auto host = std::make_unique<ListeningRoomHost>(ListeningRoomHostDependencies{
+        .roster_store = roster,
+        .player = player,
+        .endpoint = endpoint,
+        .catalog = catalog,
+        .host_clock_ms = [] { return std::int64_t{10'000}; },
+        .random_bytes =
+            [&next_random](std::span<std::uint8_t> bytes) {
+                for (auto& byte : bytes)
+                    byte = next_random++;
+            },
+        .host_fingerprint = {0xab},
+        .host_profile = ListenerProfile{"Joao", AvatarChoice{}},
+        .schedule = [](std::int64_t, std::function<void()>) {},
+    });
+    presenter.setRoomSessionGate(
+        {.filter = [&host](SessionSnapshot live) { return host->withoutGuestItems(std::move(live)); },
+         .before_exit = [&host] { host->close(); }});
+    host->onChanged = [&presenter](const RoomSnapshot&) { presenter.refreshRoomSession(); };
+    QVERIFY(host->open({}).has_value());
+    auto [host_side, guest_side] = testing::FakeRoomLink::pair("ab" + std::string(62, '0'), "fp-dj");
+    endpoint.admit(host_side);
+    QVERIFY(guest_side->sendControl(RoomHello{room_protocol_version, "Dj", AvatarChoice{}}));
+    RoomItem upload;
+    upload.content_sha256 = std::string(64, 'e');
+    const auto guest_file = localTestPath(u8"room-cache/convidado.mp3");
+    QVERIFY(host->addGuestTrack("fp-dj", guest_file, upload).has_value());
+    QCOMPARE(presenter.playlistQueueSnapshot().items.size(), std::size_t{4});
+
+    QCOMPARE(session_autosave.flush(), SessionSaveStatus::Saved);
+    const auto during = session_writer.flushes.back().snapshot;
+    QCOMPARE(during.queue.items.size(), std::size_t{3});
+    for (const auto& item : during.queue.items)
+        QVERIFY(item.source_path != guest_file);
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(!host->isOpen());
+    QCOMPARE(presenter.playlistQueueSnapshot().items.size(), std::size_t{3});
+    // Nothing guest-specific is left to save: the last write is still the guest-free session.
+    const auto& final_save =
+        session_writer.starts.empty() ? session_writer.flushes.back().snapshot : session_writer.starts.back().snapshot;
+    QCOMPARE(final_save.queue.items.size(), std::size_t{3});
+    host.reset();
+}
+
+void PlayerPresenterTests::guestRoomSessionKeepsThePreRoomSession() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesClock clock;
+    PresenterPreferencesWriter preferences_writer;
+    PreferencesAutosave preferences_autosave{preferences_writer, {}, {.now = [&clock] { return clock.now(); }}};
+    PresenterSessionWriter session_writer;
+    SessionAutosave session_autosave{session_writer, {}, {.now = [&clock] { return clock.now(); }}};
+    const auto sources = roomSources(3);
+    PlayerPresenter presenter(
+        platform, backend, metadata, [sources] { return sources; },
+        PlayerPresenterPreferences{
+            .autosave = &preferences_autosave,
+            .session = {.autosave = &session_autosave, .now = [&clock] { return clock.now(); }}});
+    QVERIFY(presenter.openAudio());
+    QVERIFY(presenter.nextTrack());
+    QCOMPARE(session_autosave.flush(), SessionSaveStatus::Saved);
+    const auto pre_room = session_writer.flushes.back().snapshot;
+
+    testing::FakeRoomGuestConnector connector;
+    auto guest = std::make_unique<ListeningRoomGuest>(ListeningRoomGuestDependencies{
+        .connector = connector,
+        .profile = ListenerProfile{"Bia", AvatarChoice{}},
+        .stored_custom_avatar_sha256 = [] { return std::optional<std::string>{}; },
+        .capture_session = [&presenter] { return presenter.liveSessionSnapshot(); },
+        .restore_session =
+            [&presenter](const SessionSnapshot& saved) { static_cast<void>(presenter.restoreRoomSession(saved)); },
+        .schedule = [](std::int64_t, std::function<void()>) {},
+    });
+    presenter.setRoomSessionGate(
+        {.filter = [&guest](SessionSnapshot live) { return guest->sessionForAutosave(std::move(live)); },
+         .hold_position = [&guest] { return guest->holdsLocalSession(); },
+         .before_exit = [&guest] { guest->leave(); }});
+    guest->join(RoomInviteLink{.host_fingerprint = {0xab}});
+    auto [host_side, guest_side] = testing::FakeRoomLink::pair("fp-bia", "ab" + std::string(62, '0'));
+    connector.complete(guest_side);
+    QVERIFY(host_side->sendControl(RoomJoinResult{JoinDecision::Admitted}));
+    QCOMPARE(guest->state(), GuestRoomState::Joined);
+    QVERIFY(guest->holdsLocalSession());
+
+    // Room playback changes the live queue and position; the saved session stays the pre-room one.
+    QVERIFY(presenter.clearQueue());
+    QVERIFY(presenter.appendPlaylistSources({localTestPath(u8"Sala tocando.wav")}));
+    QCOMPARE(session_autosave.flush(), SessionSaveStatus::Saved);
+    QCOMPARE(session_writer.flushes.back().snapshot, pre_room);
+
+    QVERIFY(presenter.requestExit());
+    QVERIFY(!guest->holdsLocalSession());
+    QCOMPARE(guest->state(), GuestRoomState::Idle);
+    // Leaving put the pre-room queue back before the final save.
+    QCOMPARE(presenter.playlistQueueSnapshot(), pre_room.queue);
+    const auto& final_save =
+        session_writer.starts.empty() ? session_writer.flushes.back().snapshot : session_writer.starts.back().snapshot;
+    QCOMPARE(final_save.queue, pre_room.queue);
+    guest.reset();
+}
+
+void PlayerPresenterTests::roomPrivacyNoticeIsMarkedOnceAndPersisted() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesClock clock;
+    PresenterPreferencesWriter preferences_writer;
+    PreferencesAutosave preferences_autosave{preferences_writer, {}, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{.autosave = &preferences_autosave});
+    QVERIFY(!presenter.roomPrivacyNoticeShown());
+    QVERIFY(presenter.markRoomPrivacyNoticeShown());
+    QVERIFY(presenter.roomPrivacyNoticeShown());
+    QVERIFY(!presenter.markRoomPrivacyNoticeShown());
+    QVERIFY(preferences_autosave.dirty());
+    QCOMPARE(preferences_autosave.flush(), PreferencesSaveStatus::Saved);
+    QVERIFY(preferences_writer.flushes.back().preferences.room_privacy_notice_shown);
 }
 
 } // namespace music_player::m0::test

@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace music_player::m0 {
 // The local listener profile for QML: first-launch setup plus the Settings section.
@@ -36,6 +37,9 @@ class ProfileBinding final : public QObject {
     [[nodiscard]] QUrl avatarSource() const;
     [[nodiscard]] int avatarIndex() const noexcept;
     [[nodiscard]] static int avatarCount() noexcept;
+    // The listening room's view of the local listener: nullopt until the profile is set up and while
+    // profile.json is unavailable.
+    [[nodiscard]] std::optional<ListenerProfile> profile() const;
 
     Q_INVOKABLE bool acceptsNickname(const QString& nickname) const;
     Q_INVOKABLE bool setNickname(const QString& nickname);

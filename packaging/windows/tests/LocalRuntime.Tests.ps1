@@ -15,7 +15,12 @@ foreach ($relative in @('RCMusic.exe', 'qt.conf', 'Qt6Core.dll', 'Qt6Gui.dll', '
         'qml/QtQuick/Controls/Basic/qmldir', 'LOCAL-DEVELOPMENT.txt')) {
     if (-not [IO.File]::Exists((Join-Path $result.payload $relative))) { throw "Missing runtime file: $relative" }
 }
-$manifest = Get-Content -LiteralPath $result.manifest -Raw | ConvertFrom-Json
+# ADR-0022: a build with the listening room links libdatachannel, so its DLL ships beside RCMusic.exe.
+$listeningRoom = Select-String -LiteralPath (Join-Path $BuildDirectory 'CMakeCache.txt') -Pattern '^RC_MUSIC_LISTENING_ROOM:BOOL=ON$' -Quiet
+if ($listeningRoom -and -not [IO.File]::Exists((Join-Path $result.payload 'datachannel.dll'))) {
+    throw 'Missing runtime file: datachannel.dll'
+}
+$manifest =Get-Content -LiteralPath $result.manifest -Raw | ConvertFrom-Json
 if ($manifest.build_testing -ne $false -or $manifest.architecture -cne 'x64') { throw 'Not a production-mode x64 payload' }
 $networkPin = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../qt-network-runtime.v1.json') -Raw | ConvertFrom-Json
 $network = @($manifest.files | Where-Object relative_path -CEQ 'Qt6Network.dll')
