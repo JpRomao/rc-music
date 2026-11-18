@@ -580,6 +580,8 @@ class PlayerPresenterTests final : public QObject {
     void shuffleQueueModeVisitsEveryRemainingOccurrence();
     void shuffleQueueModeRejectedNextPreservesOrderAndEligibility();
     void roomPlayOrderAdvancesInQueueOrderWhileShuffled();
+    void openingARoomWhileShuffledReordersThePendingQueueOnce();
+    void turningShuffleOnInARoomReordersWhatGuestsSee();
     void roomHostPlayerDelegatesQueueAndTransportToThePresenter();
     void roomSessionGateFiltersTheSavedSessionAndHoldsItsPosition();
     void roomSessionGateLeavesTheRoomBeforeTheFinalExitSave();
@@ -9552,8 +9554,8 @@ void PlayerPresenterTests::roomPlayOrderAdvancesInQueueOrderWhileShuffled() {
     QVERIFY(presenter.openAudio());
     presenter.setQueueShuffleSeedForTest(47);
     QVERIFY(presenter.toggleShuffleQueue());
-    // While a room is open the queue order is the play order: shuffle is only the physical
-    // reorder made when it was enabled, never a random pick at advance time.
+    // While a room is open the queue order is the play order: shuffle is a physical reorder of the
+    // pending part (when the room opens shuffled, or when shuffle is turned on), never a random pick.
     presenter.setRoomPlayOrder(true);
     for (int step = 0; step < 5; ++step) {
         const auto before = queueOccurrenceIds(*presenter.queueModelObject());
@@ -9569,6 +9571,93 @@ void PlayerPresenterTests::roomPlayOrderAdvancesInQueueOrderWhileShuffled() {
         }
         QTRY_COMPARE(presenter.currentOccurrenceId(), expected);
         QCOMPARE(queueOccurrenceIds(*presenter.queueModelObject()), before);
+    }
+    presenter.setRoomPlayOrder(false);
+}
+
+namespace {
+// The occurrences after the current one, and everything up to it.
+[[nodiscard]] QStringList pendingPart(const QStringList& ids, const int current) { return ids.mid(current + 1); }
+[[nodiscard]] QStringList playedPart(const QStringList& ids, const int current) { return ids.mid(0, current + 1); }
+[[nodiscard]] QStringList sorted(QStringList ids) {
+    ids.sort();
+    return ids;
+}
+[[nodiscard]] QStringList roomQueueIds(const LocalFileQueueSnapshot& queue) {
+    QStringList ids;
+    for (const auto& item : queue.items)
+        ids.append(QString::number(item.occurrence_id.value));
+    return ids;
+}
+} // namespace
+
+void PlayerPresenterTests::openingARoomWhileShuffledReordersThePendingQueueOnce() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    PresenterMetadataReader metadata;
+    const auto sources = roomSources(7);
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    presenter.setQueueShuffleSeedForTest(47);
+    QVERIFY(presenter.toggleShuffleQueue());
+    QVERIFY(presenter.nextTrack());
+    PresenterRoomHostPlayer player{presenter};
+    int changes = 0;
+    player.onChanged = [&changes] { ++changes; };
+    const auto current = presenter.currentQueueIndex();
+    const auto current_id = presenter.currentOccurrenceId();
+    const auto before = roomQueueIds(player.state().queue);
+
+    presenter.setQueueShuffleSeedForTest(5);
+    presenter.setRoomPlayOrder(true);
+    const auto opened = roomQueueIds(player.state().queue);
+    QCOMPARE(playedPart(opened, current), playedPart(before, current));
+    QVERIFY(pendingPart(opened, current) != pendingPart(before, current));
+    QCOMPARE(sorted(pendingPart(opened, current)), sorted(pendingPart(before, current)));
+    QCOMPARE(presenter.currentOccurrenceId(), current_id);
+    QCOMPARE(player.state().queue, presenter.playlistQueueSnapshot());
+    QVERIFY(changes > 0);
+
+    // Once: the room staying open does not shuffle again.
+    presenter.setRoomPlayOrder(true);
+    QCOMPARE(roomQueueIds(player.state().queue), opened);
+    QVERIFY(presenter.nextTrack());
+    QTRY_COMPARE(presenter.currentQueueIndex(), current + 1);
+    QCOMPARE(roomQueueIds(player.state().queue), opened);
+    presenter.setRoomPlayOrder(false);
+}
+
+void PlayerPresenterTests::turningShuffleOnInARoomReordersWhatGuestsSee() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    PresenterMetadataReader metadata;
+    const auto sources = roomSources(7);
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    presenter.setRoomPlayOrder(true);
+    PresenterRoomHostPlayer player{presenter};
+    int changes = 0;
+    player.onChanged = [&changes] { ++changes; };
+    const auto current = presenter.currentQueueIndex();
+    const auto before = roomQueueIds(player.state().queue);
+
+    presenter.setQueueShuffleSeedForTest(47);
+    QVERIFY(presenter.toggleShuffleQueue());
+    const auto shuffled = roomQueueIds(player.state().queue);
+    QCOMPARE(playedPart(shuffled, current), playedPart(before, current));
+    QVERIFY(pendingPart(shuffled, current) != pendingPart(before, current));
+    QCOMPARE(sorted(pendingPart(shuffled, current)), sorted(pendingPart(before, current)));
+    QVERIFY(changes > 0);
+
+    // Advancing follows the order the guests were sent.
+    for (int step = 1; step <= 3; ++step) {
+        QVERIFY(presenter.nextTrack());
+        QTRY_COMPARE(presenter.currentQueueIndex(), current + step);
+        QVERIFY(player.state().queue.current_occurrence_id.has_value());
+        QCOMPARE(QString::number(player.state().queue.current_occurrence_id->value), shuffled[current + step]);
+        QCOMPARE(roomQueueIds(player.state().queue), shuffled);
     }
     presenter.setRoomPlayOrder(false);
 }

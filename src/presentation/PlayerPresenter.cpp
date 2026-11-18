@@ -1941,7 +1941,14 @@ bool PlayerPresenter::appendPublishedAudio(const std::filesystem::path& path, bo
     return appendPublishedAudioImpl(path, committed, nullptr);
 }
 LocalFileQueueSnapshot PlayerPresenter::playlistQueueSnapshot() const { return local_queue_.snapshot(); }
-void PlayerPresenter::setRoomPlayOrder(const bool enabled) noexcept { room_play_order_ = enabled; }
+void PlayerPresenter::setRoomPlayOrder(const bool enabled) {
+    const bool opening = enabled && !room_play_order_;
+    room_play_order_ = enabled;
+    // A room opened in shuffle mode starts from one physical permutation of what is still to play
+    // (toggleShuffleQueue does the same when shuffle is turned on later); then it plays in order.
+    if (opening && shuffleQueueEnabled())
+        static_cast<void>(shuffleQueue());
+}
 void PlayerPresenter::setRoomSessionGate(PlayerPresenterRoomSessionGate gate) { room_session_gate_ = std::move(gate); }
 void PlayerPresenter::refreshRoomSession() {
     if (session_autosave_ == nullptr || uses_frozen_fixture_ || exiting_)

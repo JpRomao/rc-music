@@ -439,10 +439,12 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] LocalFileQueueSnapshot playlistQueueSnapshot() const;
     [[nodiscard]] bool appendPlaylistSources(std::vector<std::filesystem::path> source_paths);
     [[nodiscard]] QString queuedLyricsSource(const QString& occurrence_id) const;
-    // Listening room (C++ composition only, never QML). While the room play order is on, shuffle mode
-    // never picks the next track at random: the queue order (physically shuffled when shuffle was
-    // enabled) is the play order, as RoomHostPlayer requires.
-    void setRoomPlayOrder(bool enabled) noexcept;
+    // Listening room (C++ composition only, never QML). While the room play order is on, the queue
+    // order is the play order, as RoomHostPlayer requires: shuffle never picks the next track at
+    // random. Shuffle is a physical permutation of the pending part (after the current item) instead,
+    // made once when the room order turns on with shuffle enabled, and again whenever shuffle is
+    // turned on during the room; queue observers (the room's guests) see the new order.
+    void setRoomPlayOrder(bool enabled);
     void setRoomSessionGate(PlayerPresenterRoomSessionGate gate);
     // Schedules the (filtered) session again: the room changed what the gate filters, e.g. the host
     // learned that an item it just enqueued is a guest's.
