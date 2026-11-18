@@ -134,6 +134,14 @@ if(TARGET rc_music_listening_room)
     set_target_properties(rc_music_room_transport_tests PROPERTIES AUTOMOC ON)
     set_tests_properties(rc_music.room.transport PROPERTIES TIMEOUT 180 LABELS "ui;qt;listening-room")
     rc_music_copy_listening_room_runtime(rc_music_room_transport_tests)
+    # ListeningRoomHost/Guest end to end over the same loopback relay and real transport, with the
+    # silent deterministic player and real timers.
+    add_ui_test(rc_music_room_end_to_end_tests rc_music.room.end-to-end
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/ListeningRoomEndToEndTests.cpp" rc_music_listening_room
+        rc_music_room_protocol rc_music_room_ui Qt6::Network)
+    set_target_properties(rc_music_room_end_to_end_tests PROPERTIES AUTOMOC ON)
+    set_tests_properties(rc_music.room.end-to-end PROPERTIES TIMEOUT 180 LABELS "ui;qt;listening-room")
+    rc_music_copy_listening_room_runtime(rc_music_room_end_to_end_tests)
 endif()
 add_ui_test(rc_music_avatar_image_tests rc_music.profile.avatar-image
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtAvatarImageTests.cpp" rc_music_profile)
