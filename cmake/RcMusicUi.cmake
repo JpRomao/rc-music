@@ -38,6 +38,14 @@ target_include_directories(rc_music_room_protocol PUBLIC "${RC_MUSIC_SOURCE_ROOT
 target_link_libraries(rc_music_room_protocol PUBLIC rc_music_core Qt6::Core PRIVATE rc_music_media_data)
 rc_music_configure_cpp(rc_music_room_protocol)
 
+# ADR-0022: host tracks described for the listening room (hash, tags, chosen lyrics) off the UI thread.
+add_library(rc_music_room_catalog STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtRoomTrackCatalog.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtRoomTrackCatalog.cpp")
+target_include_directories(rc_music_room_catalog PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
+target_link_libraries(rc_music_room_catalog PUBLIC rc_music_core Qt6::Core PRIVATE Qt6::Concurrent)
+rc_music_configure_cpp(rc_music_room_catalog)
+
 add_library(rc_music_playlists STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.cpp"
