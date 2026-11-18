@@ -5,8 +5,9 @@ endif()
 cmake_path(ABSOLUTE_PATH BUILD_DIRECTORY NORMALIZE OUTPUT_VARIABLE build_root)
 
 # libdatachannel reaches a command through its usage requirements (RTC_ENABLE_*
-# definitions, the installed include directory) or through datachannel.lib/dll.
-set(datachannel_pattern "RTC_ENABLE_|[Dd]ata[Cc]hannel")
+# definitions, the installed include directory of libdatachannel) or through datachannel.lib/dll.
+# Source files named DataChannel*.cpp (the transport and its test) are not libdatachannel itself.
+set(datachannel_pattern "RTC_ENABLE_|[Ll]ib[Dd]ata[Cc]hannel|[Dd]ata[Cc]hannel[.](lib|dll)")
 set(dll_path "(\"[^\"]*|[^ ]*)[Dd]ata[Cc]hannel[.]dll\"?")
 set(runtime_copy_pattern "-E copy ${dll_path} ${dll_path}")
 

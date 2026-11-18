@@ -4,7 +4,7 @@ if(NOT BUILD_TESTING OR NOT RC_MUSIC_BUILD_DESKTOP)
     message(FATAL_ERROR "UI scenarios require the product desktop test configuration")
 endif()
 find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS
-    Core Gui Qml Quick QuickControls2 QuickLayouts QuickTest Test LinguistTools)
+    Core Gui Network Qml Quick QuickControls2 QuickLayouts QuickTest Test LinguistTools)
 qt_standard_project_setup(REQUIRES 6.11)
 set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml")
 
@@ -120,6 +120,14 @@ if(TARGET rc_music_listening_room)
     add_ui_test(rc_music_room_envelope_cipher_tests rc_music.room.envelope-cipher
         "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsRoomEnvelopeCipherTests.cpp" rc_music_listening_room)
     set_target_properties(rc_music_room_envelope_cipher_tests PROPERTIES AUTOMOC ON)
+    # Two peers in one process over tests/support/LoopbackSignaling.hpp (127.0.0.1, host
+    # candidates only): no internet, no audio, no personal files.
+    add_ui_test(rc_music_room_transport_tests rc_music.room.transport
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/DataChannelRoomTransportTests.cpp" rc_music_listening_room
+        rc_music_room_protocol Qt6::Network)
+    set_target_properties(rc_music_room_transport_tests PROPERTIES AUTOMOC ON)
+    set_tests_properties(rc_music.room.transport PROPERTIES TIMEOUT 180 LABELS "ui;qt;listening-room")
+    rc_music_copy_listening_room_runtime(rc_music_room_transport_tests)
 endif()
 add_ui_test(rc_music_avatar_image_tests rc_music.profile.avatar-image
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtAvatarImageTests.cpp" rc_music_profile)

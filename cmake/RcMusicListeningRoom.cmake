@@ -11,14 +11,22 @@ if(NOT TARGET rc_music_core)
 endif()
 
 find_package(LibDataChannel 0.24.6 EXACT CONFIG REQUIRED)
+# Global so rc_music_copy_listening_room_runtime can name the DLL from other directories (the
+# transport test in tests/ui); linking it stays limited to rc_music_listening_room.
+set_target_properties(LibDataChannel::LibDataChannel PROPERTIES IMPORTED_GLOBAL TRUE)
 
 find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core)
 
-# The device identity and the signaling envelope cipher use only CNG/NCrypt/Crypt32/DPAPI; they
-# live here because the transport (S6.3) is their only consumer.
+# The device identity and the signaling envelope cipher use only CNG/NCrypt/Crypt32/DPAPI, and the
+# relay WebSocket uses WinHTTP (rtc::WebSocket cannot send X-Room-Host-Token); they live here because
+# the transport (S6.3) is their only consumer. Only DataChannelRoomTransport.cpp includes rtc headers.
 add_library(rc_music_listening_room STATIC
     "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/RoomTransport.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DataChannelBuildContract.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DataChannelRoomTransport.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DataChannelRoomTransport.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsRoomSignalingSocket.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsRoomSignalingSocket.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsRoomEnvelopeCipher.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsRoomEnvelopeCipher.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsRoomIdentity.hpp"
@@ -27,7 +35,8 @@ add_library(rc_music_listening_room STATIC
 target_include_directories(rc_music_listening_room PUBLIC
     "${RC_MUSIC_SOURCE_ROOT}/include" "${RC_MUSIC_SOURCE_ROOT}/src")
 target_link_libraries(rc_music_listening_room
-    PUBLIC rc_music_contracts Qt6::Core PRIVATE LibDataChannel::LibDataChannel bcrypt ncrypt crypt32)
+    PUBLIC rc_music_contracts Qt6::Core
+    PRIVATE LibDataChannel::LibDataChannel rc_music_room_protocol bcrypt ncrypt crypt32 winhttp)
 rc_music_configure_cpp(rc_music_listening_room)
 set_target_properties(rc_music_listening_room PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
 

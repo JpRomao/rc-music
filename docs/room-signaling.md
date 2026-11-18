@@ -2,7 +2,7 @@
 
 O servidor fica em [`services/room-signaling`](../services/room-signaling/README.md). É um Worker da Cloudflare com um Durable Object `RoomRelay` por sala. Enquanto uma sala está aberta, ele repassa as mensagens de apresentação entre o host e os convidados. Essas mensagens já chegam cifradas ponta a ponta. O servidor não recebe a música e não guarda o conteúdo nem a sala depois que ela fecha. É a única exceção de rede do [ADR-0022](architecture/decisions/0022-listening-room.md) ao local-first. Faz parte da fatia S5 do [plano da sala](superpowers/plans/2026-11-17-listening-room.md).
 
-O código existe e passa nos testes locais. **Ainda não houve deploy**: criar a conta e publicar são passos do mantenedor. Os clientes C++ das fatias S6/S7 ainda não se conectam a ele.
+O código existe e passa nos testes locais. **Ainda não houve deploy**: criar a conta e publicar são passos do mantenedor. O transporte C++ da S6.3 (`DataChannelRoomHostEndpoint` e `DataChannelRoomGuestConnector`) fala este protocolo pelo WinHTTP. Ele foi testado só contra o servidor local `tests/support/LoopbackSignaling.hpp`, que reproduz as rotas, os códigos e os limites daqui. A integração no app fica para a S7.
 
 ## Protocolo
 
@@ -23,6 +23,15 @@ O código existe e passa nos testes locais. **Ainda não houve deploy**: criar a
   - `{"event":"peer-left","peer":<peer>}` vai para o host quando um convidado sai;
   - `{"event":"host-offline"}` vai para os convidados quando o host cai, e também para o convidado que entra numa sala sem host.
 - Os peers começam em 0 e não se repetem enquanto a sala existir: o contador fica no armazenamento do objeto.
+
+## Conteúdo dos envelopes no app (S6.3)
+
+O servidor não interpreta o `data`. No app, `data` é o base64 de `seal(JSON)`, com a cifra AES-256-GCM derivada do segredo do convite (`WindowsRoomEnvelopeCipher`). O JSON é `{"room_protocol_version":<u32>,"kind":"offer"|"answer"|"reject","sdp":<texto>}`, e o `reject` não tem `sdp`.
+
+- Não há ICE trickle. Cada lado espera o fim da coleta de candidatos e manda uma única descrição, então a apresentação usa uma mensagem em cada sentido.
+- O convidado oferece e cria os canais `control` e `media`. Antes de aplicar a resposta, confere se todo `a=fingerprint` é o `sha-256` da impressão digital do host que está no convite. Se não for, a conexão é recusada.
+- Quem recebe outra `room_protocol_version` falha com `VersionMismatch`. O host responde com um `reject` que leva a versão dele.
+- O token do host vem de `roomHostToken(identidade, room_id)`. Um token vazio é falha local e nunca é enviado.
 
 ## Limites
 

@@ -87,6 +87,7 @@ A conferência foi feita nas fontes da v0.24.6. Fora dos testes, a única chamad
 
 - **Risco residual:** corrida no primeiro `psa_crypto_init()` se duas conexões TLS abrirem ao mesmo tempo.
 - **Requisito para a S6.3:** no máximo um WebSocket seguro de sinalização por processo, aberto a partir de uma única thread.
+- **Como a S6.3 cumpre o requisito:** o app não abre nenhum WebSocket da libdatachannel. O `rtc::WebSocket` 0.24.6 não envia headers próprios, e o host precisa do `X-Room-Host-Token`. Ele também não informa o status HTTP de um upgrade recusado, e o 409 indica que a sala é de outro host. Por isso, o WebSocket do servidor de apresentação usa o WinHTTP do Windows (`WindowsRoomSignalingSocket`), com TLS do Schannel conferido contra as raízes do sistema. O número de WebSockets com Mbed TLS é zero por construção, e o `psa_crypto_init()` do `TlsTransport` nunca roda. O Mbed TLS só faz DTLS, com um contexto por `PeerConnection`.
 
 Se o projeto voltar a precisar de TLS 1.3 ou de PSA, este ponto deve ser revisto antes.
 
