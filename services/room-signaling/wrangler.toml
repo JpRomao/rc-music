@@ -1,0 +1,27 @@
+# Servidor de apresentação da sala de escuta (ADR-0022).
+# Só repassa envelopes cifrados entre o host e os convidados de uma sala aberta.
+name = "rc-music-room-signaling"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+workers_dev = true
+
+# Privacidade: o Wrangler não envia métricas de uso nem a lista de dependências.
+send_metrics = false
+dependencies_instrumentation = { enabled = false }
+
+# Privacidade: sem Workers Logs, sem logs de invocação.
+[observability]
+enabled = false
+
+[observability.logs]
+enabled = false
+invocation_logs = false
+
+# Um Durable Object por sala. SQLite é o backend disponível no plano gratuito.
+[[durable_objects.bindings]]
+name = "ROOM_RELAY"
+class_name = "RoomRelay"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomRelay"]

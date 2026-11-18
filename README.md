@@ -290,6 +290,7 @@ Comece por:
 | [Threat model](docs/security/threat-model.md) | Fronteiras, ameaças, controles e supply chain |
 | [Release](docs/delivery/release-process.md) | Versionamento, artefatos, instalação e publicação |
 | [Manual de uso](docs/user-guide.md) | Operação do app local, recuperação e solução de problemas |
+| [Servidor da sala](docs/room-signaling.md) | Worker de apresentação da sala de escuta: protocolo, limites, comandos e deploy |
 
 ## Regras de desenvolvimento
 

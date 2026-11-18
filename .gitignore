@@ -12,3 +12,5 @@
 /experiments/m0/candidates/*/audio/target/
 /experiments/m0/candidates/*/audio/build/
 /experiments/m0/candidates/*/package/output/
+/services/room-signaling/node_modules/
+/services/room-signaling/.wrangler/
