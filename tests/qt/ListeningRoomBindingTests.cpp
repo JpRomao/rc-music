@@ -1,10 +1,12 @@
 // ListeningRoomBinding (S7.3) over the in-memory transport, the silent deterministic player, a fake
 // catalog and an in-memory roster store. No network, identity files, audio or personal files.
+#include "../support/FakeRoomFiles.hpp"
 #include "../support/FakeRoomHost.hpp"
 #include "../support/FakeRoomTransport.hpp"
 
 #include "m0/domain/RoomInviteLink.hpp"
 #include "presentation/ListeningRoomBinding.hpp"
+#include "presentation/RoomQueueModel.hpp"
 
 #include <QAbstractItemModel>
 #include <QCryptographicHash>
@@ -72,6 +74,9 @@ struct Fixture final {
             .notify = [this](const std::string& title,
                              const std::string& message) { notifications.emplace_back(title, message); },
             .copy_text = [this](const QString& text) { copied = text; },
+            .file_outbox = &outbox,
+            .file_inbox = &inbox,
+            .room_lyrics = [this](const QString& lrc) { room_lyrics.push_back(lrc); },
         });
     }
     void completeNetwork() {
@@ -106,6 +111,9 @@ struct Fixture final {
     testing::FakeRoomHostPlayer player;
     testing::FakeRoomTrackCatalog catalog;
     testing::InMemoryRoomRosterStore roster;
+    testing::FakeRoomFileOutbox outbox;
+    testing::FakeRoomFileInbox inbox;
+    std::vector<QString> room_lyrics;
     testing::FakeRoomHostEndpoint* endpoint{nullptr};
     testing::FakeRoomGuestConnector* connector{nullptr};
     std::function<void(std::optional<ListeningRoomNetwork>)> pending_load;
@@ -304,6 +312,59 @@ class ListeningRoomBindingTests final : public QObject {
         QCOMPARE(f.restored.front(), pre_room);
         QVERIFY(guest_side->closed);
         QCOMPARE(binding->sessionForAutosave(f.player.sessionSnapshot()), f.player.sessionSnapshot());
+    }
+
+    // S8.2: the guest's room queue says which items are still loading and who added them; the host's
+    // lyrics for the current item reach the lyrics panel; leaving empties the cache.
+    void theGuestSeesLoadingItemsWithTheirAuthorAndTheHostsLyrics() {
+        Fixture f;
+        auto binding = f.make();
+        QVERIFY(binding->join(Fixture::validLink()));
+        auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, inviteHostHex());
+        f.connector->complete(guest_side);
+        QVERIFY(host_side->sendControl(RoomJoinResult{JoinDecision::Admitted}));
+        RoomSnapshot room;
+        room.version = 1;
+        room.members.push_back(
+            RoomMember{inviteHostHex(), "Joao", {AvatarKind::Bundled, 3, {}}, MemberState::Admitted});
+        room.members.push_back(RoomMember{own_hex, "Ana", {}, MemberState::Admitted});
+        for (const std::uint64_t id : {7, 8}) {
+            RoomItem item;
+            item.id = id;
+            item.origin = RoomItemOrigin::HostTrack;
+            item.owner_fingerprint = inviteHostHex();
+            item.content_sha256 = std::string(64, id == 7 ? 'a' : 'b');
+            item.size_bytes = 1000;
+            item.summary = RoomTrackSummary{id == 7 ? "Primeira" : "Segunda", "Artista", "Album", 1000};
+            item.added_by = "Joao";
+            room.queue.push_back(item);
+        }
+        room.playback.current_item = 7;
+        QVERIFY(host_side->sendControl(RoomStateMessage{room, {}}));
+
+        auto* const queue = binding->queue();
+        QCOMPARE(queue->rowCount(), 2);
+        const auto row = [&](const int index, const int role) { return queue->index(index, 0).data(role); };
+        QCOMPARE(row(0, RoomQueueModel::TitleRole).toString(), QStringLiteral("Primeira"));
+        QCOMPARE(row(0, RoomQueueModel::AddedByRole).toString(), QStringLiteral("Joao"));
+        QCOMPARE(row(0, RoomQueueModel::AvatarSourceRole).toUrl(),
+                 RoomMembersModel::avatarSource(AvatarChoice{AvatarKind::Bundled, 3, {}}));
+        QCOMPARE(row(0, RoomQueueModel::CurrentRole).toBool(), true);
+        QCOMPARE(row(0, RoomQueueModel::AvailableRole).toBool(), false);
+        QCOMPARE(row(1, RoomQueueModel::AvailableRole).toBool(), false);
+
+        QVERIFY(host_side->sendControl(RoomFileOffer{std::string(64, 'a'), 1000, 1}));
+        f.inbox.complete(std::string(64, 'a'));
+        QCOMPARE(row(0, RoomQueueModel::AvailableRole).toBool(), true);
+        QCOMPARE(row(1, RoomQueueModel::AvailableRole).toBool(), false);
+
+        QVERIFY(host_side->sendControl(RoomLyrics{7, "[00:01.00]la"}));
+        QCOMPARE(f.room_lyrics.back(), QStringLiteral("[00:01.00]la"));
+
+        binding->leave();
+        QCOMPARE(queue->rowCount(), 0);
+        QCOMPARE(f.room_lyrics.back(), QString{});
+        QCOMPARE(f.inbox.purges, 1);
     }
 
     void theHostSessionNeverStoresGuestItems() {

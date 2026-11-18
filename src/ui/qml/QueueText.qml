@@ -41,6 +41,11 @@ QtObject {
     readonly property string shortcutMoveUp: qsTr("Alt+↑")
     readonly property string shortcutMoveDown: qsTr("Alt+↓")
     readonly property string shortcutRemove: qsTr("Delete")
+    readonly property string hostControls: qsTr("O host controla")
+    readonly property string roomQueue: qsTr("Fila da sala")
+    readonly property string loading: qsTr("Carregando…")
+    readonly property string addedBy: qsTr("Adicionada por %1")
+    readonly property string loadingAddedBy: qsTr("Carregando… · adicionada por %1")
 
     function unavailableReason(errorCode) {
         switch (errorCode) {

@@ -94,6 +94,9 @@ class LyricsBinding final : public QObject {
     void setTrack(const QString& path, const QString& title, const QString& artist, const QString& album,
                   qint64 duration_ms, const QString& occurrence_id = {});
     void setPosition(qint64 confirmed_position_ms);
+    // A listening-room guest (ADR-0022, S8.2): the host's chosen lyrics (LRC) replace the track's while
+    // set, follow setPosition and are never saved as a local version. Empty text clears them.
+    void setRoomLyrics(const QString& lrc);
     // Resolves queue occurrence IDs in trusted C++. QML receives only a form token.
     void setQueueLyricsSource(std::function<QString(const QString&)> source);
     void setQueuedLyricsMetadataExtractor(std::shared_ptr<const MetadataExtractor> extractor);
@@ -229,6 +232,7 @@ class LyricsBinding final : public QObject {
     std::unique_ptr<VariantsState> variants_;
     std::unique_ptr<RomajiState> romaji_;
     std::unique_ptr<RecordingSearchState> recording_search_;
+    std::unique_ptr<LyricsDocument> room_document_;
     QtLyricsService& service_;
     QString path_, title_, artist_, album_, occurrence_;
     QVariantList online_candidates_;

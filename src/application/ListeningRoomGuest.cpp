@@ -8,6 +8,23 @@
 namespace music_player::m0 {
 namespace {
 
+// Chunks kept for offers still on their way: about two media buffers (RoomFileSender stops at 1 MiB).
+constexpr std::size_t maximum_early_chunk_bytes = 2 * 1024 * 1024;
+
+bool lowerHex64(const std::string_view text) {
+    return text.size() == 64 && std::all_of(text.begin(), text.end(), [](const char c) {
+               return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+           });
+}
+
+const RoomItem* itemWithId(const RoomSnapshot& snapshot, const std::optional<std::uint64_t> id) {
+    if (!id)
+        return nullptr;
+    const auto found = std::find_if(snapshot.queue.begin(), snapshot.queue.end(),
+                                    [&](const RoomItem& item) { return item.id == *id; });
+    return found == snapshot.queue.end() ? nullptr : &*found;
+}
+
 GuestRoomEnd byeEnd(const RoomByeReason reason) {
     switch (reason) {
     case RoomByeReason::Closed:
@@ -37,11 +54,24 @@ ListeningRoomGuest::ListeningRoomGuest(ListeningRoomGuestDependencies dependenci
       stored_custom_avatar_sha256_(std::move(dependencies.stored_custom_avatar_sha256)),
       capture_session_(std::move(dependencies.capture_session)),
       restore_session_(std::move(dependencies.restore_session)), schedule_(std::move(dependencies.schedule)),
-      alive_(std::make_shared<Alive>(Alive{this})) {
+      files_(dependencies.files), alive_(std::make_shared<Alive>(Alive{this})) {
     if (!capture_session_ || !restore_session_ || !schedule_)
         throw std::invalid_argument{"the listening room guest needs the local session seam and a scheduler"};
     if (!isValidListenerProfile(profile_))
         throw std::invalid_argument{"the listening room guest needs a valid listener profile"};
+    if (files_ != nullptr) {
+        // One guest at a time uses the inbox: a newer guest replaces these callbacks, and they do
+        // nothing once this guest is gone.
+        const std::weak_ptr<Alive> alive = alive_;
+        files_->onComplete = [alive](std::string sha256, std::filesystem::path file) {
+            if (const auto self = alive.lock())
+                self->guest->onFileComplete(sha256, file);
+        };
+        files_->onFailed = [alive](std::string sha256) {
+            if (const auto self = alive.lock())
+                self->guest->onFileFailed(sha256);
+        };
+    }
 }
 
 ListeningRoomGuest::~ListeningRoomGuest() {
@@ -110,6 +140,13 @@ SessionSnapshot ListeningRoomGuest::sessionForAutosave(SessionSnapshot live) con
 
 bool ListeningRoomGuest::holdsLocalSession() const noexcept { return saved_session_.has_value(); }
 
+std::optional<std::filesystem::path> ListeningRoomGuest::localFile(const std::string_view sha256) const {
+    const auto found = local_files_.find(sha256);
+    return found == local_files_.end() ? std::nullopt : std::optional{found->second};
+}
+
+std::optional<RoomLyrics> ListeningRoomGuest::lyrics() const { return lyrics_; }
+
 void ListeningRoomGuest::connect() {
     const auto attempt = ++attempt_;
     connecting_ = true;
@@ -141,6 +178,10 @@ void ListeningRoomGuest::onConnected(const std::uint64_t attempt, std::shared_pt
     link->onControl = [alive, link_id](RoomControlMessage message) {
         if (const auto self = alive.lock())
             self->guest->onControl(link_id, message);
+    };
+    link->onMedia = [alive, link_id](RoomFileChunk chunk) {
+        if (const auto self = alive.lock(); self && link_id == self->guest->link_id_)
+            self->guest->onChunk(std::move(chunk));
     };
     link->onClosed = [alive, link_id](const RoomLinkFailure failure) {
         if (const auto self = alive.lock())
@@ -176,8 +217,17 @@ void ListeningRoomGuest::onControl(const std::uint64_t link_id, const RoomContro
     } else if (const auto* bye = std::get_if<RoomBye>(&message)) {
         const auto ending = byeEnd(bye->reason);
         end(ending.reason, ending.failure);
+    } else if (const auto* offer = std::get_if<RoomFileOffer>(&message)) {
+        if (state_ == GuestRoomState::Joined)
+            onOffer(*offer);
+    } else if (const auto* lyrics = std::get_if<RoomLyrics>(&message)) {
+        if (state_ == GuestRoomState::Joined && snapshot_.playback.current_item == lyrics->item_id &&
+            lyrics->lrc_text.size() <= maximum_room_lyrics_bytes && lyrics_ != *lyrics) {
+            lyrics_ = *lyrics;
+            changed();
+        }
     }
-    // Lyrics, clock, catalog and file messages belong to later tasks (S8-S11).
+    // Clock and catalog messages belong to later tasks (S9-S11).
 }
 
 void ListeningRoomGuest::onLinkClosed(const std::uint64_t link_id, const RoomLinkFailure failure) {
@@ -201,6 +251,7 @@ void ListeningRoomGuest::onJoinResult(const JoinDecision decision) {
             saved_session_ = capture_session_();
         state_ = GuestRoomState::Joined;
         changed();
+        updateFiles();
         return;
     case JoinDecision::Pending:
         if (state_ == GuestRoomState::WaitingApproval || state_ == GuestRoomState::Joined)
@@ -227,13 +278,160 @@ void ListeningRoomGuest::onState(const RoomStateMessage& message) {
     fresh_link_ = false;
     if (message.snapshot == snapshot_ && message.my_permissions == permissions_)
         return;
+    // The item that stops being current was played: the cache may evict it.
+    const auto* before = itemWithId(snapshot_, snapshot_.playback.current_item);
+    if (before != nullptr && before->id != message.snapshot.playback.current_item && files_ != nullptr &&
+        lowerHex64(before->content_sha256))
+        files_->markPlayed(before->content_sha256);
+    if (lyrics_ && lyrics_->item_id != message.snapshot.playback.current_item)
+        lyrics_.reset();
     snapshot_ = message.snapshot;
     permissions_ = message.my_permissions;
     changed();
+    updateFiles();
+}
+
+std::vector<std::string> ListeningRoomGuest::fileWindow() const {
+    std::vector<std::string> window;
+    const auto count = std::min(snapshot_.queue.size(), std::size_t{1} + room_prefetch_items);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& item = snapshot_.queue[index];
+        if (item.origin != RoomItemOrigin::YoutubeVideo && lowerHex64(item.content_sha256) &&
+            std::find(window.begin(), window.end(), item.content_sha256) == window.end())
+            window.push_back(item.content_sha256);
+    }
+    return window;
+}
+
+void ListeningRoomGuest::updateFiles() {
+    if (files_ == nullptr || state_ != GuestRoomState::Joined || !link_)
+        return;
+    const auto window = fileWindow();
+    const auto inWindow = [&window](const std::string_view sha) {
+        return std::find(window.begin(), window.end(), sha) != window.end();
+    };
+    // Transfers whose item left the window stop; they are asked again if it comes back.
+    std::vector<std::uint32_t> stopped;
+    for (const auto& [transfer_id, sha] : receiving_)
+        if (!inWindow(sha))
+            stopped.push_back(transfer_id);
+    for (const auto transfer_id : stopped) {
+        receiving_.erase(transfer_id);
+        files_->abandon(transfer_id);
+    }
+    std::erase_if(requested_, [&](const std::string& sha) { return !inWindow(sha); });
+    std::erase_if(checking_, [&](const std::string& sha) { return !inWindow(sha); });
+    std::erase_if(failed_, [&](const std::string& sha) { return !inWindow(sha); });
+    if (requested_.empty()) {
+        early_chunks_.clear();
+        early_bytes_ = 0;
+    }
+    const auto epoch = files_epoch_;
+    const std::weak_ptr<Alive> alive = alive_;
+    for (const auto& sha : window) {
+        const bool receiving = std::any_of(receiving_.begin(), receiving_.end(),
+                                           [&](const auto& transfer) { return transfer.second == sha; });
+        if (local_files_.contains(sha) || checking_.contains(sha) || requested_.contains(sha) || receiving ||
+            failed_.contains(sha))
+            continue;
+        checking_.insert(sha);
+        files_->status(sha, [alive, epoch, sha](const RoomFileStatus& status) {
+            if (const auto self = alive.lock())
+                self->guest->onFileStatus(epoch, sha, status);
+        });
+    }
+}
+
+void ListeningRoomGuest::onFileStatus(const std::uint64_t epoch, const std::string& sha256,
+                                      const RoomFileStatus& status) {
+    if (epoch != files_epoch_ || checking_.erase(sha256) == 0)
+        return;
+    if (status.complete) {
+        local_files_[sha256] = status.file;
+        changed();
+        return;
+    }
+    if (state_ != GuestRoomState::Joined || !link_)
+        return;
+    const auto window = fileWindow();
+    if (std::find(window.begin(), window.end(), sha256) == window.end())
+        return;
+    requested_.insert(sha256);
+    // Keep the link alive even if the send makes the host answer synchronously.
+    const auto link = link_;
+    static_cast<void>(link->sendControl(RoomFileRequest{sha256, status.resume_offset}));
+}
+
+void ListeningRoomGuest::onOffer(const RoomFileOffer& offer) {
+    auto early = early_chunks_.extract(offer.transfer_id);
+    if (!early.empty())
+        for (const auto& chunk : early.mapped())
+            early_bytes_ -= chunk.payload.size();
+    if (files_ == nullptr || requested_.erase(offer.content_sha256) == 0 || receiving_.contains(offer.transfer_id))
+        return;
+    receiving_[offer.transfer_id] = offer.content_sha256;
+    files_->accept(offer);
+    if (!early.empty())
+        for (auto& chunk : early.mapped())
+            files_->consume(std::move(chunk));
+    if (requested_.empty()) {
+        early_chunks_.clear();
+        early_bytes_ = 0;
+    }
+}
+
+void ListeningRoomGuest::onChunk(RoomFileChunk chunk) {
+    if (files_ == nullptr || state_ != GuestRoomState::Joined)
+        return;
+    if (receiving_.contains(chunk.transfer_id)) {
+        files_->consume(std::move(chunk));
+        return;
+    }
+    if (requested_.empty() || early_bytes_ + chunk.payload.size() > maximum_early_chunk_bytes)
+        return;
+    early_bytes_ += chunk.payload.size();
+    early_chunks_[chunk.transfer_id].push_back(std::move(chunk));
+}
+
+void ListeningRoomGuest::onFileComplete(const std::string& sha256, const std::filesystem::path& file) {
+    // Only transfers still wanted: a late answer for one abandoned or purged is ignored.
+    if (std::erase_if(receiving_, [&](const auto& transfer) { return transfer.second == sha256; }) == 0)
+        return;
+    local_files_[sha256] = file;
+    changed();
+}
+
+void ListeningRoomGuest::onFileFailed(const std::string& sha256) {
+    if (std::erase_if(receiving_, [&](const auto& transfer) { return transfer.second == sha256; }) == 0)
+        return;
+    // Not asked again while its item stays in the window.
+    failed_.insert(sha256);
+}
+
+// Stops every transfer: a dropped link keeps the partial files for resume; purge (leaving, the end of
+// the room) then empties the cache. The receiver's transfers are abandoned before the purge.
+void ListeningRoomGuest::stopFiles(const bool purge) {
+    ++files_epoch_;
+    checking_.clear();
+    requested_.clear();
+    failed_.clear();
+    early_chunks_.clear();
+    early_bytes_ = 0;
+    auto receiving = std::exchange(receiving_, {});
+    if (files_ != nullptr)
+        for (const auto& transfer : receiving)
+            files_->abandon(transfer.first);
+    if (!purge)
+        return;
+    local_files_.clear();
+    lyrics_.reset();
+    if (files_ != nullptr)
+        files_->purge();
 }
 
 void ListeningRoomGuest::lost(const RoomLinkFailure failure) {
     last_failure_ = failure;
+    stopFiles(false);
     switch (state_) {
     case GuestRoomState::Joined: {
         // The window counts from the drop; the first attempt starts at once.
@@ -306,6 +504,7 @@ void ListeningRoomGuest::stop() {
     ++attempt_;
     ++episode_;
     detachLink();
+    stopFiles(true);
     snapshot_ = {};
     permissions_.reset();
     fresh_link_ = false;

@@ -7,13 +7,19 @@
 #include "m0/domain/RoomMessages.hpp"
 #include "m0/domain/RoomRoster.hpp"
 #include "m0/domain/SessionSnapshot.hpp"
+#include "m0/ports/RoomFiles.hpp"
 #include "m0/ports/RoomTransport.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace music_player::m0 {
 
@@ -54,6 +60,8 @@ struct ListeningRoomGuestDependencies final {
     // Runs task once after delay_ms on the guest's thread (QTimer::singleShot in the app). Same shape
     // as ListeningRoomHostDependencies::schedule.
     std::function<void(std::int64_t delay_ms, std::function<void()> task)> schedule;
+    // The room cache (S8.2); nullptr: the guest asks for no files.
+    RoomFileInbox* files{nullptr};
 };
 
 // Guest side of the listening room (ADR-0022, S7.2). Qt-free, no audio: it keeps the guest's view of
@@ -106,7 +114,23 @@ struct ListeningRoomGuestDependencies final {
 // must not feed observeConfirmedPosition (holdsLocalSession() tells when). The destructor closes the
 // link without calling any callback or restoring: call leave() first while the app keeps running.
 //
-// Other control messages (lyrics, clock, catalog, files) are left to later tasks (S8-S11).
+// Files (S8.2), request-driven: while Joined, the file window is the first 1 + room_prefetch_items
+// items of the room queue (the current item, then the next ones in queue order; items without a valid
+// hash, such as YouTube ones, are skipped). For each window hash that is not known complete the guest
+// asks files->status() in window order and, when the answer is not complete and the hash is still in
+// the window, sends RoomFileRequest{sha, resume_offset}. A hash already in the cache is never
+// requested. Only an offer for a hash it requested is accepted; chunks of accepted transfers go to the
+// inbox. The offer (control channel) and the chunks (media channel) are not ordered with each other:
+// while a request is outstanding, chunks of a transfer not offered yet are kept (at most 2 MiB in all)
+// and handed over once its offer is accepted. When the window changes, transfers whose item left it are abandoned (and
+// asked again if it comes back); a failed transfer is not asked again while its item stays in the window. A dropped
+// link abandons every transfer (the partial files stay, so the next request resumes); leave() and the end of the room
+// abandon them and then purge the cache. When the current item changes, the old one's hash goes to files->markPlayed().
+//
+// Lyrics: RoomLyrics for the current item (at most maximum_room_lyrics_bytes) is kept until the
+// current item changes; lyrics for any other item are ignored.
+//
+// Clock and catalog messages are left to later tasks (S9-S11).
 class ListeningRoomGuest final {
   public:
     explicit ListeningRoomGuest(ListeningRoomGuestDependencies dependencies);
@@ -125,6 +149,10 @@ class ListeningRoomGuest final {
     // What session autosave may store: the pre-room snapshot while one is held, live otherwise.
     [[nodiscard]] SessionSnapshot sessionForAutosave(SessionSnapshot live) const;
     [[nodiscard]] bool holdsLocalSession() const noexcept;
+    // The verified local copy of a room file, nullopt while it is missing or still arriving.
+    [[nodiscard]] std::optional<std::filesystem::path> localFile(std::string_view sha256) const;
+    // The host's lyrics for the current item, when it sent them.
+    [[nodiscard]] std::optional<RoomLyrics> lyrics() const;
 
     std::function<void()> onChanged;
     std::function<void(std::uint64_t, IntentRejection)> onRejected;
@@ -147,6 +175,14 @@ class ListeningRoomGuest final {
     void stop();
     void detachLink();
     [[nodiscard]] RoomHello hello() const;
+    [[nodiscard]] std::vector<std::string> fileWindow() const;
+    void updateFiles();
+    void onFileStatus(std::uint64_t epoch, const std::string& sha256, const RoomFileStatus& status);
+    void onOffer(const RoomFileOffer& offer);
+    void onChunk(RoomFileChunk chunk);
+    void onFileComplete(const std::string& sha256, const std::filesystem::path& file);
+    void onFileFailed(const std::string& sha256);
+    void stopFiles(bool purge);
     void changed() const;
 
     RoomGuestConnector& connector_;
@@ -155,6 +191,7 @@ class ListeningRoomGuest final {
     std::function<SessionSnapshot()> capture_session_;
     std::function<void(const SessionSnapshot&)> restore_session_;
     std::function<void(std::int64_t, std::function<void()>)> schedule_;
+    RoomFileInbox* files_;
 
     GuestRoomState state_{GuestRoomState::Idle};
     std::optional<RoomInviteLink> invite_;
@@ -174,6 +211,19 @@ class ListeningRoomGuest final {
     std::optional<GuestRoomEnd> end_;
     std::optional<SessionSnapshot> saved_session_;
     std::uint64_t next_request_id_{1};
+    // Room files: complete ones, status asked, request sent, transfers accepted (id -> sha), failed.
+    std::map<std::string, std::filesystem::path, std::less<>> local_files_;
+    std::set<std::string, std::less<>> checking_;
+    std::set<std::string, std::less<>> requested_;
+    std::map<std::uint32_t, std::string> receiving_;
+    std::set<std::string, std::less<>> failed_;
+    // Bumped when the guest stops its transfers: older status answers do nothing.
+    std::uint64_t files_epoch_{0};
+    std::optional<RoomLyrics> lyrics_;
+    // Chunks that came before their offer (control and media are separate channels, not ordered with
+    // each other), kept only while a request is outstanding and up to a fixed total.
+    std::map<std::uint32_t, std::vector<RoomFileChunk>> early_chunks_;
+    std::size_t early_bytes_{0};
     std::shared_ptr<Alive> alive_;
 };
 

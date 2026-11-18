@@ -4,11 +4,13 @@
 #include "m0/application/ListeningRoomHost.hpp"
 #include "m0/domain/ListenerProfile.hpp"
 #include "m0/domain/SessionSnapshot.hpp"
+#include "m0/ports/RoomFiles.hpp"
 #include "m0/ports/RoomHostPlayer.hpp"
 #include "m0/ports/RoomRosterStore.hpp"
 #include "m0/ports/RoomTrackCatalog.hpp"
 #include "m0/ports/RoomTransport.hpp"
 #include "presentation/RoomMembersModel.hpp"
+#include "presentation/RoomQueueModel.hpp"
 
 #include <QAbstractItemModel>
 #include <QObject>
@@ -67,6 +69,13 @@ struct ListeningRoomBindingDependencies final {
     std::function<void(const QString& text)> copy_text;
     // Defaults to scheduler(binding).
     ListeningRoomSchedule schedule;
+    // Room files (S8.2): the host streams what guests ask for; a guest keeps them in its room cache.
+    // nullptr: no files move. They must outlive the binding.
+    RoomFileOutbox* file_outbox{nullptr};
+    RoomFileInbox* file_inbox{nullptr};
+    // A guest's lyrics panel: the host's LRC for the current item, empty when there is none (or when
+    // this app is not a guest any more).
+    std::function<void(const QString& lrc)> room_lyrics;
 };
 
 // "Ouvir junto" for QML (ADR-0022, S7.3): hosts a room (ListeningRoomHost over the real player) or
@@ -81,6 +90,8 @@ class ListeningRoomBinding final : public QObject {
     Q_PROPERTY(QString inviteLink READ inviteLink NOTIFY changed)
     Q_PROPERTY(QAbstractItemModel* members READ members CONSTANT)
     Q_PROPERTY(QAbstractItemModel* pendingRequests READ pendingRequests CONSTANT)
+    // The room queue as a guest sees it (empty otherwise).
+    Q_PROPERTY(QAbstractItemModel* queue READ queue CONSTANT)
     Q_PROPERTY(int memberCount READ memberCount NOTIFY changed)
     Q_PROPERTY(QString hostNickname READ hostNickname NOTIFY changed)
     Q_PROPERTY(int maxListeners READ maxListeners NOTIFY changed)
@@ -106,6 +117,7 @@ class ListeningRoomBinding final : public QObject {
     [[nodiscard]] QString inviteLink() const;
     [[nodiscard]] QAbstractItemModel* members() noexcept;
     [[nodiscard]] QAbstractItemModel* pendingRequests() noexcept;
+    [[nodiscard]] QAbstractItemModel* queue() noexcept;
     [[nodiscard]] int memberCount() const noexcept;
     [[nodiscard]] QString hostNickname() const;
     [[nodiscard]] int maxListeners() const noexcept;
@@ -163,11 +175,14 @@ class ListeningRoomBinding final : public QObject {
     void retireGuest();
     void setError(QString text);
     void refreshMembers();
+    void refreshGuestRoom();
     void publish();
 
     ListeningRoomBindingDependencies dependencies_;
     RoomMembersModel members_;
     RoomMembersModel pending_;
+    RoomQueueModel queue_;
+    QString room_lyrics_;
     std::optional<ListeningRoomNetwork> network_;
     std::unique_ptr<ListeningRoomHost> host_;
     std::unique_ptr<ListeningRoomGuest> guest_;

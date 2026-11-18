@@ -175,6 +175,34 @@ class QueueTagExtractor final : public MetadataExtractor {
 class LyricsBindingTests final : public QObject {
     Q_OBJECT
   private slots:
+    // S8.2: a listening-room guest shows the host's chosen lyrics, synchronized to the position.
+    void roomLyricsReplaceTheTrackLyricsAndFollowThePosition() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto track = temp.filePath("local.mp3");
+        save(temp.filePath("local.lrc"), "Local lyrics");
+        QtLyricsService service;
+        LyricsBinding binding(service, std::make_shared<MemoryVariantsStore>());
+        binding.setTrack(track, "Local", {}, {}, 10000);
+        QTRY_COMPARE(binding.plainText(), QStringLiteral("Local lyrics"));
+
+        QSignalSpy changed(&binding, &LyricsBinding::changed);
+        binding.setRoomLyrics(QStringLiteral("[00:01.00]la\n[00:02.00]lo\n[00:03.00]li"));
+        QVERIFY(changed.count() > 0);
+        QVERIFY(binding.hasSyncedLyrics());
+        QCOMPARE(binding.statusText(), QStringLiteral("Letra sincronizada · sala"));
+        QCOMPARE(binding.readerVerses().size(), qsizetype{3});
+        binding.setPosition(2500);
+        QCOMPARE(binding.currentLine(), QStringLiteral("lo"));
+        QCOMPARE(binding.previousLine(), QStringLiteral("la"));
+        QCOMPARE(binding.nextLine(), QStringLiteral("li"));
+        QCOMPARE(binding.activeReaderVerse(), 1);
+        QVERIFY(!binding.canSaveCurrentLyrics()); // the host's lyrics never become a local version
+
+        binding.setRoomLyrics({});
+        QCOMPARE(binding.plainText(), QStringLiteral("Local lyrics"));
+        QVERIFY(!binding.hasSyncedLyrics());
+    }
     void defaultsToFirstAvailableLyricsAndRemembersIndependentTrackChoices() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());

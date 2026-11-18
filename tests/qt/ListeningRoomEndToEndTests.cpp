@@ -2,10 +2,14 @@
 // (DataChannelRoomTransport) and the in-process relay (tests/support/LoopbackSignaling.hpp): 127.0.0.1,
 // host ICE candidates only, real timers (ListeningRoomBinding::scheduler). The host's player is the
 // silent deterministic one (FakeRoomHost.hpp) with a fixed host clock; the guests' local queues are plain
-// SessionSnapshots. No internet, no real Worker, no audio and no personal files.
+// SessionSnapshots. No internet, no real Worker, no audio and no personal files. The file-transfer
+// cases (S8.2) send the project's small audio fixtures (tests/audio/corpus/fixtures/valid) into a
+// QTemporaryDir room cache.
 #include "../support/FakeRoomHost.hpp"
 #include "../support/LoopbackSignaling.hpp"
 #include "adapters/DataChannelRoomTransport.hpp"
+#include "adapters/QtRoomFileInbox.hpp"
+#include "adapters/QtRoomFileOutbox.hpp"
 #include "adapters/WindowsRoomIdentity.hpp"
 #include "m0/application/ListeningRoomGuest.hpp"
 #include "m0/application/ListeningRoomHost.hpp"
@@ -13,7 +17,10 @@
 #include "m0/domain/RoomInviteLink.hpp"
 #include "presentation/ListeningRoomBinding.hpp"
 
+#include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
+#include <QFileInfo>
 #include <QObject>
 #include <QRandomGenerator>
 #include <QTemporaryDir>
@@ -21,6 +28,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -137,6 +145,74 @@ class SeverableConnector final : public RoomGuestConnector {
     RoomGuestConnector& inner_;
 };
 
+std::filesystem::path fixture(const char* name) {
+    return std::filesystem::path{QDir(QStringLiteral(RC_MUSIC_TEST_AUDIO_FIXTURES)).filePath(name).toStdU16String()};
+}
+
+std::string sha256Of(const std::filesystem::path& file) {
+    return ListeningRoomBinding::fileSha256(QString::fromStdU16String(file.u16string())).value_or(std::string{});
+}
+
+// Describes real files like QtRoomTrackCatalog: their SHA-256, size and the lyrics the test chose.
+class HashingCatalog final : public RoomTrackCatalog {
+  public:
+    void describe(std::filesystem::path source,
+                  std::function<void(std::optional<RoomTrackDescription>)> done) override {
+        const auto sha = sha256Of(source);
+        if (sha.empty()) {
+            done(std::nullopt);
+            return;
+        }
+        RoomTrackDescription description;
+        description.item.origin = RoomItemOrigin::HostTrack;
+        description.item.content_sha256 = sha;
+        description.item.size_bytes =
+            static_cast<std::uint64_t>(QFileInfo(QString::fromStdU16String(source.u16string())).size());
+        description.item.summary = RoomTrackSummary{source.stem().string(), "Artista", "Album", 1000};
+        if (const auto found = lyrics.find(source); found != lyrics.end())
+            description.lyrics_lrc = found->second;
+        done(description);
+    }
+    std::map<std::filesystem::path, std::string> lyrics;
+};
+
+// The guest's room cache (QtRoomFileInbox) with a record of the offers it took and the files it got.
+class RecordingInbox final : public RoomFileInbox {
+  public:
+    explicit RecordingInbox(const QString& config_directory) : inner(config_directory) {
+        inner.onComplete = [this](std::string sha256, std::filesystem::path file) {
+            completed.push_back(sha256);
+            if (onComplete)
+                onComplete(std::move(sha256), std::move(file));
+        };
+        inner.onFailed = [this](std::string sha256) {
+            failed.push_back(sha256);
+            if (onFailed)
+                onFailed(std::move(sha256));
+        };
+    }
+    void status(const std::string& sha256, std::function<void(RoomFileStatus)> done) override {
+        inner.status(sha256, std::move(done));
+    }
+    void accept(const RoomFileOffer& offer) override {
+        accepted.push_back(offer.content_sha256);
+        inner.accept(offer);
+    }
+    void consume(RoomFileChunk chunk) override { inner.consume(std::move(chunk)); }
+    void abandon(const std::uint32_t transfer_id) override { inner.abandon(transfer_id); }
+    void markPlayed(const std::string& sha256) override { inner.markPlayed(sha256); }
+    void purge() override { inner.purge(); }
+    [[nodiscard]] QStringList cachedFiles() {
+        inner.waitForWorker();
+        return QDir(inner.cacheDirectory()).entryList(QDir::Files | QDir::NoDotAndDotDot);
+    }
+
+    QtRoomFileInbox inner;
+    std::vector<std::string> accepted;
+    std::vector<std::string> completed;
+    std::vector<std::string> failed;
+};
+
 // The host app: ListeningRoomHost over the real endpoint, the silent player and a fixed host clock.
 struct HostApp final {
     HostApp(const LoopbackSignaling& relay, const RoomIdentity& identity, testing::InMemoryRoomRosterStore roster_store)
@@ -170,7 +246,8 @@ struct HostApp final {
 
 // A guest app: ListeningRoomGuest over the real connector (behind SeverableConnector).
 struct GuestApp final {
-    GuestApp(const LoopbackSignaling& relay, const RoomIdentity& identity, std::string nickname)
+    GuestApp(const LoopbackSignaling& relay, const RoomIdentity& identity, std::string nickname,
+             RoomFileInbox* files = nullptr)
         : fingerprint(hex(identity.fingerprint)), real(relay.origin(), identity, local_only), connector(real),
           guest(ListeningRoomGuestDependencies{
               .connector = connector,
@@ -183,6 +260,7 @@ struct GuestApp final {
                       local = session;
                   },
               .schedule = ListeningRoomBinding::scheduler(&context),
+              .files = files,
           }) {
         guest.onEnded = [this](const RoomLinkFailure failure) { ended.push_back(failure); };
     }
@@ -195,6 +273,36 @@ struct GuestApp final {
     std::vector<SessionSnapshot> restored;
     std::vector<RoomLinkFailure> ended;
     ListeningRoomGuest guest; // last: destroyed first
+};
+
+// A host app that sends real files: the fixtures as its queue, HashingCatalog and QtRoomFileOutbox.
+struct FileHostApp final {
+    FileHostApp(const LoopbackSignaling& relay, const RoomIdentity& identity,
+                std::vector<std::filesystem::path> sources)
+        : player(std::move(sources)), endpoint(relay.origin(), identity, local_only),
+          host(ListeningRoomHostDependencies{
+              .roster_store = roster,
+              .player = player,
+              .endpoint = endpoint,
+              .catalog = catalog,
+              .host_clock_ms = [] { return std::int64_t{100'000}; },
+              .random_bytes =
+                  [](std::span<std::uint8_t> bytes) {
+                      QRandomGenerator::system()->generate(bytes.begin(), bytes.end());
+                  },
+              .host_fingerprint = identity.fingerprint,
+              .host_profile = ListenerProfile{"Joao", AvatarChoice{}},
+              .schedule = ListeningRoomBinding::scheduler(&context),
+              .files = &outbox,
+          }) {}
+
+    QObject context;
+    testing::FakeRoomHostPlayer player;
+    HashingCatalog catalog;
+    testing::InMemoryRoomRosterStore roster;
+    DataChannelRoomHostEndpoint endpoint;
+    QtRoomFileOutbox outbox;
+    ListeningRoomHost host; // last: destroyed first
 };
 
 testing::InMemoryRoomRosterStore rosterWith(std::vector<KnownListener> listeners = {}) {
@@ -218,7 +326,8 @@ class ListeningRoomEndToEndTests final : public QObject {
     RoomIdentity bia_id_;
 
     // Opens the room and waits until the relay has the host, so a guest joining next finds it.
-    static std::optional<RoomInviteLink> openRoom(HostApp& app, const LoopbackSignaling& relay,
+    template <typename App>
+    static std::optional<RoomInviteLink> openRoom(App& app, const LoopbackSignaling& relay,
                                                   const RoomOpenOptions& options) {
         const auto before = relay.host_tokens.size();
         auto invite = app.host.open(options);
@@ -228,7 +337,7 @@ class ListeningRoomEndToEndTests final : public QObject {
     }
 
     // An unknown guest asks to enter and the host approves: the guest is Joined with the host's state.
-    static bool approveIn(HostApp& app, GuestApp& visitor, const RoomInviteLink& invite) {
+    template <typename App> static bool approveIn(App& app, GuestApp& visitor, const RoomInviteLink& invite) {
         visitor.guest.join(invite);
         if (!QTest::qWaitFor([&] { return visitor.guest.state() == GuestRoomState::WaitingApproval; }, connect_ms))
             return false;
@@ -440,6 +549,77 @@ class ListeningRoomEndToEndTests final : public QObject {
         QTRY_COMPARE_WITH_TIMEOUT(ana.guest.snapshot().version, version + 1, 5000);
         QVERIFY(!hasMember(ana.guest.snapshot(), bia.fingerprint));
         QCOMPARE(ana.guest.snapshot().members.size(), std::size_t{2});
+    }
+    // S8.2: the current item first, then the next room_prefetch_items in queue order; a file the guest
+    // already has is not sent again; the host's lyrics arrive; leaving empties the cache.
+    void theGuestReceivesTheCurrentItemFirstThenTheNextOnesAndLeavesNoCache() {
+        LoopbackSignaling relay;
+        const auto wav = fixture("wav-pcm-mono.wav");
+        const auto flac = fixture("flac-16-stereo.flac");
+        const auto m4a = fixture("m4a-aac-lc.m4a");
+        const auto ogg = fixture("ogg-vorbis.ogg");
+        // The wav twice inside the window: one transfer.
+        FileHostApp app(relay, host_id_, {wav, flac, wav, m4a, ogg});
+        app.catalog.lyrics[wav] = "[00:01.00]la\n[00:02.00]lo";
+        const auto invite = openRoom(app, relay, {});
+        QVERIFY(invite.has_value());
+        QTemporaryDir ana_config;
+        QVERIFY(ana_config.isValid());
+        RecordingInbox inbox(ana_config.path());
+        GuestApp ana(relay, ana_id_, "Ana", &inbox);
+        QVERIFY(approveIn(app, ana, *invite));
+
+        QTRY_COMPARE_WITH_TIMEOUT(inbox.completed.size(), std::size_t{3}, connect_ms);
+        const std::vector<std::string> window{sha256Of(wav), sha256Of(flac), sha256Of(m4a)};
+        QCOMPARE(inbox.accepted, window);
+        QCOMPARE(inbox.completed, window);
+        QVERIFY(inbox.failed.empty());
+        const auto received = ana.guest.localFile(sha256Of(wav));
+        QVERIFY(received.has_value());
+        {
+            QFile original(QString::fromStdU16String(wav.u16string()));
+            QFile copy(QString::fromStdU16String(received->u16string()));
+            QVERIFY(original.open(QIODevice::ReadOnly) && copy.open(QIODevice::ReadOnly));
+            QCOMPARE(copy.readAll(), original.readAll());
+        } // closed: Windows cannot delete an open file
+        QVERIFY(!ana.guest.localFile(sha256Of(ogg)));
+        const RoomLyrics lyrics{app.player.occurrenceAt(0), "[00:01.00]la\n[00:02.00]lo"};
+        QTRY_VERIFY_WITH_TIMEOUT(ana.guest.lyrics() == std::optional{lyrics}, connect_ms);
+
+        // The next song: ogg enters the window; nothing else is sent again.
+        QVERIFY(app.player.next());
+        QTRY_COMPARE_WITH_TIMEOUT(inbox.completed.size(), std::size_t{4}, connect_ms);
+        QCOMPARE(inbox.accepted.back(), sha256Of(ogg));
+        QCOMPARE(inbox.accepted.size(), std::size_t{4});
+        QVERIFY(!ana.guest.lyrics()); // flac has none
+        QCOMPARE(inbox.cachedFiles().size(), qsizetype{4});
+
+        ana.guest.leave();
+        QCOMPARE(inbox.cachedFiles(), QStringList{});
+    }
+
+    void aGuestJoiningMidSongReceivesTheCurrentItemFirst() {
+        LoopbackSignaling relay;
+        const auto wav = fixture("wav-pcm-mono.wav");
+        const auto flac = fixture("flac-16-stereo.flac");
+        const auto m4a = fixture("m4a-aac-lc.m4a");
+        const auto mp3 = fixture("mp3-cbr-stereo.mp3");
+        const auto ogg = fixture("ogg-vorbis.ogg");
+        FileHostApp app(relay, host_id_, {wav, flac, m4a, mp3, ogg});
+        QVERIFY(app.player.next()); // flac is playing when Ana arrives
+        const auto invite = openRoom(app, relay, {});
+        QVERIFY(invite.has_value());
+        QTemporaryDir ana_config;
+        QVERIFY(ana_config.isValid());
+        RecordingInbox inbox(ana_config.path());
+        GuestApp ana(relay, ana_id_, "Ana", &inbox);
+        QVERIFY(approveIn(app, ana, *invite));
+
+        QTRY_COMPARE_WITH_TIMEOUT(inbox.completed.size(), std::size_t{4}, connect_ms);
+        const std::vector<std::string> window{sha256Of(flac), sha256Of(m4a), sha256Of(mp3), sha256Of(ogg)};
+        QCOMPARE(inbox.accepted, window);
+        QCOMPARE(inbox.completed.front(), sha256Of(flac));
+        QVERIFY(!ana.guest.localFile(sha256Of(wav)));
     }
 };
 

@@ -146,8 +146,10 @@ if(TARGET rc_music_listening_room)
     # silent deterministic player and real timers.
     add_ui_test(rc_music_room_end_to_end_tests rc_music.room.end-to-end
         "${RC_MUSIC_SOURCE_ROOT}/tests/qt/ListeningRoomEndToEndTests.cpp" rc_music_listening_room
-        rc_music_room_protocol rc_music_room_ui Qt6::Network)
+        rc_music_room_protocol rc_music_room_ui rc_music_room_transfer Qt6::Network)
     set_target_properties(rc_music_room_end_to_end_tests PROPERTIES AUTOMOC ON)
+    target_compile_definitions(rc_music_room_end_to_end_tests PRIVATE
+        RC_MUSIC_TEST_AUDIO_FIXTURES="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid")
     set_tests_properties(rc_music.room.end-to-end PROPERTIES TIMEOUT 180 LABELS "ui;qt;listening-room")
     rc_music_copy_listening_room_runtime(rc_music_room_end_to_end_tests)
 endif()

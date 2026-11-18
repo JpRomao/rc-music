@@ -44,6 +44,8 @@
 #include "m0/adapters/fixture/FixtureRepository.hpp"
 #endif
 #include "adapters/QtJsonRoomRosterStore.hpp"
+#include "adapters/QtRoomFileInbox.hpp"
+#include "adapters/QtRoomFileOutbox.hpp"
 #include "adapters/QtRoomTrackCatalog.hpp"
 #include "m0/domain/WindowPlacement.hpp"
 #include "presentation/ApplicationIdentity.hpp"
@@ -939,6 +941,11 @@ int main(int argc, char* argv[]) {
         QObject* room_network_context = nullptr;
         room_dependencies.signaling_origin = QStringLiteral(RC_MUSIC_ROOM_SIGNALING_ORIGIN);
         room_dependencies.catalog = &room_catalog;
+        // S8.2: the host streams room files; a guest keeps them in <config>/room-cache, purged at startup.
+        music_player::m0::QtRoomFileOutbox room_file_outbox;
+        music_player::m0::QtRoomFileInbox room_file_inbox(playlists_config_root);
+        room_dependencies.file_outbox = &room_file_outbox;
+        room_dependencies.file_inbox = &room_file_inbox;
         // The identity (DPAPI, key generation) loads off the UI thread; the transport is built back on it.
         // The watcher belongs to the binding, so a load still running when it goes calls nobody.
         room_dependencies.load_network = [&room_network_context, origin = room_dependencies.signaling_origin,
@@ -970,6 +977,7 @@ int main(int argc, char* argv[]) {
         };
 #endif
         room_dependencies.host_player = &room_host_player;
+        room_dependencies.room_lyrics = [&lyrics_binding](const QString& lrc) { lyrics_binding.setRoomLyrics(lrc); };
         room_dependencies.roster_store = &room_roster;
         room_dependencies.profile = [&profile_binding] {
             return profile_binding ? profile_binding->profile() : std::optional<music_player::m0::ListenerProfile>{};

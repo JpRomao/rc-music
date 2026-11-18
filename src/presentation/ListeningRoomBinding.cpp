@@ -32,7 +32,7 @@ namespace {
 } // namespace
 
 ListeningRoomBinding::ListeningRoomBinding(ListeningRoomBindingDependencies dependencies, QObject* parent)
-    : QObject(parent), dependencies_(std::move(dependencies)), members_(this), pending_(this) {
+    : QObject(parent), dependencies_(std::move(dependencies)), members_(this), pending_(this), queue_(this) {
     if (!dependencies_.schedule)
         dependencies_.schedule = scheduler(this);
     if (!dependencies_.capture_session)
@@ -86,6 +86,7 @@ bool ListeningRoomBinding::busy() const noexcept { return busy_; }
 QString ListeningRoomBinding::inviteLink() const { return invite_link_; }
 QAbstractItemModel* ListeningRoomBinding::members() noexcept { return &members_; }
 QAbstractItemModel* ListeningRoomBinding::pendingRequests() noexcept { return &pending_; }
+QAbstractItemModel* ListeningRoomBinding::queue() noexcept { return &queue_; }
 int ListeningRoomBinding::memberCount() const noexcept { return members_.rowCount(); }
 QString ListeningRoomBinding::hostNickname() const { return host_nickname_; }
 
@@ -320,6 +321,7 @@ void ListeningRoomBinding::startHost() {
         .host_fingerprint = network_->fingerprint,
         .host_profile = *profile,
         .schedule = dependencies_.schedule,
+        .files = dependencies_.file_outbox,
     });
     host_->onChanged = [this](const RoomSnapshot&) { hostChanged(); };
     host_->onJoinRequest = [this](const RoomMember& member) { hostJoinRequest(member); };
@@ -359,6 +361,7 @@ void ListeningRoomBinding::startGuest() {
         .capture_session = dependencies_.capture_session,
         .restore_session = dependencies_.restore_session,
         .schedule = dependencies_.schedule,
+        .files = dependencies_.file_inbox,
     });
     guest_->onChanged = [this] { guestChanged(); };
     guest_->onEnded = [this](RoomLinkFailure) { guestEnded(); };
@@ -503,9 +506,29 @@ void ListeningRoomBinding::retireGuest() {
     QMetaObject::invokeMethod(this, [this] { retired_guests_.clear(); }, Qt::QueuedConnection);
 }
 
+// The guest's room queue (which files are here yet) and the host's lyrics for the current item.
+void ListeningRoomBinding::refreshGuestRoom() {
+    QString lyrics;
+    if (role_ == GuestRole && guest_) {
+        const auto* const guest = guest_.get();
+        queue_.replace(guest->snapshot(),
+                       [guest](const std::string_view sha256) { return guest->localFile(sha256).has_value(); });
+        if (const auto current = guest->lyrics())
+            lyrics = QString::fromStdString(current->lrc_text);
+    } else {
+        queue_.replace({}, {});
+    }
+    if (lyrics == room_lyrics_)
+        return;
+    room_lyrics_ = lyrics;
+    if (dependencies_.room_lyrics)
+        dependencies_.room_lyrics(room_lyrics_);
+}
+
 void ListeningRoomBinding::setError(QString text) { error_text_ = std::move(text); }
 
 void ListeningRoomBinding::refreshMembers() {
+    refreshGuestRoom();
     const auto self = network_.has_value() ? lowerHex(network_->fingerprint) : std::string{};
     if (role_ == HostRole && host_) {
         std::vector<RoomMember> admitted;

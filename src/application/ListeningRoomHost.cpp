@@ -115,6 +115,15 @@ struct ListeningRoomHost::Connection final {
     bool greeted{false};
     // The item whose lyrics this member already received (or that has none).
     std::optional<std::uint64_t> lyrics_item{};
+    // File requests waiting for the next serveFiles() (sha -> offset), and transfers handed to the
+    // outbox (transfer_id -> sha).
+    std::map<std::string, std::uint64_t, std::less<>> wanted{};
+    std::map<std::uint32_t, std::string> transfers{};
+};
+
+struct ListeningRoomHost::WindowFile final {
+    std::string sha256;
+    std::filesystem::path file;
 };
 
 ListeningRoomHost::ListeningRoomHost(ListeningRoomHostDependencies dependencies)
@@ -123,7 +132,7 @@ ListeningRoomHost::ListeningRoomHost(ListeningRoomHostDependencies dependencies)
       random_bytes_(std::move(dependencies.random_bytes)), host_fingerprint_(dependencies.host_fingerprint),
       host_fingerprint_hex_(lowerHex(dependencies.host_fingerprint)),
       host_profile_(std::move(dependencies.host_profile)), schedule_(std::move(dependencies.schedule)),
-      alive_(std::make_shared<Alive>(Alive{this})) {
+      files_(dependencies.files), alive_(std::make_shared<Alive>(Alive{this})) {
     if (!host_clock_ms_ || !random_bytes_ || !schedule_)
         throw std::invalid_argument{"the listening room host needs a clock, a random source and a scheduler"};
     const auto loaded = roster_store_.load();
@@ -148,6 +157,7 @@ ListeningRoomHost::~ListeningRoomHost() {
         connection.link->onControl = nullptr;
         connection.link->onMedia = nullptr;
         connection.link->onClosed = nullptr;
+        forgetFiles(*connection.link);
         connection.link->close();
     }
     if (invite_)
@@ -286,6 +296,7 @@ std::optional<std::uint64_t> ListeningRoomHost::addGuestTrack(const std::string_
     described.youtube_id.clear();
     described.summary = cappedSummary(described.summary);
     guest_items_[described.id] = described;
+    guest_files_[described.id] = cached_file;
     static_cast<void>(refresh());
     return described.id;
 }
@@ -383,6 +394,9 @@ void ListeningRoomHost::onLinkControl(const std::shared_ptr<RoomLink>& link, Roo
     } else if (const auto* ping = std::get_if<RoomClockPing>(&message)) {
         if (memberState(connection->fingerprint) == MemberState::Admitted)
             static_cast<void>(link->sendControl(RoomClockPong{ping->sent_local_ms, host_clock_ms_()}));
+    } else if (const auto* request = std::get_if<RoomFileRequest>(&message)) {
+        if (memberState(connection->fingerprint) == MemberState::Admitted)
+            onFileRequest(*find(link.get()), *request);
     } else if (std::holds_alternative<RoomBye>(message)) {
         // The guest left ("Sair da sala"): no reconnect hold, the seat is free at once.
         const auto fingerprint = connection->fingerprint;
@@ -391,7 +405,7 @@ void ListeningRoomHost::onLinkControl(const std::shared_ptr<RoomLink>& link, Roo
         room_->leave(fingerprint);
         static_cast<void>(refresh());
     }
-    // A second hello, file messages (S8) and drift reports (S9.2) are ignored here.
+    // A second hello, other file messages (S12) and drift reports (S9.2) are ignored here.
 }
 
 void ListeningRoomHost::onLinkClosed(const std::shared_ptr<RoomLink>& link) {
@@ -401,6 +415,7 @@ void ListeningRoomHost::onLinkClosed(const std::shared_ptr<RoomLink>& link) {
     const auto fingerprint = connection->fingerprint;
     const bool greeted = connection->greeted;
     std::erase_if(connections_, [&](const Connection& c) { return c.link == link; });
+    forgetFiles(*link);
     if (!greeted || !room_)
         return;
     if (memberState(fingerprint) == MemberState::Admitted) {
@@ -595,6 +610,7 @@ bool ListeningRoomHost::rebuild() {
             return item.occurrence_id.value == guest.first;
         });
     });
+    std::erase_if(guest_files_, [&](const auto& guest) { return !guest_items_.contains(guest.first); });
     std::optional<std::size_t> current_index;
     for (std::size_t index = 0; index < items.size(); ++index)
         if (player.queue.current_occurrence_id == std::optional{items[index].occurrence_id})
@@ -651,6 +667,7 @@ bool ListeningRoomHost::rebuild() {
         return false;
     next.version = current_.version + 1;
     current_ = std::move(next);
+    cancelFilesOutsideWindow();
     auto view = guestView(current_);
     const bool broadcast = !sameContent(view, sent_view_);
     if (broadcast) {
@@ -715,7 +732,111 @@ void ListeningRoomHost::sendLyrics(Connection& connection) const {
 
 void ListeningRoomHost::drop(const std::shared_ptr<RoomLink>& link) {
     std::erase_if(connections_, [&](const Connection& c) { return c.link == link; });
+    forgetFiles(*link);
     link->close();
+}
+
+std::vector<ListeningRoomHost::WindowFile> ListeningRoomHost::fileWindow() const {
+    std::vector<WindowFile> window;
+    const auto items = player_.state().queue.items;
+    const auto count = std::min(current_.queue.size(), std::size_t{1} + room_prefetch_items);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& item = current_.queue[index];
+        if (const auto guest = guest_files_.find(item.id); guest != guest_files_.end()) {
+            window.push_back({item.content_sha256, guest->second});
+            continue;
+        }
+        if (item.origin != RoomItemOrigin::HostTrack)
+            continue;
+        const auto entry = std::find_if(items.begin(), items.end(), [&](const LocalFileQueueSnapshotItem& local) {
+            return local.occurrence_id.value == item.id;
+        });
+        if (entry == items.end())
+            continue;
+        const auto found = descriptions_.find(entry->source_path);
+        if (found != descriptions_.end() && found->second.item.content_sha256 == item.content_sha256)
+            window.push_back({item.content_sha256, entry->source_path});
+    }
+    return window;
+}
+
+void ListeningRoomHost::onFileRequest(Connection& connection, const RoomFileRequest& request) {
+    if (files_ == nullptr || !lowerHex64(request.content_sha256))
+        return;
+    connection.wanted[request.content_sha256] = request.offset;
+    if (std::exchange(serve_scheduled_, true))
+        return;
+    // Requests that arrive together are served together, in window order (the current item first).
+    schedule_(0, [alive = std::weak_ptr<Alive>{alive_}, generation = generation_] {
+        if (const auto self = alive.lock(); self && self->host->generation_ == generation)
+            self->host->serveFiles();
+    });
+}
+
+void ListeningRoomHost::serveFiles() {
+    serve_scheduled_ = false;
+    if (files_ == nullptr || !room_)
+        return;
+    const auto window = fileWindow();
+    std::vector<std::shared_ptr<RoomLink>> links;
+    for (const auto& connection : connections_)
+        if (!connection.wanted.empty())
+            links.push_back(connection.link);
+    for (const auto& link : links) {
+        auto* connection = find(link.get());
+        if (connection == nullptr)
+            continue;
+        const auto wanted = std::exchange(connection->wanted, {});
+        if (memberState(connection->fingerprint) != MemberState::Admitted)
+            continue;
+        std::set<std::string, std::less<>> served;
+        for (const auto& entry : window) {
+            const auto request = wanted.find(entry.sha256);
+            if (request == wanted.end() || !served.insert(entry.sha256).second)
+                continue;
+            // A new request for the same file replaces the transfer still going.
+            for (auto transfer = connection->transfers.begin(); transfer != connection->transfers.end();) {
+                if (transfer->second != entry.sha256) {
+                    ++transfer;
+                    continue;
+                }
+                files_->cancel(*link, transfer->first);
+                transfer = connection->transfers.erase(transfer);
+            }
+            const auto transfer_id = ++next_transfer_id_;
+            if (!files_->send(link, entry.file, entry.sha256, transfer_id, request->second))
+                continue;
+            // The send may run host callbacks that move or erase connections.
+            if ((connection = find(link.get())) == nullptr)
+                break;
+            connection->transfers[transfer_id] = entry.sha256;
+        }
+    }
+}
+
+void ListeningRoomHost::cancelFilesOutsideWindow() {
+    if (files_ == nullptr)
+        return;
+    std::set<std::string, std::less<>> window;
+    const auto count = std::min(current_.queue.size(), std::size_t{1} + room_prefetch_items);
+    for (std::size_t index = 0; index < count; ++index)
+        window.insert(current_.queue[index].content_sha256);
+    for (auto& connection : connections_) {
+        for (auto transfer = connection.transfers.begin(); transfer != connection.transfers.end();) {
+            if (window.contains(transfer->second)) {
+                ++transfer;
+                continue;
+            }
+            files_->cancel(*connection.link, transfer->first);
+            transfer = connection.transfers.erase(transfer);
+        }
+        std::erase_if(connection.wanted, [&](const auto& request) { return !window.contains(request.first); });
+    }
+}
+
+void ListeningRoomHost::forgetFiles(const RoomLink& link) {
+    if (files_ != nullptr)
+        files_->forget(link);
 }
 
 void ListeningRoomHost::end(const RoomByeReason reason) {
@@ -728,6 +849,7 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
     connections_.clear();
     for (const auto& connection : connections) {
         static_cast<void>(connection.link->sendControl(RoomBye{reason}));
+        forgetFiles(*connection.link);
         connection.link->close();
     }
     endpoint_.closeAll();
@@ -736,6 +858,8 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
     guest_items_.clear();
     for (const auto& guest : guests)
         static_cast<void>(player_.remove(LocalQueueOccurrenceId{guest.first}));
+    guest_files_.clear();
+    serve_scheduled_ = false;
     descriptions_.clear();
     describing_.clear();
     unreadable_.clear();

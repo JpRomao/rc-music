@@ -43,7 +43,11 @@ add_library(rc_music_room_transfer STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/RoomCache.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/RoomCache.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/RoomFileTransfer.hpp"
-    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/RoomFileTransfer.cpp")
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/RoomFileTransfer.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtRoomFileOutbox.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtRoomFileOutbox.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtRoomFileInbox.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtRoomFileInbox.cpp")
 target_include_directories(rc_music_room_transfer PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
 target_link_libraries(rc_music_room_transfer PUBLIC rc_music_core Qt6::Core)
 rc_music_configure_cpp(rc_music_room_transfer)
@@ -61,7 +65,9 @@ add_library(rc_music_room_ui STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ListeningRoomBinding.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/ListeningRoomBinding.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomMembersModel.hpp"
-    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomMembersModel.cpp")
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomMembersModel.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomQueueModel.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomQueueModel.cpp")
 target_include_directories(rc_music_room_ui PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
 target_link_libraries(rc_music_room_ui PUBLIC rc_music_core Qt6::Core)
 set_target_properties(rc_music_room_ui PROPERTIES AUTOMOC ON)

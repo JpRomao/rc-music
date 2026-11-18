@@ -1110,7 +1110,7 @@ bool LyricsBinding::variantsCanRetrySave() const {
 }
 bool LyricsBinding::variantsHasPendingChange() const { return variants_->hasPending(); }
 bool LyricsBinding::canSaveCurrentLyrics() const {
-    if (!variants_->editable() || variants_->selected || lyricsCopyProtected() ||
+    if (room_document_ || !variants_->editable() || variants_->selected || lyricsCopyProtected() ||
         (!recording_search_->displayed && service_.status() != QtLyricsService::Status::Ready))
         return false;
     const auto& document = displayedDocument();
@@ -1175,7 +1175,8 @@ QString LyricsBinding::romajiSourceRevision() const {
     return romaji_->japanese ? revision : QString{};
 }
 bool LyricsBinding::canGenerateRomaji() const {
-    return romaji_->romanizer && !romaji_->busy && variants_->editable() && !romajiSourceRevision().isEmpty();
+    return !room_document_ && romaji_->romanizer && !romaji_->busy && variants_->editable() &&
+           !romajiSourceRevision().isEmpty();
 }
 QString LyricsBinding::romajiStatusText() const { return romaji_->status(romajiSourceRevision()); }
 QString LyricsBinding::generateRomaji() {
@@ -1439,6 +1440,8 @@ bool LyricsBinding::reloadVariants() {
 }
 const LyricsDocument& LyricsBinding::displayedDocument() const {
     static const LyricsDocument hidden_document;
+    if (room_document_)
+        return *room_document_;
     if (variants_->lyrics_hidden)
         return hidden_document;
     if (variants_->selected)
@@ -1485,6 +1488,20 @@ void LyricsBinding::setTrack(const QString& path, const QString& title, const QS
         emit changed();
     }
 }
+void LyricsBinding::setRoomLyrics(const QString& lrc) {
+    if (lrc.isEmpty()) {
+        if (!room_document_)
+            return;
+        room_document_.reset();
+    } else {
+        auto parsed = parseLrc(lrc.toStdString()).document;
+        if (room_document_ && *room_document_ == parsed)
+            return;
+        room_document_ = std::make_unique<LyricsDocument>(std::move(parsed));
+    }
+    updateReaderDocument();
+    emit changed();
+}
 void LyricsBinding::setPosition(const qint64 position) {
     const auto before = lyricsLineAt(displayedDocument(), position_ms_);
     position_ms_ = position;
@@ -1527,6 +1544,8 @@ QString LyricsBinding::artist() const { return artist_; }
 QString LyricsBinding::album() const { return album_; }
 qint64 LyricsBinding::durationMs() const { return duration_ms_; }
 QString LyricsBinding::statusText() const {
+    if (room_document_)
+        return hasSyncedLyrics() ? tr("Letra sincronizada · sala") : tr("Letra sem sincronização · sala");
     if (variants_->hasPending() && path_.isEmpty())
         return variantsStatusText();
     if (variants_->lyrics_hidden)

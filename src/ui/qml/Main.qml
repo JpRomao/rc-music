@@ -49,7 +49,9 @@ ApplicationWindow {
     readonly property bool inlinePages: !presenter.usesFrozenFixture
     readonly property string currentPage: preferencesPanel.visible ? "preferences" : (libraryPanel.visible ? "library" : (searchPanel.visible ? "search" : (roomPanel.visible ? "room" : (playlistsPanel.visible ? "playlists" : (downloadsPanel.visible ? "downloads" : (queuePageActive ? "queue" : "home"))))))
     readonly property Item pageReturnFocusItem: inlinePages ? (currentPage === "preferences" ? preferencesPanel.lastFocusItem : (currentPage === "library" ? libraryPanel.lastFocusItem : (currentPage === "search" ? searchPanel.lastFocusItem : (currentPage === "room" ? roomPanel.lastFocusItem : (currentPage === "playlists" ? playlistsPanel.lastFocusItem : (currentPage === "downloads" ? downloadsPanel.lastFocusItem : null)))))) : null
-    readonly property bool queuePageActive: queueOpen && presenter.queueLoaded
+    // A guest's queue is the room queue, there even when no local queue is loaded.
+    readonly property bool roomGuest: room !== null && room.available && room.role === 2
+    readonly property bool queuePageActive: queueOpen && (presenter.queueLoaded || roomGuest)
     property alias queueButton: sideNavigation.queueButton
     property alias preferencesButton: sideNavigation.preferencesButton
     property alias playlistsButton: sideNavigation.playlistsButton
@@ -273,7 +275,7 @@ ApplicationWindow {
     }
 
     function setQueueOpen(open) {
-        if (open && !presenter.queueLoaded)
+        if (open && !presenter.queueLoaded && !roomGuest)
             return;
         if (window.inlinePages && open) {
             libraryPanel.close();
@@ -441,7 +443,7 @@ ApplicationWindow {
         editorial: window.inlinePages
         themeHost: window.inlinePages ? workspaceHeader.themeHost : null
         contract: window.uiContract
-        queueAvailable: window.presenter.queueLoaded
+        queueAvailable: window.presenter.queueLoaded || window.roomGuest
         queueActive: window.queuePageActive
         activePage: window.currentPage
         pageReturnFocusItem: window.pageReturnFocusItem
@@ -711,7 +713,7 @@ ApplicationWindow {
             presenter: window.presenter
             enabled: !window.presenter.exiting && (playbackEnabled || window.presenter.canGoPrevious || window.presenter.canGoNext || queueAvailable || lyricsAvailable)
             queueCount: queuePreview.count
-            queueAvailable: window.presenter.queueLoaded && queuePreview.count > 0 && !window.presenter.exiting
+            queueAvailable: (window.presenter.queueLoaded && queuePreview.count > 0 || window.roomGuest) && !window.presenter.exiting
             lyricsAvailable: lyricsPanel.readerAvailable
             room: window.room
             onQueueRequested: window.setQueueOpen(true)
@@ -795,6 +797,7 @@ ApplicationWindow {
         z: 10
         visible: window.queuePageActive
         overlayMode: window.inlinePages
+        room: window.room
         Rectangle {
             visible: window.inlinePages
             width: window.uiContract.highContrast ? 2 : 1

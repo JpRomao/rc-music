@@ -20,6 +20,7 @@ TestCase {
         property string inviteLink: ""
         property ListModel members: ListModel {}
         property ListModel pendingRequests: ListModel {}
+        property ListModel queue: ListModel {}
         readonly property int memberCount: members.count
         property string hostNickname: ""
         property int maxListeners: 5
@@ -97,6 +98,7 @@ TestCase {
         fakeRoom.inviteLink = "";
         fakeRoom.members.clear();
         fakeRoom.pendingRequests.clear();
+        fakeRoom.queue.clear();
         fakeRoom.hostNickname = "";
         fakeRoom.untilRevoked = false;
         fakeRoom.errorText = "";
@@ -204,6 +206,95 @@ TestCase {
         field.text = "https://sala.example/r#abc";
         mouseClick(visibleChild("room-join"));
         compare(fakeRoom.calls, ["join:https://sala.example/r#abc"]);
+    }
+
+    function joinAsGuest() {
+        fakeRoom.role = 2;
+        fakeRoom.state = "joined";
+        fakeRoom.hostNickname = "Joao";
+        fakeRoom.members.append({
+            fingerprint: "fp-host",
+            nickname: "Joao",
+            avatarSource: "qrc:/rc_music/avatars/avatar-04.svg",
+            isHost: true,
+            isSelf: false
+        });
+        fakeRoom.queue.append({
+            itemId: "7",
+            title: "Primeira",
+            artist: "Artista",
+            addedBy: "Joao",
+            avatarSource: "qrc:/rc_music/avatars/avatar-04.svg",
+            available: true,
+            current: true
+        });
+        fakeRoom.queue.append({
+            itemId: "8",
+            title: "Segunda",
+            artist: "Artista",
+            addedBy: "Bia",
+            avatarSource: "qrc:/rc_music/avatars/avatar-02.svg",
+            available: false,
+            current: false
+        });
+    }
+
+    // S8.2: the guest's queue shows the room's items, "Carregando…" until a file arrives, and who added each.
+    function test_aGuestQueueShowsLoadingItemsWithTheirAuthor() {
+        joinAsGuest();
+        createShell();
+        shell.setQueueOpen(true);
+        const panel = findChild(shell, "queue-panel");
+        tryVerify(() => panel.visible);
+        const list = visibleChild("room-queue-list");
+        compare(list.count, 2);
+        tryVerify(() => findItem(list, "room-queue-row-8") !== null);
+        const loadingRow = findItem(list, "room-queue-row-8");
+        const loading = findItem(loadingRow, "room-queue-loading");
+        verify(loading.visible);
+        compare(loading.text, "Carregando…");
+        const avatar = findItem(loadingRow, "room-queue-avatar");
+        verify(avatar.visible);
+        compare(String(avatar.source), "qrc:/rc_music/avatars/avatar-02.svg");
+        compare(findItem(loadingRow, "room-queue-title").text, "Segunda");
+        verify(loadingRow.Accessible.description.indexOf("Carregando…") >= 0);
+        verify(loadingRow.Accessible.description.indexOf("Bia") >= 0);
+        const readyRow = findItem(list, "room-queue-row-7");
+        verify(!findItem(readyRow, "room-queue-loading").visible);
+        compare(String(findItem(readyRow, "room-queue-avatar").source), "qrc:/rc_music/avatars/avatar-04.svg");
+
+        fakeRoom.queue.setProperty(1, "available", true);
+        tryVerify(() => !findItem(findItem(list, "room-queue-row-8"), "room-queue-loading").visible);
+    }
+
+    // S8.2: on a guest, shuffle and repeat belong to the host.
+    function test_aGuestCannotChangeShuffleOrRepeat() {
+        joinAsGuest();
+        createShell();
+        shell.setQueueOpen(true);
+        tryVerify(() => findChild(testCase.shell, "queue-panel").visible);
+        for (const name of ["queue-shuffle", "queue-repeat", "player-shuffle", "player-repeat"]) {
+            const button = findChild(shell, name);
+            verify(button, name);
+            verify(!button.enabled, name);
+            compare(button.disabledReason, "O host controla", name);
+            verify(button.toolTipText.indexOf("O host controla") >= 0, name);
+            compare(button.Accessible.description, "O host controla", name);
+        }
+        const shuffled = localPresenter.shuffleQueueEnabled;
+        const repeated = localPresenter.repeatQueueEnabled;
+        keyClick(Qt.Key_F1);
+        keyClick(Qt.Key_F2);
+        compare(localPresenter.shuffleQueueEnabled, shuffled);
+        compare(localPresenter.repeatQueueEnabled, repeated);
+
+        // Back outside the room, they work again.
+        fakeRoom.role = 0;
+        fakeRoom.state = "idle";
+        verify(findChild(shell, "queue-shuffle").enabled);
+        verify(findChild(shell, "queue-repeat").enabled);
+        compare(findChild(shell, "player-shuffle").disabledReason, "");
+        compare(findChild(shell, "player-repeat").disabledReason, "");
     }
 
     function test_aPendingRequestOffersAcceptAndRejectByKeyboard() {

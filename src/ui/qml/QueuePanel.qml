@@ -13,6 +13,9 @@ FocusScope {
     required property PlayerPresenter presenter
     // True when shown as the Aurora side drawer over the home; false as a full legacy page.
     property bool overlayMode: false
+    // The listening room (ListeningRoomBinding); as a guest the panel shows the room queue instead.
+    property var room: null
+    readonly property bool roomGuest: room !== null && room.available && room.role === 2
     property alias listView: queueList
     property string selectedOccurrenceId: ""
     property string selectedTitle: ""
@@ -36,7 +39,7 @@ FocusScope {
     readonly property string observedCurrentOccurrenceId: presenter.currentOccurrenceId
     readonly property bool clearConfirmationOpen: clearConfirmation.opened
     readonly property bool contextMenuOpen: rowMenu.visible
-    readonly property bool queueModesAvailable: !presenter.usesFrozenFixture && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool queueModesAvailable: !roomGuest && !presenter.usesFrozenFixture && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool queueFocusRestoreAllowed: visible && enabled && locationFocusRestoreAllowed && !presenter.exiting && !presenter.selectingAudioFiles && !addingFilesPending && presenter.locatingOccurrenceId.length === 0 && !clearConfirmation.visible
     signal closeRequested
     signal playRequested(string occurrenceId)
@@ -346,7 +349,7 @@ FocusScope {
                 accessibleName: queueText.clear
                 text: "×"
                 contract: root.contract
-                enabled: !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.count > 0
+                enabled: !root.roomGuest && !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.count > 0
                 onClicked: root.requestClear()
             }
         }
@@ -366,6 +369,7 @@ FocusScope {
                 text: root.presenter.shuffleQueueEnabled ? queueText.shuffleOn : queueText.shuffleOff
                 accessibleName: queueText.shuffle
                 shortcutHint: queueText.shortcutShuffle
+                disabledReason: root.roomGuest ? queueText.hostControls : ""
                 enabled: root.queueModesAvailable
                 checkable: true
                 checked: root.presenter.shuffleQueueEnabled
@@ -383,6 +387,7 @@ FocusScope {
                 text: root.presenter.repeatQueueEnabled ? queueText.repeatOn : queueText.repeatOff
                 accessibleName: queueText.repeat
                 shortcutHint: queueText.shortcutRepeat
+                disabledReason: root.roomGuest ? queueText.hostControls : ""
                 enabled: root.queueModesAvailable
                 checkable: true
                 checked: root.presenter.repeatQueueEnabled
@@ -396,6 +401,7 @@ FocusScope {
             id: queueList
             objectName: "queue-list"
             readonly property bool focusIndicatorVisible: activeFocus && enabled
+            visible: !root.roomGuest
             Layout.fillWidth: true
             Layout.fillHeight: true
             model: root.presenter.queueModel
@@ -590,6 +596,106 @@ FocusScope {
                 border.color: root.contract.focusColor
                 visible: queueList.focusIndicatorVisible && queueList.currentItem === null
                 z: 10
+            }
+        }
+
+        // S8.2: a guest sees the room queue: the host's order, who added each item, and
+        // a loading hint until the item's file is in the local room cache.
+        ListView {
+            id: roomQueueList
+            objectName: "room-queue-list"
+            visible: root.roomGuest
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            model: root.roomGuest ? root.room.queue : null
+            clip: true
+            keyNavigationEnabled: true
+            activeFocusOnTab: true
+            highlightMoveDuration: 0
+            Accessible.role: Accessible.List
+            Accessible.name: queueText.roomQueue
+            Accessible.focusable: true
+            Accessible.focused: activeFocus
+
+            delegate: ItemDelegate {
+                id: roomRow
+                required property int index
+                required property string itemId
+                required property string title
+                required property string artist
+                required property string addedBy
+                required property string avatarSource
+                required property bool available
+                required property bool current
+                objectName: "room-queue-row-" + itemId
+                width: ListView.view.width
+                padding: root.contract.spacingUnit
+                focusPolicy: Qt.NoFocus
+                Accessible.role: Accessible.ListItem
+                Accessible.name: title
+                Accessible.description: available ? queueText.addedBy.arg(addedBy) : queueText.loadingAddedBy.arg(addedBy)
+                Accessible.selected: ListView.isCurrentItem
+                onClicked: roomQueueList.currentIndex = index
+
+                background: Rectangle {
+                    color: roomRow.ListView.isCurrentItem && roomQueueList.activeFocus ? root.contract.selectionColor : "transparent"
+                    radius: root.contract.radiusSmall
+                    border.width: roomRow.ListView.isCurrentItem && roomQueueList.activeFocus ? 3 : 0
+                    border.color: root.contract.focusColor
+                }
+
+                contentItem: RowLayout {
+                    spacing: root.contract.spacingUnit * 2
+
+                    ListenerAvatar {
+                        objectName: "room-queue-avatar"
+                        source: roomRow.avatarSource
+                        size: 28
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+                        Text {
+                            objectName: "room-queue-title"
+                            text: roomRow.title
+                            textFormat: Text.PlainText
+                            elide: Text.ElideRight
+                            color: roomRow.current && !root.contract.highContrast ? root.contract.accentColor : root.contract.textPrimaryColor
+                            Layout.fillWidth: true
+                            Accessible.ignored: true
+                        }
+                        Text {
+                            text: roomRow.artist
+                            textFormat: Text.PlainText
+                            elide: Text.ElideRight
+                            color: root.contract.textSecondaryColor
+                            visible: text.length > 0
+                            Layout.fillWidth: true
+                            Accessible.ignored: true
+                        }
+                        Text {
+                            objectName: "room-queue-added-by"
+                            text: queueText.addedBy.arg(roomRow.addedBy)
+                            textFormat: Text.PlainText
+                            elide: Text.ElideRight
+                            color: root.contract.textSecondaryColor
+                            Layout.fillWidth: true
+                            Accessible.ignored: true
+                        }
+                    }
+                    Text {
+                        objectName: "room-queue-loading"
+                        text: queueText.loading
+                        color: root.contract.textSecondaryColor
+                        visible: !roomRow.available
+                        Accessible.ignored: true
+                    }
+                }
+            }
+
+            ScrollBar.vertical: AccessibleScrollBar {
+                objectName: "room-queue-scrollbar"
+                contract: root.contract
             }
         }
     }

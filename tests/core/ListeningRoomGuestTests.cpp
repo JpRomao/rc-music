@@ -1,5 +1,6 @@
 // ListeningRoomGuest (S7.2) over the in-memory transport, a fake scheduler with its own clock and a
 // fake local session. No network, files or audio.
+#include "../support/FakeRoomFiles.hpp"
 #include "../support/FakeRoomTransport.hpp"
 
 #include "m0/application/ListeningRoomGuest.hpp"
@@ -9,6 +10,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -98,6 +100,7 @@ struct GuestFixture final {
                 },
             .schedule = [this](const std::int64_t delay_ms,
                                std::function<void()> task) { timers.schedule(delay_ms, std::move(task)); },
+            .files = &inbox,
         });
         guest->onChanged = [this] { ++changes; };
         guest->onRejected = [this](const std::uint64_t id, const IntentRejection reason) {
@@ -138,6 +141,7 @@ struct GuestFixture final {
     int captures{};
     std::vector<SessionSnapshot> restored;
     FakeTimers timers;
+    testing::FakeRoomFileInbox inbox;
     std::shared_ptr<testing::FakeRoomLink> host_side;
     std::shared_ptr<testing::FakeRoomLink> guest_end;
     std::vector<RoomControlMessage> host_inbox;
@@ -685,4 +689,189 @@ TEST_CASE("room guest: join while already in a room does nothing", "[core][liste
     REQUIRE_FALSE(f.connector.requested.has_value());
 }
 
+namespace {
+std::string hashOf(const char letter) { return std::string(64, letter); }
+
+// A room queue of items 11, 12, ... with hashes "aaa...", "bbb...", ...; the first one is current.
+RoomStateMessage roomQueue(const std::uint64_t version, const std::string& letters) {
+    auto message = state(version);
+    std::uint64_t id = 11;
+    for (const char letter : letters) {
+        RoomItem item;
+        item.id = id++;
+        item.origin = RoomItemOrigin::HostTrack;
+        item.owner_fingerprint = host_hex;
+        item.content_sha256 = hashOf(letter);
+        item.size_bytes = 1000;
+        item.added_by = "Joao";
+        message.snapshot.queue.push_back(item);
+    }
+    if (!message.snapshot.queue.empty())
+        message.snapshot.playback.current_item = message.snapshot.queue.front().id;
+    return message;
+}
+
+std::vector<std::string> requestedHashes(const GuestFixture& f) {
+    std::vector<std::string> result;
+    for (const auto& request : f.received<RoomFileRequest>())
+        result.push_back(request.content_sha256);
+    return result;
+}
+} // namespace
+
+TEST_CASE("room guest: asks for the current item first, then the next room_prefetch_items in queue order",
+          "[core][listening-room][room-guest][room-files]") {
+    GuestFixture f;
+    f.inbox.deferred = true;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "abcdef"));
+    REQUIRE(f.received<RoomFileRequest>().empty()); // after the cache answered
+    f.inbox.answerAll();
+    REQUIRE(requestedHashes(f) == std::vector{hashOf('a'), hashOf('b'), hashOf('c'), hashOf('d')});
+    REQUIRE(f.received<RoomFileRequest>().front().offset == 0);
+    REQUIRE(!f.guest->localFile(hashOf('a')));
+}
+
+TEST_CASE("room guest: a hash already in the cache is not asked for again, a partial one resumes",
+          "[core][listening-room][room-guest][room-files]") {
+    GuestFixture f;
+    f.inbox.files[hashOf('b')] = "cache/b";
+    f.inbox.partial[hashOf('a')] = 3 * 65536;
+    f.start();
+    f.joinAdmitted();
+    // Item 13 has the same file as item 12: one request, one copy.
+    f.send(roomQueue(1, "abbc"));
+    REQUIRE(f.received<RoomFileRequest>() == std::vector<RoomFileRequest>{{hashOf('a'), 3 * 65536}, {hashOf('c'), 0}});
+    REQUIRE(f.guest->localFile(hashOf('b')) == std::optional<std::filesystem::path>{"cache/b"});
+
+    // Offers it did not ask for are ignored; the requested one is accepted and its chunks go to the cache.
+    f.send(RoomFileOffer{hashOf('b'), 1000, 7});
+    f.send(RoomFileOffer{hashOf('a'), 1000, 8});
+    REQUIRE(f.inbox.accepted == std::vector<RoomFileOffer>{{hashOf('a'), 1000, 8}});
+    REQUIRE(f.host_side->sendMedia({8, 3 * 65536, {1, 2, 3}}));
+    REQUIRE(f.host_side->sendMedia({7, 0, {1}}));
+    REQUIRE(f.inbox.consumed == std::vector<RoomFileChunk>{{8, 3 * 65536, {1, 2, 3}}});
+    const auto changes = f.changes;
+    f.inbox.complete(hashOf('a'));
+    REQUIRE(f.guest->localFile(hashOf('a')) ==
+            std::optional<std::filesystem::path>{std::filesystem::path{"cache"} / hashOf('a')});
+    REQUIRE(f.changes > changes);
+    f.send(roomQueue(2, "abbcd")); // d is past the window
+    REQUIRE(f.received<RoomFileRequest>().size() == 2);
+}
+
+TEST_CASE("room guest: a queue change abandons transfers of items that left and asks for the new ones",
+          "[core][listening-room][room-guest][room-files]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "abcde"));
+    std::uint32_t id = 20;
+    for (const char letter : std::string{"abcd"})
+        f.send(RoomFileOffer{hashOf(letter), 1000, id++}); // a=20 b=21 c=22 d=23
+    REQUIRE(f.inbox.accepted.size() == 4);
+
+    // The host moved on to b and dropped c: a and c stop, a is marked played, e comes in.
+    auto next = roomQueue(2, "bde");
+    next.snapshot.queue[0].id = 12;
+    next.snapshot.queue[1].id = 14;
+    next.snapshot.queue[2].id = 15;
+    next.snapshot.playback.current_item = 12;
+    f.send(next);
+    std::vector<std::uint32_t> abandoned = f.inbox.abandoned;
+    std::sort(abandoned.begin(), abandoned.end());
+    REQUIRE(abandoned == std::vector<std::uint32_t>{20, 22});
+    REQUIRE(f.inbox.played == std::vector{hashOf('a')});
+    REQUIRE(requestedHashes(f).back() == hashOf('e'));
+    REQUIRE(requestedHashes(f).size() == 5);
+    // A late chunk of an abandoned transfer is not passed on.
+    REQUIRE(f.host_side->sendMedia({20, 0, {1}}));
+    REQUIRE(f.inbox.consumed.empty());
+}
+
+TEST_CASE("room guest: a dropped link abandons transfers and the next admission resumes them",
+          "[core][listening-room][room-guest][room-files]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "a"));
+    f.send(RoomFileOffer{hashOf('a'), 1000, 5});
+    f.dropLink(RoomLinkFailure::Unreachable);
+    REQUIRE(f.inbox.abandoned == std::vector<std::uint32_t>{5});
+    REQUIRE(f.inbox.purges == 0);
+
+    f.inbox.partial[hashOf('a')] = 65536;
+    f.connectLink();
+    f.send(RoomJoinResult{JoinDecision::Admitted});
+    f.send(roomQueue(1, "a")); // same version: the host kept it
+    REQUIRE(f.received<RoomFileRequest>() == std::vector<RoomFileRequest>{{hashOf('a'), 0}, {hashOf('a'), 65536}});
+}
+
+TEST_CASE("room guest: leaving or the end of the room abandons transfers, then empties the cache",
+          "[core][listening-room][room-guest][room-files]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "ab"));
+    f.send(RoomFileOffer{hashOf('a'), 1000, 5});
+    f.send(RoomFileOffer{hashOf('b'), 1000, 6});
+    f.inbox.complete(hashOf('b'));
+    f.inbox.log.clear();
+    f.guest->leave();
+    REQUIRE(f.inbox.log == std::vector<std::string>{"abandon:5", "purge"});
+    REQUIRE(!f.guest->localFile(hashOf('b')));
+
+    f.inbox.log.clear();
+    f.inbox.files.clear();
+    f.joinAdmitted();
+    f.send(roomQueue(2, "a"));
+    f.send(RoomFileOffer{hashOf('a'), 1000, 7});
+    f.send(RoomBye{RoomByeReason::Closed});
+    REQUIRE(f.guest->state() == GuestRoomState::Ended);
+    REQUIRE(f.inbox.log.back() == "purge");
+    REQUIRE(std::find(f.inbox.log.begin(), f.inbox.log.end(), "abandon:7") != f.inbox.log.end());
+    REQUIRE(f.inbox.purges == 2);
+}
+
+TEST_CASE("room guest: keeps the host's lyrics for the current item only",
+          "[core][listening-room][room-guest][room-files]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "ab"));
+    f.send(RoomLyrics{12, "[00:01.00]outra"}); // not the current item
+    REQUIRE(!f.guest->lyrics());
+    f.send(RoomLyrics{11, "[00:01.00]la"});
+    REQUIRE(f.guest->lyrics() == std::optional{RoomLyrics{11, "[00:01.00]la"}});
+
+    auto next = roomQueue(2, "b");
+    next.snapshot.queue[0].id = 12;
+    next.snapshot.playback.current_item = 12;
+    f.send(next);
+    REQUIRE(!f.guest->lyrics());
+    f.send(RoomLyrics{12, "[00:02.00]lo"});
+    f.guest->leave();
+    REQUIRE(!f.guest->lyrics());
+}
+
+// Control and media are separate channels: a chunk can overtake its offer.
+TEST_CASE("room guest: chunks that arrive before their offer are kept for it",
+          "[core][listening-room][room-guest][room-files]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "a"));
+    REQUIRE(f.host_side->sendMedia({9, 0, {1}}));
+    REQUIRE(f.host_side->sendMedia({9, 1, {2}}));
+    REQUIRE(f.inbox.consumed.empty());
+    f.send(RoomFileOffer{hashOf('a'), 2, 9});
+    REQUIRE(f.inbox.consumed == std::vector<RoomFileChunk>{{9, 0, {1}}, {9, 1, {2}}});
+
+    // With nothing asked for, stray chunks are not kept.
+    f.inbox.complete(hashOf('a'));
+    REQUIRE(f.host_side->sendMedia({10, 0, {1}}));
+    f.send(RoomFileOffer{hashOf('a'), 1, 10});
+    REQUIRE(f.inbox.consumed.size() == 2);
+}
 } // namespace music_player::m0::test

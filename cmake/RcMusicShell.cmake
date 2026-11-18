@@ -12,6 +12,7 @@ function(rc_music_link_shell target ui support)
         rc_music_profile
         rc_music_room_ui
         rc_music_room_catalog
+        rc_music_room_transfer
         ${support}
         ${ui}
         ${ui}plugin

@@ -1,5 +1,6 @@
 // ListeningRoomHost (S7.1) over the in-memory transport, the silent deterministic player, a fake
 // catalog and an in-memory roster store. No network, files or audio.
+#include "../support/FakeRoomFiles.hpp"
 #include "../support/FakeRoomHost.hpp"
 #include "../support/FakeRoomTransport.hpp"
 
@@ -10,8 +11,10 @@
 
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <variant>
@@ -76,6 +79,7 @@ struct HostFixture final {
             .host_profile = ListenerProfile{"Joao", AvatarChoice{}},
             .schedule = [this](std::int64_t delay_ms,
                                std::function<void()> task) { scheduled.push_back({delay_ms, std::move(task)}); },
+            .files = &outbox,
         });
         host->onJoinRequest = [this](const RoomMember& member) { join_requests.push_back(member); };
     }
@@ -111,6 +115,7 @@ struct HostFixture final {
     testing::FakeRoomHostPlayer player;
     testing::FakeRoomHostEndpoint endpoint;
     testing::FakeRoomTrackCatalog catalog;
+    testing::FakeRoomFileOutbox outbox;
     std::int64_t now{10'000};
     std::uint8_t next_random{1};
     std::vector<RoomMember> join_requests;
@@ -831,4 +836,126 @@ TEST_CASE("room host: guests never see pending people", "[core][listening-room][
                         [](const RoomMember& m) { return m.fingerprint == "fp-new"; }));
 }
 
+namespace {
+std::string sha(const std::filesystem::path& source) { return testing::FakeRoomTrackCatalog::fakeSha256(source); }
+std::vector<std::string> shas(const std::vector<std::filesystem::path>& sources) {
+    std::vector<std::string> result;
+    for (const auto& source : sources)
+        result.push_back(sha(source));
+    return result;
+}
+const std::vector<std::filesystem::path> six_tracks{"music/a.mp3", "music/b.mp3", "music/c.mp3",
+                                                    "music/d.mp3", "music/e.mp3", "music/f.mp3"};
+} // namespace
+
+TEST_CASE("room host: files go out for the current item first, then the next room_prefetch_items in queue order",
+          "[core][listening-room][room-host][room-files]") {
+    HostFixture f{six_tracks};
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    f.runScheduled();
+    // Asked in reverse order, and for one item past the window: served in window order, without it.
+    for (const auto* source : {"music/e.mp3", "music/d.mp3", "music/c.mp3", "music/b.mp3", "music/a.mp3"})
+        static_cast<void>(dj->link->sendControl(RoomFileRequest{sha(source), 0}));
+    REQUIRE(f.outbox.sent.empty()); // served on the next scheduler turn
+    f.runScheduled();
+    REQUIRE(f.outbox.sentHashes() == shas({"music/a.mp3", "music/b.mp3", "music/c.mp3", "music/d.mp3"}));
+    REQUIRE(f.outbox.sent.front().peer == "fp-dj");
+    REQUIRE(f.outbox.sent.front().file == std::filesystem::path{"music/a.mp3"});
+    REQUIRE(f.outbox.sent.front().offset == 0);
+    const std::set<std::uint32_t> ids{f.outbox.sent[0].transfer_id, f.outbox.sent[1].transfer_id,
+                                      f.outbox.sent[2].transfer_id, f.outbox.sent[3].transfer_id};
+    REQUIRE(ids.size() == 4);
+    REQUIRE(room_prefetch_items == 3);
+}
+
+TEST_CASE("room host: a request outside the window, from a pending person or for an unknown hash is not served",
+          "[core][listening-room][room-host][room-files]") {
+    HostFixture f{six_tracks};
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    auto stranger = f.join("fp-stranger", "Bia"); // pending
+    REQUIRE(f.player.next());
+    f.runScheduled();
+    static_cast<void>(dj->link->sendControl(RoomFileRequest{sha("music/a.mp3"), 0})); // left the window
+    static_cast<void>(dj->link->sendControl(RoomFileRequest{std::string(64, 'f'), 0}));
+    static_cast<void>(stranger->link->sendControl(RoomFileRequest{sha("music/b.mp3"), 0}));
+    f.runScheduled();
+    REQUIRE(f.outbox.sent.empty());
+
+    // A guest that resumes asks from its offset: the host sends from there.
+    static_cast<void>(dj->link->sendControl(RoomFileRequest{sha("music/b.mp3"), 3 * 65536}));
+    f.runScheduled();
+    REQUIRE(f.outbox.sentHashes() == shas({"music/b.mp3"}));
+    REQUIRE(f.outbox.sent.front().offset == 3 * 65536);
+}
+
+TEST_CASE("room host: a queue change while sending cancels the transfers of items that left the window",
+          "[core][listening-room][room-host][room-files]") {
+    HostFixture f{six_tracks};
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    for (const auto* source : {"music/a.mp3", "music/b.mp3", "music/c.mp3", "music/d.mp3"})
+        static_cast<void>(dj->link->sendControl(RoomFileRequest{sha(source), 0}));
+    f.runScheduled();
+    REQUIRE(f.outbox.sent.size() == 4);
+    const auto id_a = f.outbox.transferOf(sha("music/a.mp3"));
+    const auto id_d = f.outbox.transferOf(sha("music/d.mp3"));
+
+    // d moves to the end of the queue: out of the window, its transfer stops; e comes in, nothing sent
+    // until the guest asks for it.
+    REQUIRE(f.player.move(LocalQueueOccurrenceId{f.player.occurrenceAt(3)}, 5));
+    REQUIRE(f.outbox.cancelled == std::vector<std::pair<std::string, std::uint32_t>>{{"fp-dj", id_d}});
+    // The current item changes: a leaves the window.
+    REQUIRE(f.player.next());
+    REQUIRE(f.outbox.cancelled.back() == std::pair<std::string, std::uint32_t>{"fp-dj", id_a});
+    REQUIRE(f.outbox.cancelled.size() == 2);
+    f.runScheduled();
+    REQUIRE(f.outbox.sent.size() == 4);
+}
+
+TEST_CASE("room host: a second request for the same hash replaces the first transfer",
+          "[core][listening-room][room-host][room-files]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    static_cast<void>(dj->link->sendControl(RoomFileRequest{sha("music/a.mp3"), 0}));
+    f.runScheduled();
+    const auto first = f.outbox.transferOf(sha("music/a.mp3"));
+    static_cast<void>(dj->link->sendControl(RoomFileRequest{sha("music/a.mp3"), 65536}));
+    f.runScheduled();
+    REQUIRE(f.outbox.sent.size() == 2);
+    REQUIRE(f.outbox.sent.back().transfer_id != first);
+    REQUIRE(f.outbox.cancelled == std::vector<std::pair<std::string, std::uint32_t>>{{"fp-dj", first}});
+}
+
+TEST_CASE("room host: a link that goes is forgotten by the outbox", "[core][listening-room][room-host][room-files]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    auto listener = f.join("fp-listener", "Ouvinte");
+    dj->link->close(); // dropped by the network
+    REQUIRE(f.outbox.forgotten == std::vector<std::string>{"fp-dj"});
+    static_cast<void>(f.host->kick("fp-listener", false));
+    REQUIRE(f.outbox.forgotten == std::vector<std::string>{"fp-dj", "fp-listener"});
+}
+
+TEST_CASE("room host: lyrics above maximum_room_lyrics_bytes are not sent",
+          "[core][listening-room][room-host][room-files]") {
+    HostFixture f;
+    f.catalog.lyrics["music/a.mp3"] = std::string(maximum_room_lyrics_bytes + 1, 'a');
+    f.catalog.lyrics["music/b.mp3"] = std::string(maximum_room_lyrics_bytes, 'b');
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    REQUIRE(dj->all<RoomLyrics>().empty());
+    dj->intent(1, RoomIntent{.kind = RoomIntentKind::Next});
+    REQUIRE(dj->all<RoomLyrics>() ==
+            std::vector<RoomLyrics>{RoomLyrics{f.player.occurrenceAt(1), std::string(maximum_room_lyrics_bytes, 'b')}});
+}
 } // namespace music_player::m0::test

@@ -7,6 +7,7 @@
 #include "m0/domain/RoomMessages.hpp"
 #include "m0/domain/RoomRoster.hpp"
 #include "m0/domain/SessionSnapshot.hpp"
+#include "m0/ports/RoomFiles.hpp"
 #include "m0/ports/RoomHostPlayer.hpp"
 #include "m0/ports/RoomRosterStore.hpp"
 #include "m0/ports/RoomTrackCatalog.hpp"
@@ -47,6 +48,8 @@ struct ListeningRoomHostDependencies final {
     ListenerProfile host_profile{};
     // Runs task once after delay_ms on the host's thread (QTimer::singleShot in the app).
     std::function<void(std::int64_t delay_ms, std::function<void()> task)> schedule;
+    // Streams the files guests ask for (S8.2); nullptr: file requests are ignored.
+    RoomFileOutbox* files{nullptr};
 };
 
 // Upper bound of the encoded size of a RoomStateMessage (RoomProtocolCodec JSON): every text byte
@@ -118,7 +121,17 @@ struct ListeningRoomHostDependencies final {
 //     within room_anchor_tolerance_ms of expectedPositionMs(anchor, now), so position jitter neither
 //     bumps the version nor broadcasts. (A seek made in the host's own UI that moves less than the
 //     tolerance is indistinguishable from jitter and keeps the anchor.)
-//   - When the current item changes, its lyrics (if any) go once to every admitted member as RoomLyrics.
+//   - When the current item changes, its lyrics (if any) go once to every admitted member as RoomLyrics,
+//     and to a member admitted mid-song. Lyrics above maximum_room_lyrics_bytes are never sent.
+//
+// Files (S8.2): transfers are request-driven. The file window is the first 1 + room_prefetch_items
+// items of the room queue (the current item, then the next ones in queue order). An admitted member's
+// RoomFileRequest{sha, offset} is served only when sha belongs to a window item the host has a file for
+// (a host track, or a guest item in the host's cache); anything else is dropped. Requests are collected
+// and served on the next scheduler turn in window order (the current item first), each with a new
+// transfer_id, through RoomFileOutbox::send from the request's offset (resume). A second request for a
+// sha replaces the first. When the window changes, transfers whose item left it are cancelled; a link
+// that goes is forgotten by the outbox.
 //
 // Guest items (GuestTrack) never reach the session: the session autosave must store
 // withoutGuestItems(snapshot) while a room is open, and close(), revoke() and the destructor remove
@@ -186,6 +199,12 @@ class ListeningRoomHost final {
     void admitted(const std::shared_ptr<RoomLink>& link);
     void sendState(const Connection& connection) const;
     void sendLyrics(Connection& connection) const;
+    struct WindowFile;
+    [[nodiscard]] std::vector<WindowFile> fileWindow() const;
+    void onFileRequest(Connection& connection, const RoomFileRequest& request);
+    void serveFiles();
+    void cancelFilesOutsideWindow();
+    void forgetFiles(const RoomLink& link);
     void drop(const std::shared_ptr<RoomLink>& link);
     void end(RoomByeReason reason);
     void saveRoster();
@@ -204,6 +223,7 @@ class ListeningRoomHost final {
     std::string host_fingerprint_hex_;
     ListenerProfile host_profile_;
     std::function<void(std::int64_t, std::function<void()>)> schedule_;
+    RoomFileOutbox* files_;
 
     RoomRoster roster_;
     bool roster_writable_{false};
@@ -216,6 +236,10 @@ class ListeningRoomHost final {
     std::set<std::filesystem::path> describing_;
     std::set<std::filesystem::path> unreadable_;
     std::map<std::uint64_t, RoomItem> guest_items_;
+    // The cached file of each guest item, to serve it like a host track.
+    std::map<std::uint64_t, std::filesystem::path> guest_files_;
+    std::uint32_t next_transfer_id_{0};
+    bool serve_scheduled_{false};
     // Admitted members whose link dropped, held for room_reconnect_window_ms (value: hold token).
     std::map<std::string, std::uint64_t, std::less<>> held_;
     std::uint64_t next_hold_{0};

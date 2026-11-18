@@ -12,7 +12,7 @@ GridLayout {
     property Item pageReturnFocusItem: null
     readonly property bool editorial: !presenter.usesFrozenFixture
     readonly property bool spread: editorial && width >= 680
-    readonly property bool queueModesAvailable: editorial && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool queueModesAvailable: editorial && !roomGuest && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     // Narrow rails drop the ±5 s buttons; ←/→ and the progress bar keep that function.
     readonly property bool roomy: !editorial || width >= 580
     property int queueCount: 0
@@ -21,6 +21,8 @@ GridLayout {
     // ADR-0022: the listening room binding; the badge shows only while in a room.
     property var room: null
     readonly property bool inRoom: room !== null && room.available && room.role !== 0
+    // S8.2: shuffle and repeat belong to the host while this app is a guest.
+    readonly property bool roomGuest: inRoom && room.role === 2
     signal queueRequested
     signal lyricsRequested
     columns: editorial ? 2 : 1
@@ -217,6 +219,7 @@ GridLayout {
             font.family: root.contract.symbolFontFamily
             accessibleName: queueLabels.shuffle
             shortcutHint: queueLabels.shortcutShuffle
+            disabledReason: root.roomGuest ? queueLabels.hostControls : ""
             onClicked: {
                 if (enabled)
                     root.presenter.toggleShuffleQueue();
@@ -310,6 +313,7 @@ GridLayout {
             font.family: root.contract.symbolFontFamily
             accessibleName: queueLabels.repeat
             shortcutHint: queueLabels.shortcutRepeat
+            disabledReason: root.roomGuest ? queueLabels.hostControls : ""
             onClicked: {
                 if (enabled)
                     root.presenter.toggleRepeatQueue();
