@@ -23,6 +23,9 @@ inline constexpr std::int32_t room_play_lead_ms = 300;
 inline constexpr std::uint32_t room_clock_samples = 8;
 inline constexpr std::int32_t room_clock_resample_ms = 5000;
 inline constexpr std::int32_t room_reconnect_window_ms = 30000;
+// A guest inside the reconnect window waits this long after a failed attempt, doubling up to the maximum.
+inline constexpr std::int32_t room_reconnect_retry_initial_ms = 1000;
+inline constexpr std::int32_t room_reconnect_retry_maximum_ms = 8000;
 // The host keeps the playback anchor while the player stays within this distance of it.
 inline constexpr std::int64_t room_anchor_tolerance_ms = 100;
 // Title, artist and album of a room item, cut at a code point boundary.
