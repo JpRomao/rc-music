@@ -800,7 +800,16 @@ struct DataChannelRoomHostEndpoint::State final : std::enable_shared_from_this<S
 
     std::optional<WindowsRoomEnvelopeCipher> cipher;
     std::unique_ptr<WindowsRoomSignalingSocket> socket;
-    std::map<std::uint32_t, std::shared_ptr<DataChannelRoomLink>> pending;
+    // A negotiation in progress. Once its answer is sent, the PeerConnection no longer needs the
+    // relay: the guest closes its relay socket as soon as its own link is up, and the relay's
+    // peer-left for it may reach this host before libdatachannel reports the host's channels open.
+    // So peer-left drops only negotiations that are still unanswered; answered ones end by their
+    // ICE/DTLS failure or room_connect_timeout_ms.
+    struct Pending {
+        std::shared_ptr<DataChannelRoomLink> link;
+        bool answered{};
+    };
+    std::map<std::uint32_t, Pending> pending;
     std::vector<std::weak_ptr<DataChannelRoomLink>> handed;
     std::function<void(std::shared_ptr<RoomLink>)> on_incoming;
     std::function<void(RoomLinkFailure)> on_failure;
@@ -843,8 +852,11 @@ struct DataChannelRoomHostEndpoint::State final : std::enable_shared_from_this<S
         if (!message)
             return;
         if (message->event == QStringLiteral("peer-left")) {
-            if (const auto peer = peerNumber(message->peer))
-                pending.erase(*peer);
+            if (const auto peer = peerNumber(message->peer)) {
+                const auto found = pending.find(*peer);
+                if (found != pending.end() && !found->second.answered)
+                    pending.erase(found);
+            }
             return;
         }
         const auto peer = peerNumber(message->from);
@@ -874,12 +886,15 @@ struct DataChannelRoomHostEndpoint::State final : std::enable_shared_from_this<S
             if (!self || self->generation != opened)
                 return nullptr;
             const auto found = self->pending.find(peer);
-            return found != self->pending.end() && found->second.get() == raw ? self : nullptr;
+            return found != self->pending.end() && found->second.link.get() == raw ? self : nullptr;
         };
         link->on_gathered = [current, peer] {
             if (const auto self = current()) {
-                if (const auto answer = self->pending[peer]->localSdp())
+                auto& negotiation = self->pending[peer];
+                if (const auto answer = negotiation.link->localSdp()) {
+                    negotiation.answered = true;
                     self->reply(peer, payloadText(QStringLiteral("answer"), *answer));
+                }
             }
         };
         link->on_ready = [current, peer] {
@@ -890,7 +905,7 @@ struct DataChannelRoomHostEndpoint::State final : std::enable_shared_from_this<S
             if (const auto self = current())
                 self->pending.erase(peer);
         };
-        pending[peer] = link;
+        pending[peer] = Pending{link};
         if (!link->setRemote(sdp, "offer")) {
             pending.erase(peer);
             return;
@@ -903,7 +918,7 @@ struct DataChannelRoomHostEndpoint::State final : std::enable_shared_from_this<S
 
     void admit(std::uint32_t peer) {
         const auto self = shared_from_this();
-        auto link = pending[peer];
+        auto link = pending[peer].link;
         pending.erase(peer);
         const auto fingerprint = link->verifiedRemoteFingerprint();
         if (!fingerprint)

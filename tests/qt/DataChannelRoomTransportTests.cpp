@@ -309,6 +309,30 @@ class DataChannelRoomTransportTests final : public QObject {
         QVERIFY(!at_host.failure && !at_guest.failure);
     }
 
+    // A guest that is done with the relay closes its socket, and the relay tells the host
+    // peer-left. That must not drop a negotiation the host already answered: the PeerConnection
+    // carries on without the relay (timeout or ICE/DTLS failure clean it up otherwise).
+    void aPeerLeftAfterTheAnswerDoesNotDropTheGuest() {
+        LoopbackSignaling relay;
+        relay.peer_left_after_host_reply = true;
+        const auto invite = inviteFor(host_id_);
+        DataChannelRoomHostEndpoint host(relay.origin(), host_id_, local_only);
+        DataChannelRoomGuestConnector guest(relay.origin(), guest_id_, local_only);
+        Outcome at_host;
+        Outcome at_guest;
+        openHost(host, invite, at_host, relay);
+        connectGuest(guest, invite, at_guest);
+        QTRY_VERIFY_WITH_TIMEOUT((at_host.link && at_guest.link) || at_host.failure || at_guest.failure, connect_ms);
+        QVERIFY(!at_host.failure && !at_guest.failure);
+        std::optional<RoomLinkFailure> guest_closed;
+        at_guest.link->onClosed = [&](RoomLinkFailure failure) { guest_closed = failure; };
+        std::vector<RoomControlMessage> at_host_controls;
+        at_host.link->onControl = [&](RoomControlMessage message) { at_host_controls.push_back(std::move(message)); };
+        QVERIFY(at_guest.link->sendControl(RoomClockPing{5}));
+        QTRY_COMPARE_WITH_TIMEOUT(at_host_controls.size(), std::size_t{1}, connect_ms);
+        QVERIFY(!guest_closed);
+    }
+
     void theRelayOnlySeesSealedEnvelopes() {
         LoopbackSignaling relay;
         const auto invite = inviteFor(host_id_);
@@ -433,15 +457,21 @@ class DataChannelRoomTransportTests final : public QObject {
 
     void anEmptyHostTokenNeverReachesTheRelay() {
         LoopbackSignaling relay;
-        DataChannelRoomHostEndpoint host(relay.origin(), RoomIdentity{}, local_only);
+        // A usable identity (PEMs and key_passphrase intact) whose device secret is gone: only the
+        // host token is missing, so only the token guard can stop the request.
+        auto identity = host_id_;
+        identity.passphrase.fill(0);
+        const auto invite = inviteFor(host_id_);
+        QVERIFY(roomHostToken(identity, invite.room_id).isEmpty());
+        DataChannelRoomHostEndpoint host(relay.origin(), identity, local_only);
         Outcome at_host;
         host.open(
-            inviteFor(host_id_), [&](std::shared_ptr<RoomLink>) { ++at_host.links; },
+            invite, [&](std::shared_ptr<RoomLink>) { ++at_host.links; },
             [&](RoomLinkFailure failure) { at_host.failure = failure; });
-        QTRY_VERIFY_WITH_TIMEOUT(at_host.failure.has_value(), connect_ms);
+        QTest::qWait(1000);
+        QVERIFY(relay.host_tokens.isEmpty()); // no host request at all, so no empty header either
+        QVERIFY(at_host.failure.has_value());
         QCOMPARE(*at_host.failure, RoomLinkFailure::Unreachable);
-        QTest::qWait(300);
-        QVERIFY(relay.host_tokens.isEmpty());
     }
 
     void aSecondHostWithAnotherTokenIsRefused() {

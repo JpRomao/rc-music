@@ -66,6 +66,12 @@ class LoopbackSignaling final : public QObject {
             drop(connection.get());
     }
 
+    // Test hook: right after relaying a host message to a guest, also tell the host that this guest
+    // left (as the real relay does when a connected guest closes its socket). The host then sees
+    // peer-left before the guest even has the answer, so before any ICE/DTLS: a deterministic
+    // "peer-left wins the race" for the host's negotiation.
+    bool peer_left_after_host_reply{};
+
     QList<QByteArray> received;    // text messages from clients, as sent
     QList<QByteArray> host_tokens; // X-Room-Host-Token of each host request
     int guest_requests{};
@@ -366,6 +372,10 @@ class LoopbackSignaling final : public QObject {
             return;
         sendText(found->second, QJsonDocument(QJsonObject{{QStringLiteral("from"), QStringLiteral("host")},
                                                           {QStringLiteral("data"), data}})
+                                    .toJson(QJsonDocument::Compact));
+        if (peer_left_after_host_reply)
+            sendText(room.host, QJsonDocument(QJsonObject{{QStringLiteral("event"), QStringLiteral("peer-left")},
+                                                          {QStringLiteral("peer"), static_cast<qint64>(found->first)}})
                                     .toJson(QJsonDocument::Compact));
     }
 
