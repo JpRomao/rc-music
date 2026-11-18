@@ -74,6 +74,8 @@ struct HostFixture final {
                 },
             .host_fingerprint = host_fingerprint,
             .host_profile = ListenerProfile{"Joao", AvatarChoice{}},
+            .schedule = [this](std::int64_t delay_ms,
+                               std::function<void()> task) { scheduled.push_back({delay_ms, std::move(task)}); },
         });
         host->onJoinRequest = [this](const RoomMember& member) { join_requests.push_back(member); };
     }
@@ -92,6 +94,13 @@ struct HostFixture final {
         guest->hello(std::move(nickname));
         return guest;
     }
+    // Runs every task scheduled so far (as if their delays elapsed), in order.
+    void runScheduled() {
+        auto due = std::move(scheduled);
+        scheduled.clear();
+        for (auto& [delay, task] : due)
+            task();
+    }
     [[nodiscard]] bool isMember(const std::string& fingerprint) const {
         const auto members = host->snapshot().members;
         return std::any_of(members.begin(), members.end(),
@@ -105,6 +114,7 @@ struct HostFixture final {
     std::int64_t now{10'000};
     std::uint8_t next_random{1};
     std::vector<RoomMember> join_requests;
+    std::vector<std::pair<std::int64_t, std::function<void()>>> scheduled;
     std::unique_ptr<ListeningRoomHost> host;
 };
 
@@ -147,6 +157,11 @@ TEST_CASE("room host: open makes a new link and until_revoked persists one that 
     REQUIRE(f.store.stored.invite.has_value());
 
     REQUIRE(f.host->open({.until_revoked = true}) == persistent);
+    // Reopening with default options keeps the persisted settings.
+    REQUIRE(f.store.stored.invite->max_listeners == 3);
+    REQUIRE(f.host->persistedInvite().has_value());
+    REQUIRE(f.host->persistedInvite()->max_listeners == 3);
+    REQUIRE(f.host->persistedInvite()->room_id == persistent->room_id);
     f.host->close();
     f.host.reset();
     f.start();
@@ -263,9 +278,15 @@ TEST_CASE("room host: Next from a DJ advances the player and the version; from a
     auto listener = f.join("fp-listener", "Lia");
     const auto before = f.host->snapshot();
 
+    // The clock moves while the (silent) player does not: a refused intent must not re-anchor or broadcast.
+    f.now += 500;
+    const auto listener_states = listener->all<RoomStateMessage>().size();
     listener->intent(41, RoomIntent{.kind = RoomIntentKind::Next});
+    listener->intent(42, RoomIntent{.kind = RoomIntentKind::Next});
+    REQUIRE(listener->all<RoomStateMessage>().size() == listener_states);
     REQUIRE(listener->all<RoomIntentRejected>() ==
-            std::vector<RoomIntentRejected>{RoomIntentRejected{41, IntentRejection::MissingPermission}});
+            std::vector<RoomIntentRejected>{RoomIntentRejected{41, IntentRejection::MissingPermission},
+                                            RoomIntentRejected{42, IntentRejection::MissingPermission}});
     REQUIRE(f.player.currentIndex() == 0);
     REQUIRE(f.host->snapshot() == before);
 
@@ -462,6 +483,10 @@ TEST_CASE("room host: host-only shuffle, repeat and queue end show up in the sna
     for (std::size_t index = 0; index < shuffled.queue.size(); ++index)
         REQUIRE(shuffled.queue[index].id == f.player.occurrenceAt(index));
     REQUIRE(f.player.paths()[1] == "music/d.mp3");
+    // From the current item on, the snapshot order is the play order.
+    dj->intent(9, RoomIntent{.kind = RoomIntentKind::Next});
+    REQUIRE(dj->lastState()->snapshot.playback.current_item == shuffled.queue[1].id);
+    dj->intent(8, RoomIntent{.kind = RoomIntentKind::Previous});
 
     f.player.repeat = true;
     for (int step = 0; step < 4; ++step)
@@ -557,6 +582,8 @@ TEST_CASE("room host: a dropped link leaves the room and a newer link replaces a
     REQUIRE(f.host->snapshot().members.size() == 2);
 
     second->link->close();
+    REQUIRE(f.isMember("fp-dj"));
+    f.runScheduled();
     REQUIRE_FALSE(f.isMember("fp-dj"));
 }
 
@@ -577,6 +604,199 @@ TEST_CASE("room host: clock pings, lyrics of the current item and a full room", 
     auto late = f.join("fp-listener");
     REQUIRE(late->inbox == std::vector<RoomControlMessage>{RoomJoinResult{JoinDecision::RejectedFull}});
     REQUIRE(late->link->closed);
+}
+
+TEST_CASE("room host: playback jitter within the tolerance keeps the anchor and the version",
+          "[core][listening-room][room-host]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    const auto before = f.host->snapshot();
+    // Each tick moves the player 200 ms while the host clock moves 210 ms: 50 ms behind after five.
+    for (int step = 0; step < 5; ++step) {
+        f.now += 210;
+        f.player.tick();
+    }
+    REQUIRE(f.host->snapshot() == before);
+    REQUIRE(dj->lastState()->snapshot.version == before.version);
+}
+
+TEST_CASE("room host: drift beyond the tolerance re-anchors once", "[core][listening-room][room-host]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    const auto before = f.host->snapshot();
+    for (int step = 0; step < 3; ++step) {
+        f.now += 260; // 60 ms of drift per tick: beyond 100 ms on the second one.
+        f.player.tick();
+    }
+    const auto after = f.host->snapshot();
+    REQUIRE(after.version == before.version + 1);
+    REQUIRE(after.playback.anchor_position_ms == 84'400);
+    REQUIRE(after.playback.anchor_host_ms == 10'520);
+    REQUIRE(dj->lastState()->snapshot == after);
+}
+
+TEST_CASE("room host: summaries are capped and the state window starts at the current item",
+          "[core][listening-room][room-host]") {
+    HostFixture f;
+    // 300 x "e-acute" (2 bytes each): the cut must land on a code point boundary.
+    std::string long_title;
+    for (int i = 0; i < 300; ++i)
+        long_title += "\xc3\xa9";
+    f.catalog.summary_override = RoomTrackSummary{long_title, std::string(20'000, 'a'), "Album", 1'000};
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    REQUIRE(f.host->snapshot().queue.size() == 3);
+    for (const auto& item : f.host->snapshot().queue) {
+        REQUIRE(item.summary.title.size() <= maximum_room_summary_text_bytes);
+        REQUIRE(item.summary.title.size() % 2 == 0);
+        REQUIRE(item.summary.title.substr(0, 2) == "\xc3\xa9");
+        REQUIRE(item.summary.artist == std::string(maximum_room_summary_text_bytes, 'a'));
+        REQUIRE(item.summary.album == "Album");
+    }
+    RoomItem upload;
+    upload.content_sha256 = std::string(64, 'e');
+    upload.summary.title = std::string(20'000, 'g');
+    const auto id = f.host->addGuestTrack("fp-dj", "room-cache/g.mp3", upload);
+    REQUIRE(id.has_value());
+    REQUIRE(f.host->snapshot().queue.back().summary.title.size() == maximum_room_summary_text_bytes);
+
+    dj->intent(1, RoomIntent{.kind = RoomIntentKind::Next});
+    REQUIRE(f.host->snapshot().queue.front().id == f.player.occurrenceAt(1));
+    REQUIRE(f.host->snapshot().playback.current_item == f.player.occurrenceAt(1));
+    REQUIRE(dj->lastState()->snapshot == f.host->snapshot());
+}
+
+TEST_CASE("room host: the estimated state size bounds the queue window", "[core][listening-room][room-host]") {
+    std::vector<std::filesystem::path> sources;
+    for (std::size_t index = 0; index < maximum_room_queue_items; ++index)
+        sources.emplace_back("music/" + std::to_string(index) + ".mp3");
+    HostFixture f(sources);
+    const std::string quotes(maximum_room_summary_text_bytes, '"');
+    f.catalog.summary_override = RoomTrackSummary{quotes, quotes, quotes, 1'000};
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    const auto state = dj->lastState();
+    REQUIRE(state.has_value());
+    REQUIRE_FALSE(state->snapshot.queue.empty());
+    REQUIRE(state->snapshot.queue.size() < maximum_room_queue_items);
+    REQUIRE(estimatedRoomStateBytes(*state) <= maximum_room_control_message_bytes);
+    REQUIRE(state->snapshot.queue.front().id == f.player.occurrenceAt(0));
+}
+
+TEST_CASE("room host: destroying the host removes guest items from the player", "[core][listening-room][room-host]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    RoomItem upload;
+    upload.content_sha256 = std::string(64, 'e');
+    REQUIRE(f.host->addGuestTrack("fp-dj", "room-cache/g.mp3", upload).has_value());
+    REQUIRE(f.player.paths().size() == 4);
+    f.host.reset();
+    const auto paths = f.player.paths();
+    REQUIRE(std::find(paths.begin(), paths.end(), "room-cache/g.mp3") == paths.end());
+    REQUIRE(paths.size() == 3);
+}
+
+TEST_CASE("room host: a transport that closes another link while sending does not break admission",
+          "[core][listening-room][room-host]") {
+    HostFixture f;
+    f.catalog.lyrics["music/a.mp3"] = "[00:01.00]la";
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto listener = f.join("fp-listener", "Lia");
+    auto first = f.join("fp-dj");
+    // A newer link of an already admitted person gets the state directly; while it is sent, the
+    // transport synchronously drops the listener's link.
+    auto second = f.connect("fp-dj");
+    second->host_side->accepts_control = [&listener](const RoomControlMessage& m) {
+        if (std::holds_alternative<RoomStateMessage>(m))
+            listener->link->close();
+        return true;
+    };
+    second->hello();
+    REQUIRE(second->inbox.front() == RoomControlMessage{RoomJoinResult{JoinDecision::Admitted}});
+    REQUIRE(second->lastState().has_value());
+    REQUIRE(second->all<RoomLyrics>() == std::vector<RoomLyrics>{RoomLyrics{f.player.occurrenceAt(0), "[00:01.00]la"}});
+}
+
+TEST_CASE("room host: an admitted member who drops keeps the seat and resumes inside the reconnect window",
+          "[core][listening-room][room-host]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({.max_listeners = 1}));
+    auto dj = f.join("fp-dj");
+    const auto version = f.host->snapshot().version;
+
+    dj->link->close();
+    REQUIRE(f.host->snapshot().version == version);
+    REQUIRE(f.isMember("fp-dj"));
+    REQUIRE(std::any_of(f.scheduled.begin(), f.scheduled.end(),
+                        [](const auto& task) { return task.first == room_reconnect_window_ms; }));
+    auto other = f.join("fp-listener");
+    REQUIRE(other->inbox == std::vector<RoomControlMessage>{RoomJoinResult{JoinDecision::RejectedFull}});
+
+    auto back = f.join("fp-dj");
+    REQUIRE(back->inbox.front() == RoomControlMessage{RoomJoinResult{JoinDecision::Admitted}});
+    REQUIRE(back->lastState()->snapshot.version == version);
+    REQUIRE(f.host->snapshot().version == version);
+    f.runScheduled();
+    REQUIRE(f.isMember("fp-dj"));
+    REQUIRE(f.host->snapshot().version == version);
+    REQUIRE_FALSE(back->link->closed);
+}
+
+TEST_CASE("room host: after the reconnect window the member leaves", "[core][listening-room][room-host]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    auto listener = f.join("fp-listener", "Lia");
+    const auto version = f.host->snapshot().version;
+    dj->link->close();
+    f.runScheduled();
+    REQUIRE_FALSE(f.isMember("fp-dj"));
+    REQUIRE(f.host->snapshot().version == version + 1);
+    REQUIRE(listener->lastState()->snapshot.members.size() == 2);
+}
+
+TEST_CASE("room host: a link that never says hello is closed after the hello timeout",
+          "[core][listening-room][room-host]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto silent = f.connect("fp-dj");
+    auto talker = f.join("fp-listener", "Lia");
+    REQUIRE(std::any_of(f.scheduled.begin(), f.scheduled.end(),
+                        [](const auto& task) { return task.first == room_hello_timeout_ms; }));
+    f.runScheduled();
+    REQUIRE(silent->link->closed);
+    REQUIRE_FALSE(talker->link->closed);
+    REQUIRE(f.isMember("fp-listener"));
+}
+
+TEST_CASE("room host: guests never see pending people", "[core][listening-room][room-host]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    const auto dj_states = dj->all<RoomStateMessage>().size();
+    auto stranger = f.join("fp-new", "Caio");
+    REQUIRE(f.isMember("fp-new"));
+    REQUIRE(dj->all<RoomStateMessage>().size() == dj_states);
+    for (const auto& state : dj->all<RoomStateMessage>())
+        for (const auto& member : state.snapshot.members)
+            REQUIRE(member.state == MemberState::Admitted);
+    REQUIRE(f.host->approve("fp-new"));
+    const auto last = dj->lastState()->snapshot;
+    REQUIRE(std::any_of(last.members.begin(), last.members.end(),
+                        [](const RoomMember& m) { return m.fingerprint == "fp-new"; }));
 }
 
 } // namespace music_player::m0::test

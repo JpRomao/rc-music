@@ -45,7 +45,14 @@ struct ListeningRoomHostDependencies final {
     // SHA-256 of the host's own DTLS certificate (RoomIdentity::fingerprint).
     std::array<std::uint8_t, 32> host_fingerprint{};
     ListenerProfile host_profile{};
+    // Runs task once after delay_ms on the host's thread (QTimer::singleShot in the app).
+    std::function<void(std::int64_t delay_ms, std::function<void()> task)> schedule;
 };
+
+// Upper bound of the encoded size of a RoomStateMessage (RoomProtocolCodec JSON): every text byte
+// counted as its worst JSON escape. The host keeps every state it sends within
+// maximum_room_control_message_bytes by this estimate.
+[[nodiscard]] std::size_t estimatedRoomStateBytes(const RoomStateMessage& message);
 
 // Host side of the listening room (ADR-0022, S7.1): ties ListeningRoom/RoomRoster, the roster store,
 // the local player (RoomHostPlayer, see that port for why it is not PlayerController directly), the
@@ -66,15 +73,20 @@ struct ListeningRoomHostDependencies final {
 //     JoinResult{Pending} only, plus onJoinRequest; nothing else is sent to a pending member, and
 //     anything it sends after the hello is ignored. Full/Blocked -> that JoinResult, then close.
 //     reject() answers JoinResult{RejectedClosed} and closes.
+//   - A link that sends no hello within room_hello_timeout_ms is closed.
 //   - One live link per identity: a newer link that says hello replaces the older one (closed
-//     locally). A link dropped by the network makes its member leave the room; a known person who
-//     comes back is admitted again by the roster.
+//     locally). When the link of an ADMITTED member drops, the member is held for
+//     room_reconnect_window_ms: same seat, no version bump; a new link with the same fingerprint that
+//     says hello inside the window resumes it (JoinResult{Admitted} + the current state, version
+//     unchanged). After the window the member leaves (version bumps). A pending person who drops
+//     leaves at once.
 //   - kick(fp, block) sends RoomBye{Kicked} and closes; blocking someone present is always
 //     kick(fp, true), never a bare roster change.
 //
 // Intents: every RoomIntentMessage goes through ListeningRoom::authorize against the current
 // snapshot (requiredPermission alone is never the gate). NotAdmitted is dropped silently (pending
-// people get nothing); any other rejection answers RoomIntentRejected{request_id, reason}. Authorized
+// people get nothing); any other rejection answers RoomIntentRejected{request_id, reason} and changes
+// nothing (no refresh, no broadcast: a refused guest cannot make the host send states). Authorized
 // intents call the player: Next/Previous/Seek/Pause/Resume, RemoveItem and MoveItem (destination is
 // an index of the room queue). Pause/Resume already in that state succeed without a command; a
 // command the player refuses answers InvalidArgument.
@@ -84,23 +96,32 @@ struct ListeningRoomHostDependencies final {
 //     (S8/S12). That transfer will call addGuestTrack(), which overwrites the item's id,
 //     owner_fingerprint (the link fingerprint) and added_by before using it.
 // There is no guest intent for shuffle, repeat or the end of the queue: they stay with the host's
-// player and reach the room only as the queue order and current item.
+// player and reach the room only as the queue order (the play order, see RoomHostPlayer) and current
+// item.
 //
-// State: snapshot().version grows by one each time the members, the room queue or the playback
-// change, and only then RoomStateMessage goes to every admitted member with ITS OWN effective
-// permissions (RoomRoster::effectivePermissions). The room queue maps the player's queue: item id =
-// the queue occurrence id; HostTrack items carry the catalog's hash and summary, owner = the host
-// fingerprint (lowercase hex) and added_by = the host nickname; an item appears once the catalog
-// described it (current item first) and a file the catalog cannot read stays out of the room. At
-// most maximum_room_queue_items items, a window that starts at the current item when the local
-// queue is longer. Playback: current_item, playing, and the anchor (host_clock_ms(), position) taken
-// whenever the playback changes in a way the previous anchor does not predict (pause, seek, new
-// item). When the current item changes, its lyrics (if any) go to every admitted member as
-// RoomLyrics. A message the link refuses (the adapter drops what encodeRoomControl rejects, e.g. an
-// oversized state) is skipped: that member keeps its older version until a later state fits.
+// State: snapshot() is the host's view; its version grows by one each time the members, the room
+// queue or the playback change. Guests get guestView = the same snapshot with ADMITTED members only
+// (pending people stay visible to the host, via snapshot() and onJoinRequest), and only when that view
+// changed: RoomStateMessage goes to every admitted member with ITS OWN effective permissions
+// (RoomRoster::effectivePermissions); a guest may see version gaps.
+//   - Room queue: from the current item forward (the play order), item id = the queue occurrence id.
+//     HostTrack items carry the catalog's hash and summary, owner = the host fingerprint (lowercase
+//     hex) and added_by = the host nickname; an item appears once the catalog described it and a file
+//     the catalog cannot read stays out. Title, artist and album are cut to
+//     maximum_room_summary_text_bytes at a code point boundary (also for guest items). The window holds
+//     at most maximum_room_queue_items items and only as many as keep estimatedRoomStateBytes of the
+//     guests' state within maximum_room_control_message_bytes, so every state the host sends is
+//     encodable. A message a link still refuses is skipped: that member keeps its older version.
+//   - Playback: current_item, playing and the anchor (host_clock_ms(), position). Item changes,
+//     play/pause and seek intents always re-anchor; otherwise the anchor stays while the player is
+//     within room_anchor_tolerance_ms of expectedPositionMs(anchor, now), so position jitter neither
+//     bumps the version nor broadcasts. (A seek made in the host's own UI that moves less than the
+//     tolerance is indistinguishable from jitter and keeps the anchor.)
+//   - When the current item changes, its lyrics (if any) go once to every admitted member as RoomLyrics.
 //
 // Guest items (GuestTrack) never reach the session: the session autosave must store
-// withoutGuestItems(snapshot) while a room is open, and close()/revoke() remove them from the queue.
+// withoutGuestItems(snapshot) while a room is open, and close(), revoke() and the destructor remove
+// them from the player's queue.
 //
 // Endpoint failure: onEndpointFailed is called and links already connected keep working; the UI
 // decides whether to close the room.
@@ -111,9 +132,10 @@ class ListeningRoomHost final {
     ListeningRoomHost(const ListeningRoomHost&) = delete;
     ListeningRoomHost& operator=(const ListeningRoomHost&) = delete;
 
-    // Reuses the persisted invite when until_revoked and present; until_revoked persists the invite
-    // (room id, secret, max_listeners, default role). Opening without until_revoked leaves a persisted
-    // invite untouched. Already open: returns the current invite.
+    // until_revoked with a persisted invite reopens it with ITS settings (max_listeners, default role),
+    // ignoring the options; without one, it creates and persists a new invite with the options.
+    // Opening without until_revoked leaves a persisted invite untouched. Already open: returns the
+    // current invite.
     [[nodiscard]] std::optional<RoomInviteLink> open(const RoomOpenOptions& options);
     // "Encerrar sala": RoomBye{Closed} to everyone, keeps the persisted invite.
     void close();
@@ -124,6 +146,8 @@ class ListeningRoomHost final {
     [[nodiscard]] bool kick(std::string_view fingerprint, bool block);
     [[nodiscard]] RoomSnapshot snapshot() const;
     [[nodiscard]] bool isOpen() const noexcept;
+    // The invite kept for "until revoked" rooms, with its settings (for the UI to show).
+    [[nodiscard]] std::optional<PersistedInvite> persistedInvite() const;
 
     // For the guest-file transfer (S8/S12): a guest's file already in the host's room cache joins the
     // queue as a GuestTrack. Overwrites id, origin, owner_fingerprint (= owner_fingerprint) and
@@ -147,6 +171,8 @@ class ListeningRoomHost final {
     void onEndpointFailure(std::uint64_t generation, RoomLinkFailure failure);
     void onLinkControl(const std::shared_ptr<RoomLink>& link, RoomControlMessage message);
     void onLinkClosed(const std::shared_ptr<RoomLink>& link);
+    void onHelloTimeout(std::uint64_t generation, const std::shared_ptr<RoomLink>& link);
+    void onReconnectExpired(std::uint64_t generation, const std::string& fingerprint, std::uint64_t token);
     void onHello(const std::shared_ptr<RoomLink>& link, const RoomHello& hello);
     void onIntent(const std::shared_ptr<RoomLink>& link, const RoomIntentMessage& message);
     [[nodiscard]] std::optional<IntentRejection> apply(const RoomIntent& intent);
@@ -176,6 +202,7 @@ class ListeningRoomHost final {
     std::array<std::uint8_t, 32> host_fingerprint_;
     std::string host_fingerprint_hex_;
     ListenerProfile host_profile_;
+    std::function<void(std::int64_t, std::function<void()>)> schedule_;
 
     RoomRoster roster_;
     bool roster_writable_{false};
@@ -188,6 +215,12 @@ class ListeningRoomHost final {
     std::set<std::filesystem::path> describing_;
     std::set<std::filesystem::path> unreadable_;
     std::map<std::uint64_t, RoomItem> guest_items_;
+    // Admitted members whose link dropped, held for room_reconnect_window_ms (value: hold token).
+    std::map<std::string, std::uint64_t, std::less<>> held_;
+    std::uint64_t next_hold_{0};
+    // The last state guests received (admitted members only), to broadcast only what they would see.
+    RoomSnapshot sent_view_;
+    bool reanchor_{false};
     bool refreshing_{false};
     bool refresh_again_{false};
     std::shared_ptr<Alive> alive_;

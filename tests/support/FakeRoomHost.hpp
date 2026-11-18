@@ -125,6 +125,9 @@ class FakeRoomHostPlayer final : public RoomHostPlayer {
         }
         changed();
     }
+    // One step of normal playback (DeterministicPlaybackConfig::tick_interval_ms). Like a presenter
+    // that reports positions, the fake notifies onChanged for it.
+    void tick() { static_cast<void>(backend_.tick()); }
     [[nodiscard]] SessionSnapshot sessionSnapshot() const {
         const auto playback = state();
         return {queue_.snapshot(), queue_.currentOccurrenceId() ? playback.position_ms : 0, {}, {}};
@@ -221,13 +224,15 @@ class FakeRoomTrackCatalog final : public RoomTrackCatalog {
         description.item.origin = RoomItemOrigin::HostTrack;
         description.item.content_sha256 = fakeSha256(source);
         description.item.size_bytes = 1000;
-        description.item.summary = {source.stem().string(), "Artista", "Album", 248'000};
+        description.item.summary =
+            summary_override.value_or(RoomTrackSummary{source.stem().string(), "Artista", "Album", 248'000});
         if (const auto found = lyrics.find(source); found != lyrics.end())
             description.lyrics_lrc = found->second;
         return description;
     }
 
     bool deferred{false};
+    std::optional<RoomTrackSummary> summary_override;
     std::set<std::filesystem::path> unreadable;
     std::map<std::filesystem::path, std::string> lyrics;
     std::vector<std::filesystem::path> requests;

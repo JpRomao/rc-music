@@ -116,6 +116,9 @@ set_target_properties(rc_music_room_protocol_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_room_track_catalog_tests rc_music.room.track-catalog
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtRoomTrackCatalogTests.cpp" rc_music_room_catalog)
 set_target_properties(rc_music_room_track_catalog_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_room_host_state_tests rc_music.room.host-state
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/ListeningRoomHostStateTests.cpp" rc_music_room_protocol)
+set_target_properties(rc_music_room_host_state_tests PROPERTIES AUTOMOC ON)
 if(TARGET rc_music_listening_room)
     add_ui_test(rc_music_room_identity_tests rc_music.room.identity
         "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsRoomIdentityTests.cpp" rc_music_listening_room)

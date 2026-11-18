@@ -18,6 +18,13 @@ namespace music_player::m0 {
 // delegating to its own commands. Tests implement it with LocalFileQueue + PlayerController + the
 // DeterministicPlaybackBackend (tests/support/FakeRoomHost.hpp).
 //
+// Play order: from the current item on, state().queue.items IS the order in which the tracks will
+// play. The room's queue is what everyone hears and what the S8 prefetch follows, so an implementation
+// must never pick the next track out of that order. Requirement for S7.3: PlayerPresenter's shuffle
+// mode currently picks a random unvisited item on advance; while a room is open it must instead turn
+// shuffle into a physical reorder of the upcoming items (as shuffleQueue() does) and then advance in
+// queue order.
+//
 // Shuffle, repeat and the end-of-queue behaviour are host-only and deliberately absent: they reach
 // the room only as the queue order and the current item that state() reports.
 struct RoomHostPlayerState final {
@@ -45,8 +52,9 @@ class RoomHostPlayer {
     virtual bool move(LocalQueueOccurrenceId occurrence, std::size_t destination_index) = 0;
 
     // Called after any queue, current-item, play/pause or seek change, whoever made it (the host's
-    // own UI or a command above), possibly from inside the command. Not called for the position
-    // ticks of normal playback.
+    // own UI or a command above), possibly from inside the command. It may also be called for the
+    // position updates of normal playback: the host keeps its anchor while the position stays within
+    // room_anchor_tolerance_ms of it.
     std::function<void()> onChanged;
 };
 

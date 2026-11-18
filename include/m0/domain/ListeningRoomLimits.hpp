@@ -23,6 +23,12 @@ inline constexpr std::int32_t room_play_lead_ms = 300;
 inline constexpr std::uint32_t room_clock_samples = 8;
 inline constexpr std::int32_t room_clock_resample_ms = 5000;
 inline constexpr std::int32_t room_reconnect_window_ms = 30000;
+// The host keeps the playback anchor while the player stays within this distance of it.
+inline constexpr std::int64_t room_anchor_tolerance_ms = 100;
+// Title, artist and album of a room item, cut at a code point boundary.
+inline constexpr std::size_t maximum_room_summary_text_bytes = 256;
+// A guest link that sends no RoomHello within this time is closed.
+inline constexpr std::int32_t room_hello_timeout_ms = 10000;
 inline constexpr std::int32_t minimum_output_offset_ms = -500;
 inline constexpr std::int32_t maximum_output_offset_ms = 500;
 

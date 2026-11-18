@@ -1,5 +1,6 @@
 #include "m0/application/ListeningRoomHost.hpp"
 
+#include "m0/domain/MetadataSanitization.hpp"
 #include "m0/domain/RoomClock.hpp"
 
 #include <algorithm>
@@ -30,7 +31,77 @@ bool sameContent(const RoomSnapshot& a, const RoomSnapshot& b) {
     return a.members == b.members && a.queue == b.queue && a.playback == b.playback;
 }
 
+// What guests see: pending people stay visible to the host only.
+RoomSnapshot guestView(RoomSnapshot snapshot) {
+    std::erase_if(snapshot.members, [](const RoomMember& m) { return m.state != MemberState::Admitted; });
+    return snapshot;
+}
+
+// Sanitized, then cut at a code point boundary to maximum_room_summary_text_bytes; empty when the
+// result is not stable under sanitizeMetadataText (the peer's codec would refuse it).
+std::string summaryText(const std::string_view raw) {
+    auto sanitized = sanitizeMetadataText(raw);
+    if (sanitized.disposition == MetadataTextDisposition::InvalidEncoding)
+        return {};
+    std::string text = std::move(sanitized.text);
+    if (text.size() > maximum_room_summary_text_bytes) {
+        std::size_t cut = maximum_room_summary_text_bytes;
+        while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80)
+            --cut;
+        text.resize(cut);
+        auto again = sanitizeMetadataText(text);
+        if (again.disposition == MetadataTextDisposition::InvalidEncoding)
+            return {};
+        text = std::move(again.text);
+    }
+    if (text.empty() || text.size() > maximum_room_summary_text_bytes ||
+        sanitizeMetadataText(text).disposition != MetadataTextDisposition::Unchanged)
+        return {};
+    return text;
+}
+
+RoomTrackSummary cappedSummary(const RoomTrackSummary& summary) {
+    return {summaryText(summary.title), summaryText(summary.artist), summaryText(summary.album),
+            std::max<std::int64_t>(summary.duration_ms, 0)};
+}
+
+// Worst JSON escape per byte: quote/backslash 2, control 6 (a 6-byte escape), non-ASCII 3 (a 6-byte escape of
+// a 2-byte sequence, or a surrogate pair of a 4-byte one), plus the quotes.
+std::size_t jsonTextBytes(const std::string_view text) {
+    std::size_t bytes = 2;
+    for (const char raw : text) {
+        const auto c = static_cast<unsigned char>(raw);
+        bytes += c == '"' || c == '\\' ? 2 : c < 0x20 ? 6 : c >= 0x80 ? 3 : 1;
+    }
+    return bytes;
+}
+constexpr std::size_t json_number_bytes = 24;       // up to 2^53 with sign, plus separators
+constexpr std::size_t json_state_frame_bytes = 512; // type, keys, version, playback and permissions
+constexpr std::size_t json_item_keys_bytes = 192;
+constexpr std::size_t json_member_keys_bytes = 128;
+
+std::size_t estimatedItemBytes(const RoomItem& item) {
+    return json_item_keys_bytes + 3 * json_number_bytes + jsonTextBytes("youtube_video") +
+           jsonTextBytes(item.owner_fingerprint) + jsonTextBytes(item.content_sha256) + jsonTextBytes(item.youtube_id) +
+           jsonTextBytes(item.added_by) + jsonTextBytes(item.summary.title) + jsonTextBytes(item.summary.artist) +
+           jsonTextBytes(item.summary.album);
+}
+
+std::size_t estimatedMemberBytes(const RoomMember& member) {
+    return json_member_keys_bytes + json_number_bytes + jsonTextBytes(member.fingerprint) +
+           jsonTextBytes(member.nickname) + jsonTextBytes(member.avatar.custom_sha256);
+}
+
 } // namespace
+
+std::size_t estimatedRoomStateBytes(const RoomStateMessage& message) {
+    std::size_t bytes = json_state_frame_bytes;
+    for (const auto& member : message.snapshot.members)
+        bytes += estimatedMemberBytes(member);
+    for (const auto& item : message.snapshot.queue)
+        bytes += estimatedItemBytes(item);
+    return bytes;
+}
 
 // Callbacks handed to links, the endpoint, the player and the catalog hold a weak reference to this
 // token, so a callback that arrives after the host is gone does nothing.
@@ -51,9 +122,10 @@ ListeningRoomHost::ListeningRoomHost(ListeningRoomHostDependencies dependencies)
       catalog_(dependencies.catalog), host_clock_ms_(std::move(dependencies.host_clock_ms)),
       random_bytes_(std::move(dependencies.random_bytes)), host_fingerprint_(dependencies.host_fingerprint),
       host_fingerprint_hex_(lowerHex(dependencies.host_fingerprint)),
-      host_profile_(std::move(dependencies.host_profile)), alive_(std::make_shared<Alive>(Alive{this})) {
-    if (!host_clock_ms_ || !random_bytes_)
-        throw std::invalid_argument{"the listening room host needs a clock and a random source"};
+      host_profile_(std::move(dependencies.host_profile)), schedule_(std::move(dependencies.schedule)),
+      alive_(std::make_shared<Alive>(Alive{this})) {
+    if (!host_clock_ms_ || !random_bytes_ || !schedule_)
+        throw std::invalid_argument{"the listening room host needs a clock, a random source and a scheduler"};
     const auto loaded = roster_store_.load();
     // Invalid, FutureVersion and Unavailable: run with the default roster and never overwrite the file.
     roster_writable_ = loaded.status == RoomRosterLoadStatus::Missing ||
@@ -80,30 +152,37 @@ ListeningRoomHost::~ListeningRoomHost() {
     }
     if (invite_)
         endpoint_.closeAll();
+    // As in end(): guest items never outlive the room in the host's queue.
+    for (const auto& guest : guest_items_)
+        static_cast<void>(player_.remove(LocalQueueOccurrenceId{guest.first}));
 }
 
 std::optional<RoomInviteLink> ListeningRoomHost::open(const RoomOpenOptions& options) {
     if (invite_)
         return invite_;
-    const std::size_t max_listeners =
+    std::size_t max_listeners =
         std::clamp<std::size_t>(options.max_listeners, minimum_room_listeners, maximum_room_listeners);
+    std::uint64_t default_role_id = options.default_role_id;
     RoomInviteLink invite{};
     invite.host_fingerprint = host_fingerprint_;
     auto roster = roster_.snapshot();
     if (options.until_revoked && roster.invite) {
+        // Reopening a persisted invite keeps its own settings, not this call's.
         invite.room_id = roster.invite->room_id;
         invite.secret = roster.invite->secret;
+        max_listeners = roster.invite->max_listeners;
+        default_role_id = roster.invite->default_role_id;
     } else {
         random_bytes_(invite.room_id);
         random_bytes_(invite.secret);
-    }
-    if (options.until_revoked) {
-        roster.invite = PersistedInvite{invite.room_id, invite.secret, max_listeners, options.default_role_id};
-        if (roster_.restore(std::move(roster)))
-            saveRoster();
+        if (options.until_revoked) {
+            roster.invite = PersistedInvite{invite.room_id, invite.secret, max_listeners, default_role_id};
+            if (roster_.restore(std::move(roster)))
+                saveRoster();
+        }
     }
 
-    room_.emplace(max_listeners, options.default_role_id, roster_);
+    room_.emplace(max_listeners, default_role_id, roster_);
     invite_ = invite;
     const auto generation = ++generation_;
     const std::weak_ptr<Alive> alive = alive_;
@@ -152,6 +231,7 @@ bool ListeningRoomHost::approve(const std::string_view fingerprint) {
 bool ListeningRoomHost::reject(const std::string_view fingerprint) {
     if (!room_ || !room_->reject(fingerprint))
         return false;
+    held_.erase(std::string{fingerprint});
     if (auto* connection = findMember(fingerprint)) {
         const auto link = connection->link;
         static_cast<void>(link->sendControl(RoomJoinResult{JoinDecision::RejectedClosed}));
@@ -164,6 +244,7 @@ bool ListeningRoomHost::reject(const std::string_view fingerprint) {
 bool ListeningRoomHost::kick(const std::string_view fingerprint, const bool block) {
     if (!room_ || !room_->kick(fingerprint, block))
         return false;
+    held_.erase(std::string{fingerprint});
     if (block)
         saveRoster();
     if (auto* connection = findMember(fingerprint)) {
@@ -178,6 +259,8 @@ bool ListeningRoomHost::kick(const std::string_view fingerprint, const bool bloc
 RoomSnapshot ListeningRoomHost::snapshot() const { return current_; }
 
 bool ListeningRoomHost::isOpen() const noexcept { return invite_.has_value(); }
+
+std::optional<PersistedInvite> ListeningRoomHost::persistedInvite() const { return roster_.snapshot().invite; }
 
 std::optional<std::uint64_t> ListeningRoomHost::addGuestTrack(const std::string_view owner_fingerprint,
                                                               const std::filesystem::path& cached_file,
@@ -201,6 +284,7 @@ std::optional<std::uint64_t> ListeningRoomHost::addGuestTrack(const std::string_
     described.owner_fingerprint = std::string{owner_fingerprint};
     described.added_by = owner->nickname;
     described.youtube_id.clear();
+    described.summary = cappedSummary(described.summary);
     guest_items_[described.id] = described;
     static_cast<void>(refresh());
     return described.id;
@@ -248,6 +332,34 @@ void ListeningRoomHost::onIncoming(const std::uint64_t generation, const std::sh
     }
     connections_.push_back(Connection{link, fingerprint, false});
     attach(link);
+    schedule_(room_hello_timeout_ms,
+              [alive = std::weak_ptr<Alive>{alive_}, weak = std::weak_ptr<RoomLink>{link}, generation] {
+                  const auto self = alive.lock();
+                  const auto strong = weak.lock();
+                  if (self && strong)
+                      self->host->onHelloTimeout(generation, strong);
+              });
+}
+
+void ListeningRoomHost::onHelloTimeout(const std::uint64_t generation, const std::shared_ptr<RoomLink>& link) {
+    if (generation != generation_)
+        return;
+    if (const auto* connection = find(link.get()); connection != nullptr && !connection->greeted)
+        drop(link);
+}
+
+void ListeningRoomHost::onReconnectExpired(const std::uint64_t generation, const std::string& fingerprint,
+                                           const std::uint64_t token) {
+    if (generation != generation_ || !room_)
+        return;
+    const auto held = held_.find(fingerprint);
+    if (held == held_.end() || held->second != token)
+        return;
+    held_.erase(held);
+    if (findMember(fingerprint) != nullptr)
+        return;
+    room_->leave(fingerprint);
+    static_cast<void>(refresh());
 }
 
 void ListeningRoomHost::onEndpointFailure(const std::uint64_t generation, const RoomLinkFailure failure) {
@@ -282,10 +394,22 @@ void ListeningRoomHost::onLinkClosed(const std::shared_ptr<RoomLink>& link) {
     const auto fingerprint = connection->fingerprint;
     const bool greeted = connection->greeted;
     std::erase_if(connections_, [&](const Connection& c) { return c.link == link; });
-    if (greeted && room_) {
-        room_->leave(fingerprint);
-        static_cast<void>(refresh());
+    if (!greeted || !room_)
+        return;
+    if (memberState(fingerprint) == MemberState::Admitted) {
+        // Keep the seat and the version for room_reconnect_window_ms: a new link with the same
+        // fingerprint resumes the membership.
+        const auto token = ++next_hold_;
+        held_[fingerprint] = token;
+        schedule_(room_reconnect_window_ms,
+                  [alive = std::weak_ptr<Alive>{alive_}, generation = generation_, fingerprint, token] {
+                      if (const auto self = alive.lock())
+                          self->host->onReconnectExpired(generation, fingerprint, token);
+                  });
+        return;
     }
+    room_->leave(fingerprint);
+    static_cast<void>(refresh());
 }
 
 void ListeningRoomHost::onHello(const std::shared_ptr<RoomLink>& link, const RoomHello& hello) {
@@ -315,6 +439,7 @@ void ListeningRoomHost::onHello(const std::shared_ptr<RoomLink>& link, const Roo
     const auto decision = room_->requestJoin(candidate);
     switch (decision) {
     case JoinDecision::Admitted:
+        held_.erase(fingerprint);
         static_cast<void>(link->sendControl(RoomJoinResult{decision}));
         admitted(link);
         return;
@@ -344,8 +469,12 @@ void ListeningRoomHost::onIntent(const std::shared_ptr<RoomLink>& link, const Ro
     auto rejection = room_->authorize(fingerprint, message.intent, current_);
     if (rejection == IntentRejection::NotAdmitted)
         return; // Pending people get nothing but their JoinResult.
-    if (!rejection)
-        rejection = apply(message.intent);
+    if (rejection) {
+        // Refused before reaching the player: nothing changed, so no refresh and no broadcast.
+        static_cast<void>(link->sendControl(RoomIntentRejected{message.request_id, *rejection}));
+        return;
+    }
+    rejection = apply(message.intent);
     if (rejection)
         static_cast<void>(link->sendControl(RoomIntentRejected{message.request_id, *rejection}));
     static_cast<void>(refresh());
@@ -361,6 +490,7 @@ std::optional<IntentRejection> ListeningRoomHost::apply(const RoomIntent& intent
     case RoomIntentKind::Previous:
         return accepted(player_.previous());
     case RoomIntentKind::Seek:
+        reanchor_ = true; // A seek is a discrete event even when it moves less than the tolerance.
         return accepted(player_.seek(intent.position_ms));
     case RoomIntentKind::Pause:
         return player_.state().status == PlaybackStatus::Playing ? accepted(player_.pause()) : std::nullopt;
@@ -429,6 +559,7 @@ std::optional<RoomItem> ListeningRoomHost::roomItem(const LocalFileQueueSnapshot
     item.owner_fingerprint = host_fingerprint_hex_;
     item.added_by = host_profile_.nickname;
     item.youtube_id.clear();
+    item.summary = cappedSummary(item.summary);
     return item;
 }
 
@@ -461,13 +592,11 @@ bool ListeningRoomHost::rebuild() {
     for (std::size_t index = 0; index < items.size(); ++index)
         if (player.queue.current_occurrence_id == std::optional{items[index].occurrence_id})
             current_index = index;
-    // A longer local queue shows the maximum_room_queue_items items from the current one on.
-    const std::size_t first = items.size() > maximum_room_queue_items
-                                  ? std::min(current_index.value_or(0), items.size() - maximum_room_queue_items)
-                                  : 0;
+    // The room queue runs from the current item forward (the play order, see RoomHostPlayer): at most
+    // maximum_room_queue_items items and only as many as keep the guests' state within
+    // maximum_room_control_message_bytes by estimatedRoomStateBytes.
+    const std::size_t first = current_index.value_or(0);
     const std::size_t end = std::min(items.size(), first + maximum_room_queue_items);
-    if (current_index && !guest_items_.contains(items[*current_index].occurrence_id.value))
-        requestDescription(items[*current_index].source_path);
     for (std::size_t index = first; index < end; ++index)
         if (!guest_items_.contains(items[index].occurrence_id.value))
             requestDescription(items[index].source_path);
@@ -476,21 +605,33 @@ bool ListeningRoomHost::rebuild() {
     next.members.push_back(hostMember());
     for (auto& member : room_->members())
         next.members.push_back(std::move(member));
-    for (std::size_t index = first; index < end; ++index)
-        if (auto item = roomItem(items[index]))
-            next.queue.push_back(std::move(*item));
+    std::size_t budget = estimatedRoomStateBytes(RoomStateMessage{guestView(next), {}});
+    for (std::size_t index = first; index < end; ++index) {
+        auto item = roomItem(items[index]);
+        if (!item)
+            continue;
+        const auto cost = estimatedItemBytes(*item);
+        if (budget + cost > maximum_room_control_message_bytes)
+            break;
+        budget += cost;
+        next.queue.push_back(std::move(*item));
+    }
 
-    if (current_index && std::any_of(next.queue.begin(), next.queue.end(), [&](const RoomItem& item) {
-            return item.id == items[*current_index].occurrence_id.value;
-        })) {
+    if (current_index && !next.queue.empty() && next.queue.front().id == items[*current_index].occurrence_id.value) {
         auto& playback = next.playback;
         playback.current_item = items[*current_index].occurrence_id.value;
         playback.playing = player.status == PlaybackStatus::Playing;
         const auto position = std::max<std::int64_t>(player.position_ms, 0);
         const auto now = host_clock_ms_();
         const auto& previous = current_.playback;
-        if (previous.current_item == playback.current_item && previous.playing == playback.playing &&
-            expectedPositionMs(previous, now) == position) {
+        const auto expected = expectedPositionMs(previous, now);
+        const auto drift = expected > position ? expected - position : position - expected;
+        // Item changes, play/pause and seeks always re-anchor; otherwise the anchor stays while the
+        // player is within room_anchor_tolerance_ms of it, so position jitter neither bumps the version
+        // nor broadcasts.
+        const bool forced = std::exchange(reanchor_, false);
+        if (!forced && previous.current_item == playback.current_item && previous.playing == playback.playing &&
+            drift <= room_anchor_tolerance_ms) {
             playback.anchor_host_ms = previous.anchor_host_ms;
             playback.anchor_position_ms = previous.anchor_position_ms;
         } else {
@@ -503,40 +644,47 @@ bool ListeningRoomHost::rebuild() {
         return false;
     next.version = current_.version + 1;
     current_ = std::move(next);
-    // Iterate over a copy: a synchronous transport may call back into the host while sending.
-    std::vector<std::shared_ptr<RoomLink>> links;
-    for (const auto& connection : connections_)
-        links.push_back(connection.link);
-    for (const auto& link : links) {
-        auto* connection = find(link.get());
-        if (connection == nullptr || !connection->greeted ||
-            memberState(connection->fingerprint) != MemberState::Admitted)
-            continue;
-        sendState(*connection);
-        if ((connection = find(link.get())) != nullptr)
-            sendLyrics(*connection);
+    auto view = guestView(current_);
+    const bool broadcast = !sameContent(view, sent_view_);
+    if (broadcast) {
+        sent_view_ = std::move(view);
+        // Iterate over a copy: a synchronous transport may call back into the host while sending.
+        std::vector<std::shared_ptr<RoomLink>> links;
+        for (const auto& connection : connections_)
+            links.push_back(connection.link);
+        for (const auto& link : links) {
+            const auto* connection = find(link.get());
+            if (connection == nullptr || !connection->greeted ||
+                memberState(connection->fingerprint) != MemberState::Admitted)
+                continue;
+            sendState(*connection);
+            if (auto* again = find(link.get()))
+                sendLyrics(*again);
+        }
     }
     if (onChanged)
         onChanged(current_);
-    return true;
+    return broadcast;
 }
 
 void ListeningRoomHost::admitted(const std::shared_ptr<RoomLink>& link) {
-    // Admission changes the members, so a broadcast normally carries the state; when nothing changed
-    // (a newer link of someone already admitted) this member gets the current state directly.
+    // Admission changes what guests see, so a broadcast normally carries the state; when nothing changed
+    // (someone resuming inside the reconnect window, or a newer link) this member gets it directly.
+    // Re-find the connection after every send: a synchronous transport may close other links meanwhile.
     const bool broadcast = refresh();
-    auto* connection = find(link.get());
-    if (connection == nullptr)
-        return;
     if (!broadcast)
-        sendState(*connection);
-    sendLyrics(*connection);
+        if (const auto* connection = find(link.get()))
+            sendState(*connection);
+    if (auto* connection = find(link.get()))
+        sendLyrics(*connection);
 }
 
 void ListeningRoomHost::sendState(const Connection& connection) const {
-    // A refused message (e.g. too large for the codec) is skipped: the member keeps its older version.
-    static_cast<void>(
-        connection.link->sendControl(RoomStateMessage{current_, roster_.effectivePermissions(connection.fingerprint)}));
+    // Copies first: the send may run host callbacks that move or erase connections.
+    const auto link = connection.link;
+    const auto permissions = roster_.effectivePermissions(connection.fingerprint);
+    // A refused message is skipped: the member keeps its older version.
+    static_cast<void>(link->sendControl(RoomStateMessage{guestView(current_), permissions}));
 }
 
 void ListeningRoomHost::sendLyrics(Connection& connection) const {
@@ -544,6 +692,7 @@ void ListeningRoomHost::sendLyrics(Connection& connection) const {
         return;
     const auto id = *current_.playback.current_item;
     connection.lyrics_item = id;
+    const auto link = connection.link;
     if (guest_items_.contains(id))
         return;
     const auto items = player_.state().queue.items;
@@ -554,7 +703,7 @@ void ListeningRoomHost::sendLyrics(Connection& connection) const {
         return;
     const auto found = descriptions_.find(entry->source_path);
     if (found != descriptions_.end() && !found->second.lyrics_lrc.empty())
-        static_cast<void>(connection.link->sendControl(RoomLyrics{id, found->second.lyrics_lrc}));
+        static_cast<void>(link->sendControl(RoomLyrics{id, found->second.lyrics_lrc}));
 }
 
 void ListeningRoomHost::drop(const std::shared_ptr<RoomLink>& link) {
@@ -583,7 +732,10 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
     descriptions_.clear();
     describing_.clear();
     unreadable_.clear();
+    held_.clear();
+    reanchor_ = false;
     current_ = RoomSnapshot{.version = current_.version + 1};
+    sent_view_ = {};
     if (onChanged)
         onChanged(current_);
 }
