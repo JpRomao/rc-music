@@ -74,11 +74,11 @@ TEST_CASE("join: repeated requests keep a single entry", "[core][listening-room]
     ListeningRoom room(4, listener_role, roster);
     REQUIRE(room.requestJoin(candidate("fp-a", "Ana")) == JoinDecision::Pending);
     auto again = candidate("fp-a", "Ana Maria");
-    again.avatar_sha256 = "abc";
+    again.avatar = {AvatarKind::Bundled, 7, {}};
     REQUIRE(room.requestJoin(again) == JoinDecision::Pending);
     REQUIRE(room.members().size() == 1);
     REQUIRE(room.members()[0].nickname == "Ana Maria");
-    REQUIRE(room.members()[0].avatar_sha256 == "abc");
+    REQUIRE(room.members()[0].avatar == AvatarChoice{AvatarKind::Bundled, 7, {}});
     REQUIRE(room.approve("fp-a"));
     REQUIRE(room.requestJoin(candidate("fp-a")) == JoinDecision::Admitted);
     REQUIRE(room.members().size() == 1);

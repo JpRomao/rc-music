@@ -35,14 +35,17 @@ AvatarChoice initialAvatar(const std::uint64_t random_value) noexcept {
     return {AvatarKind::Bundled, static_cast<std::uint32_t>(random_value % bundled_avatar_count), {}};
 }
 
+bool isValidAvatarChoice(const AvatarChoice& avatar) noexcept {
+    if (avatar.kind == AvatarKind::Bundled)
+        return avatar.bundled_index < bundled_avatar_count && avatar.custom_sha256.empty();
+    return avatar.kind == AvatarKind::Custom && avatar.bundled_index == 0 && lowerHex64(avatar.custom_sha256);
+}
+
 bool isValidListenerProfile(const ListenerProfile& profile) {
     const auto nickname = canonicalNickname(profile.nickname);
     if (!nickname.has_value() || *nickname != profile.nickname)
         return false;
-    const auto& avatar = profile.avatar;
-    if (avatar.kind == AvatarKind::Bundled)
-        return avatar.bundled_index < bundled_avatar_count && avatar.custom_sha256.empty();
-    return avatar.kind == AvatarKind::Custom && avatar.bundled_index == 0 && lowerHex64(avatar.custom_sha256);
+    return isValidAvatarChoice(profile.avatar);
 }
 
 } // namespace music_player::m0

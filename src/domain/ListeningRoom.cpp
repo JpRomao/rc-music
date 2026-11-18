@@ -36,7 +36,7 @@ JoinDecision ListeningRoom::requestJoin(const RoomMember& candidate) {
                                        [&](const RoomMember& m) { return m.fingerprint == candidate.fingerprint; });
     if (existing != members_.end()) {
         existing->nickname = candidate.nickname;
-        existing->avatar_sha256 = candidate.avatar_sha256;
+        existing->avatar = candidate.avatar;
         return existing->state == MemberState::Admitted ? JoinDecision::Admitted : JoinDecision::Pending;
     }
     const KnownListener* known = roster_.find(candidate.fingerprint);

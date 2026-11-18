@@ -51,6 +51,16 @@ TEST_CASE("listener profile validation checks nickname and avatar", "[core][list
     REQUIRE_FALSE(isValidListenerProfile({"", {AvatarKind::Bundled, 0, {}}}));
 }
 
+TEST_CASE("avatar choice validation stands on its own", "[core][listening-room][profile]") {
+    REQUIRE(isValidAvatarChoice({AvatarKind::Bundled, bundled_avatar_count - 1, {}}));
+    REQUIRE(isValidAvatarChoice({AvatarKind::Custom, 0, std::string(64, 'f')}));
+    REQUIRE_FALSE(isValidAvatarChoice({AvatarKind::Bundled, bundled_avatar_count, {}}));
+    REQUIRE_FALSE(isValidAvatarChoice({AvatarKind::Bundled, 0, std::string(64, 'f')}));
+    REQUIRE_FALSE(isValidAvatarChoice({AvatarKind::Custom, 1, std::string(64, 'f')}));
+    REQUIRE_FALSE(isValidAvatarChoice({AvatarKind::Custom, 0, std::string(64, 'F')}));
+    REQUIRE_FALSE(isValidAvatarChoice({static_cast<AvatarKind>(9), 0, {}}));
+}
+
 TEST_CASE("listening room limits match the plan", "[core][listening-room][profile]") {
     STATIC_REQUIRE(maximum_room_listeners == 10);
     STATIC_REQUIRE(minimum_output_offset_ms == -500);

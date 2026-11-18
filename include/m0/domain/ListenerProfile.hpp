@@ -28,6 +28,8 @@ struct ListenerProfile final {
 // no bidi/invisible layout characters) with 1..maximum_nickname_code_points code points.
 [[nodiscard]] std::optional<std::string> canonicalNickname(std::string_view raw);
 [[nodiscard]] AvatarChoice initialAvatar(std::uint64_t random_value) noexcept;
+// Bundled: index < bundled_avatar_count and no hash. Custom: index 0 and a 64-char lowercase hex SHA-256.
+[[nodiscard]] bool isValidAvatarChoice(const AvatarChoice& avatar) noexcept;
 [[nodiscard]] bool isValidListenerProfile(const ListenerProfile& profile);
 
 } // namespace music_player::m0

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "m0/domain/ListenerProfile.hpp"
 #include "m0/domain/RoomRoster.hpp"
 
 #include <cstddef>
@@ -16,8 +17,9 @@ enum class MemberState : std::uint8_t { Pending, Admitted };
 struct RoomMember final {
     std::string fingerprint{};
     std::string nickname{};
-    std::string avatar_sha256{};
+    AvatarChoice avatar{};
     MemberState state{};
+    bool operator==(const RoomMember&) const = default;
 };
 
 enum class RoomItemOrigin : std::uint8_t { HostTrack, GuestTrack, YoutubeVideo };
@@ -27,6 +29,7 @@ struct RoomTrackSummary final {
     std::string artist{};
     std::string album{};
     std::int64_t duration_ms{};
+    bool operator==(const RoomTrackSummary&) const = default;
 };
 
 struct RoomItem final {
@@ -38,6 +41,7 @@ struct RoomItem final {
     RoomTrackSummary summary{};
     std::string youtube_id{};
     std::string added_by{};
+    bool operator==(const RoomItem&) const = default;
 };
 
 struct RoomPlayback final {
@@ -45,6 +49,7 @@ struct RoomPlayback final {
     bool playing{};
     std::int64_t anchor_host_ms{};
     std::int64_t anchor_position_ms{};
+    bool operator==(const RoomPlayback&) const = default;
 };
 
 struct RoomSnapshot final {
@@ -52,6 +57,7 @@ struct RoomSnapshot final {
     std::vector<RoomMember> members{};
     std::vector<RoomItem> queue{};
     RoomPlayback playback{};
+    bool operator==(const RoomSnapshot&) const = default;
 };
 
 // RejectedClosed is produced by the application layer, never by the domain.
@@ -77,6 +83,7 @@ struct RoomIntent final {
     std::uint64_t playlist_id{};
     std::vector<std::uint64_t> catalog_entry_ids{};
     std::optional<RoomItem> uploaded{};
+    bool operator==(const RoomIntent&) const = default;
 };
 
 enum class IntentRejection : std::uint8_t { NotAdmitted, MissingPermission, UnknownItem, InvalidArgument, QueueFull };

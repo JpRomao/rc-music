@@ -30,6 +30,14 @@ target_link_libraries(rc_music_profile PUBLIC rc_music_core Qt6::Core Qt6::Gui P
 set_target_properties(rc_music_profile PROPERTIES AUTOMOC ON)
 rc_music_configure_cpp(rc_music_profile)
 
+# ADR-0022: wire codec of the listening room (control JSON and binary file chunks).
+add_library(rc_music_room_protocol STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/RoomProtocolCodec.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/RoomProtocolCodec.cpp")
+target_include_directories(rc_music_room_protocol PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
+target_link_libraries(rc_music_room_protocol PUBLIC rc_music_core Qt6::Core PRIVATE rc_music_media_data)
+rc_music_configure_cpp(rc_music_room_protocol)
+
 add_library(rc_music_playlists STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/QtJsonPlaylistStore.cpp"
