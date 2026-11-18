@@ -1,9 +1,13 @@
+#include "adapters/QtRoomFileInbox.hpp"
 #include "adapters/RoomFileTransfer.hpp"
 
 #include "../support/FakeRoomTransport.hpp"
+#include "m0/application/ListeningRoomGuest.hpp"
 #include "m0/domain/ListeningRoomLimits.hpp"
 
+#include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDeadlineTimer>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -21,6 +25,7 @@
 #include <vector>
 
 using namespace music_player::m0;
+using music_player::m0::testing::FakeRoomGuestConnector;
 using music_player::m0::testing::FakeRoomLink;
 
 namespace {
@@ -90,6 +95,71 @@ struct Room {
     std::vector<bool> consumed;
     std::vector<std::pair<std::string, QString>> completed;
     std::vector<std::pair<std::string, RoomTransferError>> failed;
+};
+// ListeningRoomGuest over the real QtRoomFileInbox; the test plays the host on the other end of the link
+// and, like ListeningRoomHost, answers each request with a new offer streamed from the request's offset.
+struct GuestOverRealInbox {
+    explicit GuestOverRealInbox(const QString& config) : inbox(config) {
+        guest = std::make_unique<ListeningRoomGuest>(ListeningRoomGuestDependencies{
+            .connector = connector,
+            .profile = ListenerProfile{"Ana", AvatarChoice{AvatarKind::Bundled, 3, {}}},
+            .stored_custom_avatar_sha256 = [] { return std::optional<std::string>{}; },
+            .capture_session = [] { return SessionSnapshot{}; },
+            .restore_session = [](const SessionSnapshot&) {},
+            .schedule = [](std::int64_t, std::function<void()>) {},
+            .files = &inbox,
+        });
+        RoomInviteLink invite{};
+        invite.room_id[0] = 7;
+        invite.host_fingerprint[0] = 0xab;
+        guest->join(invite);
+        auto links = FakeRoomLink::pair(host_hex, "fedc0304" + std::string(56, '0'));
+        host = links.first;
+        host->onControl = [this](const RoomControlMessage& message) {
+            if (const auto* request = std::get_if<RoomFileRequest>(&message))
+                requests.push_back(*request);
+        };
+        connector.complete(links.second);
+        send(RoomJoinResult{JoinDecision::Admitted});
+    }
+    void send(const RoomControlMessage& message) const { QVERIFY(host->sendControl(message)); }
+    // The room queue: the file as item item_id (current), or empty.
+    void queue(const std::uint64_t version, const std::string& sha, const std::uint64_t size,
+               const std::optional<std::uint64_t> item_id) const {
+        RoomStateMessage message;
+        message.snapshot.version = version;
+        message.snapshot.members = {RoomMember{host_hex, "Joao", AvatarChoice{}, MemberState::Admitted}};
+        if (item_id) {
+            RoomItem item;
+            item.id = *item_id;
+            item.origin = RoomItemOrigin::HostTrack;
+            item.owner_fingerprint = host_hex;
+            item.content_sha256 = sha;
+            item.size_bytes = size;
+            item.added_by = "Joao";
+            message.snapshot.queue.push_back(item);
+            message.snapshot.playback.current_item = *item_id;
+        }
+        send(message);
+    }
+    // Offers the file under a new transfer id and streams it from offset up to (not including) until.
+    void serve(const QByteArray& bytes, const std::string& sha, const std::uint64_t offset, const std::uint64_t until) {
+        const auto transfer_id = next_transfer_id++;
+        send(RoomFileOffer{sha, static_cast<std::uint64_t>(bytes.size()), transfer_id});
+        for (auto at = offset; at < until; at += room_file_chunk_bytes)
+            QVERIFY(host->sendMedia(chunkOf(bytes, transfer_id, at)));
+    }
+    bool waitForRequests(const std::size_t count) {
+        return QTest::qWaitFor([&] { return requests.size() >= count; }, 5000);
+    }
+
+    const std::string host_hex = "abcd0102" + std::string(56, '0');
+    FakeRoomGuestConnector connector;
+    QtRoomFileInbox inbox;
+    std::unique_ptr<ListeningRoomGuest> guest;
+    std::shared_ptr<FakeRoomLink> host;
+    std::vector<RoomFileRequest> requests;
+    std::uint32_t next_transfer_id{30};
 };
 } // namespace
 
@@ -183,6 +253,47 @@ class RoomFileTransferTests final : public QObject {
         // The transfer is over: a later chunk is just ignored.
         QVERIFY(!room.receiver.consume(chunkOf(original, 4, 0)));
         QCOMPARE(room.failed.size(), std::size_t{1});
+    }
+
+    // A replacement transfer (the host answering an older request) may start below where the .part
+    // stands: on its first chunk the receiver goes back to the sender's offset, keeps the prefix and
+    // completes, with nothing left reserved.
+    void aTransferStartingBelowThePartGoesBackToTheSendersOffset() {
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        Room room(config.path());
+        const auto wav = readAll(fixture("wav-pcm-mono.wav"));
+        const auto original = wav + wav + wav;
+        const auto sha = sha256(original);
+        const auto size = static_cast<std::uint64_t>(original.size());
+
+        QVERIFY(room.receiver.accept({sha, size, 1}));
+        QVERIFY(room.receiver.consume(chunkOf(original, 1, 0)));
+        QVERIFY(room.receiver.consume(chunkOf(original, 1, room_file_chunk_bytes)));
+        room.receiver.abandon(1);
+        QVERIFY(room.receiver.accept({sha, size, 2})); // resumes at 2 chunks
+        for (std::uint64_t at = 0; at < size; at += room_file_chunk_bytes)
+            QVERIFY(room.receiver.consume(chunkOf(original, 2, at)));
+        QVERIFY(room.failed.empty());
+        QCOMPARE(room.completed.size(), std::size_t{1});
+        QCOMPARE(readAll(room.completed.front().second), original);
+        QVERIFY(room.cache.reserve(room_cache_quota_bytes - size)); // nothing else reserved
+    }
+
+    // Only the first chunk may go back: once a transfer has started, any other offset is OutOfOrder.
+    void aStartedTransferGoingBackFailsOutOfOrder() {
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        Room room(config.path());
+        const auto original = readAll(fixture("wav-pcm-mono.wav"));
+        const auto sha = sha256(original);
+
+        QVERIFY(room.receiver.accept({sha, static_cast<std::uint64_t>(original.size()), 4}));
+        QVERIFY(room.receiver.consume(chunkOf(original, 4, 0)));
+        QVERIFY(!room.receiver.consume(chunkOf(original, 4, 0)));
+        QCOMPARE(room.failed.size(), std::size_t{1});
+        QCOMPARE(room.failed.front(), std::make_pair(sha, RoomTransferError::OutOfOrder));
+        QVERIFY(!QFileInfo::exists(*room.cache.partialPathFor(sha)));
     }
 
     void fullQuotaFailsQuotaExceeded() {
@@ -360,6 +471,67 @@ class RoomFileTransferTests final : public QObject {
         room.host->closed = true;
         room.sender.pump(*room.host);
         QVERIFY(room.sender.idle());
+    }
+
+    // S8.2 review: the host's window drops the file and brings it back before it serves the first
+    // request, so the guest asks twice. The first offer is accepted and writes some chunks; the second
+    // replaces it but streams from the offset of a request made before those chunks. Whatever happens,
+    // the file must complete: the receiver may only start where the host streams from.
+    void aReplacedTransferStillCompletesFromWhereTheCacheStands_data() {
+        QTest::addColumn<int>("flaps");
+        QTest::newRow("dropped and back once") << 1;
+        QTest::newRow("dropped and back twice") << 2;
+    }
+    void aReplacedTransferStillCompletesFromWhereTheCacheStands() {
+        QFETCH(int, flaps);
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        QByteArray bytes(static_cast<qsizetype>(3 * room_file_chunk_bytes + 1234), Qt::Uninitialized);
+        for (qsizetype index = 0; index < bytes.size(); ++index)
+            bytes[index] = static_cast<char>((index * 31 + 7) % 251);
+        const auto sha = sha256(bytes);
+        const auto size = static_cast<std::uint64_t>(bytes.size());
+        {
+            GuestOverRealInbox room(config.path());
+            QCOMPARE(room.guest->state(), GuestRoomState::Joined);
+            std::uint64_t version = 1;
+            room.queue(version++, sha, size, 11);
+            QVERIFY(room.waitForRequests(1));
+            for (int flap = 0; flap < flaps; ++flap) {
+                room.queue(version++, sha, size, std::nullopt);
+                room.queue(version++, sha, size, 12 + static_cast<std::uint64_t>(flap));
+                QVERIFY(room.waitForRequests(static_cast<std::size_t>(flap) + 2));
+            }
+            const auto asked = room.requests.size();
+            QCOMPARE(asked, static_cast<std::size_t>(flaps) + 1);
+            for (const auto& request : room.requests)
+                QCOMPARE(request.offset, std::uint64_t{0});
+
+            // Each earlier request's transfer writes some chunks before the host replaces it with the
+            // answer to the next request (cancelling it), streamed from that request's offset.
+            for (std::size_t index = 0; index + 1 < asked; ++index) {
+                const auto chunks = index == 0 ? 2 : 1;
+                room.serve(bytes, sha, room.requests[index].offset,
+                           room.requests[index].offset + chunks * room_file_chunk_bytes);
+                room.inbox.waitForWorker();
+                QCoreApplication::processEvents();
+            }
+            room.serve(bytes, sha, room.requests.back().offset, size);
+            // Like the host, every later request gets a new offer streamed from its offset.
+            std::size_t answered = asked;
+            QDeadlineTimer deadline(5000);
+            while (!room.guest->localFile(sha) && !deadline.hasExpired()) {
+                room.inbox.waitForWorker();
+                QCoreApplication::processEvents();
+                if (room.requests.size() > answered) {
+                    answered = room.requests.size();
+                    room.serve(bytes, sha, room.requests.back().offset, size);
+                }
+            }
+            const auto file = room.guest->localFile(sha);
+            QVERIFY2(file.has_value(), "the replaced transfer never completed");
+            QCOMPARE(readAll(QString::fromStdU16String(file->u16string())), bytes);
+        }
     }
 };
 

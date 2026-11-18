@@ -127,8 +127,13 @@ bool RoomFileReceiver::consume(const RoomFileChunk& chunk) {
     if (found == incoming_.end())
         return false;
     auto& incoming = found->second;
-    if (chunk.offset != incoming.next_offset)
-        return fail(chunk.transfer_id, RoomTransferError::OutOfOrder);
+    if (chunk.offset != incoming.next_offset) {
+        if (incoming.started || chunk.offset > incoming.next_offset)
+            return fail(chunk.transfer_id, RoomTransferError::OutOfOrder);
+        if (const auto error = goBack(incoming, chunk.offset))
+            return fail(chunk.transfer_id, *error);
+    }
+    incoming.started = true;
     const auto length = static_cast<std::uint64_t>(chunk.payload.size());
     if (length > chunk_bytes || length > incoming.size_bytes - incoming.next_offset)
         return fail(chunk.transfer_id, RoomTransferError::TooLarge);
@@ -167,6 +172,30 @@ void RoomFileReceiver::abandon(const std::uint32_t transfer_id) {
         return;
     cache_.release(found->second.size_bytes - found->second.next_offset);
     incoming_.erase(found);
+}
+
+std::optional<RoomTransferError> RoomFileReceiver::goBack(Incoming& incoming, const std::uint64_t offset) {
+    const auto again = incoming.next_offset - offset;
+    if (!cache_.reserve(again))
+        return RoomTransferError::QuotaExceeded;
+    // From here fail() releases size - next_offset; the bytes reserved again are counted once offset
+    // becomes next_offset.
+    auto hash = std::make_unique<QCryptographicHash>(QCryptographicHash::Sha256);
+    QFile part(*cache_.partialPathFor(incoming.sha256));
+    auto prepared = part.open(QIODevice::ReadWrite);
+    for (std::uint64_t hashed = 0; prepared && hashed < offset;) {
+        const auto data = part.read(static_cast<qint64>(std::min(chunk_bytes, offset - hashed)));
+        prepared = !data.isEmpty();
+        hash->addData(data);
+        hashed += static_cast<std::uint64_t>(data.size());
+    }
+    prepared = prepared && part.resize(static_cast<qint64>(offset));
+    part.close();
+    incoming.next_offset = offset;
+    if (!prepared)
+        return RoomTransferError::Io;
+    incoming.hash = std::move(hash);
+    return std::nullopt;
 }
 
 bool RoomFileReceiver::fail(const std::uint32_t transfer_id, const RoomTransferError error) {

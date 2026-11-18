@@ -70,8 +70,12 @@ class RoomFileSender {
 //
 // Resume: when <sha>.part exists, resumeRequest() gives the offset to ask the sender for (its size
 // rounded down to a whole chunk) and accept() continues from there: it cuts any partial tail and
-// hashes the kept prefix, so the final check covers the whole file. A sender starting elsewhere
-// gets OutOfOrder, which deletes the .part, so the next attempt starts from zero.
+// hashes the kept prefix, so the final check covers the whole file. The offer carries no offset, so
+// the first chunk says where the sender starts: below the resume point (a transfer answering an
+// older request, e.g. after a replacement) the receiver goes back there, cutting the .part and
+// hashing the shorter prefix again, so it always continues from the sender's offset. A first chunk
+// beyond the resume point, or any later chunk out of order, gets OutOfOrder, which deletes the .part,
+// so the next attempt starts from zero.
 class RoomFileReceiver {
   public:
     // maximum_file_bytes: the host receiving guest uploads passes maximum_guest_upload_bytes.
@@ -92,7 +96,12 @@ class RoomFileReceiver {
         std::uint64_t size_bytes{};
         std::uint64_t next_offset{};
         std::unique_ptr<QCryptographicHash> hash;
+        // Whether a chunk has been taken; until then the transfer may go back to the sender's offset.
+        bool started{false};
     };
+    // Cuts the .part to offset (below next_offset) and hashes the prefix again; reserves the bytes to
+    // write again. Returns the error when it cannot.
+    [[nodiscard]] std::optional<RoomTransferError> goBack(Incoming& incoming, std::uint64_t offset);
     bool fail(std::uint32_t transfer_id, RoomTransferError error);
     bool finish(std::uint32_t transfer_id);
 

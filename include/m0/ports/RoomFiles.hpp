@@ -51,6 +51,9 @@ class RoomFileInbox {
     virtual void status(const std::string& sha256, std::function<void(RoomFileStatus)> done) = 0;
     // An offer the guest asked for; a refused offer ends in onFailed (or nothing when malformed).
     virtual void accept(const RoomFileOffer& offer) = 0;
+    // The offer carries no offset: a transfer continues from where its first chunk starts, even below
+    // the partial file kept for resume (the host answering an older request); a first chunk beyond it,
+    // or any later chunk out of order, fails the transfer.
     virtual void consume(RoomFileChunk chunk) = 0;
     // Stops a transfer (its item left the window, or the link dropped); the partial file stays for resume.
     virtual void abandon(std::uint32_t transfer_id) = 0;

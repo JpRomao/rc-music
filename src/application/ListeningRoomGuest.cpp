@@ -376,7 +376,8 @@ void ListeningRoomGuest::onOffer(const RoomFileOffer& offer) {
         return;
     // A newer offer for a file already being received: the host answered a later request for it and
     // cancelled the earlier transfer, so the one held here would never complete. It is abandoned first,
-    // which also releases its cache reservation before the new one is accepted.
+    // which also releases its cache reservation before the new one is accepted. The new transfer may
+    // start below what the old one wrote; the inbox continues from the host's offset (RoomFileInbox).
     if (held != receiving_.end()) {
         const auto stale = held->first;
         receiving_.erase(held);
