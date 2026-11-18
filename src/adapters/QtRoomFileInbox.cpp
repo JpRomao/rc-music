@@ -33,13 +33,21 @@ QtRoomFileInbox::QtRoomFileInbox(QString config_directory, QObject* parent)
             },
             Qt::QueuedConnection);
     };
-    worker_->receiver.onFailed = [this](std::string sha256, RoomTransferError) {
-        std::erase_if(worker_->transfers, [&](const auto& transfer) { return transfer.second == sha256; });
+    worker_->receiver.onFailed = [this](std::string sha256, const RoomTransferError error) {
+        // The receiver has one transfer per hash: the one recorded for it is the one that ended.
+        std::uint32_t transfer_id = 0;
+        std::erase_if(worker_->transfers, [&](const auto& transfer) {
+            if (transfer.second != sha256)
+                return false;
+            transfer_id = transfer.first;
+            return true;
+        });
+        const auto failure = error == RoomTransferError::Gap ? RoomFileFailure::Gap : RoomFileFailure::Failed;
         QMetaObject::invokeMethod(
             this,
-            [this, sha256 = std::move(sha256)] {
+            [this, sha256 = std::move(sha256), transfer_id, failure] {
                 if (onFailed)
-                    onFailed(sha256);
+                    onFailed(sha256, transfer_id, failure);
             },
             Qt::QueuedConnection);
     };

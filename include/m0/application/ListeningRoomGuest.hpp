@@ -119,11 +119,14 @@ struct ListeningRoomGuestDependencies final {
 // hash, such as YouTube ones, are skipped). For each window hash that is not known complete the guest
 // asks files->status() in window order and, when the answer is not complete and the hash is still in
 // the window, sends RoomFileRequest{sha, resume_offset}. A hash already in the cache is never
-// requested. Only an offer for a hash it requested is accepted; chunks of accepted transfers go to the
-// inbox. The offer (control channel) and the chunks (media channel) are not ordered with each other:
-// while a request is outstanding, chunks of a transfer not offered yet are kept (at most 2 MiB in all)
-// and handed over once its offer is accepted. When the window changes, transfers whose item left it are abandoned (and
-// asked again if it comes back); a failed transfer is not asked again while its item stays in the window. A dropped
+// requested. Only an offer for a hash it requested is accepted, or a newer offer for a hash being
+// received (the host replaced that transfer: the old one is abandoned first); chunks of accepted
+// transfers go to the inbox. The offer (control channel) and the chunks (media channel) are not ordered
+// with each other: while a request is outstanding, chunks of a transfer not offered yet are kept (at
+// most 2 MiB in all) and handed over once its offer is accepted; chunks of a transfer already over are
+// dropped. When the window changes, transfers whose item left it are abandoned (and asked again if it
+// comes back). A transfer that ends in a Gap is asked again at once (from the partial file); one that
+// fails is asked again at most room_file_retries times while its item stays in the window. A dropped
 // link abandons every transfer (the partial files stay, so the next request resumes); leave() and the end of the room
 // abandon them and then purge the cache. When the current item changes, the old one's hash goes to files->markPlayed().
 //
@@ -181,7 +184,7 @@ class ListeningRoomGuest final {
     void onOffer(const RoomFileOffer& offer);
     void onChunk(RoomFileChunk chunk);
     void onFileComplete(const std::string& sha256, const std::filesystem::path& file);
-    void onFileFailed(const std::string& sha256);
+    void onFileFailed(const std::string& sha256, std::uint32_t transfer_id, RoomFileFailure failure);
     void stopFiles(bool purge);
     void changed() const;
 
@@ -217,6 +220,8 @@ class ListeningRoomGuest final {
     std::set<std::string, std::less<>> requested_;
     std::map<std::uint32_t, std::string> receiving_;
     std::set<std::string, std::less<>> failed_;
+    // Failed transfers asked for again in this window entry (at most room_file_retries per file).
+    std::map<std::string, int, std::less<>> retries_;
     // Bumped when the guest stops its transfers: older status answers do nothing.
     std::uint64_t files_epoch_{0};
     std::optional<RoomLyrics> lyrics_;

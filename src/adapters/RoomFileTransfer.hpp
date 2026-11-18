@@ -29,7 +29,8 @@ namespace music_player::m0 {
 // The sender only queues more chunks while the media channel holds less than this.
 inline constexpr std::size_t room_media_buffer_high_water_bytes = 1024 * 1024;
 
-enum class RoomTransferError : std::uint8_t { TooLarge, HashMismatch, OutOfOrder, QuotaExceeded, Io };
+// Gap: the first chunk starts beyond the resume point; the .part stays (see RoomFileReceiver).
+enum class RoomTransferError : std::uint8_t { TooLarge, HashMismatch, OutOfOrder, QuotaExceeded, Io, Gap };
 
 // One sender per link. Transfers are sent one after the other in offer order (the current item
 // first, then the prefetched ones), reading room_file_chunk_bytes at a time: the file is never
@@ -66,7 +67,7 @@ class RoomFileSender {
 // is also called when the offer was well formed (TooLarge, QuotaExceeded, Io). A malformed offer
 // (invalid hash, size 0), a busy transfer_id or hash, or a hash already complete in the cache is
 // only refused. consume() returns false for a chunk of an unknown transfer and for every failure;
-// a failed transfer calls onFailed once and deletes its .part.
+// a failed transfer calls onFailed once and deletes its .part (except on a Gap, which keeps it).
 //
 // Resume: when <sha>.part exists, resumeRequest() gives the offset to ask the sender for (its size
 // rounded down to a whole chunk) and accept() continues from there: it cuts any partial tail and
@@ -74,8 +75,9 @@ class RoomFileSender {
 // the first chunk says where the sender starts: below the resume point (a transfer answering an
 // older request, e.g. after a replacement) the receiver goes back there, cutting the .part and
 // hashing the shorter prefix again, so it always continues from the sender's offset. A first chunk
-// beyond the resume point, or any later chunk out of order, gets OutOfOrder, which deletes the .part,
-// so the next attempt starts from zero.
+// beyond the resume point (the sender answering a request made before the .part was cut back) ends
+// the transfer with Gap and keeps the .part, so asking again resumes from it. Any later chunk out of
+// order gets OutOfOrder, which deletes the .part, so the next attempt starts from zero.
 class RoomFileReceiver {
   public:
     // maximum_file_bytes: the host receiving guest uploads passes maximum_guest_upload_bytes.

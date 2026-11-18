@@ -128,8 +128,10 @@ bool RoomFileReceiver::consume(const RoomFileChunk& chunk) {
         return false;
     auto& incoming = found->second;
     if (chunk.offset != incoming.next_offset) {
-        if (incoming.started || chunk.offset > incoming.next_offset)
+        if (incoming.started)
             return fail(chunk.transfer_id, RoomTransferError::OutOfOrder);
+        if (chunk.offset > incoming.next_offset)
+            return fail(chunk.transfer_id, RoomTransferError::Gap);
         if (const auto error = goBack(incoming, chunk.offset))
             return fail(chunk.transfer_id, *error);
     }
@@ -175,11 +177,8 @@ void RoomFileReceiver::abandon(const std::uint32_t transfer_id) {
 }
 
 std::optional<RoomTransferError> RoomFileReceiver::goBack(Incoming& incoming, const std::uint64_t offset) {
-    const auto again = incoming.next_offset - offset;
-    if (!cache_.reserve(again))
-        return RoomTransferError::QuotaExceeded;
-    // From here fail() releases size - next_offset; the bytes reserved again are counted once offset
-    // becomes next_offset.
+    // The .part is cut first, so the quota check below does not count the bytes cut off twice (on
+    // disk and reserved). Until next_offset becomes offset, fail() releases what is reserved now.
     auto hash = std::make_unique<QCryptographicHash>(QCryptographicHash::Sha256);
     QFile part(*cache_.partialPathFor(incoming.sha256));
     auto prepared = part.open(QIODevice::ReadWrite);
@@ -191,9 +190,11 @@ std::optional<RoomTransferError> RoomFileReceiver::goBack(Incoming& incoming, co
     }
     prepared = prepared && part.resize(static_cast<qint64>(offset));
     part.close();
-    incoming.next_offset = offset;
     if (!prepared)
         return RoomTransferError::Io;
+    if (!cache_.reserve(incoming.next_offset - offset))
+        return RoomTransferError::QuotaExceeded;
+    incoming.next_offset = offset;
     incoming.hash = std::move(hash);
     return std::nullopt;
 }
@@ -204,7 +205,9 @@ bool RoomFileReceiver::fail(const std::uint32_t transfer_id, const RoomTransferE
         return false;
     auto& incoming = node.mapped();
     cache_.release(incoming.size_bytes - incoming.next_offset);
-    QFile::remove(*cache_.partialPathFor(incoming.sha256));
+    // A Gap keeps what was received: asking again from it resumes.
+    if (error != RoomTransferError::Gap)
+        QFile::remove(*cache_.partialPathFor(incoming.sha256));
     if (onFailed)
         onFailed(incoming.sha256, error);
     return false;

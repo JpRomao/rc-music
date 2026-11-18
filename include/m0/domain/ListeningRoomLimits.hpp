@@ -16,6 +16,9 @@ inline constexpr std::uint64_t maximum_guest_upload_bytes = 50ull * 1024 * 1024;
 inline constexpr std::uint64_t room_cache_quota_bytes = 1024ull * 1024 * 1024;
 inline constexpr std::size_t maximum_room_lyrics_bytes = 64 * 1024;
 inline constexpr std::size_t room_prefetch_items = 3;
+// A guest asks again for a file whose transfer failed at most this many times while its item stays in
+// the window (a new window entry starts over); then the item stays unavailable.
+inline constexpr int room_file_retries = 2;
 inline constexpr std::size_t maximum_nickname_code_points = 32;
 inline constexpr std::size_t maximum_custom_avatar_input_bytes = 2 * 1024 * 1024;
 inline constexpr std::uint32_t avatar_pixels = 256;

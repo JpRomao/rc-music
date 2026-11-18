@@ -67,9 +67,9 @@ ListeningRoomGuest::ListeningRoomGuest(ListeningRoomGuestDependencies dependenci
             if (const auto self = alive.lock())
                 self->guest->onFileComplete(sha256, file);
         };
-        files_->onFailed = [alive](std::string sha256) {
+        files_->onFailed = [alive](std::string sha256, std::uint32_t transfer_id, RoomFileFailure failure) {
             if (const auto self = alive.lock())
-                self->guest->onFileFailed(sha256);
+                self->guest->onFileFailed(sha256, transfer_id, failure);
         };
     }
 }
@@ -322,6 +322,7 @@ void ListeningRoomGuest::updateFiles() {
     std::erase_if(requested_, [&](const std::string& sha) { return !inWindow(sha); });
     std::erase_if(checking_, [&](const std::string& sha) { return !inWindow(sha); });
     std::erase_if(failed_, [&](const std::string& sha) { return !inWindow(sha); });
+    std::erase_if(retries_, [&](const auto& retry) { return !inWindow(retry.first); });
     if (requested_.empty()) {
         early_chunks_.clear();
         early_bytes_ = 0;
@@ -416,10 +417,25 @@ void ListeningRoomGuest::onFileComplete(const std::string& sha256, const std::fi
     changed();
 }
 
-void ListeningRoomGuest::onFileFailed(const std::string& sha256) {
-    if (std::erase_if(receiving_, [&](const auto& transfer) { return transfer.second == sha256; }) == 0)
+void ListeningRoomGuest::onFileFailed(const std::string& sha256, const std::uint32_t transfer_id,
+                                      const RoomFileFailure failure) {
+    // Only the live transfer: a late answer for one already replaced or abandoned changes nothing.
+    const auto found = receiving_.find(transfer_id);
+    if (found == receiving_.end() || found->second != sha256)
         return;
-    // Not asked again while its item stays in the window.
+    receiving_.erase(found);
+    // A Gap is a race, not a fault: the partial file stays and asking again (status() first) resumes
+    // from it, so the host replaces the transfer from the right offset.
+    if (failure == RoomFileFailure::Gap) {
+        updateFiles();
+        return;
+    }
+    // Anything else may be transient: asked again a few times while its item stays in the window.
+    if (auto& retries = retries_[sha256]; retries < room_file_retries) {
+        ++retries;
+        updateFiles();
+        return;
+    }
     failed_.insert(sha256);
 }
 
@@ -430,6 +446,7 @@ void ListeningRoomGuest::stopFiles(const bool purge) {
     checking_.clear();
     requested_.clear();
     failed_.clear();
+    retries_.clear();
     early_chunks_.clear();
     early_bytes_ = 0;
     last_offer_id_ = 0;

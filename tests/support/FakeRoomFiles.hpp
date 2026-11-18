@@ -95,6 +95,12 @@ class FakeRoomFileInbox final : public RoomFileInbox {
         if (onComplete)
             onComplete(sha256, files[sha256]);
     }
+    // The receiver ended transfer_id without the file.
+    void fail(const std::string& sha256, const std::uint32_t transfer_id,
+              const RoomFileFailure failure = RoomFileFailure::Failed) {
+        if (onFailed)
+            onFailed(sha256, transfer_id, failure);
+    }
     [[nodiscard]] RoomFileStatus lookup(const std::string& sha256) const {
         if (const auto found = files.find(sha256); found != files.end())
             return {true, 0, found->second};

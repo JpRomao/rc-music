@@ -41,6 +41,12 @@ struct RoomFileStatus final {
     bool operator==(const RoomFileStatus&) const = default;
 };
 
+// Why a transfer ended without its file. Gap: the host streams from beyond the partial file kept for
+// resume (it answered a request made before that file was cut back); the partial file stays, and
+// asking again with the offset status() gives now resumes it. Failed: anything else (hash mismatch,
+// I/O, quota, size, a chunk out of order); the partial file is gone.
+enum class RoomFileFailure : std::uint8_t { Failed, Gap };
+
 // Guest side: the disposable room cache and its receiver. In the app the file work runs on a worker
 // thread; every call returns at once and every callback comes back on the guest's thread, in the
 // order of the calls.
@@ -53,7 +59,7 @@ class RoomFileInbox {
     virtual void accept(const RoomFileOffer& offer) = 0;
     // The offer carries no offset: a transfer continues from where its first chunk starts, even below
     // the partial file kept for resume (the host answering an older request); a first chunk beyond it,
-    // or any later chunk out of order, fails the transfer.
+    // or any later chunk out of order, ends the transfer (Gap and Failed respectively).
     virtual void consume(RoomFileChunk chunk) = 0;
     // Stops a transfer (its item left the window, or the link dropped); the partial file stays for resume.
     virtual void abandon(std::uint32_t transfer_id) = 0;
@@ -63,7 +69,9 @@ class RoomFileInbox {
     virtual void purge() = 0;
 
     std::function<void(std::string /*sha256*/, std::filesystem::path /*file*/)> onComplete;
-    std::function<void(std::string /*sha256*/)> onFailed;
+    // transfer_id is the accepted offer's: a late answer for a transfer the guest already replaced is
+    // told apart from the live one.
+    std::function<void(std::string /*sha256*/, std::uint32_t /*transfer_id*/, RoomFileFailure)> onFailed;
 };
 
 } // namespace music_player::m0

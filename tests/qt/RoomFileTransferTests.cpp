@@ -242,17 +242,50 @@ class RoomFileTransferTests final : public QObject {
         QTemporaryDir config;
         QVERIFY(config.isValid());
         Room room(config.path());
-        const auto original = readAll(fixture("wav-pcm-mono.wav"));
+        const auto wav = readAll(fixture("wav-pcm-mono.wav"));
+        const auto original = wav + wav + wav;
         const auto sha = sha256(original);
 
         QVERIFY(room.receiver.accept({sha, static_cast<std::uint64_t>(original.size()), 4}));
-        QVERIFY(!room.receiver.consume(chunkOf(original, 4, room_file_chunk_bytes)));
+        QVERIFY(room.receiver.consume(chunkOf(original, 4, 0)));
+        QVERIFY(!room.receiver.consume(chunkOf(original, 4, 2 * room_file_chunk_bytes)));
         QCOMPARE(room.failed.size(), std::size_t{1});
         QCOMPARE(room.failed.front(), std::make_pair(sha, RoomTransferError::OutOfOrder));
         QVERIFY(!QFileInfo::exists(*room.cache.partialPathFor(sha)));
         // The transfer is over: a later chunk is just ignored.
-        QVERIFY(!room.receiver.consume(chunkOf(original, 4, 0)));
+        QVERIFY(!room.receiver.consume(chunkOf(original, 4, room_file_chunk_bytes)));
         QCOMPARE(room.failed.size(), std::size_t{1});
+    }
+
+    // A first chunk beyond the resume point (the host answering a request made before the .part was cut
+    // back) is a Gap: the transfer ends but the .part stays, and asking again resumes from it.
+    void aFirstChunkBeyondTheResumePointIsAGapThatKeepsThePart() {
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        Room room(config.path());
+        const auto wav = readAll(fixture("wav-pcm-mono.wav"));
+        const auto original = wav + wav + wav;
+        const auto sha = sha256(original);
+        const auto size = static_cast<std::uint64_t>(original.size());
+
+        QVERIFY(room.receiver.accept({sha, size, 1}));
+        QVERIFY(room.receiver.consume(chunkOf(original, 1, 0)));
+        QVERIFY(room.receiver.consume(chunkOf(original, 1, room_file_chunk_bytes)));
+        room.receiver.abandon(1);
+        QVERIFY(room.receiver.accept({sha, size, 2})); // resumes at 2 chunks
+        QVERIFY(!room.receiver.consume(chunkOf(original, 2, 3 * room_file_chunk_bytes)));
+        QCOMPARE(room.failed.size(), std::size_t{1});
+        QCOMPARE(room.failed.front(), std::make_pair(sha, RoomTransferError::Gap));
+        QCOMPARE(QFileInfo(*room.cache.partialPathFor(sha)).size(), qint64{2 * room_file_chunk_bytes});
+        QCOMPARE(room.receiver.resumeRequest(sha),
+                 (std::optional<RoomFileRequest>{RoomFileRequest{sha, 2 * room_file_chunk_bytes}}));
+
+        QVERIFY(room.receiver.accept({sha, size, 3}));
+        for (auto at = std::uint64_t{2 * room_file_chunk_bytes}; at < size; at += room_file_chunk_bytes)
+            QVERIFY(room.receiver.consume(chunkOf(original, 3, at)));
+        QCOMPARE(room.completed.size(), std::size_t{1});
+        QCOMPARE(readAll(room.completed.front().second), original);
+        QVERIFY(room.cache.reserve(room_cache_quota_bytes - size)); // nothing else reserved
     }
 
     // A replacement transfer (the host answering an older request) may start below where the .part
@@ -531,6 +564,62 @@ class RoomFileTransferTests final : public QObject {
             const auto file = room.guest->localFile(sha);
             QVERIFY2(file.has_value(), "the replaced transfer never completed");
             QCOMPARE(readAll(QString::fromStdU16String(file->u16string())), bytes);
+        }
+    }
+
+    // S8.2 review, round 3: two quick drop-and-return cycles make the host answer a request made before
+    // the .part was cut back. The transfer answering the newest request then starts beyond the .part
+    // (a Gap); the guest asks again from what is kept and the file completes.
+    void aTransferStartingBeyondTheCutBackPartStillCompletes() {
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        QByteArray bytes(static_cast<qsizetype>(5 * room_file_chunk_bytes + 777), Qt::Uninitialized);
+        for (qsizetype index = 0; index < bytes.size(); ++index)
+            bytes[index] = static_cast<char>((index * 17 + 3) % 253);
+        const auto sha = sha256(bytes);
+        const auto size = static_cast<std::uint64_t>(bytes.size());
+        const auto pump = [](GuestOverRealInbox& room) {
+            room.inbox.waitForWorker();
+            QCoreApplication::processEvents();
+        };
+        {
+            GuestOverRealInbox room(config.path());
+            QCOMPARE(room.guest->state(), GuestRoomState::Joined);
+            // 1. R0 at 0.
+            room.queue(1, sha, size, 11);
+            QVERIFY(room.waitForRequests(1));
+            // 2. Out and back before R0 is served: R_Y at 0.
+            room.queue(2, sha, size, std::nullopt);
+            room.queue(3, sha, size, 12);
+            QVERIFY(room.waitForRequests(2));
+            // 3. The host serves R0: three chunks are written.
+            room.serve(bytes, sha, room.requests[0].offset, room.requests[0].offset + 3 * room_file_chunk_bytes);
+            pump(room);
+            // 4. Out (the guest abandons T0, the .part stays at three chunks) and back: R_X at three chunks.
+            room.queue(4, sha, size, std::nullopt);
+            room.queue(5, sha, size, 13);
+            QVERIFY(room.waitForRequests(3));
+            QCOMPARE(room.requests[2].offset, std::uint64_t{3 * room_file_chunk_bytes});
+            // 5. The host serves R_Y from 0: the guest goes back to 0 and one chunk is written.
+            room.serve(bytes, sha, room.requests[1].offset, room.requests[1].offset + room_file_chunk_bytes);
+            pump(room);
+            // 6. The host replaces T_Y with the answer to R_X, from three chunks: beyond the .part.
+            room.serve(bytes, sha, room.requests[2].offset, size);
+            // 7. Like the host, every later request gets a new offer streamed from its offset.
+            std::size_t answered = 3;
+            QDeadlineTimer deadline(5000);
+            while (!room.guest->localFile(sha) && !deadline.hasExpired()) {
+                pump(room);
+                if (room.requests.size() > answered) {
+                    answered = room.requests.size();
+                    room.serve(bytes, sha, room.requests.back().offset, size);
+                }
+            }
+            const auto file = room.guest->localFile(sha);
+            QVERIFY2(file.has_value(), "the transfer that started beyond the .part never completed");
+            QCOMPARE(readAll(QString::fromStdU16String(file->u16string())), bytes);
+            // It resumed from what the .part kept (one chunk), not from scratch.
+            QCOMPARE(room.requests.back().offset, std::uint64_t{room_file_chunk_bytes});
         }
     }
 };

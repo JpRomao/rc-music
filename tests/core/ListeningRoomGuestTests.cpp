@@ -906,4 +906,76 @@ TEST_CASE("room guest: a newer offer for a file being received replaces the stal
     f.send(RoomFileOffer{hashOf('b'), 1000, 32});
     REQUIRE(f.inbox.consumed == std::vector<RoomFileChunk>{{31, 0, {1}}, {32, 0, {2}}});
 }
+
+namespace {
+std::size_t requestsFor(const GuestFixture& f, const char letter) {
+    const auto hashes = requestedHashes(f);
+    return static_cast<std::size_t>(std::count(hashes.begin(), hashes.end(), hashOf(letter)));
+}
+} // namespace
+
+TEST_CASE("room guest: a failed transfer is asked for again at most room_file_retries times per window entry",
+          "[core][listening-room][room-guest][room-files]") {
+    static_assert(room_file_retries == 2);
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "a"));
+    REQUIRE(requestsFor(f, 'a') == 1);
+    // A failure that does not go away (the host's file does not match its hash, say).
+    std::uint32_t id = 5;
+    for (int round = 0; round < room_file_retries + 2; ++round) {
+        f.send(RoomFileOffer{hashOf('a'), 1000, id});
+        f.inbox.fail(hashOf('a'), id++);
+    }
+    REQUIRE(requestsFor(f, 'a') == 1 + static_cast<std::size_t>(room_file_retries));
+    REQUIRE(f.inbox.accepted.size() == 1 + static_cast<std::size_t>(room_file_retries));
+
+    // Out of the window and back: a new entry, new tries.
+    auto without_a = roomQueue(2, "b");
+    without_a.snapshot.queue[0].id = 12;
+    without_a.snapshot.playback.current_item = 12;
+    f.send(without_a);
+    f.send(roomQueue(3, "a"));
+    REQUIRE(requestsFor(f, 'a') == 2 + static_cast<std::size_t>(room_file_retries));
+}
+
+TEST_CASE("room guest: a gap asks again at once from the partial file without using a retry",
+          "[core][listening-room][room-guest][room-files]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "a"));
+    std::uint32_t id = 5;
+    for (int round = 0; round < room_file_retries + 1; ++round) {
+        f.send(RoomFileOffer{hashOf('a'), 1000, id});
+        f.inbox.partial[hashOf('a')] = 65536; // the receiver kept the partial file
+        f.inbox.fail(hashOf('a'), id++, RoomFileFailure::Gap);
+    }
+    REQUIRE(requestsFor(f, 'a') == 2 + static_cast<std::size_t>(room_file_retries));
+    REQUIRE(f.received<RoomFileRequest>().back() == RoomFileRequest{hashOf('a'), 65536});
+    // The retries for real failures are all still there.
+    for (int round = 0; round < room_file_retries; ++round) {
+        f.send(RoomFileOffer{hashOf('a'), 1000, id});
+        f.inbox.fail(hashOf('a'), id++);
+    }
+    REQUIRE(requestsFor(f, 'a') == 2 + 2 * static_cast<std::size_t>(room_file_retries));
+}
+
+TEST_CASE("room guest: a late failure of a replaced transfer leaves the live one alone",
+          "[core][listening-room][room-guest][room-files]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "a"));
+    f.send(roomQueue(2, "a")); // same window: nothing asked again
+    f.send(RoomFileOffer{hashOf('a'), 1000, 5});
+    f.send(RoomFileOffer{hashOf('a'), 1000, 6}); // replaces 5
+    f.inbox.fail(hashOf('a'), 5);                // the answer for 5 comes late
+    REQUIRE(requestsFor(f, 'a') == 1);
+    REQUIRE(f.host_side->sendMedia({6, 0, {1}}));
+    REQUIRE(f.inbox.consumed == std::vector<RoomFileChunk>{{6, 0, {1}}});
+    f.inbox.complete(hashOf('a'));
+    REQUIRE(f.guest->localFile(hashOf('a')));
+}
 } // namespace music_player::m0::test

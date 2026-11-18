@@ -185,10 +185,10 @@ class RecordingInbox final : public RoomFileInbox {
             if (onComplete)
                 onComplete(std::move(sha256), std::move(file));
         };
-        inner.onFailed = [this](std::string sha256) {
+        inner.onFailed = [this](std::string sha256, const std::uint32_t transfer_id, const RoomFileFailure failure) {
             failed.push_back(sha256);
             if (onFailed)
-                onFailed(std::move(sha256));
+                onFailed(std::move(sha256), transfer_id, failure);
         };
     }
     void status(const std::string& sha256, std::function<void(RoomFileStatus)> done) override {
