@@ -29,7 +29,7 @@ O código existe e passa nos testes locais. **Ainda não houve deploy**: criar a
 - **16 KiB por mensagem**, contados em bytes UTF-8. Uma mensagem maior fecha o socket com 1009.
 - **20 mensagens por segundo por socket.** A 21ª no mesmo segundo é descartada. O contador fica só na memória do objeto. Se o objeto hibernar, a contagem recomeça, o que no máximo libera uma janela nova.
 - **11 sockets por sala:** até 10 convidados e uma vaga reservada ao host. O 11º convidado recebe 429 antes do upgrade, mesmo sem host na sala, para que o host sempre consiga voltar.
-- **10 minutos sem host:** o prazo começa quando o host cai ou quando o primeiro convidado entra numa sala sem host. Ao fim, um alarme fecha todos os sockets com 1001 e apaga o armazenamento, inclusive o hash do token. Um host que volta antes disso cancela o alarme. Depois de apagada, a sala aceita um novo token. A proteção do conteúdo continua sendo a cifragem com o segredo do convite.
+- **10 minutos sem host:** o prazo começa quando o host cai ou quando o primeiro convidado entra numa sala sem host. Ao fim, um alarme fecha todos os sockets com 1001 e apaga o armazenamento, inclusive o hash do token. Enquanto houver algo no armazenamento, há sempre um alarme pendente. Com o host conectado, ou de volta antes do prazo, o alarme não apaga nada e só se rearma para dali a 10 minutos. Se o objeto reiniciar com o host conectado (deploy, despejo do runtime, troca de máquina), os sockets caem sem eventos de saída. Mesmo assim, o alarme seguinte apaga tudo, no pior caso até 20 minutos depois da queda. Depois de apagada, a sala aceita um novo token. A proteção do conteúdo continua sendo a cifragem com o segredo do convite.
 
 ## Privacidade
 
@@ -84,3 +84,5 @@ O npm marca `@cloudflare/vitest-pool-workers` como renomeado para `@cloudflare/v
 ## Evidência
 
 S5.1, em 2026-11-17: Red **0/26**, com stubs que respondem 501. Depois, Green **26/26** em `npx vitest run`, repetido três vezes, e `npx tsc --noEmit` limpo. Um teste de substituição do host pelo mesmo token entrou depois do Green e passou de primeira. O fechamento ficou em **27/27**, depois de um `npm ci --ignore-scripts` limpo. Os testes são locais no workerd. Não houve deploy nem teste contra a Cloudflare real, e nenhum cliente C++ foi conectado.
+
+Correção 1 da S5.1: o alarme fica sempre armado enquanto houver estado. Red **26/29**: os 3 testes novos falharam, inclusive o reinício do objeto com `evictDurableObject(..., { webSockets: "close" })`, que deixava o estado sem alarme. Green **29/29**, duas vezes, e `npx tsc --noEmit` limpo.

@@ -1,4 +1,4 @@
-import { SELF, env, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
+import { SELF, env, evictDurableObject, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 const ORIGIN = "https://sala.example";
@@ -98,6 +98,9 @@ function roomStub(roomId: string): DurableObjectStub {
 
 const alarmOf = (roomId: string): Promise<number | null> =>
   runInDurableObject(roomStub(roomId), (_instance, state) => state.storage.getAlarm());
+
+const storageOf = (roomId: string): Promise<[string, unknown][]> =>
+  runInDurableObject(roomStub(roomId), async (_instance, state) => [...(await state.storage.list()).entries()]);
 
 async function waitForAlarm(roomId: string): Promise<number> {
   for (let attempt = 0; attempt < 50; attempt++) {
@@ -374,7 +377,7 @@ describe("alarme de 10 minutos sem host", () => {
     expect(await alarmOf(roomId)).toBe(first);
   });
 
-  it("é cancelado quando o host volta antes do prazo", async () => {
+  it("com o host de volta, rearma o alarme e não apaga nada", async () => {
     const roomId = newRoomId();
     const token = newHostToken();
     const host = await openHost(roomId, token);
@@ -384,11 +387,42 @@ describe("alarme de 10 minutos sem host", () => {
     await waitForAlarm(roomId);
 
     const back = await openHost(roomId, token);
-    expect(await alarmOf(roomId)).toBeNull();
-    expect(await runDurableObjectAlarm(roomStub(roomId))).toBe(false);
+    const storedBefore = await storageOf(roomId);
+    const beforeAlarm = Date.now();
+    expect(await runDurableObjectAlarm(roomStub(roomId))).toBe(true);
 
+    expect(await storageOf(roomId)).toEqual(storedBefore);
+    expect(await alarmOf(roomId)).toBeGreaterThanOrEqual(beforeAlarm + TEN_MINUTES_MS - 1000);
     const peer = await introduce(back, guest);
     expect(peer).toEqual(expect.any(Number));
+  });
+
+  it("fica armado enquanto o host está conectado e só se rearma", async () => {
+    const roomId = newRoomId();
+    const before = Date.now();
+    const host = await openHost(roomId, newHostToken());
+    const guest = await openGuest(roomId);
+    const armed = await alarmOf(roomId);
+    expect(armed).toBeGreaterThanOrEqual(before + TEN_MINUTES_MS - 1000);
+
+    const storedBefore = await storageOf(roomId);
+    expect(storedBefore.length).toBeGreaterThan(0);
+    expect(await runDurableObjectAlarm(roomStub(roomId))).toBe(true);
+    expect(await storageOf(roomId)).toEqual(storedBefore);
+    expect(await alarmOf(roomId)).not.toBeNull();
+
+    await introduce(host, guest);
+    await guest.expectSilence(0);
+  });
+
+  it("apaga o estado mesmo quando o objeto reinicia sem eventos de saída", async () => {
+    const roomId = newRoomId();
+    await openHost(roomId, newHostToken());
+    await openGuest(roomId);
+    await evictDurableObject(roomStub(roomId), { webSockets: "close" });
+
+    expect(await runDurableObjectAlarm(roomStub(roomId))).toBe(true);
+    expect(await storageOf(roomId)).toEqual([]);
   });
 });
 

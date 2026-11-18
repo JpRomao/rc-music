@@ -10,7 +10,12 @@
 // - 11 sockets: até 10 convidados e uma vaga reservada ao host. O 11º convidado é recusado com
 //   429 antes do upgrade, haja host ou não, e um host com o mesmo token substitui o anterior;
 // - 10 minutos sem host (depois que o host cai, ou depois que o primeiro convidado entra numa sala
-//   sem host): o alarme fecha todos os sockets e apaga o armazenamento. A volta do host cancela.
+//   sem host): o alarme fecha todos os sockets e apaga o armazenamento.
+//
+// Enquanto houver algo no armazenamento, há sempre um alarme pendente. Com o host conectado, o
+// alarme só se rearma para daqui a 10 minutos. Assim, se o objeto reiniciar com o host conectado
+// (deploy, despejo, troca de máquina), os sockets caem sem eventos de saída, e o alarme seguinte
+// ainda apaga tudo: no pior caso, até 20 minutos depois da queda.
 //
 // Usa a API de hibernação: o papel, o peer e um id de conexão ficam em `serializeAttachment`.
 
@@ -160,7 +165,10 @@ export class RoomRelay extends DurableObject<Env> {
   }
 
   override async alarm(): Promise<void> {
-    if (this.liveHosts().length > 0) return;
+    if (this.liveHosts().length > 0) {
+      await this.ctx.storage.setAlarm(Date.now() + HOST_ABSENCE_MS);
+      return;
+    }
     for (const ws of this.ctx.getWebSockets()) closeQuietly(ws, CLOSE_ROOM_CLOSED, "sala encerrada");
     this.rates.clear();
     await this.ctx.storage.deleteAll();
@@ -176,7 +184,7 @@ export class RoomRelay extends DurableObject<Env> {
     const previous = this.ctx.getWebSockets(HOST_TAG);
     const client = this.accept([HOST_TAG], { role: "host", connection: crypto.randomUUID() });
     for (const old of previous) closeQuietly(old, CLOSE_HOST_REPLACED, "host substituído");
-    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.setAlarm(Date.now() + HOST_ABSENCE_MS);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -190,8 +198,8 @@ export class RoomRelay extends DurableObject<Env> {
 
     if (this.liveHosts().length === 0) {
       sendQuietly(this.ctx.getWebSockets(peerTag(peer)), JSON.stringify({ event: "host-offline" }));
-      await this.scheduleClosingIfIdle();
     }
+    await this.ensureAlarm();
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -219,7 +227,8 @@ export class RoomRelay extends DurableObject<Env> {
     await this.ctx.storage.setAlarm(Date.now() + HOST_ABSENCE_MS);
   }
 
-  private async scheduleClosingIfIdle(): Promise<void> {
+  /** Arma o alarme se não houver um; nunca o adia. */
+  private async ensureAlarm(): Promise<void> {
     if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + HOST_ABSENCE_MS);
   }
 
