@@ -93,7 +93,17 @@ Depois, mude apelido e avatar em **Configurações → Perfil**. **Usar imagem p
 
 ## Ouvir junto
 
-A página **Ouvir junto** abre uma sala para ouvir a mesma fila com outras pessoas. **Criar sala** pede quantas pessoas podem entrar (de 1 a 10; padrão 5) e quanto o convite dura: **Termina quando eu fechar o app** (padrão) ou **Vale até eu revogar**. Depois, copie o link de convite e mande para quem você quiser. Cada pedido para entrar aparece com **Aceitar** e **Recusar**; com o app em segundo plano, o pedido também vira uma notificação do sistema. **Entrar com link** usa o convite que alguém mandou para você. Durante a sala, a barra do player mostra quem é o anfitrião e quantas pessoas estão na sala. Na primeira sala, o app avisa uma vez que, como em chamadas de voz, os participantes ficam sabendo o endereço IP uns dos outros. Um build sem o servidor de apresentação da sala mostra "Sala indisponível neste build".
+A página **Ouvir junto** abre uma sala para ouvir a mesma fila com outras pessoas. Nesta primeira versão, quem entra vê o anfitrião e quem mais está na sala; tocar no próprio app as músicas da fila do anfitrião ainda não está disponível. Abrir o app não conecta a nada: a rede só é usada enquanto você está numa sala. Um build sem o servidor de apresentação da sala mostra "Sala indisponível neste build".
+
+Na primeira sala, criando ou entrando, o app avisa uma vez que, como em chamadas de voz, os participantes ficam sabendo o endereço IP uns dos outros. Só convide quem você conhece.
+
+- **Abrir a sala:** **Criar sala** pede quantas pessoas podem entrar (de 1 a 10; padrão 5) e quanto o convite dura: **Termina quando eu fechar o app** (padrão) ou **Vale até eu revogar**. **Abrir sala** abre a sala com a sua fila atual. Você e quem ainda espera aprovação não contam na lotação.
+- **Convidar:** **Copiar link** copia o convite; mande o link para quem você quiser. Um convite **Vale até eu revogar** continua o mesmo quando você abre a sala de novo com essa opção, mas a sala nunca reabre sozinha.
+- **Aprovar:** cada pessoa nova aparece em **Pedidos para entrar**, com **Aceitar** e **Recusar**; com o app em segundo plano, o pedido também vira uma notificação do sistema. Quem espera não recebe nada da sala. Quem você aceitou uma vez entra direto nas próximas salas.
+- **Entrar:** **Entrar com link** pede o convite que alguém mandou para você. Enquanto o anfitrião não aceita, a página mostra "Esperando o anfitrião aceitar seu pedido…". Ao entrar, o app guarda a sua fila e a posição, e as devolve quando você sai ou a sala acaba. Durante a sala, a barra do player mostra quem é o anfitrião e quantas pessoas estão na sala.
+- **Sala cheia:** quem já foi aceito e chega com a sala lotada vê "A sala está cheia". Uma pessoa nova fica esperando, e o anfitrião só consegue aceitá-la quando houver lugar.
+- **Sair e encerrar:** **Sair da sala** tira você na hora e libera o seu lugar. **Fechar sala** encerra a sala para todos, que veem "O anfitrião encerrou a sala.". **Revogar convite**, que aparece nas salas **Vale até eu revogar**, encerra a sala e invalida o link: quem tentar usá-lo depois vê "O anfitrião não está com a sala aberta agora.", e a próxima sala terá um link novo.
+- **Conexão:** se a sua conexão com a sala cair, o app tenta voltar sozinho por 30 s ("A conexão caiu. Tentando voltar à sala…") e, se não conseguir, mostra o motivo; use **Entrar com link** para tentar de novo. Se o anfitrião fechar o app, a sala acaba para todos, que veem "O anfitrião encerrou a sala.".
 
 ## Preferências, bandeja e restauração
 
