@@ -16,35 +16,43 @@ namespace music_player::m0 {
 [[nodiscard]] QByteArray hkdfSha256(QByteArrayView input_key, QByteArrayView salt, QByteArrayView info,
                                     qsizetype length);
 
-// End-to-end cipher of the signaling envelopes (the "data" of S5's {to, data}). Both keys come
+// End-to-end cipher of the signaling envelopes (the "data" of S5's {to, data}). The key comes
 // from the invite secret with HKDF-SHA256 and an EMPTY salt:
-//   signaling key = HKDF(secret, info "rc-music room signaling v1", 32 bytes), AES-256-GCM;
-//   host token    = HKDF(secret, info "rc-music room host v1", 32 bytes).
+//   signaling key = HKDF(secret, info "rc-music room signaling v1", 32 bytes), AES-256-GCM.
 // seal output: 12-byte random nonce | ciphertext | 16-byte tag, AAD = room_id. The relay sees only
-// opaque bytes. The signaling key is wiped on destruction; nothing here is logged.
+// opaque bytes. Fails closed: if the key derivation fails, isValid() is false, seal() returns an
+// empty array and open() returns nullopt (never a fallback key). The relay's host token is NOT
+// derived here: every guest holds the invite secret (see roomHostToken in WindowsRoomIdentity.hpp).
+// The signaling key is wiped on destruction; nothing here is logged.
 class WindowsRoomEnvelopeCipher final {
   public:
     static constexpr qsizetype nonce_size = 12;
     static constexpr qsizetype tag_size = 16;
 
+    using KeyDerivation = QByteArray (*)(QByteArrayView input_key, QByteArrayView salt, QByteArrayView info,
+                                         qsizetype length);
+
     explicit WindowsRoomEnvelopeCipher(std::span<const std::uint8_t, 16> secret,
                                        std::span<const std::uint8_t, 16> room_id);
+    // Test seam: the same cipher with another HKDF (production passes hkdfSha256).
+    WindowsRoomEnvelopeCipher(std::span<const std::uint8_t, 16> secret, std::span<const std::uint8_t, 16> room_id,
+                              KeyDerivation derive);
     ~WindowsRoomEnvelopeCipher();
     WindowsRoomEnvelopeCipher(const WindowsRoomEnvelopeCipher&) = default;
     WindowsRoomEnvelopeCipher& operator=(const WindowsRoomEnvelopeCipher&) = default;
 
-    // Empty only if the system RNG or BCrypt fails.
+    // false when the key derivation failed; the cipher then refuses to seal or open.
+    [[nodiscard]] bool isValid() const;
+    // Empty when the cipher is not valid or the system RNG or BCrypt fails.
     [[nodiscard]] QByteArray seal(QByteArrayView plain) const;
-    // nullopt for input shorter than nonce + tag, a wrong secret or room_id, or any altered byte.
+    // nullopt for an invalid cipher, input shorter than nonce + tag, a wrong secret or room_id, or
+    // any altered byte.
     [[nodiscard]] std::optional<QByteArray> open(QByteArrayView sealed) const;
-    // The 32-byte host token as the 43-char unpadded base64url text that the S5 relay
-    // (services/room-signaling) requires in X-Room-Host-Token.
-    [[nodiscard]] QByteArray hostToken() const;
 
   private:
     std::array<std::uint8_t, 32> key_{};
     std::array<std::uint8_t, 16> room_id_{};
-    QByteArray host_token_;
+    bool valid_{};
 };
 
 } // namespace music_player::m0

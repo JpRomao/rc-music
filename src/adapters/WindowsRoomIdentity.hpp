@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 
 namespace music_player::m0 {
@@ -29,6 +30,8 @@ struct RoomIdentity final {
     // keyPemPass: base64url (no padding, 43 ASCII chars) of the 32 passphrase bytes. A secret:
     // keep it in memory only and never log it.
     std::string key_passphrase;
+    // The same passphrase as its 32 raw bytes, the device secret behind roomHostToken. Never log it.
+    std::array<std::uint8_t, 32> passphrase{};
 };
 
 // Loads the identity, or creates it when room-identity-cert.pem is absent (a key or passphrase
@@ -37,5 +40,12 @@ struct RoomIdentity final {
 // DPAPI failure) returns nullopt and leaves every file untouched; so does a certificate whose key
 // or passphrase file is missing. Never logs secrets.
 [[nodiscard]] std::optional<RoomIdentity> loadOrCreateRoomIdentity(const QString& config_directory);
+
+// X-Room-Host-Token of the S5 relay for one room: the 43-char unpadded base64url of
+// HKDF-SHA256(ikm = identity.passphrase, salt = room_id, info "rc-music room host v1", 32 bytes).
+// Only this device can compute it (the passphrase lives under DPAPI); it is never derived from the
+// invite secret, which every guest holds and could use to replace the host on the relay. Empty on
+// any failure, including an identity without a passphrase (fail closed).
+[[nodiscard]] QByteArray roomHostToken(const RoomIdentity& identity, std::span<const std::uint8_t, 16> room_id);
 
 } // namespace music_player::m0

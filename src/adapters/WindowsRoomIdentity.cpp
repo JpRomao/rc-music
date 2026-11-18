@@ -1,5 +1,7 @@
 #include "adapters/WindowsRoomIdentity.hpp"
 
+#include "adapters/WindowsRoomEnvelopeCipher.hpp"
+
 #include <QByteArray>
 #include <QByteArrayView>
 #include <QDir>
@@ -38,6 +40,7 @@ constexpr quint32 pbkdf2_iterations = 10000;
 // Mbed TLS refuses more (MBEDTLS_PK_DECRYPT_MAX_ITERATIONS in 3.6.8).
 constexpr quint32 maximum_iterations = 10000000;
 constexpr char dpapi_entropy[] = "rc-music room identity v1";
+constexpr char host_token_info[] = "rc-music room host v1";
 
 // DER contents of the object identifiers in use.
 const QByteArray oid_ec_public_key = QByteArray::fromHex("2a8648ce3d0201");
@@ -554,6 +557,7 @@ std::optional<RoomIdentity> load(const Paths& paths) {
     identity.certificate_file = QDir::toNativeSeparators(QFileInfo(paths.certificate).absoluteFilePath());
     identity.key_file = QDir::toNativeSeparators(QFileInfo(paths.key).absoluteFilePath());
     identity.key_passphrase = text.toStdString();
+    std::copy(passphrase->cbegin(), passphrase->cend(), reinterpret_cast<char*>(identity.passphrase.data()));
     return identity;
 }
 
@@ -594,6 +598,19 @@ std::optional<RoomIdentity> loadOrCreateRoomIdentity(const QString& config_direc
     if (!QFileInfo::exists(paths.certificate) && !create(paths))
         return std::nullopt;
     return load(paths);
+}
+
+QByteArray roomHostToken(const RoomIdentity& identity, std::span<const std::uint8_t, 16> room_id) {
+    if (std::all_of(identity.passphrase.cbegin(), identity.passphrase.cend(), [](auto byte) { return byte == 0; }))
+        return {};
+    auto token = hkdfSha256(
+        QByteArrayView(reinterpret_cast<const char*>(identity.passphrase.data()), passphrase_size),
+        QByteArrayView(reinterpret_cast<const char*>(room_id.data()), static_cast<qsizetype>(room_id.size())),
+        host_token_info, 32);
+    const auto cleanup = qScopeGuard([&] { wipe(token); });
+    if (token.size() != 32)
+        return {};
+    return token.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
 }
 
 } // namespace music_player::m0

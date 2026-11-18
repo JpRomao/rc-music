@@ -1,6 +1,5 @@
 #include "adapters/WindowsRoomEnvelopeCipher.hpp"
 
-#include <QMessageAuthenticationCode>
 #include <QTest>
 
 #include <array>
@@ -14,19 +13,10 @@ std::array<std::uint8_t, 16> sequence(const std::uint8_t start) {
         bytes[i] = static_cast<std::uint8_t>(start + i * 11);
     return bytes;
 }
-// Independent HKDF-SHA256 (Qt HMAC) to pin the empty-salt convention of hostToken().
-QByteArray referenceHkdf(const QByteArray& ikm, const QByteArray& info, const int length) {
-    const auto prk = QMessageAuthenticationCode::hash(ikm, QByteArray(32, '\0'), QCryptographicHash::Sha256);
-    QByteArray okm, block;
-    for (char counter = 1; okm.size() < length; ++counter) {
-        block =
-            QMessageAuthenticationCode::hash(block + info + QByteArray(1, counter), prk, QCryptographicHash::Sha256);
-        okm += block;
-    }
-    return okm.left(length);
-}
-QByteArray bytes(const std::array<std::uint8_t, 16>& value) {
-    return QByteArray(reinterpret_cast<const char*>(value.data()), static_cast<qsizetype>(value.size()));
+QByteArray failingHkdf(QByteArrayView, QByteArrayView, QByteArrayView, qsizetype) { return {}; }
+QByteArray shortHkdf(QByteArrayView, QByteArrayView, QByteArrayView, qsizetype) { return QByteArray(16, '\x07'); }
+QByteArray zeroHkdf(QByteArrayView, QByteArrayView, QByteArrayView, const qsizetype length) {
+    return QByteArray(length, '\0');
 }
 } // namespace
 
@@ -88,19 +78,25 @@ class WindowsRoomEnvelopeCipherTests final : public QObject {
         for (qsizetype size = 0; size < 28; ++size)
             QVERIFY(!cipher.open(QByteArray(size, '\0')).has_value());
     }
-    void hostTokenIsTheRelayHeaderValue() {
+    void productionCipherUsesHkdfSha256AndIsValid() {
         const WindowsRoomEnvelopeCipher cipher(sequence(1), sequence(2));
-        const auto token = cipher.hostToken();
-        QCOMPARE(token.size(), 43);
-        for (const char c : token)
-            QVERIFY((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_');
-        const auto decoded =
-            QByteArray::fromBase64(token, QByteArray::Base64UrlEncoding | QByteArray::AbortOnBase64DecodingErrors);
-        QCOMPARE(decoded, referenceHkdf(bytes(sequence(1)), "rc-music room host v1", 32));
-        QCOMPARE(hkdfSha256(bytes(sequence(1)), {}, "rc-music room host v1", 32), decoded);
-        // Same secret, same token whatever the room; another secret, another token.
-        QCOMPARE(WindowsRoomEnvelopeCipher(sequence(1), sequence(9)).hostToken(), token);
-        QVERIFY(WindowsRoomEnvelopeCipher(sequence(4), sequence(2)).hostToken() != token);
+        QVERIFY(cipher.isValid());
+        const WindowsRoomEnvelopeCipher seam(sequence(1), sequence(2), &hkdfSha256);
+        QVERIFY(seam.isValid());
+        QCOMPARE(seam.open(cipher.seal("offer")).value_or("-"), QByteArray("offer"));
+    }
+    void aFailedKeyDerivationFailsClosed() {
+        // A known all-zero key is exactly what a fail-open cipher would fall back to.
+        const WindowsRoomEnvelopeCipher zero(sequence(1), sequence(2), &zeroHkdf);
+        const auto zero_sealed = zero.seal("candidate:1 1 udp 2122260223 192.0.2.1 54400 typ host");
+        QVERIFY(!zero_sealed.isEmpty());
+        for (const auto derive : {&failingHkdf, &shortHkdf}) {
+            const WindowsRoomEnvelopeCipher broken(sequence(1), sequence(2), derive);
+            QVERIFY(!broken.isValid());
+            QVERIFY(broken.seal("offer").isEmpty());
+            QVERIFY(broken.seal({}).isEmpty());
+            QVERIFY(!broken.open(zero_sealed).has_value());
+        }
     }
 };
 

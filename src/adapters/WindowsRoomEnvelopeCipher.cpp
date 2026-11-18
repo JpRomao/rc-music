@@ -15,7 +15,6 @@ namespace {
 constexpr qsizetype hash_size = 32;
 constexpr qsizetype key_size = 32;
 constexpr char signaling_info[] = "rc-music room signaling v1";
-constexpr char host_info[] = "rc-music room host v1";
 
 PUCHAR bytes(const void* data) { return static_cast<PUCHAR>(const_cast<void*>(data)); }
 // BCrypt wants a valid pointer even for zero-length input.
@@ -92,23 +91,29 @@ QByteArray hkdfSha256(QByteArrayView input_key, QByteArrayView salt, QByteArrayV
 }
 
 WindowsRoomEnvelopeCipher::WindowsRoomEnvelopeCipher(std::span<const std::uint8_t, 16> secret,
-                                                     std::span<const std::uint8_t, 16> room_id) {
+                                                     std::span<const std::uint8_t, 16> room_id)
+    : WindowsRoomEnvelopeCipher(secret, room_id, &hkdfSha256) {}
+
+WindowsRoomEnvelopeCipher::WindowsRoomEnvelopeCipher(std::span<const std::uint8_t, 16> secret,
+                                                     std::span<const std::uint8_t, 16> room_id,
+                                                     const KeyDerivation derive) {
     const QByteArrayView ikm(reinterpret_cast<const char*>(secret.data()), static_cast<qsizetype>(secret.size()));
-    auto key = hkdfSha256(ikm, {}, signaling_info, key_size);
-    auto token = hkdfSha256(ikm, {}, host_info, key_size);
-    if (key.size() == key_size)
+    auto key = derive(ikm, {}, signaling_info, key_size);
+    // Fail closed: without a derived key there is no cipher, never the all-zero key_.
+    valid_ = key.size() == key_size;
+    if (valid_)
         std::copy(key.cbegin(), key.cend(), reinterpret_cast<char*>(key_.data()));
-    if (token.size() == key_size)
-        host_token_ = token.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
-    SecureZeroMemory(key.data(), static_cast<SIZE_T>(key.size()));
-    SecureZeroMemory(token.data(), static_cast<SIZE_T>(token.size()));
+    if (!key.isEmpty())
+        SecureZeroMemory(key.data(), static_cast<SIZE_T>(key.size()));
     std::copy(room_id.begin(), room_id.end(), room_id_.begin());
 }
+
+bool WindowsRoomEnvelopeCipher::isValid() const { return valid_; }
 
 WindowsRoomEnvelopeCipher::~WindowsRoomEnvelopeCipher() { SecureZeroMemory(key_.data(), key_.size()); }
 
 QByteArray WindowsRoomEnvelopeCipher::seal(QByteArrayView plain) const {
-    if (plain.size() > std::numeric_limits<ULONG>::max() - nonce_size - tag_size)
+    if (!valid_ || plain.size() > std::numeric_limits<ULONG>::max() - nonce_size - tag_size)
         return {};
     const GcmKey key(key_);
     if (!key.get())
@@ -130,7 +135,7 @@ QByteArray WindowsRoomEnvelopeCipher::seal(QByteArrayView plain) const {
 }
 
 std::optional<QByteArray> WindowsRoomEnvelopeCipher::open(QByteArrayView sealed) const {
-    if (sealed.size() < nonce_size + tag_size || sealed.size() > std::numeric_limits<ULONG>::max())
+    if (!valid_ || sealed.size() < nonce_size + tag_size || sealed.size() > std::numeric_limits<ULONG>::max())
         return std::nullopt;
     const GcmKey key(key_);
     if (!key.get())
@@ -151,7 +156,5 @@ std::optional<QByteArray> WindowsRoomEnvelopeCipher::open(QByteArrayView sealed)
         return std::nullopt;
     return plain;
 }
-
-QByteArray WindowsRoomEnvelopeCipher::hostToken() const { return host_token_; }
 
 } // namespace music_player::m0

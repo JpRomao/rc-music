@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QMessageAuthenticationCode>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -54,6 +55,20 @@ const QByteArray pkcs8Prefix = QByteArray::fromHex("020100"
                                                    "3013"
                                                    "0607"
                                                    "2a8648ce3d0201");
+// Independent HKDF-SHA256 (Qt HMAC) for one 32-byte block.
+QByteArray referenceHkdf32(const QByteArray& ikm, const QByteArray& salt, const QByteArray& info) {
+    const auto prk = QMessageAuthenticationCode::hash(ikm, salt, QCryptographicHash::Sha256);
+    return QMessageAuthenticationCode::hash(info + QByteArray(1, '\x01'), prk, QCryptographicHash::Sha256);
+}
+std::array<std::uint8_t, 16> room(const std::uint8_t start) {
+    std::array<std::uint8_t, 16> bytes{};
+    for (std::size_t i = 0; i < bytes.size(); ++i)
+        bytes[i] = static_cast<std::uint8_t>(start + i * 13);
+    return bytes;
+}
+QByteArray raw(const auto& bytes) {
+    return QByteArray(reinterpret_cast<const char*>(bytes.data()), static_cast<qsizetype>(bytes.size()));
+}
 const QByteArray prime256v1 = QByteArray::fromHex("06082a8648ce3d030107");
 } // namespace
 
@@ -95,6 +110,27 @@ class WindowsRoomIdentityTests final : public QObject {
         QCOMPARE(second->key_pem, first->key_pem);
         QCOMPARE(second->key_passphrase, first->key_passphrase);
         QCOMPARE(snapshot(config), files);
+    }
+    void hostTokenIsDerivedFromTheDeviceSecretPerRoom() {
+        QTemporaryDir a, b;
+        const auto x = loadOrCreateRoomIdentity(a.path());
+        const auto again = loadOrCreateRoomIdentity(a.path());
+        const auto y = loadOrCreateRoomIdentity(b.path());
+        QVERIFY(x && again && y);
+        // The raw passphrase bytes are the decoded keyPemPass text.
+        QCOMPARE(raw(x->passphrase),
+                 QByteArray::fromBase64(QByteArray::fromStdString(x->key_passphrase), QByteArray::Base64UrlEncoding));
+        const auto token = roomHostToken(*x, room(1));
+        QCOMPARE(token.size(), 43);
+        for (const char c : token)
+            QVERIFY((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_');
+        QCOMPARE(QByteArray::fromBase64(token, QByteArray::Base64UrlEncoding),
+                 referenceHkdf32(raw(x->passphrase), raw(room(1)), "rc-music room host v1"));
+        QCOMPARE(roomHostToken(*again, room(1)), token);
+        QVERIFY(roomHostToken(*x, room(2)) != token);
+        QVERIFY(roomHostToken(*y, room(1)) != token);
+        // No device secret, no token.
+        QVERIFY(roomHostToken(RoomIdentity{}, room(1)).isEmpty());
     }
     void anotherDirectoryGetsAnotherIdentity() {
         QTemporaryDir a, b;
