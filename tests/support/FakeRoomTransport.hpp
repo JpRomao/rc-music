@@ -2,7 +2,9 @@
 
 // In-memory implementation of m0/ports/RoomTransport.hpp for application-layer tests.
 // Links come in connected pairs and deliver synchronously; the endpoint and the connector only
-// record their calls and let the test decide when a link arrives or a failure happens.
+// record their calls and let the test decide when a link arrives or a failure happens. Like the
+// real adapter, the connector calls exactly one of its callbacks once and nothing after cancel(),
+// and the endpoint delivers nothing after closeAll() or its own failure.
 
 #include "m0/ports/RoomTransport.hpp"
 
@@ -32,7 +34,7 @@ class FakeRoomLink final : public RoomLink {
 
     [[nodiscard]] std::string peerFingerprint() const override { return peer_fingerprint_; }
     bool sendControl(const RoomControlMessage& message) override {
-        if (closed)
+        if (closed || (accepts_control && !accepts_control(message)))
             return false;
         sent_control.push_back(message);
         if (const auto peer = peer_.lock(); peer && !peer->closed && peer->onControl)
@@ -65,6 +67,8 @@ class FakeRoomLink final : public RoomLink {
     }
 
     std::vector<RoomControlMessage> sent_control;
+    // When set and false, sendControl drops the message like the adapter drops what the codec rejects.
+    std::function<bool(const RoomControlMessage&)> accepts_control;
     std::vector<RoomFileChunk> sent_media;
     std::size_t buffered_bytes{};
     bool closed{};
@@ -79,17 +83,34 @@ class FakeRoomHostEndpoint final : public RoomHostEndpoint {
     void open(const RoomInviteLink& invite, std::function<void(std::shared_ptr<RoomLink>)> on_incoming,
               std::function<void(RoomLinkFailure)> on_failure) override {
         opened = invite;
+        ++open_count;
         on_incoming_ = std::move(on_incoming);
         on_failure_ = std::move(on_failure);
     }
-    void closeAll() override { closed_all = true; }
-    void admit(std::shared_ptr<RoomLink> link) { on_incoming_(std::move(link)); }
-    void fail(const RoomLinkFailure failure) { on_failure_(failure); }
+    void closeAll() override {
+        closed_all = true;
+        disarm();
+    }
+    void admit(std::shared_ptr<RoomLink> link) {
+        if (const auto deliver = on_incoming_)
+            deliver(std::move(link));
+    }
+    void fail(const RoomLinkFailure failure) {
+        const auto deliver = on_failure_;
+        disarm();
+        if (deliver)
+            deliver(failure);
+    }
 
     std::optional<RoomInviteLink> opened;
+    int open_count{};
     bool closed_all{};
 
   private:
+    void disarm() {
+        on_incoming_ = nullptr;
+        on_failure_ = nullptr;
+    }
     std::function<void(std::shared_ptr<RoomLink>)> on_incoming_;
     std::function<void(RoomLinkFailure)> on_failure_;
 };
@@ -99,17 +120,35 @@ class FakeRoomGuestConnector final : public RoomGuestConnector {
     void connect(const RoomInviteLink& invite, std::function<void(std::shared_ptr<RoomLink>)> on_connected,
                  std::function<void(RoomLinkFailure)> on_failure) override {
         requested = invite;
+        cancelled = false;
         on_connected_ = std::move(on_connected);
         on_failure_ = std::move(on_failure);
     }
-    void cancel() override { cancelled = true; }
-    void complete(std::shared_ptr<RoomLink> link) { on_connected_(std::move(link)); }
-    void fail(const RoomLinkFailure failure) { on_failure_(failure); }
+    void cancel() override {
+        cancelled = true;
+        disarm();
+    }
+    void complete(std::shared_ptr<RoomLink> link) {
+        const auto deliver = on_connected_;
+        disarm();
+        if (deliver)
+            deliver(std::move(link));
+    }
+    void fail(const RoomLinkFailure failure) {
+        const auto deliver = on_failure_;
+        disarm();
+        if (deliver)
+            deliver(failure);
+    }
 
     std::optional<RoomInviteLink> requested;
     bool cancelled{};
 
   private:
+    void disarm() {
+        on_connected_ = nullptr;
+        on_failure_ = nullptr;
+    }
     std::function<void(std::shared_ptr<RoomLink>)> on_connected_;
     std::function<void(RoomLinkFailure)> on_failure_;
 };

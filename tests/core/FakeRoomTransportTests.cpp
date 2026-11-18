@@ -52,12 +52,82 @@ TEST_CASE("fake host endpoint and guest connector hand out links on demand", "[c
     REQUIRE(connected.size() == 1);
     REQUIRE(incoming[0]->peerFingerprint() == "fp-guest");
 
-    connector.fail(RoomLinkFailure::HostOffline);
     endpoint.closeAll();
-    connector.cancel();
-    REQUIRE(failures == std::vector<RoomLinkFailure>{RoomLinkFailure::HostOffline});
+    REQUIRE(failures.empty());
     REQUIRE(endpoint.closed_all);
+}
+
+TEST_CASE("fake guest connector calls exactly one callback once and nothing after cancel",
+          "[core][listening-room][transport]") {
+    testing::FakeRoomGuestConnector connector;
+    RoomInviteLink invite;
+    std::vector<std::shared_ptr<RoomLink>> connected;
+    std::vector<RoomLinkFailure> failures;
+    const auto connect = [&] {
+        connector.connect(
+            invite, [&](auto link) { connected.push_back(link); }, [&](auto f) { failures.push_back(f); });
+    };
+    auto [host_side, guest_side] = testing::FakeRoomLink::pair("fp-host", "fp-guest");
+
+    connect();
+    connector.complete(guest_side);
+    connector.fail(RoomLinkFailure::HostOffline);
+    connector.complete(guest_side);
+    REQUIRE(connected.size() == 1);
+    REQUIRE(failures.empty());
+
+    connect();
+    connector.cancel();
     REQUIRE(connector.cancelled);
+    connector.fail(RoomLinkFailure::Unreachable);
+    connector.complete(guest_side);
+    REQUIRE(connected.size() == 1);
+    REQUIRE(failures.empty());
+
+    connect();
+    connector.fail(RoomLinkFailure::Refused);
+    connector.fail(RoomLinkFailure::Refused);
+    REQUIRE(failures == std::vector<RoomLinkFailure>{RoomLinkFailure::Refused});
+
+    testing::FakeRoomGuestConnector never_connected;
+    never_connected.complete(guest_side);
+    never_connected.fail(RoomLinkFailure::Closed);
+}
+
+TEST_CASE("fake host endpoint delivers nothing when closed or never opened", "[core][listening-room][transport]") {
+    testing::FakeRoomHostEndpoint endpoint;
+    auto [host_side, guest_side] = testing::FakeRoomLink::pair("fp-host", "fp-guest");
+    endpoint.admit(host_side);
+    endpoint.fail(RoomLinkFailure::SignalingUnavailable);
+
+    std::vector<std::shared_ptr<RoomLink>> incoming;
+    std::vector<RoomLinkFailure> failures;
+    endpoint.open(
+        RoomInviteLink{}, [&](auto link) { incoming.push_back(link); }, [&](auto f) { failures.push_back(f); });
+    endpoint.closeAll();
+    endpoint.admit(host_side);
+    endpoint.fail(RoomLinkFailure::SignalingUnavailable);
+    REQUIRE(incoming.empty());
+    REQUIRE(failures.empty());
+
+    endpoint.open(
+        RoomInviteLink{}, [&](auto link) { incoming.push_back(link); }, [&](auto f) { failures.push_back(f); });
+    endpoint.fail(RoomLinkFailure::SignalingUnavailable);
+    endpoint.admit(host_side);
+    REQUIRE(failures == std::vector<RoomLinkFailure>{RoomLinkFailure::SignalingUnavailable});
+    REQUIRE(incoming.empty());
+}
+
+TEST_CASE("fake room link can refuse a control message like the codec-checking adapter",
+          "[core][listening-room][transport]") {
+    auto [host, guest] = testing::FakeRoomLink::pair("fp-host", "fp-guest");
+    std::vector<RoomControlMessage> at_guest;
+    guest->onControl = [&](RoomControlMessage m) { at_guest.push_back(std::move(m)); };
+    host->accepts_control = [](const RoomControlMessage& m) { return !std::holds_alternative<RoomStateMessage>(m); };
+    REQUIRE_FALSE(host->sendControl(RoomStateMessage{}));
+    REQUIRE(host->sendControl(RoomBye{}));
+    REQUIRE(at_guest.size() == 1);
+    REQUIRE(host->sent_control.size() == 1);
 }
 
 } // namespace music_player::m0::test
