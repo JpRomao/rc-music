@@ -113,6 +113,14 @@ set_target_properties(rc_music_room_roster_store_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_room_protocol_tests rc_music.room.protocol
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/RoomProtocolCodecTests.cpp" rc_music_room_protocol)
 set_target_properties(rc_music_room_protocol_tests PROPERTIES AUTOMOC ON)
+if(TARGET rc_music_listening_room)
+    add_ui_test(rc_music_room_identity_tests rc_music.room.identity
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsRoomIdentityTests.cpp" rc_music_listening_room)
+    set_target_properties(rc_music_room_identity_tests PROPERTIES AUTOMOC ON)
+    add_ui_test(rc_music_room_envelope_cipher_tests rc_music.room.envelope-cipher
+        "${RC_MUSIC_SOURCE_ROOT}/tests/qt/WindowsRoomEnvelopeCipherTests.cpp" rc_music_listening_room)
+    set_target_properties(rc_music_room_envelope_cipher_tests PROPERTIES AUTOMOC ON)
+endif()
 add_ui_test(rc_music_avatar_image_tests rc_music.profile.avatar-image
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtAvatarImageTests.cpp" rc_music_profile)
 set_target_properties(rc_music_avatar_image_tests PROPERTIES AUTOMOC ON)

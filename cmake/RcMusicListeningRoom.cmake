@@ -12,13 +12,22 @@ endif()
 
 find_package(LibDataChannel 0.24.6 EXACT CONFIG REQUIRED)
 
+find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core)
+
+# The device identity and the signaling envelope cipher use only CNG/NCrypt/Crypt32/DPAPI; they
+# live here because the transport (S6.3) is their only consumer.
 add_library(rc_music_listening_room STATIC
+    "${RC_MUSIC_SOURCE_ROOT}/include/m0/ports/RoomTransport.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/adapters/DataChannelBuildContract.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsRoomEnvelopeCipher.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsRoomEnvelopeCipher.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsRoomIdentity.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/adapters/WindowsRoomIdentity.cpp"
 )
 target_include_directories(rc_music_listening_room PUBLIC
     "${RC_MUSIC_SOURCE_ROOT}/include" "${RC_MUSIC_SOURCE_ROOT}/src")
 target_link_libraries(rc_music_listening_room
-    PUBLIC rc_music_contracts PRIVATE LibDataChannel::LibDataChannel)
+    PUBLIC rc_music_contracts Qt6::Core PRIVATE LibDataChannel::LibDataChannel bcrypt ncrypt crypt32)
 rc_music_configure_cpp(rc_music_listening_room)
 set_target_properties(rc_music_listening_room PROPERTIES AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
 
