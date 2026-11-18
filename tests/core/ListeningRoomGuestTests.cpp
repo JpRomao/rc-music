@@ -248,6 +248,35 @@ TEST_CASE("room guest: leave restores exactly the queue and position from before
     REQUIRE(f.restored.size() == 1);
 }
 
+TEST_CASE("room guest: leave tells the host with Bye before closing the link and does not reconnect",
+          "[core][listening-room][room-guest]") {
+    for (const bool admitted : {true, false}) {
+        GuestFixture f;
+        f.start();
+        f.guest->join(invite());
+        f.connectLink();
+        f.send(RoomJoinResult{admitted ? JoinDecision::Admitted : JoinDecision::Pending});
+        f.connector.requested.reset();
+        // The host closes the link when it reads the Bye: that close must not look like a drop.
+        f.host_side->onControl = [&f](RoomControlMessage message) {
+            f.host_inbox.push_back(std::move(message));
+            if (std::holds_alternative<RoomBye>(f.host_inbox.back()))
+                f.host_side->close();
+        };
+
+        f.guest->leave();
+        REQUIRE(f.received<RoomBye>() == std::vector{RoomBye{RoomByeReason::Closed}});
+        REQUIRE(std::holds_alternative<RoomBye>(f.host_inbox.back()));
+        REQUIRE(f.guest_end->closed);
+        REQUIRE(f.guest->state() == GuestRoomState::Idle);
+        REQUIRE_FALSE(f.connector.requested.has_value());
+        f.timers.advance(room_reconnect_window_ms * 2);
+        REQUIRE(f.guest->state() == GuestRoomState::Idle);
+        REQUIRE_FALSE(f.connector.requested.has_value());
+        REQUIRE(f.ended.empty());
+    }
+}
+
 TEST_CASE("room guest: request ids start at 1 and a rejection reaches onRejected with its id",
           "[core][listening-room][room-guest]") {
     GuestFixture f;

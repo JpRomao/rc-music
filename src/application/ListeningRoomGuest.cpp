@@ -73,6 +73,13 @@ void ListeningRoomGuest::join(const RoomInviteLink& invite) {
 void ListeningRoomGuest::leave() {
     if (state_ == GuestRoomState::Idle)
         return;
+    // Tell the host first, so it frees the seat at once instead of holding it for its reconnect window.
+    // The link is detached before the send: the host closing it in answer is not a drop.
+    if (const auto link = std::exchange(link_, nullptr)) {
+        ++link_id_;
+        static_cast<void>(link->sendControl(RoomBye{RoomByeReason::Closed}));
+        link->close();
+    }
     stop();
     state_ = GuestRoomState::Idle;
     end_.reset();

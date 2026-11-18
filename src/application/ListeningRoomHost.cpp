@@ -383,6 +383,13 @@ void ListeningRoomHost::onLinkControl(const std::shared_ptr<RoomLink>& link, Roo
     } else if (const auto* ping = std::get_if<RoomClockPing>(&message)) {
         if (memberState(connection->fingerprint) == MemberState::Admitted)
             static_cast<void>(link->sendControl(RoomClockPong{ping->sent_local_ms, host_clock_ms_()}));
+    } else if (std::holds_alternative<RoomBye>(message)) {
+        // The guest left ("Sair da sala"): no reconnect hold, the seat is free at once.
+        const auto fingerprint = connection->fingerprint;
+        held_.erase(fingerprint);
+        drop(link);
+        room_->leave(fingerprint);
+        static_cast<void>(refresh());
     }
     // A second hello, file messages (S8) and drift reports (S9.2) are ignored here.
 }

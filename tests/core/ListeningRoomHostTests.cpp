@@ -587,6 +587,38 @@ TEST_CASE("room host: a dropped link leaves the room and a newer link replaces a
     REQUIRE_FALSE(f.isMember("fp-dj"));
 }
 
+TEST_CASE("room host: a Bye from a member is an immediate leave, without the reconnect hold",
+          "[core][listening-room][room-host]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    auto listener = f.join("fp-listener", "Lia");
+    auto stranger = f.join("fp-new", "Caio");
+    REQUIRE(f.isMember("fp-new"));
+    const auto version = f.host->snapshot().version;
+    f.scheduled.clear();
+
+    static_cast<void>(dj->link->sendControl(RoomBye{RoomByeReason::Closed}));
+    REQUIRE_FALSE(f.isMember("fp-dj"));
+    REQUIRE(f.host->snapshot().version == version + 1);
+    REQUIRE(dj->link->closed);
+    REQUIRE(listener->lastState()->snapshot.version == version + 1);
+    REQUIRE(listener->lastState()->snapshot.members.size() == 2);
+    REQUIRE(std::none_of(f.scheduled.begin(), f.scheduled.end(),
+                         [](const auto& task) { return task.first == room_reconnect_window_ms; }));
+
+    // A pending person who gives up leaves the same way.
+    static_cast<void>(stranger->link->sendControl(RoomBye{RoomByeReason::Closed}));
+    REQUIRE_FALSE(f.isMember("fp-new"));
+    REQUIRE(stranger->link->closed);
+
+    // Coming back is a new arrival: a known listener is admitted again.
+    auto back = f.join("fp-dj");
+    REQUIRE(back->inbox.front() == RoomControlMessage{RoomJoinResult{JoinDecision::Admitted}});
+    REQUIRE(f.isMember("fp-dj"));
+}
+
 TEST_CASE("room host: clock pings, lyrics of the current item and a full room", "[core][listening-room][room-host]") {
     HostFixture f;
     f.catalog.lyrics["music/a.mp3"] = "[00:01.00]la";

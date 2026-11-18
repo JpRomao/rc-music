@@ -93,7 +93,8 @@ struct ListeningRoomGuestDependencies final {
 // VersionMismatch, Bye{Kicked}, Bye{Full} and every rejected JoinResult -> Refused, a lost link -> its
 // failure. Ending closes the link, clears snapshot() and permissions(), restores the local session (if
 // one was saved), then calls onChanged and then onEnded. leave() does the same but goes to Idle and does not
-// call onEnded; the host sees the link close (it holds the seat for its own reconnect window).
+// call onEnded; it first sends RoomBye{Closed} on the link (when there is one), so the host frees the
+// seat at once instead of holding it for its reconnect window.
 //
 // Local session: on the first entry to Joined of a join() the guest calls capture_session once and
 // keeps that snapshot until leave() or Ended, which call restore_session with it exactly (a reconnect

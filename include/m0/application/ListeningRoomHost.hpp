@@ -79,7 +79,8 @@ struct ListeningRoomHostDependencies final {
 //     room_reconnect_window_ms: same seat, no version bump; a new link with the same fingerprint that
 //     says hello inside the window resumes it (JoinResult{Admitted} + the current state, version
 //     unchanged). After the window the member leaves (version bumps). A pending person who drops
-//     leaves at once.
+//     leaves at once. A RoomBye from a guest (it left) is an immediate leave: the link is closed,
+//     there is no reconnect hold, and the version bumps.
 //   - kick(fp, block) sends RoomBye{Kicked} and closes; blocking someone present is always
 //     kick(fp, true), never a bare roster change.
 //
