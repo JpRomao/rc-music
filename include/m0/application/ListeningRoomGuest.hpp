@@ -26,7 +26,7 @@ enum class GuestEndReason : std::uint8_t {
     RoomFull,        // JoinResult{RejectedFull} or Bye{Full}
     Blocked,         // JoinResult{RejectedBlocked}
     Rejected,        // JoinResult{RejectedClosed}: the host refused the request
-    Closed,          // Bye{Closed}: "Encerrar sala"
+    Closed,          // Bye{Closed} ("Encerrar sala"), or HostOffline while reconnecting (host gone, no Bye)
     Revoked,         // Bye{Revoked}
     Kicked,          // Bye{Kicked}
     VersionMismatch, // Bye{VersionMismatch}
@@ -81,12 +81,15 @@ struct ListeningRoomGuestDependencies final {
 // RoomIntentRejected{id, reason} calls onRejected(id, reason).
 //
 // Link loss: from Joined, a dropped link goes to Reconnecting with the same invite: a connect at once,
-// and after each failure (connector failure of any kind, HostOffline included, or a new link that drops
-// before admission) another attempt after room_reconnect_retry_initial_ms, doubling up to
-// room_reconnect_retry_maximum_ms. JoinResult{Admitted} returns to Joined (snapshot kept), Pending to
-// WaitingApproval. room_reconnect_window_ms after the drop the window ends: Ended(LinkLost) with
-// onEnded(last failure seen). From Connecting or WaitingApproval a drop or a connect failure ends at
-// once (LinkLost, that failure).
+// and after each failure (a connector failure other than HostOffline, or a new link that drops before
+// admission) another attempt after room_reconnect_retry_initial_ms, doubling up to
+// room_reconnect_retry_maximum_ms. HostOffline ends the room at once: Ended(Closed) with
+// onEnded(HostOffline). The relay only says it when the host's app is not in the room, so the host left
+// without a Bye (its app closed or crashed), and the room ends for everyone when the host leaves.
+// JoinResult{Admitted} returns to Joined (snapshot kept), Pending to WaitingApproval.
+// room_reconnect_window_ms after the drop the window ends: Ended(LinkLost) with onEnded(last failure
+// seen). From Connecting or WaitingApproval a drop or a connect failure ends at once (LinkLost, that
+// failure).
 //
 // Ending: JoinResult RejectedFull/RejectedBlocked/RejectedClosed and RoomBye end the room with the
 // reason in endReason(). onEnded gets: Bye{Closed} and Bye{Revoked} -> Closed, Bye{VersionMismatch} ->

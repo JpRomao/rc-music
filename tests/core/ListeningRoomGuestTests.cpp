@@ -382,7 +382,7 @@ TEST_CASE("room guest: failures inside the reconnect window keep retrying with a
     f.dropLink(RoomLinkFailure::Closed);
     REQUIRE(f.connector.requested == invite()); // first attempt at once
     f.connector.requested.reset();
-    f.connector.fail(RoomLinkFailure::HostOffline);
+    f.connector.fail(RoomLinkFailure::Unreachable);
     REQUIRE(f.guest->state() == GuestRoomState::Reconnecting);
 
     // Each failed attempt waits initial, 2x, 4x... up to the maximum before the next connect.
@@ -395,7 +395,7 @@ TEST_CASE("room guest: failures inside the reconnect window keep retrying with a
         REQUIRE(f.connector.requested == invite());
         attempts.push_back(f.timers.now);
         f.connector.requested.reset();
-        f.connector.fail(i % 2 == 0 ? RoomLinkFailure::SignalingUnavailable : RoomLinkFailure::HostOffline);
+        f.connector.fail(i % 2 == 0 ? RoomLinkFailure::SignalingUnavailable : RoomLinkFailure::Unreachable);
         REQUIRE(f.guest->state() == GuestRoomState::Reconnecting);
         expected_delay = std::min<std::int64_t>(expected_delay * 2, room_reconnect_retry_maximum_ms);
     }
@@ -416,6 +416,34 @@ TEST_CASE("room guest: failures inside the reconnect window keep retrying with a
     REQUIRE(f.ended == std::vector{RoomLinkFailure::Refused});
     f.timers.advance(room_reconnect_window_ms); // no attempt after the end
     REQUIRE_FALSE(f.connector.requested.has_value());
+}
+
+TEST_CASE("room guest: the relay saying the host is gone ends a reconnect at once as a closed room",
+          "[core][listening-room][room-guest]") {
+    for (const bool after_a_retry : {false, true}) {
+        GuestFixture f;
+        f.start();
+        const auto before = f.local;
+        f.joinAdmitted();
+        f.local = SessionSnapshot{};
+        f.dropLink(RoomLinkFailure::Closed); // the host app went away without a Bye
+        REQUIRE(f.guest->state() == GuestRoomState::Reconnecting);
+        if (after_a_retry) {
+            f.connector.fail(RoomLinkFailure::Unreachable);
+            f.timers.advance(room_reconnect_retry_initial_ms);
+            REQUIRE(f.guest->state() == GuestRoomState::Reconnecting);
+        }
+        f.connector.requested.reset();
+
+        f.connector.fail(RoomLinkFailure::HostOffline);
+        REQUIRE(f.guest->state() == GuestRoomState::Ended);
+        REQUIRE(f.guest->endReason() == GuestRoomEnd{GuestEndReason::Closed, RoomLinkFailure::HostOffline});
+        REQUIRE(f.ended == std::vector{RoomLinkFailure::HostOffline});
+        REQUIRE(f.local == before);
+        f.timers.advance(room_reconnect_window_ms * 2); // no attempt after the end
+        REQUIRE_FALSE(f.connector.requested.has_value());
+        REQUIRE(f.ended.size() == 1);
+    }
 }
 
 TEST_CASE("room guest: the window ending during an attempt cancels it", "[core][listening-room][room-guest]") {

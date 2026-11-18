@@ -250,6 +250,12 @@ void ListeningRoomGuest::lost(const RoomLinkFailure failure) {
         return;
     }
     case GuestRoomState::Reconnecting: {
+        // The relay says the host is not in the room: its app went away (no Bye) and nothing brings
+        // that room back inside the window, so it ended for this guest now.
+        if (failure == RoomLinkFailure::HostOffline) {
+            end(GuestEndReason::Closed, failure);
+            return;
+        }
         const auto episode = episode_;
         const auto delay = retry_delay_ms_;
         retry_delay_ms_ = std::min<std::int64_t>(retry_delay_ms_ * 2, room_reconnect_retry_maximum_ms);
