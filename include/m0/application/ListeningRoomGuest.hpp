@@ -224,6 +224,10 @@ class ListeningRoomGuest final {
     // each other), kept only while a request is outstanding and up to a fixed total.
     std::map<std::uint32_t, std::vector<RoomFileChunk>> early_chunks_;
     std::size_t early_bytes_{0};
+    // The highest transfer id offered so far. The host numbers transfers in increasing order and its
+    // offers arrive in order, so a chunk at or below it that is not being received belongs to a transfer
+    // that is over (refused, replaced or abandoned) and is dropped instead of kept as early.
+    std::uint32_t last_offer_id_{0};
     std::shared_ptr<Alive> alive_;
 };
 

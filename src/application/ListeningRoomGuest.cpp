@@ -367,8 +367,21 @@ void ListeningRoomGuest::onOffer(const RoomFileOffer& offer) {
     if (!early.empty())
         for (const auto& chunk : early.mapped())
             early_bytes_ -= chunk.payload.size();
-    if (files_ == nullptr || requested_.erase(offer.content_sha256) == 0 || receiving_.contains(offer.transfer_id))
+    last_offer_id_ = std::max(last_offer_id_, offer.transfer_id);
+    if (files_ == nullptr || receiving_.contains(offer.transfer_id))
         return;
+    const auto held = std::find_if(receiving_.begin(), receiving_.end(),
+                                   [&](const auto& transfer) { return transfer.second == offer.content_sha256; });
+    if (requested_.erase(offer.content_sha256) == 0 && held == receiving_.end())
+        return;
+    // A newer offer for a file already being received: the host answered a later request for it and
+    // cancelled the earlier transfer, so the one held here would never complete. It is abandoned first,
+    // which also releases its cache reservation before the new one is accepted.
+    if (held != receiving_.end()) {
+        const auto stale = held->first;
+        receiving_.erase(held);
+        files_->abandon(stale);
+    }
     receiving_[offer.transfer_id] = offer.content_sha256;
     files_->accept(offer);
     if (!early.empty())
@@ -387,7 +400,8 @@ void ListeningRoomGuest::onChunk(RoomFileChunk chunk) {
         files_->consume(std::move(chunk));
         return;
     }
-    if (requested_.empty() || early_bytes_ + chunk.payload.size() > maximum_early_chunk_bytes)
+    if (requested_.empty() || chunk.transfer_id <= last_offer_id_ ||
+        early_bytes_ + chunk.payload.size() > maximum_early_chunk_bytes)
         return;
     early_bytes_ += chunk.payload.size();
     early_chunks_[chunk.transfer_id].push_back(std::move(chunk));
@@ -417,6 +431,7 @@ void ListeningRoomGuest::stopFiles(const bool purge) {
     failed_.clear();
     early_chunks_.clear();
     early_bytes_ = 0;
+    last_offer_id_ = 0;
     auto receiving = std::exchange(receiving_, {});
     if (files_ != nullptr)
         for (const auto& transfer : receiving)

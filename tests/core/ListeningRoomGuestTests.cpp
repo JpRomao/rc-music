@@ -874,4 +874,36 @@ TEST_CASE("room guest: chunks that arrive before their offer are kept for it",
     f.send(RoomFileOffer{hashOf('a'), 1, 10});
     REQUIRE(f.inbox.consumed.size() == 2);
 }
+
+TEST_CASE("room guest: a newer offer for a file being received replaces the stale one",
+          "[core][listening-room][room-guest][room-files]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "ab")); // asks for a and b
+    // The host drops a and brings it back before serving the first request: the guest asks again.
+    auto without_a = roomQueue(2, "b");
+    without_a.snapshot.queue[0].id = 12;
+    without_a.snapshot.playback.current_item = 12;
+    f.send(without_a);
+    f.send(roomQueue(3, "ab"));
+    REQUIRE(requestedHashes(f) == std::vector{hashOf('a'), hashOf('b'), hashOf('a')});
+
+    // The offer for the first request arrives after the second request; then the host replaces it.
+    f.send(RoomFileOffer{hashOf('a'), 1000, 30});
+    f.inbox.log.clear();
+    f.send(RoomFileOffer{hashOf('a'), 1000, 31});
+    REQUIRE(f.inbox.log == std::vector<std::string>{"abandon:30", "accept:31"});
+    REQUIRE(f.host_side->sendMedia({31, 0, {1}}));
+    REQUIRE(f.inbox.consumed == std::vector<RoomFileChunk>{{31, 0, {1}}});
+    f.inbox.complete(hashOf('a'));
+    REQUIRE(f.guest->localFile(hashOf('a')));
+
+    // A late chunk of the replaced transfer is dropped, not kept for an offer that will never come,
+    // so it takes no room from the next transfer's early chunks.
+    REQUIRE(f.host_side->sendMedia({30, 0, std::vector<std::uint8_t>(2 * 1024 * 1024, 1)}));
+    REQUIRE(f.host_side->sendMedia({32, 0, {2}}));
+    f.send(RoomFileOffer{hashOf('b'), 1000, 32});
+    REQUIRE(f.inbox.consumed == std::vector<RoomFileChunk>{{31, 0, {1}}, {32, 0, {2}}});
+}
 } // namespace music_player::m0::test
