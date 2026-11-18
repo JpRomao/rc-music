@@ -53,6 +53,10 @@ function Assert-RcMusicBuildDirectory {
             TagLib_DIR = Join-Path $Tools.TagLibPrefix 'lib/cmake/taglib'
         }
         if ($Testing -eq 'ON') { $paths['RC_MUSIC_CATCH2_SOURCE_DIR'] = $Tools.Catch2Source }
+        # Caches configured before the listening room have no package entry yet; the next configure adds it.
+        if ($cache.ContainsKey('LibDataChannel_DIR') -and $cache['LibDataChannel_DIR'] -notlike '*-NOTFOUND') {
+            $paths['LibDataChannel_DIR'] = Join-Path $Tools.DataChannelPrefix 'lib/cmake/LibDataChannel'
+        }
         foreach ($key in $cache.Keys) {
             if ($key -match '^(Qt6\w+)_DIR$' -and $key -ne 'Qt6Multimedia_DIR' -and
                 $cache[$key] -notlike '*-NOTFOUND') {
@@ -85,7 +89,7 @@ function Read-RcMusicDevelopmentTools {
     )
     $data = Import-PowerShellDataFile -LiteralPath $Path
     $allowed = @('CMake', 'CTest', 'Ninja', 'Compiler', 'ClangFormat', 'QmlFormat', 'QtPrefix',
-        'QtMultimediaPackage', 'QtHost', 'TagLibPrefix', 'Catch2Source', 'VisualStudioRoot')
+        'QtMultimediaPackage', 'QtHost', 'TagLibPrefix', 'DataChannelPrefix', 'Catch2Source', 'VisualStudioRoot')
     foreach ($key in $data.Keys) {
         if ($key -notin $allowed) { throw "Unknown toolchain field: $key" }
         if ($data[$key] -isnot [string] -or [string]::IsNullOrWhiteSpace($data[$key]) -or
@@ -97,7 +101,7 @@ function Read-RcMusicDevelopmentTools {
     if ($Task -in @('format', 'check', 'validate')) { $required += @('ClangFormat', 'QmlFormat') }
     if ($Task -in @('build', 'test', 'lint', 'validate')) {
         $required += @('CMake', 'Ninja', 'Compiler', 'QtPrefix', 'QtMultimediaPackage',
-            'QtHost', 'TagLibPrefix', 'VisualStudioRoot')
+            'QtHost', 'TagLibPrefix', 'DataChannelPrefix', 'VisualStudioRoot')
         if ($Task -ne 'build') { $required += @('CTest', 'Catch2Source') }
     }
     $resolved = @{}
@@ -157,7 +161,7 @@ function Get-RcMusicDevelopmentPlan {
         $configure = @('-S', $RepositoryRoot, '-B', $BuildDirectory, '-G', 'Ninja',
             '-DCMAKE_BUILD_TYPE=Release', '-DRC_MUSIC_BUILD_DESKTOP=ON', "-DBUILD_TESTING=$testing",
             "-DCMAKE_MAKE_PROGRAM=$($Tools.Ninja)", "-DCMAKE_CXX_COMPILER=$($Tools.Compiler)",
-            "-DCMAKE_PREFIX_PATH=$($Tools.QtPrefix);$($Tools.TagLibPrefix)",
+            "-DCMAKE_PREFIX_PATH=$($Tools.QtPrefix);$($Tools.TagLibPrefix);$($Tools.DataChannelPrefix)",
             "-DQt6Multimedia_DIR=$($Tools.QtMultimediaPackage)", "-DQT_HOST_PATH=$($Tools.QtHost)")
         if ($testing -eq 'ON') { $configure += "-DRC_MUSIC_CATCH2_SOURCE_DIR=$($Tools.Catch2Source)" }
         Add-Step 'configure' $Tools.CMake $configure

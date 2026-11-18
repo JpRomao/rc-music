@@ -13,5 +13,6 @@
     QtMultimediaPackage = 'out/product/qt-multimedia-6.11.2-rcmusic2/lib/cmake/Qt6Multimedia'
     QtHost = 'out/m0/toolchains/qt-6.11.2-msvc2022_64'
     TagLibPrefix = 'out/product/taglib-2.3.2-msvc144/install'
+    DataChannelPrefix = 'out/product/libdatachannel-0.24.6'
     Catch2Source = 'out/m0/toolchains/Catch2-3.15.3'
 }

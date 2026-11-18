@@ -37,6 +37,7 @@ if(RC_MUSIC_BUILD_NATIVE_MESSAGING)
 endif()
 
 option(RC_MUSIC_BUILD_DESKTOP "Build the Windows RC Music desktop application" OFF)
+option(RC_MUSIC_LISTENING_ROOM "Build the desktop listening room transport (requires libdatachannel)" ON)
 if(RC_MUSIC_BUILD_DESKTOP)
     if(NOT WIN32)
         message(FATAL_ERROR "The product desktop build currently targets Windows; Linux validation is deferred")

@@ -22,7 +22,7 @@ $tools = @{
     Compiler = 'C:/tools/cl.exe'; ClangFormat = 'C:/tools/clang-format.exe'
     QmlFormat = 'C:/tools/qmlformat.exe'; QtPrefix = 'C:/SDK 日本 & tools/qt'
     QtMultimediaPackage = 'C:/SDK/Multimedia'; QtHost = 'C:/SDK/host'
-    TagLibPrefix = 'C:/SDK/taglib'; Catch2Source = 'C:/SDK/catch2'
+    TagLibPrefix = 'C:/SDK/taglib'; DataChannelPrefix = 'C:/SDK/datachannel'; Catch2Source = 'C:/SDK/catch2'
     VisualStudioRoot = 'C:/tools/VS'
 }
 $build = Join-Path $repository 'out/product/runner-fixture'
@@ -109,7 +109,7 @@ Test-Case 'CTest JUnit belongs only to an explicitly selected diagnostic run' {
 }
 Test-Case 'toolchain paths with spaces Unicode and metacharacters remain single arguments' {
     $plan = Plan build
-    Assert-True ($plan[0].Arguments -contains '-DCMAKE_PREFIX_PATH=C:/SDK 日本 & tools/qt;C:/SDK/taglib') 'Path was split or reinterpreted'
+    Assert-True ($plan[0].Arguments -contains '-DCMAKE_PREFIX_PATH=C:/SDK 日本 & tools/qt;C:/SDK/taglib;C:/SDK/datachannel') 'Path was split or reinterpreted'
     Assert-True ($plan[0].File -ceq $tools.CMake) 'Wrong executable'
 }
 Test-Case 'development plans never invoke experiments native packaging builders smokes benchmarks or downloads' {
@@ -184,9 +184,11 @@ try {
         Qt6LinguistTools_DIR = "$($tools.QtHost)/lib/cmake/Qt6LinguistTools"
         Qt6Multimedia_DIR = $tools.QtMultimediaPackage; QT_HOST_PATH = $tools.QtHost
         TagLib_DIR = "$($tools.TagLibPrefix)/lib/cmake/taglib"; RC_MUSIC_CATCH2_SOURCE_DIR = $tools.Catch2Source
+        LibDataChannel_DIR = "$($tools.DataChannelPrefix)/lib/cmake/LibDataChannel"
     }
     foreach ($key in @('CMAKE_COMMAND', 'CMAKE_CXX_COMPILER', 'CMAKE_MAKE_PROGRAM', 'Qt6_DIR', 'Qt6Core_DIR',
-            'Qt6LinguistTools_DIR', 'Qt6Multimedia_DIR', 'QT_HOST_PATH', 'TagLib_DIR', 'RC_MUSIC_CATCH2_SOURCE_DIR')) {
+            'Qt6LinguistTools_DIR', 'Qt6Multimedia_DIR', 'QT_HOST_PATH', 'TagLib_DIR', 'RC_MUSIC_CATCH2_SOURCE_DIR',
+            'LibDataChannel_DIR')) {
         Test-Case "cached $key must match the selected toolchain" {
             $cache = $sdkCache.Clone()
             $cache[$key] = 'C:/unrelated-sdk'
@@ -225,6 +227,17 @@ try {
             [IO.File]::WriteAllText($config, "@{ ClangFormat = '$path'; QmlFormat = 'scripts/Format-Source.ps1' }")
             Assert-Rejected { Read-RcMusicDevelopmentTools -Path $config -RepositoryRoot $repository -Task check } 'unavailable'
         }
+    }
+    Test-Case 'build tool data requires the listening room libdatachannel prefix' {
+        $config = Join-Path $testRoot 'build-tools.psd1'
+        $leaf = 'scripts/develop.ps1'
+        $fields = "CMake = '$leaf'; Ninja = '$leaf'; Compiler = '$leaf'; QtPrefix = 'scripts'; QtMultimediaPackage = 'scripts'; " +
+            "QtHost = 'scripts'; TagLibPrefix = 'scripts'; VisualStudioRoot = 'scripts'"
+        [IO.File]::WriteAllText($config, "@{ $fields }")
+        Assert-Rejected { Read-RcMusicDevelopmentTools -Path $config -RepositoryRoot $repository -Task build } 'Missing toolchain field: DataChannelPrefix'
+        [IO.File]::WriteAllText($config, "@{ $fields; DataChannelPrefix = 'scripts/tests' }")
+        $read = Read-RcMusicDevelopmentTools -Path $config -RepositoryRoot $repository -Task build
+        Assert-True ($read.DataChannelPrefix -eq (Join-Path $repository 'scripts/tests')) 'Prefix did not resolve from the repository'
     }
 } finally {
     Assert-SafeTestRoot

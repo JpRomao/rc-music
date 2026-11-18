@@ -61,7 +61,25 @@ Dependências novas exigem autorização explícita do mantenedor no momento da 
 | libjuice | MPL-2.0 | ICE usado pela libdatachannel |
 | usrsctp | BSD-3-Clause | SCTP dos data channels |
 | plog | MIT | log interno da libdatachannel |
-| Pilha TLS/DTLS | a definir | OpenSSL, GnuTLS ou MbedTLS; a escolha e sua licença entram na fatia S6 |
+| Mbed TLS | Apache-2.0 (usada sob Apache-2.0 da licença dupla Apache-2.0 OR GPL-2.0-or-later) | pilha TLS/DTLS da libdatachannel, estática dentro de `datachannel.dll` |
+
+### Pilha TLS e versões fixadas (S6.1)
+
+Em 2026-11-18, o mantenedor escolheu **Mbed TLS 3.6.8** em vez de OpenSSL 3.5 LTS. O build do Mbed TLS usa só CMake, sem Perl nem NASM. A libdatachannel é compilada com `USE_MBEDTLS=ON`, `NO_MEDIA=ON`, `NO_EXAMPLES=ON` e `NO_TESTS=ON`, em Release, com MSVC 14.44. O resultado é uma `datachannel.dll` compartilhada. Mbed TLS, libjuice, usrsctp e plog ficam estáticos dentro dela. No CMake do produto, só `rc_music_listening_room` linka `LibDataChannel::LibDataChannel`.
+
+| Componente | Versão | Origem fixada |
+| --- | --- | --- |
+| libdatachannel | 0.24.6 | tag `v0.24.6` (objeto `d9617a53201615ef729e99dc39ad6736982d0346`), commit `6b1e2e620f1e37f0eafeee702eaea0043cb305fd` |
+| libjuice | submódulo `deps/libjuice` | commit `b89c792e3612faf2f12cf35bcc56857313a06be3` |
+| usrsctp | submódulo `deps/usrsctp` | commit `fec583d54493f879d2ae44a743423bf8a04371ab` |
+| plog | submódulo `deps/plog` | commit `94899e0b926ac1b0f4750bfbd495167b4a6ae9ef` |
+| Mbed TLS | 3.6.8 | `mbedtls-3.6.8.tar.bz2` da release oficial, SHA-256 `bc54b818e87f49c0b3281dd85d24adaede0e63b4e822e3fbd49c005a38b9595b`, conferido contra `mbedtls-3.6.8-sha256sum.txt` |
+
+Os submódulos `deps/json` e `deps/libsrtp` não foram baixados: sem mídia e sem exemplos, o build não os usa.
+
+O Mbed TLS usa o mecanismo documentado `MBEDTLS_USER_CONFIG_FILE` com uma única opção fora do padrão, `MBEDTLS_SSL_DTLS_SRTP`. A libdatachannel 0.24.6 chama `mbedtls_ssl_conf_dtls_srtp_protection_profiles()` no transporte DTLS mesmo com `NO_MEDIA=ON`. Por isso, o Mbed TLS e a `datachannel.dll` são compilados com o mesmo arquivo. A receita está em [Comandos de desenvolvimento](../../development-commands.md#libdatachannel-da-sala-de-escuta).
+
+As licenças e os avisos de libdatachannel e libjuice (MPL-2.0), usrsctp (BSD-3-Clause), plog (MIT) e Mbed TLS (Apache-2.0) precisam acompanhar o instalador. Essa entrega fica para a fatia S13.
 
 O Worker usa pacotes npm próprios, também sujeitos à mesma autorização e ao registro da licença. Os termos do plano gratuito do Cloudflare Workers são condição de operação, não dependência do app.
 

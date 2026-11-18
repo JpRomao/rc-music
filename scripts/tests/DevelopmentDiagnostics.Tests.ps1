@@ -43,6 +43,7 @@ function Planned-Steps($Run, [string] $Task) {
         ClangFormat = 'C:/unused/clang-format.exe'; QmlFormat = 'C:/unused/qmlformat.exe'
         CMake = 'C:/unused/cmake.exe'; CTest = 'C:/unused/ctest.exe'; Ninja = 'C:/unused/ninja.exe'
         Compiler = 'C:/unused/cl.exe'; QtPrefix = 'C:/unused/qt'; TagLibPrefix = 'C:/unused/taglib'
+        DataChannelPrefix = 'C:/unused/datachannel'
         QtMultimediaPackage = 'C:/unused/multimedia'; QtHost = 'C:/unused/qt-host'; Catch2Source = 'C:/unused/catch2'
     }
     return @(Get-RcMusicDevelopmentPlan -Task $Task -RepositoryRoot $source -BuildDirectory $Run.Report.buildDirectory `

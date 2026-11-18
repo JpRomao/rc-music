@@ -9,7 +9,7 @@ O entrypoint [scripts/develop.ps1](../scripts/develop.ps1) executa os checks da 
 
 Execute em PowerShell 7 x64 no Windows. O arquivo de ferramentas padrão é `.tools/windows.psd1`, ignorado pelo Git. O [exemplo versionado](../tools/windows.example.psd1) contém os caminhos existentes no host validado; em outra máquina, ajuste-os para instalações locais equivalentes. Caminhos relativos são resolvidos a partir da raiz do repositório, não da pasta do arquivo de ferramentas.
 
-O runner não instala nem baixa dependências. A configuração é um `.psd1` de dados com campos conhecidos: `CMake`, `CTest`, `Ninja`, `Compiler`, `ClangFormat`, `QmlFormat`, `VisualStudioRoot`, `QtPrefix`, `QtMultimediaPackage`, `QtHost`, `TagLibPrefix` e `Catch2Source`. Os caminhos exigidos dependem da ação; campos desconhecidos, caminhos inválidos ou ferramentas ausentes são recusados. `format` e `check` não exigem CMake, compilador, Qt de destino ou Catch2: exigem os dois formatters locais. Git deve estar disponível para os checks documentais e de diff; `rg` é opcional para a enumeração de fontes.
+O runner não instala nem baixa dependências. A configuração é um `.psd1` de dados com campos conhecidos: `CMake`, `CTest`, `Ninja`, `Compiler`, `ClangFormat`, `QmlFormat`, `VisualStudioRoot`, `QtPrefix`, `QtMultimediaPackage`, `QtHost`, `TagLibPrefix`, `DataChannelPrefix` e `Catch2Source`. Os caminhos exigidos dependem da ação; campos desconhecidos, caminhos inválidos ou ferramentas ausentes são recusados. `format` e `check` não exigem CMake, compilador, Qt de destino ou Catch2: exigem os dois formatters locais. Git deve estar disponível para os checks documentais e de diff; `rg` é opcional para a enumeração de fontes.
 
 ### Qt Multimedia com FFmpeg corrigido
 
@@ -23,10 +23,35 @@ pwsh -NoProfile -File scripts/develop.ps1 build -ToolchainFile tools/windows.exa
 
 O primeiro comando prepara `out/product/qt-network-sdk`, uma cópia do SDK Qt com a DLL Qt Network qualificada. Use `-VendorSdkRoot` e `-DllDirectory` para indicar os insumos em outro host. O segundo comando prepara `out/product/qt-multimedia-6.11.2-rcmusic2` a partir do Qt Multimedia 6.11.2 e do FFmpeg em `out/product/fffix2/install/bin`. Ele aceita `-VendorSdkRoot` e `-FfmpegBinDirectory`. Em `.tools/windows.psd1`, use os caminhos retornados para `QtPrefix` e `QtMultimediaPackage` e configure um diretório de build novo. As ações `build`, `test`, `lint` e `validate` conferem os hashes qualificados antes de configurar ou compilar. [Proveniência do FFmpeg](delivery/windows-f8a593b-ffmpeg.md#uso-no-fluxo-windows)
 
+### libdatachannel da sala de escuta
+
+A sala de escuta ([ADR-0022](architecture/decisions/0022-listening-room.md)) usa libdatachannel **0.24.6** com Mbed TLS **3.6.8**. Mbed TLS é estático dentro de `datachannel.dll`, assim como libjuice, usrsctp e plog. O campo `DataChannelPrefix` aponta para a instalação, por padrão `out/product/libdatachannel-0.24.6`, e entra em `CMAKE_PREFIX_PATH` depois de Qt e TagLib. A opção CMake `RC_MUSIC_LISTENING_ROOM` vale `ON` no produto; com `OFF`, o build não procura a libdatachannel e não cria `rc_music_listening_room`. Só essa biblioteca linka `LibDataChannel::LibDataChannel`, e o CTest `rc_music.listening-room.build-boundary` confere a fronteira. O build Release copia `datachannel.dll` para o lado de `m0_qt_shell.exe`.
+
+O runner não baixa nem compila essas dependências. Receita usada em 2026-11-18, em um prompt x64 do MSVC 14.44, a partir de `out/product`:
+
+```powershell
+git clone --depth 1 --branch v0.24.6 https://github.com/paullouisageneau/libdatachannel libdatachannel-src-0.24.6
+git -C libdatachannel-src-0.24.6 submodule update --init --depth 1 -- deps/libjuice deps/usrsctp deps/plog
+gh release download mbedtls-3.6.8 -R Mbed-TLS/mbedtls -D mbedtls-download-3.6.8 -p mbedtls-3.6.8.tar.bz2 -p mbedtls-3.6.8-sha256sum.txt
+# Conferir o SHA-256 antes de extrair em mbedtls-src-3.6.8.
+cmake -S mbedtls-src-3.6.8/mbedtls-3.6.8 -B mbedtls-build-3.6.8 -G Ninja -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_INSTALL_PREFIX="$PWD/mbedtls-3.6.8" -DUSE_SHARED_MBEDTLS_LIBRARY=OFF -DUSE_STATIC_MBEDTLS_LIBRARY=ON `
+  -DENABLE_PROGRAMS=OFF -DENABLE_TESTING=OFF -DGEN_FILES=OFF `
+  -DMBEDTLS_USER_CONFIG_FILE="$PWD/mbedtls-3.6.8/config/rc_music_mbedtls_user_config.h"
+cmake --build mbedtls-build-3.6.8; cmake --install mbedtls-build-3.6.8
+cmake -S libdatachannel-src-0.24.6 -B libdatachannel-build-0.24.6 -G Ninja -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_INSTALL_PREFIX="$PWD/libdatachannel-0.24.6" -DCMAKE_PREFIX_PATH="$PWD/mbedtls-3.6.8" `
+  "-DCMAKE_CXX_FLAGS_INIT=-DMBEDTLS_USER_CONFIG_FILE=<rc_music_mbedtls_user_config.h> -I$PWD/mbedtls-3.6.8/config" `
+  -DUSE_MBEDTLS=ON -DNO_MEDIA=ON -DNO_EXAMPLES=ON -DNO_TESTS=ON
+cmake --build libdatachannel-build-0.24.6; cmake --install libdatachannel-build-0.24.6
+```
+
+O arquivo de configuração de usuário do Mbed TLS contém apenas `#define MBEDTLS_SSL_DTLS_SRTP`. A libdatachannel 0.24.6 chama `mbedtls_ssl_conf_dtls_srtp_protection_profiles()` no transporte DTLS mesmo com `NO_MEDIA=ON`. Mbed TLS e `datachannel.dll` precisam ser compilados com o mesmo arquivo. Versões, commits, hashes e licenças estão no ADR-0022.
+
 Versões desta receita:
 
 - clang-format **19.1.1** e qmlformat **6.11.2**, conferidos por `--version` antes de formatar;
-- Qt **6.11.2** e TagLib **2.3.2**, exigidos exatamente pelo CMake. Catch2 **3.15.3** somente para testes. [Proveniência do TagLib](desktop-build.md#taglib-no-runtime-windows)
+- Qt **6.11.2**, TagLib **2.3.2** e libdatachannel **0.24.6**, exigidos exatamente pelo CMake. Catch2 **3.15.3** somente para testes. [Proveniência do TagLib](desktop-build.md#taglib-no-runtime-windows)
 - MSVC/toolset **14.44**, SDK Windows **10.0.22621.0**, CMake **3.31+** e gerador Ninja.
 
 Nas ações que compilam, o script entra no ambiente de desenvolvimento x64 do Visual Studio configurado. Não é necessário preparar manualmente o ambiente de compilação para esses comandos.
@@ -117,7 +142,7 @@ O check C++ chama clang-format com `--dry-run --Werror`. O qmlformat **não ofer
 
 Antes de configurar ou compilar, o runner exige um diretório filho de `out/product`, sem atravessar reparse points. Um cache existente precisa pertencer exatamente à raiz do produto e declarar Ninja, Release, `RC_MUSIC_BUILD_DESKTOP=ON` e o `BUILD_TESTING` da ação. Cache com entradas duplicadas, outra origem ou flags divergentes é recusado; o runner não apaga caches nem converte silenciosamente um build OFF em ON. Use diretórios distintos para produção e testes.
 
-O cache também precisa corresponder às ferramentas selecionadas: CMake, compilador, Ninja, Qt, Qt Multimedia, host Qt, TagLib e Catch2 quando ON. Módulos Qt já encontrados precisam pertencer ao SDK configurado; pacotes de ferramentas podem vir do host Qt escolhido. Isso impede reaproveitar silenciosamente módulos de outro SDK apenas porque `CMAKE_PREFIX_PATH` foi alterado. Para trocar toolchain, escolha uma nova pasta de build; o runner não remove a anterior.
+O cache também precisa corresponder às ferramentas selecionadas: CMake, compilador, Ninja, Qt, Qt Multimedia, host Qt, TagLib, libdatachannel (quando o cache já o encontrou) e Catch2 quando ON. Módulos Qt já encontrados precisam pertencer ao SDK configurado; pacotes de ferramentas podem vir do host Qt escolhido. Isso impede reaproveitar silenciosamente módulos de outro SDK apenas porque `CMAKE_PREFIX_PATH` foi alterado. Para trocar toolchain, escolha uma nova pasta de build; o runner não remove a anterior.
 
 Cada processo precisa terminar com código zero. Falhas interrompem os passos seguintes e a mensagem final de sucesso não é emitida. O build sempre precede a execução dos testes; CTest recebe `--output-on-failure --no-tests=error`, portanto ausência de testes também é falha. O runner preserva os ambientes configurados por alvo no CTest, sem impor globalmente logging ou `QT_FATAL_WARNINGS`.
 

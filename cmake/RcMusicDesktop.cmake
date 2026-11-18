@@ -243,3 +243,10 @@ if(RC_MUSIC_DESKTOP_AUDIO_SUPPORT)
         rc_music_link_shell_audio(m0_qt_shell)
     endif()
 endif()
+
+# Only the product entry point turns RC_MUSIC_LISTENING_ROOM on (default ON there);
+# find_package(LibDataChannel) happens inside the module and nowhere else.
+include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicListeningRoom.cmake")
+if(TARGET rc_music_listening_room AND TARGET m0_qt_shell)
+    rc_music_copy_listening_room_runtime(m0_qt_shell)
+endif()
