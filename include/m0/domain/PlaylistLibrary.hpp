@@ -22,10 +22,14 @@ struct PlaylistEntry final {
     [[nodiscard]] bool operator==(const PlaylistEntry&) const = default;
 };
 
+// Who may see a list when a listening room publishes playlists. Lists start Private.
+enum class PlaylistVisibility : std::uint8_t { Private, Room };
+
 struct NamedPlaylist final {
     std::uint64_t id{};
     std::string name{};
     std::vector<PlaylistEntry> entries{};
+    PlaylistVisibility visibility{PlaylistVisibility::Private};
     [[nodiscard]] bool operator==(const NamedPlaylist&) const = default;
 };
 
@@ -50,6 +54,8 @@ class PlaylistLibrary final {
                                                       std::vector<std::filesystem::path> source_paths = {});
     [[nodiscard]] bool rename(std::uint64_t playlist_id, std::string name);
     [[nodiscard]] bool remove(std::uint64_t playlist_id);
+    // False for an unknown id or when the list already has that visibility.
+    [[nodiscard]] bool setVisibility(std::uint64_t playlist_id, PlaylistVisibility visibility);
     [[nodiscard]] bool append(std::uint64_t playlist_id, std::vector<std::filesystem::path> source_paths);
     [[nodiscard]] bool replaceEntrySource(std::uint64_t playlist_id, std::uint64_t entry_id,
                                           std::filesystem::path source_path);

@@ -11,6 +11,7 @@ O mantenedor colocou playlists nomeadas como próxima prioridade em FR-056/M6.6.
 3. Selecione uma playlist e use **Adicionar arquivos…** para escolher faixas locais diretamente. Quando a fila tiver faixas, use **Adicionar fila atual** para copiá-las. As duas ações acrescentam as faixas na ordem recebida e permitem duplicatas.
 4. Selecione uma faixa da lista e use os controles de mover para cima/baixo ou **Remover**. Se o arquivo mudou de lugar, use **Localizar arquivo…** e selecione o novo caminho. A ação atualiza só a entrada selecionada e mantém sua posição e as duplicatas. A edição preserva a fila em reprodução e os arquivos de áudio.
 5. Use **Renomear** para alterar o nome da lista escolhida. **Excluir** pede confirmação do alvo; somente a playlist é removida.
+6. Com uma playlist selecionada, a chave **Visível para a sala** define se ela poderá ser publicada aos convidados de uma sala de escuta ([ADR-0022](architecture/decisions/0022-listening-room.md)). Toda playlist começa privada; a escolha é gravada como as demais edições.
 
 Listas e entradas possuem IDs próprios: nomes iguais e faixas repetidas são permitidos. Nomes e paths são apresentados como texto simples. Trocar a seleção ou alterar o alvo de uma confirmação não deve redirecionar a ação para outra lista.
 
@@ -44,7 +45,7 @@ Quando não for possível carregar o catálogo, use **Tentar abrir novamente** d
 
 ## Arquivos e limites
 
-O catálogo usa `playlists.json`, `playlists.json.bak` e `playlists.json.lock`, na pasta de configuração do RC Music. Ele contém nomes, IDs e referências aos arquivos locais; o store não abre, altera ou apaga esses áudios. O backup conserva a versão anterior do primário válido e pode recuperar uma leitura quando o primário estiver inválido ou ausente. A leitura não repara os arquivos automaticamente.
+O catálogo usa `playlists.json`, `playlists.json.bak` e `playlists.json.lock`, na pasta de configuração do RC Music. Ele contém nomes, IDs, a visibilidade de cada lista (esquema versão 2; arquivos da versão 1 carregam como privados) e referências aos arquivos locais; o store não abre, altera ou apaga esses áudios. O backup conserva a versão anterior do primário válido e pode recuperar uma leitura quando o primário estiver inválido ou ausente. A leitura não repara os arquivos automaticamente.
 
 | Limite | Valor |
 |---|---:|

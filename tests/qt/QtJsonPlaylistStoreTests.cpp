@@ -95,12 +95,48 @@ class QtJsonPlaylistStoreTests final : public QObject {
         QCOMPARE(loaded.status, PlaylistLoadStatus::Loaded);
         QVERIFY(loaded.snapshot == original());
         const auto encoded = QJsonDocument::fromJson(read(primary(directory))).object();
-        QCOMPARE(encoded.value("schemaVersion").toInt(), 1);
+        QCOMPARE(encoded.value("schemaVersion").toInt(), 2);
         const auto lists = encoded.value("playlists").toArray();
         QCOMPARE(lists.at(1).toObject().value("id").toString(), "18446744073709551615");
         const auto entries = lists.at(0).toObject().value("entries").toArray();
         QCOMPARE(entries.at(1).toObject().value("id").toString(), "9007199254740993");
         QVERIFY(!QFileInfo::exists(backup(directory)));
+    }
+    void visibilityRoundTripsAndVersionOneFilesLoadAsPrivate() {
+        QTemporaryDir temporary;
+        QVERIFY(temporary.isValid());
+        QVERIFY(write(primary(temporary.path()), document()));
+        QtJsonPlaylistStore legacy(temporary.path());
+        const auto old = legacy.load();
+        QCOMPARE(old.status, PlaylistLoadStatus::Loaded);
+        QCOMPARE(old.snapshot.playlists.size(), std::size_t{1});
+        QVERIFY(old.snapshot.playlists.front().visibility == PlaylistVisibility::Private);
+        QTemporaryDir other;
+        QVERIFY(other.isValid());
+        auto snapshot = original();
+        snapshot.playlists.front().visibility = PlaylistVisibility::Room;
+        QtJsonPlaylistStore store(other.path());
+        QCOMPARE(store.save(snapshot), PlaylistSaveStatus::Saved);
+        const auto loaded = QtJsonPlaylistStore(other.path()).load();
+        QCOMPARE(loaded.status, PlaylistLoadStatus::Loaded);
+        QVERIFY(loaded.snapshot == snapshot);
+        QVERIFY(loaded.snapshot.playlists.front().visibility == PlaylistVisibility::Room);
+        QVERIFY(loaded.snapshot.playlists.back().visibility == PlaylistVisibility::Private);
+        QCOMPARE(QJsonDocument::fromJson(read(primary(other.path()))).object().value("schemaVersion").toInt(), 2);
+    }
+    void versionTwoRejectsUnknownOrMissingVisibility() {
+        for (const auto* visibility : {"\"secret\"", "1", "null"}) {
+            QTemporaryDir temporary;
+            QVERIFY(
+                write(primary(temporary.path()),
+                      QByteArray("{\"schemaVersion\":2,\"playlists\":[{\"id\":\"1\",\"name\":\"A\",\"visibility\":") +
+                          visibility + ",\"entries\":[]}]}"));
+            QCOMPARE(QtJsonPlaylistStore(temporary.path()).load().status, PlaylistLoadStatus::Invalid);
+        }
+        QTemporaryDir temporary;
+        QVERIFY(write(primary(temporary.path()),
+                      "{\"schemaVersion\":2,\"playlists\":[{\"id\":\"1\",\"name\":\"A\",\"entries\":[]}]}"));
+        QCOMPARE(QtJsonPlaylistStore(temporary.path()).load().status, PlaylistLoadStatus::Invalid);
     }
     void eachReplacementKeepsThePreviousPrimaryAsTheExactBackup() {
         QTemporaryDir temporary;
@@ -148,7 +184,7 @@ class QtJsonPlaylistStoreTests final : public QObject {
     void futureVersionInEitherSlotBlocksEveryWrite() {
         QFETCH(bool, future_primary);
         QTemporaryDir temporary;
-        const QByteArray future("{\"schemaVersion\":2,\"opaqueFutureData\":{\"keep\":true}}");
+        const QByteArray future("{\"schemaVersion\":3,\"opaqueFutureData\":{\"keep\":true}}");
         QVERIFY(write(primary(temporary.path()), future_primary ? future : document()));
         QVERIFY(write(backup(temporary.path()), future_primary ? document() : future));
         const auto before_primary = read(primary(temporary.path())), before_backup = read(backup(temporary.path()));

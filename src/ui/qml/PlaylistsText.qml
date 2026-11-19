@@ -11,6 +11,7 @@ QtObject {
     readonly property string empty: qsTr("Suas playlists aparecerão aqui.")
     readonly property string rename: qsTr("Renomear")
     readonly property string deleteAction: qsTr("Excluir")
+    readonly property string visibleToRoom: qsTr("Visível para a sala")
     readonly property string tracks: qsTr("Faixas da playlist")
     readonly property string detailEyebrow: qsTr("PLAYLIST")
     readonly property string selectPlaylist: qsTr("Selecione uma playlist.")

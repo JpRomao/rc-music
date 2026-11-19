@@ -58,6 +58,9 @@ TestCase {
         function deletePlaylist(id) {
             return record("delete", [id]);
         }
+        function setPlaylistVisibleToRoom(id, visible) {
+            return record("visibility", [id, visible]);
+        }
         function saveQueueAsPlaylist(name) {
             return record("saveQueue", [name]);
         }
@@ -263,6 +266,33 @@ TestCase {
         const dialog = findChild(shell, "playlist-name-dialog");
         verify(!dialog.visible || !submit.enabled);
         compare(backend.calls.length, 0);
+    }
+    function test_roomVisibilityToggleIsNamedAndSetsTheSelectedList() {
+        openPanel();
+        const toggle = findChild(shell, "playlist-room-visibility");
+        verify(toggle !== null);
+        compare(toggle.text, "Visível para a sala");
+        compare(toggle.Accessible.name, "Visível para a sala");
+        compare(toggle.checked, false);
+        compare(backend.calls.length, 0);
+        clickVisible(toggle);
+        const call = lastCall("visibility");
+        compare(call.args[0], "1");
+        compare(call.args[1], true);
+        backend.playlists = [
+            {
+                id: "1",
+                name: "<b>Favoritas 日本</b>",
+                count: 3,
+                visibleToRoom: true
+            },
+            backend.playlists[1]];
+        tryCompare(toggle, "checked", true);
+        clickVisible(toggle);
+        compare(lastCall("visibility").args[1], false);
+        backend.canAddFiles = true;
+        backend.hasPendingChange = true;
+        tryCompare(toggle, "enabled", false);
     }
     function test_deleteRequiresConfirmationForTheCapturedList() {
         openPanel();
@@ -693,6 +723,8 @@ TestCase {
         tryCompare(findChild(shell, "playlist-rename"), "activeFocus", true);
         keyClick(Qt.Key_Tab);
         tryCompare(findChild(shell, "playlist-delete"), "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        tryCompare(findChild(shell, "playlist-room-visibility"), "activeFocus", true);
         keyClick(Qt.Key_Tab);
         tryCompare(entries, "activeFocus", true);
         keyClick(Qt.Key_End);

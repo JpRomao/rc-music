@@ -24,6 +24,8 @@ struct InspectedFile final {
     QByteArray bytes{};
     PlaylistLibrarySnapshot snapshot{};
 };
+// v1 had no per-list visibility (every list loads as Private); v2 adds it.
+constexpr int current_schema_version = 2;
 enum class WriteStatus { Failed, Committed, CommittedWithInjectedFailure };
 
 QString primaryPath(const QString& directory) { return QDir(directory).filePath(QStringLiteral("playlists.json")); }
@@ -88,6 +90,19 @@ std::optional<std::uint64_t> decodeId(const QJsonValue& value) {
     }
     return result;
 }
+QString visibilityText(const PlaylistVisibility visibility) {
+    return visibility == PlaylistVisibility::Room ? QStringLiteral("room") : QStringLiteral("private");
+}
+std::optional<PlaylistVisibility> decodeVisibility(const QJsonValue& value) {
+    if (!value.isString())
+        return {};
+    const auto text = value.toString();
+    if (text == QLatin1String("private"))
+        return PlaylistVisibility::Private;
+    if (text == QLatin1String("room"))
+        return PlaylistVisibility::Room;
+    return {};
+}
 QByteArray encode(const PlaylistLibrarySnapshot& snapshot) {
     if (!isValidPlaylistLibrarySnapshot(snapshot))
         return {};
@@ -106,11 +121,12 @@ QByteArray encode(const PlaylistLibrarySnapshot& snapshot) {
         }
         playlists.push_back(QJsonObject{{QStringLiteral("id"), QString::number(playlist.id)},
                                         {QStringLiteral("name"), name},
+                                        {QStringLiteral("visibility"), visibilityText(playlist.visibility)},
                                         {QStringLiteral("entries"), entries}});
     }
-    const auto bytes =
-        QJsonDocument(QJsonObject{{QStringLiteral("schemaVersion"), 1}, {QStringLiteral("playlists"), playlists}})
-            .toJson(QJsonDocument::Compact);
+    const auto bytes = QJsonDocument(QJsonObject{{QStringLiteral("schemaVersion"), current_schema_version},
+                                                 {QStringLiteral("playlists"), playlists}})
+                           .toJson(QJsonDocument::Compact);
     return bytes.size() > QtJsonPlaylistStore::maximum_file_size ? QByteArray{} : bytes;
 }
 InspectedFile decode(QByteArray bytes) {
@@ -123,9 +139,9 @@ InspectedFile decode(QByteArray bytes) {
     if (!version.isDouble() || !std::isfinite(version.toDouble()) || version.toDouble() <= 0 ||
         std::trunc(version.toDouble()) != version.toDouble())
         return {.status = FileStatus::Invalid};
-    // Future schemas are opaque. Their shape/depth is not constrained by v1,
+    // Future schemas are opaque. Their shape/depth is not constrained by v2,
     // and observing one never authorizes overwriting either document slot.
-    if (version.toDouble() > 1)
+    if (version.toDouble() > current_schema_version)
         return {.status = FileStatus::FutureVersion};
     if (!detail::strictJsonPreflight(bytes, 5) || root.size() != 2 ||
         !root.value(QStringLiteral("playlists")).isArray())
@@ -142,7 +158,11 @@ InspectedFile decode(QByteArray bytes) {
         const auto object = playlist_value.toObject();
         const auto id = decodeId(object.value(QStringLiteral("id")));
         const auto name_value = object.value(QStringLiteral("name"));
-        if (object.size() != 3 || !id || !name_value.isString() || !object.value(QStringLiteral("entries")).isArray())
+        const bool has_visibility = version.toDouble() >= 2;
+        const auto visibility = has_visibility ? decodeVisibility(object.value(QStringLiteral("visibility")))
+                                               : std::optional{PlaylistVisibility::Private};
+        if (object.size() != (has_visibility ? 4 : 3) || !visibility || !id || !name_value.isString() ||
+            !object.value(QStringLiteral("entries")).isArray())
             return {.status = FileStatus::Invalid};
         const auto name = name_value.toString();
         if (!scalarString(name))
@@ -152,7 +172,7 @@ InspectedFile decode(QByteArray bytes) {
         if (size > maximum_playlist_entries - entry_count)
             return {.status = FileStatus::Invalid};
         entry_count += size;
-        NamedPlaylist playlist{*id, name.toUtf8().toStdString(), {}};
+        NamedPlaylist playlist{*id, name.toUtf8().toStdString(), {}, *visibility};
         playlist.entries.reserve(size);
         for (const auto& entry_value : entries) {
             if (!entry_value.isObject())

@@ -94,6 +94,26 @@ TEST_CASE("playlists rename preserves identity entries and the other lists", "[c
     CHECK(library.snapshot() == after);
 }
 
+TEST_CASE("playlists are private by default and visibility changes only the chosen list",
+          "[core][playlists][listening-room]") {
+    PlaylistLibrary library;
+    REQUIRE(library.restore(sample()));
+    CHECK(library.find(7)->visibility == PlaylistVisibility::Private);
+    const auto created = library.create("Nova");
+    REQUIRE(created);
+    CHECK(library.find(*created)->visibility == PlaylistVisibility::Private);
+    const auto before = library.snapshot();
+    CHECK_FALSE(library.setVisibility(12345, PlaylistVisibility::Room));
+    CHECK(library.snapshot() == before);
+    REQUIRE(library.setVisibility(7, PlaylistVisibility::Room));
+    CHECK(library.find(7)->visibility == PlaylistVisibility::Room);
+    CHECK(library.find(7)->entries == before.playlists[0].entries);
+    CHECK(library.find(9)->visibility == PlaylistVisibility::Private);
+    CHECK_FALSE(library.setVisibility(7, PlaylistVisibility::Room));
+    REQUIRE(library.setVisibility(7, PlaylistVisibility::Private));
+    CHECK(library.snapshot() == before);
+}
+
 TEST_CASE("playlists append keeps existing entries and gives repeated paths new global entry ids",
           "[core][playlists][FR-056]") {
     PlaylistLibrary library;

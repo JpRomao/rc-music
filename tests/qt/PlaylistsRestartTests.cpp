@@ -394,7 +394,7 @@ class PlaylistsRestartTests final : public QObject {
         const auto primary = readFixture(QDir(directory).filePath(QStringLiteral("playlists.json")));
         QVERIFY(primary);
         const auto document = QJsonDocument::fromJson(*primary).object();
-        QCOMPARE(document.value("schemaVersion").toInt(), 1);
+        QCOMPARE(document.value("schemaVersion").toInt(), 2);
         const auto playlists = document.value("playlists").toArray();
         QCOMPARE(playlists.size(), 1);
         const auto saved = playlists.first().toObject();

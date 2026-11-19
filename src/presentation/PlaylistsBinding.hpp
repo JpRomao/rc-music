@@ -56,6 +56,8 @@ class PlaylistsBinding final : public QObject {
     Q_INVOKABLE bool createPlaylist(const QString& name);
     Q_INVOKABLE bool renamePlaylist(const QString& id, const QString& name);
     Q_INVOKABLE bool deletePlaylist(const QString& id);
+    // Marks a saved list as visible to (or hidden from) listening-room guests.
+    Q_INVOKABLE bool setPlaylistVisibleToRoom(const QString& id, bool visible);
     Q_INVOKABLE bool saveQueueAsPlaylist(const QString& name);
     Q_INVOKABLE bool addQueueToPlaylist(const QString& id);
     Q_INVOKABLE bool requestAddFiles(const QString& id);

@@ -146,6 +146,13 @@ bool PlaylistLibrary::rename(const std::uint64_t playlist_id, std::string name) 
     snapshot_ = std::move(candidate);
     return true;
 }
+bool PlaylistLibrary::setVisibility(const std::uint64_t playlist_id, const PlaylistVisibility visibility) {
+    const auto found = findPlaylist(snapshot_, playlist_id);
+    if (found == snapshot_.playlists.end() || found->visibility == visibility)
+        return false;
+    found->visibility = visibility;
+    return true;
+}
 bool PlaylistLibrary::remove(const std::uint64_t playlist_id) {
     const auto found = findPlaylist(snapshot_, playlist_id);
     if (found == snapshot_.playlists.end())

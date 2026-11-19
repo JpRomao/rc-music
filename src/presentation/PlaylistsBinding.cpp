@@ -273,7 +273,8 @@ QVariantList PlaylistsBinding::playlists() const {
     for (const auto& item : impl_->library.snapshot().playlists)
         result.push_back(QVariantMap{{"id", QString::number(item.id)},
                                      {"name", QString::fromUtf8(item.name)},
-                                     {"count", static_cast<int>(item.entries.size())}});
+                                     {"count", static_cast<int>(item.entries.size())},
+                                     {"visibleToRoom", item.visibility == PlaylistVisibility::Room}});
     return result;
 }
 QVariantList PlaylistsBinding::entries() const {
@@ -317,6 +318,15 @@ bool PlaylistsBinding::createPlaylist(const QString& name) {
 bool PlaylistsBinding::renamePlaylist(const QString& value, const QString& name) {
     const auto id = identifier(value);
     return id && impl_->mutate([&](auto& candidate) { return candidate.rename(*id, nameText(name)); }, *id);
+}
+bool PlaylistsBinding::setPlaylistVisibleToRoom(const QString& value, const bool visible) {
+    const auto id = identifier(value);
+    return id && impl_->mutate(
+                     [&](auto& candidate) {
+                         return candidate.setVisibility(*id, visible ? PlaylistVisibility::Room
+                                                                     : PlaylistVisibility::Private);
+                     },
+                     *id);
 }
 bool PlaylistsBinding::deletePlaylist(const QString& value) {
     const auto id = identifier(value);

@@ -384,6 +384,21 @@ PageSurface {
                         onClicked: root.requestDelete()
                     }
                 }
+                PreferenceToggle {
+                    id: roomVisibility
+                    Layout.fillWidth: true
+                    contract: root.contract
+                    controlId: "playlist-room-visibility"
+                    text: playlistsText.visibleToRoom
+                    value: root.selectedPlaylist !== null && root.selectedPlaylist.visibleToRoom === true
+                    visible: root.selectedPlaylist !== null
+                    enabled: root.canEdit && root.selectedPlaylist !== null
+                    onValueEdited: checked => {
+                        root.playlists.setPlaylistVisibleToRoom(root.selectedPlaylistId, checked);
+                        // The saved list, not the click, decides the state shown.
+                        roomVisibility.checked = Qt.binding(() => roomVisibility.value);
+                    }
+                }
             }
             Rectangle {
                 Layout.preferredWidth: 1

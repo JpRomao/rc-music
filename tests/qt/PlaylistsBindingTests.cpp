@@ -167,6 +167,26 @@ class PlaylistsBindingTests final : public QObject {
         QCOMPARE(binding.playlists().front().toMap().value("id").toString(), id);
         QCOMPARE(appends, 0);
     }
+    void roomVisibilityIsPersistedLikeOtherEditsAndExposedPerRow() {
+        auto store = std::make_shared<Store>();
+        store->disk = {{{{3, "Primeira", {}}, {4, "Segunda", {}}}}, PlaylistLoadStatus::Loaded};
+        PlaylistsBinding binding(store, [] { return PlaylistsBinding::Paths{}; }, [](auto) { return true; });
+        load(binding);
+        for (const auto& row : binding.playlists())
+            QVERIFY(!row.toMap().value("visibleToRoom").toBool());
+        QVERIFY(!binding.setPlaylistVisibleToRoom("99", true));
+        QVERIFY(!binding.setPlaylistVisibleToRoom("3", false)); // Already private.
+        store->release = false;
+        QVERIFY(binding.setPlaylistVisibleToRoom("3", true));
+        QVERIFY(binding.hasPendingChange());
+        QVERIFY(!binding.playlists().front().toMap().value("visibleToRoom").toBool()); // Not saved yet.
+        store->release = true;
+        QTRY_VERIFY_WITH_TIMEOUT(!binding.busy(), 2000);
+        QVERIFY(binding.playlists().at(0).toMap().value("visibleToRoom").toBool());
+        QVERIFY(!binding.playlists().at(1).toMap().value("visibleToRoom").toBool());
+        QVERIFY(store->disk.snapshot.playlists.at(0).visibility == PlaylistVisibility::Room);
+        QVERIFY(store->disk.snapshot.playlists.at(1).visibility == PlaylistVisibility::Private);
+    }
     void creatingAnEmptyPlaylistNeverReadsOrCopiesTheCurrentQueue() {
         auto store = std::make_shared<Store>();
         int reads{};
