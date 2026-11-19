@@ -213,6 +213,7 @@ if(RC_MUSIC_DESKTOP_SHELL_SUPPORT)
     rc_music_configure_cpp(m0_qt_diagnostic_binding)
 
     rc_music_link_shell(m0_qt_shell m0_qt_shell_ui m0_qt_shell_support m0_qt_diagnostic_binding)
+    include("${RC_MUSIC_SOURCE_ROOT}/cmake/RcMusicTestProfileRoot.cmake")
 endif()
 
 if(RC_MUSIC_DESKTOP_AUDIO_SUPPORT)

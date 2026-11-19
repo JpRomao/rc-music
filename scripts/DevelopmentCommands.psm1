@@ -160,6 +160,8 @@ function Get-RcMusicDevelopmentPlan {
         $testing = if ($Task -eq 'build') { 'OFF' } else { 'ON' }
         $configure = @('-S', $RepositoryRoot, '-B', $BuildDirectory, '-G', 'Ninja',
             '-DCMAKE_BUILD_TYPE=Release', '-DRC_MUSIC_BUILD_DESKTOP=ON', "-DBUILD_TESTING=$testing",
+            # --profile-root (S13.1) is a manual test build; a reused cache never keeps it ON here.
+            '-DRC_MUSIC_TEST_PROFILE_ROOT=OFF',
             "-DCMAKE_MAKE_PROGRAM=$($Tools.Ninja)", "-DCMAKE_CXX_COMPILER=$($Tools.Compiler)",
             "-DCMAKE_PREFIX_PATH=$($Tools.QtPrefix);$($Tools.TagLibPrefix);$($Tools.DataChannelPrefix)",
             "-DQt6Multimedia_DIR=$($Tools.QtMultimediaPackage)", "-DQT_HOST_PATH=$($Tools.QtHost)")

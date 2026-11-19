@@ -97,6 +97,12 @@ function New-RcMusicInstallerPlan {
         $manifest.distribution -cne 'private-local-development-only') {
         throw 'Installer requires a clean private production-mode x64 runtime manifest'
     }
+    # S13.1: a runtime that accepts --profile-root is a local test build, never installable.
+    $testProfileRootProperty = $manifest.PSObject.Properties['test_profile_root']
+    if ($null -ne $testProfileRootProperty -and
+        ($testProfileRootProperty.Value -isnot [bool] -or $testProfileRootProperty.Value)) {
+        throw 'Installer refuses a runtime built with the --profile-root test option'
+    }
     $component = Get-RcMusicInstallerComponent -Manifest $manifest -RuntimeDirectory $runtime
     $canonicalEdition = if ($Edition -ieq 'CompleteExperimental') { 'CompleteExperimental' } else { 'Lite' }
     $editionProperty = $manifest.PSObject.Properties['edition']

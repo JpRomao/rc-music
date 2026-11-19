@@ -42,6 +42,8 @@ option(RC_MUSIC_LISTENING_ROOM "Build the desktop listening room transport (requ
 # default): the "Ouvir junto" page says the room is unavailable in this build and nothing
 # network-related is ever built.
 set(RC_MUSIC_ROOM_SIGNALING_ORIGIN "" CACHE STRING "Listening room signaling relay origin (https://<host>)")
+# S13.1, test builds only: m0_qt_shell accepts --profile-root <dir> to run a second isolated instance.
+option(RC_MUSIC_TEST_PROFILE_ROOT "Test builds only: accept --profile-root <dir> in m0_qt_shell (never the product)" OFF)
 if(RC_MUSIC_BUILD_DESKTOP)
     if(NOT WIN32)
         message(FATAL_ERROR "The product desktop build currently targets Windows; Linux validation is deferred")

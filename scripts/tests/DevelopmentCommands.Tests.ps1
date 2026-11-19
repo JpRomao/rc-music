@@ -47,12 +47,14 @@ Test-Case 'build configures root Release production then builds only the applica
     Assert-True ($plan[0].Arguments -contains $repository) 'Missing root source'
     Assert-True ($plan[0].Arguments -contains '-DCMAKE_BUILD_TYPE=Release') 'Missing Release'
     Assert-True ($plan[0].Arguments -contains '-DBUILD_TESTING=OFF') 'Production must exclude tests'
+    Assert-True ($plan[0].Arguments -contains '-DRC_MUSIC_TEST_PROFILE_ROOT=OFF') 'Production must force --profile-root off'
     Assert-True ($plan[1].Arguments -contains 'm0_qt_shell') 'Missing application target'
 }
 Test-Case 'test configures ON and builds before running all tests with empty suites rejected' {
     $plan = Plan test
     Assert-True (($plan.Name -join '|') -ceq 'configure|build|test') 'Wrong test order'
     Assert-True ($plan[0].Arguments -contains '-DBUILD_TESTING=ON') 'Missing tests ON'
+    Assert-True ($plan[0].Arguments -contains '-DRC_MUSIC_TEST_PROFILE_ROOT=OFF') 'A reused cache could keep --profile-root on'
     Assert-True ($plan[2].Arguments -contains '--no-tests=error') 'Empty suite could pass'
     Assert-True ($plan[2].Arguments -contains '--output-on-failure') 'Missing diagnostics'
     Assert-True (-not ($plan[2].Arguments -contains '-R')) 'Default test suite must not be filtered'

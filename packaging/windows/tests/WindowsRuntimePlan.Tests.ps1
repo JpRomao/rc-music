@@ -534,6 +534,27 @@ try {
             Assert-Rejected { Get-RcMusicDesktopBuildConfiguration @arguments } 'RC_MUSIC_BUILD_NATIVE_MESSAGING'
         }
     }
+    Test-Case 'the --profile-root test option stays off unless the runtime explicitly opts in' {
+        $s = New-Scenario
+        $root = Join-Path $s.Base 'product source'
+        $null = New-Item -ItemType Directory -Path $root
+        $cache = @{ CMAKE_HOME_DIRECTORY = $root; CMAKE_BUILD_TYPE = 'Release'; BUILD_TESTING = 'OFF'
+            RC_MUSIC_BUILD_DESKTOP = 'ON' }
+        Assert-Equal (Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $root).test_profile_root $false
+        $cache.RC_MUSIC_TEST_PROFILE_ROOT = 'OFF'
+        Assert-Equal (Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $root).test_profile_root $false
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $root -TestProfileRoot } 'RC_MUSIC_TEST_PROFILE_ROOT'
+        foreach ($value in @('ON', 'on', 'TRUE', '1', $true)) {
+            $cache.RC_MUSIC_TEST_PROFILE_ROOT = $value
+            Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $root } 'RC_MUSIC_TEST_PROFILE_ROOT'
+        }
+        $cache.RC_MUSIC_TEST_PROFILE_ROOT = 'ON'
+        $configuration = Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $root -TestProfileRoot
+        Assert-Equal $configuration.test_profile_root $true
+        Assert-Equal $configuration.entrypoint 'product'
+        $cache.Remove('RC_MUSIC_TEST_PROFILE_ROOT')
+        Assert-Rejected { Get-RcMusicDesktopBuildConfiguration -Cache $cache -RepositoryRoot $root -TestProfileRoot } 'RC_MUSIC_TEST_PROFILE_ROOT'
+    }
     Test-Case 'existing local and pinned-download profiles report native hosts disabled by default' {
         $s = New-DownloadScenario
         $arguments = $s.Arguments.Clone()

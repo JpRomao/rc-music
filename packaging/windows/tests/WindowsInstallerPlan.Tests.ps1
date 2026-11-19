@@ -823,6 +823,18 @@ try {
             Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output }
         }
     }
+    Test-Case 'rejects runtimes built with the --profile-root test option' {
+        foreach ($value in @($true, 'false', 1)) {
+            $f = New-Fixture
+            $f.Manifest | Add-Member -NotePropertyName test_profile_root -NotePropertyValue $value
+            Save-Manifest $f
+            Assert-Rejected { New-RcMusicInstallerPlan $f.App $f.Output }
+        }
+        $f = New-Fixture
+        $f.Manifest | Add-Member -NotePropertyName test_profile_root -NotePropertyValue $false
+        Save-Manifest $f
+        Assert-True ($null -ne (New-RcMusicInstallerPlan $f.App $f.Output)) 'An explicit false marker must stay accepted'
+    }
     Test-Case 'rejects existing or out-of-scope output directories' {
         $f = New-Fixture
         Assert-Rejected { New-RcMusicInstallerPlan $f.App $testRoot }

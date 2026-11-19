@@ -152,7 +152,8 @@ function Get-RcMusicDesktopBuildConfiguration {
         [ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite',
         [object] $DownloadProfileHeader,
         [object] $DownloadProfileHeaderSha256,
-        [switch] $NativeHostComponent
+        [switch] $NativeHostComponent,
+        [switch] $TestProfileRoot
     )
     $hasDownloadHeader = $PSBoundParameters.ContainsKey('DownloadProfileHeader')
     $hasDownloadPin = $PSBoundParameters.ContainsKey('DownloadProfileHeaderSha256')
@@ -276,6 +277,14 @@ function Get-RcMusicDesktopBuildConfiguration {
             }
         }
     }
+    # S13.1: `--profile-root <dir>` is a test build option. A runtime carries it only on an explicit
+    # opt-in that matches the compiled cache; the installer refuses such a runtime.
+    $testProfileRootEnabled = [bool] $TestProfileRoot
+    $cachedTestProfileRoot = if ($Cache.Contains('RC_MUSIC_TEST_PROFILE_ROOT')) { $Cache['RC_MUSIC_TEST_PROFILE_ROOT'] } else { 'OFF' }
+    $expectedTestProfileRoot = if ($testProfileRootEnabled) { 'ON' } else { 'OFF' }
+    if ($cachedTestProfileRoot -isnot [string] -or $cachedTestProfileRoot -cne $expectedTestProfileRoot) {
+        throw "Unsupported desktop build configuration: RC_MUSIC_TEST_PROFILE_ROOT (runtime requires $expectedTestProfileRoot)"
+    }
     $browserSdkRoot = $null
     if ($complete) {
         if ($entrypoint -cne 'product') {
@@ -314,6 +323,7 @@ function Get-RcMusicDesktopBuildConfiguration {
         edition = if ($complete) { 'CompleteExperimental' } else { 'Lite' }
         download_component_enabled = $downloadEnabled
         native_hosts_enabled = $nativeEnabled
+        test_profile_root = $testProfileRootEnabled
         download_profile_header = $downloadHeader
         download_profile_header_sha256 = $downloadHeaderHash
         browser_sdk_root = $browserSdkRoot

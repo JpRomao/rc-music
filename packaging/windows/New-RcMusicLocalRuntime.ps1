@@ -9,7 +9,10 @@ param(
     [AllowEmptyString()] [string] $MainNativeBuildReceipt,
     [AllowEmptyString()] [string] $MainNativeBuildReceiptSha256,
     [AllowEmptyString()] [string] $YoutubeNativeBuildReceipt,
-    [AllowEmptyString()] [string] $YoutubeNativeBuildReceiptSha256
+    [AllowEmptyString()] [string] $YoutubeNativeBuildReceiptSha256,
+    # S13.1: accept a build configured with RC_MUSIC_TEST_PROFILE_ROOT=ON (two isolated instances on one
+    # computer). The manifest records it, and the installer refuses that runtime.
+    [switch] $TestProfileRoot
 )
 
 Set-StrictMode -Version Latest
@@ -165,6 +168,7 @@ if ($componentEnabled) {
     $configurationArguments.DownloadProfileHeaderSha256 = $downloadComponent.header_sha256
 }
 $configurationArguments.NativeHostComponent = $nativeEnabled
+$configurationArguments.TestProfileRoot = [bool] $TestProfileRoot
 $configuration = Get-RcMusicDesktopBuildConfiguration -Cache $cache @configurationArguments
 if ($nativeEnabled) {
     $nativeComponent = Get-RuntimeNativeComponent
@@ -394,6 +398,7 @@ $manifest = [ordered]@{
     }
     files = $plan.files; pe_imports = @($reports); external_prerequisites = @($external | Sort-Object)
 }
+if ($configuration.test_profile_root) { $manifest.test_profile_root = $true }
 if ($componentEnabled) {
     $manifest.download_component = [ordered]@{
         schema_version = 1; selection_default = $false

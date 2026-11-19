@@ -2,6 +2,12 @@
 #include "OpenSourcesDispatcher.hpp"
 #include "QtSingleInstanceCoordinator.hpp"
 #include "ShellLaunchOptions.hpp"
+#ifdef RC_MUSIC_TEST_PROFILE_ROOT
+#if !defined(M0_QT_COMBINED_AUDIO) || defined(M0_QT_SHELL_TEST_HOOKS)
+#error "The test profile root belongs only to the combined audio m0_qt_shell, never to an instrumented test shell"
+#endif
+#include "TestProfileRoot.hpp"
+#endif
 #ifdef RC_MUSIC_PLAYER_DOWNLOADS_CONFIGURED
 #if !defined(Q_OS_WIN) || !defined(M0_QT_COMBINED_AUDIO)
 #error The configured player downloads composition requires the Windows audio shell
@@ -338,7 +344,25 @@ int main(int argc, char* argv[]) {
             !QCoreApplication::installTranslator(&pt_br_translation)) {
             throw std::runtime_error{"the pt-BR translation catalog could not be installed"};
         }
+#ifdef RC_MUSIC_TEST_PROFILE_ROOT
+        // Test builds only (S13.1): every per-user file of this instance lives under the chosen
+        // directory, so a second instance runs beside the first instead of forwarding to it.
+        std::optional<QString> test_profile_root;
+        QStringList launch_arguments;
+        try {
+            auto selection = music_player::m0::experiment::takeTestProfileRoot(application.arguments());
+            if (selection.profile_root.has_value())
+                test_profile_root = music_player::m0::experiment::prepareTestProfileRoot(*selection.profile_root);
+            launch_arguments = std::move(selection.remaining_arguments);
+        } catch (const std::invalid_argument& error) {
+            std::fprintf(stderr, "RC Music: %s\n", error.what());
+            std::fflush(stderr);
+            return 2;
+        }
+        const auto options = parseShellLaunchOptions(launch_arguments);
+#else
         const auto options = parseShellLaunchOptions(application.arguments());
+#endif
         validateShellLaunchOptions(options,
 #ifdef M0_QT_SHELL_TEST_HOOKS
                                    true,
@@ -368,6 +392,10 @@ int main(int argc, char* argv[]) {
 #ifdef M0_QT_SHELL_TEST_HOOKS
         if (options.test_config_root.has_value())
             config_root = *options.test_config_root;
+#endif
+#ifdef RC_MUSIC_TEST_PROFILE_ROOT
+        if (test_profile_root.has_value())
+            config_root = *test_profile_root;
 #endif
 #endif
 #ifdef M0_QT_COMBINED_AUDIO

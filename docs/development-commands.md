@@ -117,6 +117,51 @@ pwsh -NoProfile -File scripts/develop.ps1 lint
 pwsh -NoProfile -File scripts/develop.ps1 validate
 ```
 
+## Dois apps isolados no mesmo computador
+
+O teste real da sala de escuta (S13.1) abre dois RC Music lado a lado, cada um com seu perfil. A opção CMake `RC_MUSIC_TEST_PROFILE_ROOT` vale `OFF` por padrão e só existe para builds de teste. Com `ON`, o `m0_qt_shell` aceita `--profile-root <dir>`. Com `OFF`, o executável não compila nem linka esse código, e `--profile-root` é tratado como qualquer outro argumento, ou seja, como uma fonte a abrir.
+
+As ações de `develop.ps1` sempre configuram `-DRC_MUSIC_TEST_PROFILE_ROOT=OFF`, mesmo num cache reaproveitado. O CTest `rc_music.test-profile-root.build-boundary` confere o padrão `OFF`, o runner, as linhas de compilação e link e o próprio executável. Num build `OFF`, `m0_qt_shell.exe` não contém o texto `--profile-root`. O empacotamento recusa um cache `ON`, a menos que `New-RcMusicLocalRuntime.ps1` receba `-TestProfileRoot`. Esse runtime registra `test_profile_root: true` no manifesto, e o instalador o recusa.
+
+`<dir>` precisa ser um caminho absoluto, como `C:\rc-music\convidado`. O app cria a pasta se ela não existir. O app recusa caminho relativo, caminho de unidade sem barra (`C:perfil`), arquivo existente, pasta que não pode ser criada, opção repetida, a forma `--profile-root=<dir>` e opção sem valor. Na recusa, o app escreve o motivo em stderr, com o prefixo `RC Music:`, e sai com código 2. Depois de `--`, `--profile-root` é uma fonte, não a opção.
+
+O perfil substitui a pasta de configuração do usuário. Ficam dentro dele `preferences.json`, `session.json`, `playlists.json`, `library.json`, `profile.json`, `room-roles.json`, `avatars/`, `room-cache/`, `room-uploads/`, a identidade da sala (`room-identity-*.pem` e a senha protegida por DPAPI), letras, downloads e diagnóstico. O lock de instância única (`single-instance.lock`) também fica no perfil. Por isso, o segundo app vira primário e não encaminha seus argumentos ao primeiro: o servidor local de cada um leva o PID do próprio processo.
+
+Continuam compartilhados, sem efeito no teste:
+
+- o cache de QML que o Qt grava em `%LOCALAPPDATA%\MusicPlayer\MusicPlayer\cache\qmlcache`, quando usado, indexado pelo conteúdo do arquivo;
+- o agrupamento na barra de tarefas, porque os dois apps usam o mesmo executável;
+- a bandeja e os controles de mídia do Windows, com um ícone e uma sessão por janela;
+- as pastas recentes dos diálogos de arquivo, guardadas pelo Windows.
+
+Fora da edição Lite, o perfil do WebView2 da edição Complete continua em `CacheLocation` (`EmbeddedBrowser/<uuid>`, um por sessão). Com os hosts nativos, a posse do pipe da extensão é única por usuário, e só o primeiro app recebe pedidos do navegador.
+
+Build e runtime de teste, a partir da raiz, com os caminhos de `.tools/windows.psd1`. Troque `<worker>` pela origem publicada da sala:
+
+```powershell
+cmake -S . -B out/product/rc-music-two-profiles -G Ninja -DCMAKE_BUILD_TYPE=Release `
+  -DRC_MUSIC_BUILD_DESKTOP=ON -DBUILD_TESTING=OFF -DRC_MUSIC_TEST_PROFILE_ROOT=ON `
+  "-DRC_MUSIC_ROOM_SIGNALING_ORIGIN=https://<worker>" `
+  "-DCMAKE_MAKE_PROGRAM=<Ninja>" "-DCMAKE_CXX_COMPILER=<Compiler>" `
+  "-DCMAKE_PREFIX_PATH=<QtPrefix>;<TagLibPrefix>;<DataChannelPrefix>" `
+  "-DQt6Multimedia_DIR=<QtMultimediaPackage>" "-DQT_HOST_PATH=<QtHost>"
+cmake --build out/product/rc-music-two-profiles --target m0_qt_shell
+pwsh -NoProfile -File packaging/windows/New-RcMusicLocalRuntime.ps1 -TestProfileRoot `
+  -BuildDirectory out/product/rc-music-two-profiles -OutputDirectory out/product/rc-music-two-profiles-runtime
+$app = Resolve-Path out/product/rc-music-two-profiles-runtime/app/RCMusic.exe
+$profiles = Join-Path $PWD 'out/product/rc-music-two-profiles-data'
+Start-Process $app -ArgumentList '--profile-root', (Join-Path $profiles 'anfitriao')
+Start-Process $app -ArgumentList '--profile-root', (Join-Path $profiles 'convidado')
+```
+
+Para não depender de como o `Start-Process` monta a linha de comando, use pastas de perfil sem espaços. O app é de janela, sem console. Para ver uma recusa, redirecione o stderr:
+
+```powershell
+$p = Start-Process $app -ArgumentList '--profile-root', 'relativo' -Wait -PassThru -RedirectStandardError profile-root.err
+$p.ExitCode   # 2
+Get-Content profile-root.err
+```
+
 ## Checks das receitas Windows
 
 `check` e `validate` executam os oito checks abaixo uma vez, sequencialmente, após `format-tests` e antes de `diff`:

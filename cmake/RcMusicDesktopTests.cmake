@@ -37,6 +37,8 @@ function(rc_music_add_desktop_tests)
 
     _rc_music_add_desktop_test(rc_music_shell_launch_tests
         rc_music.desktop.shell-launch-options ShellLaunchOptionsTests.cpp m0_qt_shell_bootstrap)
+    _rc_music_add_desktop_test(rc_music_test_profile_root_tests
+        rc_music.desktop.test-profile-root TestProfileRootTests.cpp rc_music_test_profile_root m0_qt_shell_bootstrap)
     _rc_music_add_desktop_test(rc_music_open_sources_command_tests
         rc_music.desktop.open-sources.command OpenSourcesCommandTests.cpp m0_qt_shell_bootstrap)
     _rc_music_add_desktop_test(rc_music_open_sources_dispatcher_tests
