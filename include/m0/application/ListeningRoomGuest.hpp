@@ -243,6 +243,7 @@ class ListeningRoomGuest final {
     void onFileStatus(std::uint64_t epoch, const std::string& sha256, const RoomFileStatus& status);
     void onOffer(const RoomFileOffer& offer);
     void onChunk(RoomFileChunk chunk);
+    void dropEarlyChunks();
     void onFileComplete(const std::string& sha256, const std::filesystem::path& file);
     void onFileFailed(const std::string& sha256, std::uint32_t transfer_id, RoomFileFailure failure);
     void stopFiles(bool purge);
@@ -300,6 +301,8 @@ class ListeningRoomGuest final {
     // each other), kept only while a request is outstanding and up to a fixed total.
     std::map<std::uint32_t, std::vector<RoomFileChunk>> early_chunks_;
     std::size_t early_bytes_{0};
+    // Transfers not offered yet that lost chunks to that limit: their offer asks again (onOffer).
+    std::set<std::uint32_t> overflowed_;
     // The highest transfer id offered so far. The host numbers transfers in increasing order and its
     // offers arrive in order, so a chunk at or below it that is not being received belongs to a transfer
     // that is over (refused, replaced or abandoned) and is dropped instead of kept as early.

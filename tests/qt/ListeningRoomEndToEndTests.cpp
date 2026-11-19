@@ -158,6 +158,18 @@ std::string sha256Of(const std::filesystem::path& file) {
     return ListeningRoomBinding::fileSha256(QString::fromStdU16String(file.u16string())).value_or(std::string{});
 }
 
+// A file of `size` random bytes: the size of a real song without shipping one (the host's catalog here only
+// hashes it, and the guest's player is silent).
+std::filesystem::path randomFile(const QTemporaryDir& directory, const char* name, const qsizetype size) {
+    const auto path = QDir(directory.path()).filePath(QString::fromLatin1(name));
+    QByteArray bytes(size, Qt::Uninitialized);
+    QRandomGenerator::global()->fillRange(reinterpret_cast<quint32*>(bytes.data()), size / 4);
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != size)
+        qFatal("cannot write a test file");
+    return std::filesystem::path{path.toStdU16String()};
+}
+
 // Describes real files like QtRoomTrackCatalog: their SHA-256, size and the lyrics the test chose.
 class HashingCatalog final : public RoomTrackCatalog {
   public:
@@ -793,6 +805,28 @@ class ListeningRoomEndToEndTests final : public QObject {
         QCOMPARE(app.host.snapshot().queue.size(), std::size_t{1});
         QCOMPARE(app.uploadedFiles(), QStringList{});
 #endif
+    }
+
+    // S13.1 (first real two-app run): two 7 MB files, the size of a 3-minute MP3. Over the real transport the
+    // second one's offer arrived after all of its chunks, and the transfer stopped at 2 MiB for good.
+    void twoSongFilesOfRealSizeBothArrive() {
+        QTemporaryDir sources;
+        QVERIFY(sources.isValid());
+        const auto left = randomFile(sources, "left.mp3", 7'202'019);
+        const auto right = randomFile(sources, "right.mp3", 7'202'018);
+        LoopbackSignaling relay;
+        FileHostApp app(relay, host_id_, {left, right});
+        const auto invite = openRoom(app, relay, {});
+        QVERIFY(invite.has_value());
+        QTemporaryDir ana_config;
+        QVERIFY(ana_config.isValid());
+        RecordingInbox inbox(ana_config.path());
+        GuestApp ana(relay, ana_id_, "Ana", &inbox);
+        QVERIFY(approveIn(app, ana, *invite));
+
+        QTRY_COMPARE_WITH_TIMEOUT(inbox.completed.size(), std::size_t{2}, connect_ms);
+        QCOMPARE(inbox.completed, (std::vector<std::string>{sha256Of(left), sha256Of(right)}));
+        QVERIFY(inbox.failed.empty());
     }
 
     void aGuestJoiningMidSongReceivesTheCurrentItemFirst() {

@@ -891,6 +891,35 @@ TEST_CASE("room guest: chunks that arrive before their offer are kept for it",
     REQUIRE(f.inbox.consumed.size() == 2);
 }
 
+// S13.1: the offer can come after the whole file. The chunks past what is kept are gone and no later
+// chunk shows the gap, so the guest asks again from what it has instead of waiting forever.
+TEST_CASE("room guest: an offer that comes after more chunks than are kept asks again from the partial file",
+          "[core][listening-room][room-guest][room-files]") {
+    constexpr std::size_t chunk = 64 * 1024;
+    constexpr std::size_t kept = 2 * 1024 * 1024 / chunk;
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "a"));
+    REQUIRE(requestedHashes(f) == std::vector{hashOf('a')});
+    for (std::size_t index = 0; index < kept + 3; ++index)
+        REQUIRE(f.host_side->sendMedia({9, index * chunk, std::vector<std::uint8_t>(chunk, 1)}));
+    f.inbox.partial[hashOf('a')] = kept * chunk; // what the receiver wrote from the kept chunks
+    f.send(RoomFileOffer{hashOf('a'), (kept + 3) * chunk, 9});
+
+    REQUIRE(f.inbox.consumed.size() == kept);
+    REQUIRE(f.inbox.abandoned == std::vector<std::uint32_t>{9});
+    REQUIRE(requestedHashes(f) == std::vector{hashOf('a'), hashOf('a')});
+    REQUIRE(f.received<RoomFileRequest>().back() == RoomFileRequest{hashOf('a'), kept * chunk});
+
+    // The host replaces the transfer from there; a late chunk of the old one is dropped.
+    REQUIRE(f.host_side->sendMedia({9, (kept + 3) * chunk, {1}}));
+    f.send(RoomFileOffer{hashOf('a'), (kept + 3) * chunk, 10});
+    REQUIRE(f.host_side->sendMedia({10, kept * chunk, {2}}));
+    REQUIRE(f.inbox.consumed.size() == kept + 1);
+    REQUIRE(f.inbox.consumed.back() == RoomFileChunk{10, kept * chunk, {2}});
+}
+
 TEST_CASE("room guest: a newer offer for a file being received replaces the stale one",
           "[core][listening-room][room-guest][room-files]") {
     GuestFixture f;

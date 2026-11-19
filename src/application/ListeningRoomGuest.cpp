@@ -10,7 +10,8 @@
 namespace music_player::m0 {
 namespace {
 
-// Chunks kept for offers still on their way: about two media buffers (RoomFileSender stops at 1 MiB).
+// Chunks kept for offers still on their way. An offer can come later than this (S13.1: after a whole
+// 7 MB file over a real link); the transfer then asks again from what was kept (onOffer).
 constexpr std::size_t maximum_early_chunk_bytes = 2 * 1024 * 1024;
 
 bool lowerHex64(const std::string_view text) {
@@ -514,10 +515,8 @@ void ListeningRoomGuest::updateFiles() {
     std::erase_if(checking_, [&](const std::string& sha) { return !inWindow(sha); });
     std::erase_if(failed_, [&](const std::string& sha) { return !inWindow(sha); });
     std::erase_if(retries_, [&](const auto& retry) { return !inWindow(retry.first); });
-    if (requested_.empty()) {
-        early_chunks_.clear();
-        early_bytes_ = 0;
-    }
+    if (requested_.empty())
+        dropEarlyChunks();
     const auto epoch = files_epoch_;
     const std::weak_ptr<Alive> alive = alive_;
     for (const auto& sha : window) {
@@ -560,7 +559,9 @@ void ListeningRoomGuest::onOffer(const RoomFileOffer& offer) {
     if (!early.empty())
         for (const auto& chunk : early.mapped())
             early_bytes_ -= chunk.payload.size();
+    const bool overflowed = overflowed_.contains(offer.transfer_id);
     last_offer_id_ = std::max(last_offer_id_, offer.transfer_id);
+    std::erase_if(overflowed_, [this](const std::uint32_t id) { return id <= last_offer_id_; });
     if (files_ == nullptr || receiving_.contains(offer.transfer_id))
         return;
     const auto held = std::find_if(receiving_.begin(), receiving_.end(),
@@ -581,10 +582,17 @@ void ListeningRoomGuest::onOffer(const RoomFileOffer& offer) {
     if (!early.empty())
         for (auto& chunk : early.mapped())
             files_->consume(std::move(chunk));
-    if (requested_.empty()) {
-        early_chunks_.clear();
-        early_bytes_ = 0;
+    // Chunks of this transfer were dropped before it was offered, and the host may have sent the rest
+    // already, so no later chunk would show the gap. It ends here, after what was kept is written; asking
+    // again (status() first) resumes from the partial file, and the host replaces the transfer.
+    if (overflowed) {
+        receiving_.erase(offer.transfer_id);
+        files_->abandon(offer.transfer_id);
+        updateFiles();
+        return;
     }
+    if (requested_.empty())
+        dropEarlyChunks();
 }
 
 void ListeningRoomGuest::onChunk(RoomFileChunk chunk) {
@@ -594,11 +602,20 @@ void ListeningRoomGuest::onChunk(RoomFileChunk chunk) {
         files_->consume(std::move(chunk));
         return;
     }
-    if (requested_.empty() || chunk.transfer_id <= last_offer_id_ ||
-        early_bytes_ + chunk.payload.size() > maximum_early_chunk_bytes)
+    if (requested_.empty() || chunk.transfer_id <= last_offer_id_)
         return;
+    if (early_bytes_ + chunk.payload.size() > maximum_early_chunk_bytes) {
+        overflowed_.insert(chunk.transfer_id);
+        return;
+    }
     early_bytes_ += chunk.payload.size();
     early_chunks_[chunk.transfer_id].push_back(std::move(chunk));
+}
+
+void ListeningRoomGuest::dropEarlyChunks() {
+    early_chunks_.clear();
+    early_bytes_ = 0;
+    overflowed_.clear();
 }
 
 void ListeningRoomGuest::onFileComplete(const std::string& sha256, const std::filesystem::path& file) {
@@ -640,8 +657,7 @@ void ListeningRoomGuest::stopFiles(const bool purge) {
     requested_.clear();
     failed_.clear();
     retries_.clear();
-    early_chunks_.clear();
-    early_bytes_ = 0;
+    dropEarlyChunks();
     last_offer_id_ = 0;
     auto receiving = std::exchange(receiving_, {});
     if (files_ != nullptr)
