@@ -97,7 +97,8 @@ constexpr std::size_t json_playlist_keys_bytes = 96;
 constexpr std::size_t json_entry_keys_bytes = 128; // id and the summary keys
 // Catalog files the host asks the track catalog for at a time (each one is hashed).
 constexpr std::size_t catalog_describing_limit = 8;
-// S12.1: upload chunks kept per link for offers still on their way, like the guest's early chunks.
+// S12.1: upload chunks kept per link for offers still on their way, like the guest's early chunks. An offer can
+// come later than this (S13.1); the upload then asks again from what was kept (onUploadOffer).
 constexpr std::size_t maximum_early_upload_bytes = 2 * 1024 * 1024;
 
 std::size_t estimatedPlaylistBytes(const RoomCatalogPlaylist& playlist) {
@@ -151,6 +152,8 @@ struct ListeningRoomHost::Connection final {
     std::map<std::uint32_t, std::vector<RoomFileChunk>> early_upload{};
     std::size_t early_upload_bytes{0};
     std::uint32_t last_upload_offer{0};
+    // Upload transfers not offered yet that lost chunks to the early limit: their offer asks again.
+    std::set<std::uint32_t> overflowed_upload{};
     // Counts this member's upload offers and chunks: the stall watch of its uploads compares it.
     std::uint64_t upload_activity{0};
 };
@@ -1372,7 +1375,10 @@ void ListeningRoomHost::onUploadStatus(const std::uint64_t token, const std::str
 }
 
 void ListeningRoomHost::onUploadOffer(Connection& connection, const RoomFileOffer& offer) {
+    const bool overflowed = connection.overflowed_upload.contains(offer.transfer_id);
     connection.last_upload_offer = std::max(connection.last_upload_offer, offer.transfer_id);
+    std::erase_if(connection.overflowed_upload,
+                  [&connection](const std::uint32_t id) { return id <= connection.last_upload_offer; });
     auto early = connection.early_upload.extract(offer.transfer_id);
     if (!early.empty())
         for (const auto& chunk : early.mapped())
@@ -1402,11 +1408,22 @@ void ListeningRoomHost::onUploadOffer(Connection& connection, const RoomFileOffe
             chunk.transfer_id = receiving;
             uploads_->consume(std::move(chunk));
         }
+    // Chunks of this transfer were dropped before it was offered, and the owner may have sent the rest already,
+    // so no later chunk would show the gap. It ends here, after what was kept is written; asking again resumes
+    // from the partial file (like a Gap, without using a retry), and the owner replaces its transfer.
+    if (overflowed) {
+        uploads_->abandon(receiving);
+        upload.receiving.reset();
+        upload.offered.reset();
+        askUpload(offer.content_sha256);
+        return;
+    }
     if (std::none_of(uploading_.begin(), uploading_.end(),
                      [&](const auto& entry) { return entry.second.owner == owner && entry.second.requested; })) {
         if (auto* still = findMember(owner)) {
             still->early_upload.clear();
             still->early_upload_bytes = 0;
+            still->overflowed_upload.clear();
         }
     }
 }
@@ -1429,10 +1446,13 @@ void ListeningRoomHost::onUploadChunk(const RoomLink* link, RoomFileChunk chunk)
         awaiting = awaiting || upload.requested;
     }
     // Before its offer (control and media are not ordered with each other): kept while a request is out.
-    if (!awaiting || chunk.transfer_id <= connection->last_upload_offer ||
-        connection->early_upload_bytes + chunk.payload.size() > maximum_early_upload_bytes)
+    if (!awaiting || chunk.transfer_id <= connection->last_upload_offer)
         return;
     ++connection->upload_activity;
+    if (connection->early_upload_bytes + chunk.payload.size() > maximum_early_upload_bytes) {
+        connection->overflowed_upload.insert(chunk.transfer_id);
+        return;
+    }
     connection->early_upload_bytes += chunk.payload.size();
     connection->early_upload[chunk.transfer_id].push_back(std::move(chunk));
 }

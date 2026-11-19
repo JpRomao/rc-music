@@ -184,6 +184,9 @@ struct ListeningRoomHostDependencies final {
 //     owner's RoomFileOffer must name that hash and the declared size (else the upload is refused); the host
 //     accepts it under its own transfer id (guests choose theirs) and hands the owner's chunks to the cache.
 //     Chunks that come before their offer are kept (at most 2 MiB per link) while a request is outstanding.
+//     When some of a transfer's early chunks were dropped over that limit, its offer is accepted, the kept
+//     chunks are written, and the transfer is abandoned and asked for again from the partial file (S13.1:
+//     the offer can come after the whole file, so no later chunk would show the gap). This uses no retry.
 //     The cache refuses an offer above maximum_guest_upload_bytes and a chunk past the offered size, and
 //     keeps the file only when its SHA-256 matches the declared hash.
 //   - The same owner declaring a hash it is already uploading replaces that upload (its partial file stays

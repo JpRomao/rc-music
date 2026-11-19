@@ -1823,6 +1823,46 @@ TEST_CASE("room host: the owner leaving keeps its track, which plays for the oth
     REQUIRE(f.outbox.sent.back().file == std::filesystem::path{"cache"} / upload_sha);
 }
 
+// S13.1: the owner's offer can come after its whole file. The chunks past what is kept are gone and no later
+// chunk shows the gap, so the host asks again from what it has instead of waiting for the stall timeout.
+TEST_CASE("room host: an upload offer that comes after more chunks than are kept asks again from the partial file",
+          "[core][listening-room][room-host][room-uploads]") {
+    constexpr std::size_t piece = 64 * 1024;
+    constexpr std::size_t kept = 2 * 1024 * 1024 / piece;
+    constexpr std::uint64_t size = (kept + 3) * piece;
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    dj->intent(43, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload(size)});
+    REQUIRE(dj->all<RoomFileRequest>() == std::vector<RoomFileRequest>{{upload_sha, 0}});
+    for (std::size_t index = 0; index < kept + 3; ++index)
+        static_cast<void>(dj->link->sendMedia(chunk(77, index * piece, piece)));
+    f.uploads.partial[upload_sha] = kept * piece; // what the cache wrote from the kept chunks
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{upload_sha, size, 77}));
+
+    REQUIRE(f.uploads.accepted.size() == 1);
+    const auto first = f.uploads.accepted.front().transfer_id;
+    REQUIRE(f.uploads.consumed.size() == kept);
+    REQUIRE(f.uploads.abandoned == std::vector<std::uint32_t>{first});
+    REQUIRE(dj->all<RoomFileRequest>() == std::vector<RoomFileRequest>{{upload_sha, 0}, {upload_sha, kept * piece}});
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+
+    // The owner replaces its transfer from there; a late chunk of the old one is dropped.
+    static_cast<void>(dj->link->sendMedia(chunk(77, (kept + 3) * piece, 1)));
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{upload_sha, size, 78}));
+    REQUIRE(f.uploads.accepted.size() == 2);
+    const auto second = f.uploads.accepted.back().transfer_id;
+    static_cast<void>(dj->link->sendMedia(chunk(78, kept * piece, 3 * piece)));
+    REQUIRE(f.uploads.consumed.size() == kept + 1);
+    REQUIRE(f.uploads.consumed.back().transfer_id == second);
+    REQUIRE(f.uploads.consumed.back().offset == kept * piece);
+    f.uploads.complete(upload_sha);
+    f.probe.completeAll();
+    REQUIRE(findItem(f.host->snapshot(), upload_sha).has_value());
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+}
+
 TEST_CASE("room host: an owner who goes mid-upload leaves nothing behind",
           "[core][listening-room][room-host][room-uploads]") {
     HostFixture f;

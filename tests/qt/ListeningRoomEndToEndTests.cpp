@@ -172,6 +172,40 @@ std::filesystem::path randomFile(const QTemporaryDir& directory, const char* nam
     return std::filesystem::path{path.toStdU16String()};
 }
 
+// A 16-bit stereo 44.1 kHz PCM WAV of `data_bytes` random samples: valid audio of a real song's size for the
+// host's upload probe. Tests never play it.
+std::filesystem::path randomWav(const QTemporaryDir& directory, const char* name, const quint32 data_bytes) {
+    const auto path = QDir(directory.path()).filePath(QString::fromLatin1(name));
+    QByteArray bytes;
+    const auto le32 = [&bytes](const quint32 value) {
+        for (int shift = 0; shift < 32; shift += 8)
+            bytes.append(static_cast<char>((value >> shift) & 0xFF));
+    };
+    const auto le16 = [&bytes](const quint16 value) {
+        bytes.append(static_cast<char>(value & 0xFF));
+        bytes.append(static_cast<char>(value >> 8));
+    };
+    bytes.append("RIFF");
+    le32(36 + data_bytes);
+    bytes.append("WAVEfmt ");
+    le32(16);
+    le16(1); // PCM
+    le16(2);
+    le32(44'100);
+    le32(44'100 * 4);
+    le16(4);
+    le16(16);
+    bytes.append("data");
+    le32(data_bytes);
+    const auto header = bytes.size();
+    bytes.resize(header + static_cast<qsizetype>(data_bytes));
+    QRandomGenerator::global()->fillRange(reinterpret_cast<quint32*>(bytes.data() + header), data_bytes / 4);
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size())
+        qFatal("cannot write a test file");
+    return std::filesystem::path{path.toStdU16String()};
+}
+
 std::int64_t steadyMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
         .count();
@@ -872,6 +906,42 @@ class ListeningRoomEndToEndTests final : public QObject {
         QTRY_COMPARE_WITH_TIMEOUT(inbox.completed.size(), std::size_t{2}, connect_ms);
         QCOMPARE(inbox.completed, (std::vector<std::string>{sha256Of(left), sha256Of(right)}));
         QVERIFY(inbox.failed.empty());
+    }
+
+    // S13.1 fix round 2: a guest's two 7 MB uploads, one after the other on its link. The second upload's offer
+    // can come after all of its chunks, like the host's own files in twoSongFilesOfRealSizeBothArrive.
+    void twoGuestUploadsOfRealSizeBothJoinTheQueue() {
+#ifndef RC_MUSIC_E2E_UPLOAD_PROBE
+        QSKIP("built without the TagLib metadata extractor");
+#else
+        QTemporaryDir sources;
+        QVERIFY(sources.isValid());
+        const auto first = randomWav(sources, "first.wav", 7'200'000);
+        const auto second = randomWav(sources, "second.wav", 7'200'004);
+        LoopbackSignaling relay;
+        QTemporaryDir host_config;
+        QVERIFY(host_config.isValid());
+        UploadHostApp app(relay, host_id_, host_config.path(), {fixture("wav-pcm-mono.wav")});
+        const auto invite = openRoom(app, relay, {.default_role_id = dj_role});
+        QVERIFY(invite.has_value());
+        HashingCatalog ana_catalog;
+        QtRoomFileOutbox ana_outbox;
+        GuestApp ana(relay, ana_id_, "Ana", nullptr, &ana_catalog, &ana_outbox);
+        QVERIFY(approveIn(app, ana, *invite));
+
+        QVERIFY(ana.guest.uploadTrack(first));
+        QVERIFY(ana.guest.uploadTrack(second));
+        QTRY_COMPARE_WITH_TIMEOUT(ana.uploads,
+                                  (std::vector<GuestUploadResult>{GuestUploadResult::Added, GuestUploadResult::Added}),
+                                  connect_ms);
+        QVERIFY(app.item(sha256Of(first)).has_value());
+        QVERIFY(app.item(sha256Of(second)).has_value());
+        auto uploaded = app.uploadedFiles();
+        uploaded.sort();
+        QStringList expected{QString::fromStdString(sha256Of(first)), QString::fromStdString(sha256Of(second))};
+        expected.sort();
+        QCOMPARE(uploaded, expected);
+#endif
     }
 
     // S13.1: the host queued two tracks without playing either, the guest came in, and only then the host
