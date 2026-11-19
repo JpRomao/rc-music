@@ -201,6 +201,40 @@ A sonda tocou um seno de 1 kHz em um player. A frequência medida é a mediana d
   - s-13 antes do seek;
   - e-1 na janela final.
 
+## Teste real
+
+**S13.1, 2026-11-19: dois apps no mesmo PC.** O build de testes abre um segundo app isolado com `--profile-root` ([comandos](development-commands.md#dois-apps-isolados-no-mesmo-computador)). Em vez do Worker publicado, o mantenedor aprovou um servidor local: `wrangler dev --local` em `127.0.0.1:8787`, a partir de `services/room-signaling`. A sincronia entre PCs e o servidor publicado ficam para a S13.2.
+
+**Mídia:** três MP3 gerados para o teste, sem arquivos pessoais. São os cliques da S1 com etiquetas ("Cliques Esquerda" e "Cliques Direita") e um tom de 1 kHz de 20 s ("Tom 1 kHz").
+
+**Medida:** o `LoopbackRecorder` da S1 gravou a saída do sistema. Os dois apps tocam a mesma faixa de cliques, então cada clique aparece duas vezes, e a distância entre os dois é a diferença entre os apps.
+
+### Primeira execução
+
+Criar a sala, entrar pelo link e aprovar funcionaram. O convidado como Ouvinte via só a playlist visível, sem botões de adicionar. Três falhas apareceram:
+
+- **A barra do convidado ficava vazia** enquanto ele tocava. A gravação mostrou os cliques em dobro. A diferença começou em 36 ms e caiu para 12,6 ms em cerca de 4 s, com p95 de 31,7 ms. O convidado tocava, mas a barra não mostrava a música da sala. Corrigido em `a680257`.
+- **A segunda música parava em 2 MiB.** Os pedaços que chegam antes da oferta da transferência ficam guardados até 2 MiB. Os que passavam disso eram descartados sem aviso, e o arquivo nunca terminava. Agora o convidado grava o que guardou e pede o resto a partir do arquivo parcial (`0039112`). O envio de músicas ao host tinha o mesmo defeito (`1401c37`). A revisão achou um laço sem limite nesse novo pedido. Ele passou a respeitar `room_file_retries` (`75b0f81`).
+- **Play no host com fila, mas sem item atual, não faz nada.** O comportamento é anterior à sala e ficou registrado para depois.
+
+### Segunda execução
+
+Feita com `75b0f81` e um perfil de convidado novo, com cache vazio. O convite deu ao convidado o cargo DJ.
+
+| Passo | Resultado |
+|---|---|
+| Criar, aviso de IP, entrar, aprovar | ok |
+| Barra do convidado | mostra a música, o tempo e o estado da sala |
+| Tocar, pular e pausar pelo convidado | ok nos dois apps |
+| Adicionar de playlist visível | ok |
+| Enviar música própria | toca nos dois como "Tom 1 kHz". Antes de tocar, a fila do host mostra o hash do arquivo no lugar do título |
+| Revogar "Adicionar da sala" e "Enviar músicas próprias" | os botões somem na hora no convidado |
+| Fechar a sala | o convidado vê "O anfitrião encerrou a sala." A música enviada sai da fila do host, que mantém as próprias. Os envios do host são apagados |
+
+**Sincronia:** 44 pares de cliques em 45 s. A diferença foi de 9,3 ms a partir de cerca de 4 s, com máximo de 9,8 ms, e se manteve depois de um pulo feito pelo convidado. Fica abaixo de 100 ms.
+
+**Falha:** depois do fim da sala, o `room-cache/` do convidado ainda guardava a música que ele mesmo enviou. O desenho manda apagar o cache ao sair da sala. Era o item atual: o cache era limpo antes de o player soltar o arquivo, e o Windows não apaga arquivo aberto. Agora o convidado solta o player antes de limpar o cache. Arquivos que ainda não puderem ser apagados são tentados de novo por cerca de 10 s (`231f372`). Numa terceira rodada curta, o convidado enviou o tom e a sala foi fechada com ele tocando. O `room-cache/` do convidado e o `room-uploads/` do host sumiram. Na abertura do app, o arquivo que tinha sobrado da segunda execução também foi apagado.
+
 ## Reprodução
 
 Rode a partir da raiz, com o ambiente MSVC carregado:
