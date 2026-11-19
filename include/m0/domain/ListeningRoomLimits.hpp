@@ -29,8 +29,21 @@ inline constexpr std::int32_t room_reconnect_window_ms = 30000;
 // A guest inside the reconnect window waits this long after a failed attempt, doubling up to the maximum.
 inline constexpr std::int32_t room_reconnect_retry_initial_ms = 1000;
 inline constexpr std::int32_t room_reconnect_retry_maximum_ms = 8000;
-// The host keeps the playback anchor while the player stays within this distance of it.
+// The host keeps the playback anchor while the player stays within this distance of it. It equals
+// room_drift_seek_ms: a host that drifts past it re-anchors, which a guest corrects with the same seek.
 inline constexpr std::int64_t room_anchor_tolerance_ms = 100;
+// A guest's drift correction (S1 "Limiares escolhidos", S9.1). Above room_drift_nudge_ms the guest plays
+// at 1 +- room_drift_nudge_rate_delta until the drift falls to half of it or crosses zero, for at most
+// room_drift_nudge_max_ms; above room_drift_seek_ms on two evaluations in a row it seeks. An evaluation
+// whose position is older than room_drift_stale_position_ms (a stalled main thread) is discarded.
+inline constexpr std::int64_t room_drift_nudge_ms = 20;
+inline constexpr std::int64_t room_drift_seek_ms = 100;
+inline constexpr double room_drift_nudge_rate_delta = 0.01;
+inline constexpr std::int64_t room_drift_nudge_max_ms = 10000;
+inline constexpr std::int64_t room_drift_stale_position_ms = 150;
+inline constexpr std::int32_t room_drift_check_ms = 1000;
+// While the backend is still loading a room file, the guest looks again after this long.
+inline constexpr std::int32_t room_follow_retry_ms = 50;
 // Title, artist and album of a room item, cut at a code point boundary.
 inline constexpr std::size_t maximum_room_summary_text_bytes = 256;
 // A guest link that sends no RoomHello within this time is closed.

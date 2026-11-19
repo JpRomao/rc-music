@@ -1,5 +1,6 @@
 #pragma once
 
+#include "m0/application/RoomPlaybackFollower.hpp"
 #include "m0/domain/ListenerProfile.hpp"
 #include "m0/domain/ListeningRoom.hpp"
 #include "m0/domain/ListeningRoomLimits.hpp"
@@ -62,6 +63,10 @@ struct ListeningRoomGuestDependencies final {
     std::function<void(std::int64_t delay_ms, std::function<void()> task)> schedule;
     // The room cache (S8.2); nullptr: the guest asks for no files.
     RoomFileInbox* files{nullptr};
+    // S9.1: the player that follows the host's time, and the follower's clock (required with it).
+    // nullptr: the guest plays nothing and sends no clock pings. It must outlive the guest.
+    RoomPlaybackFollower* follower{nullptr};
+    std::function<std::int64_t()> local_clock_ms;
 };
 
 // Guest side of the listening room (ADR-0022, S7.2). Qt-free, no audio: it keeps the guest's view of
@@ -133,7 +138,14 @@ struct ListeningRoomGuestDependencies final {
 // Lyrics: RoomLyrics for the current item (at most maximum_room_lyrics_bytes) is kept until the
 // current item changes; lyrics for any other item are ignored.
 //
-// Clock and catalog messages are left to later tasks (S9-S11).
+// Time (S9.1), with a follower: on admission and then every room_clock_resample_ms while that link
+// stays joined, the guest sends RoomClockPing{local_clock_ms()}; each RoomClockPong becomes a
+// ClockSample for the follower. Every applied state, and every current-item file that becomes local,
+// calls follower->apply(playback, local file of the current item or nullopt). Ending or leaving stops
+// the follower before restore_session, so the room file is gone when the local session comes back. A
+// dropped link leaves the follower playing the last playback.
+//
+// Catalog messages are left to later tasks (S10-S11).
 class ListeningRoomGuest final {
   public:
     explicit ListeningRoomGuest(ListeningRoomGuestDependencies dependencies);
@@ -186,6 +198,8 @@ class ListeningRoomGuest final {
     void onFileComplete(const std::string& sha256, const std::filesystem::path& file);
     void onFileFailed(const std::string& sha256, std::uint32_t transfer_id, RoomFileFailure failure);
     void stopFiles(bool purge);
+    void follow();
+    void ping(std::uint64_t link_id);
     void changed() const;
 
     RoomGuestConnector& connector_;
@@ -195,6 +209,8 @@ class ListeningRoomGuest final {
     std::function<void(const SessionSnapshot&)> restore_session_;
     std::function<void(std::int64_t, std::function<void()>)> schedule_;
     RoomFileInbox* files_;
+    RoomPlaybackFollower* follower_;
+    std::function<std::int64_t()> local_clock_ms_;
 
     GuestRoomState state_{GuestRoomState::Idle};
     std::optional<RoomInviteLink> invite_;

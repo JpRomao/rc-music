@@ -2,8 +2,10 @@
 
 #include "m0/application/ListeningRoomGuest.hpp"
 #include "m0/application/ListeningRoomHost.hpp"
+#include "m0/application/RoomPlaybackFollower.hpp"
 #include "m0/domain/ListenerProfile.hpp"
 #include "m0/domain/SessionSnapshot.hpp"
+#include "m0/ports/PlaybackBackend.hpp"
 #include "m0/ports/RoomFiles.hpp"
 #include "m0/ports/RoomHostPlayer.hpp"
 #include "m0/ports/RoomRosterStore.hpp"
@@ -15,6 +17,7 @@
 #include <QAbstractItemModel>
 #include <QObject>
 #include <QString>
+#include <QTimer>
 
 #include <array>
 #include <cstdint>
@@ -76,6 +79,17 @@ struct ListeningRoomBindingDependencies final {
     // A guest's lyrics panel: the host's LRC for the current item, empty when there is none (or when
     // this app is not a guest any more).
     std::function<void(const QString& lrc)> room_lyrics;
+    // S9.1: the app's one player, where a guest plays the room in time with the host. nullptr: a guest
+    // follows the room's queue and plays nothing (tests and the E2E stay silent). It must outlive the
+    // binding.
+    PlaybackBackend* guest_backend{nullptr};
+    // Puts the local queue away once a guest holds its pre-room session, so the local transport never
+    // fights the room on the shared player (PlayerPresenter::restoreRoomSession with an empty session).
+    // The session comes back from capture_session's copy when the guest leaves. Only with guest_backend.
+    std::function<void()> release_local_session;
+    // While a guest plays the room: the player's position every room_position_feed_ms (the lyrics
+    // panel follows it), then nullopt once when the guest stops. Only with guest_backend.
+    std::function<void(std::optional<std::int64_t> position_ms)> room_position;
 };
 
 // "Ouvir junto" for QML (ADR-0022, S7.3): hosts a room (ListeningRoomHost over the real player) or
@@ -142,6 +156,9 @@ class ListeningRoomBinding final : public QObject {
     Q_INVOKABLE void acknowledgePrivacyNotice();
     Q_INVOKABLE void dismissError();
 
+    // S9.1: the guest's output offset (Preferences::room_output_offset_ms); a positive value plays earlier.
+    void setOutputOffsetMs(int offset_ms);
+
     // App exit, before the final session save: the guest leaves (its pre-room session comes back) and
     // the host closes (guest items leave the queue).
     void shutdown();
@@ -173,6 +190,9 @@ class ListeningRoomBinding final : public QObject {
     void guestEnded();
     void endHost();
     void retireGuest();
+    void followTick();
+    void feedPosition();
+    void stopFollowing();
     void setError(QString text);
     void refreshMembers();
     void refreshGuestRoom();
@@ -184,6 +204,12 @@ class ListeningRoomBinding final : public QObject {
     RoomQueueModel queue_;
     QString room_lyrics_;
     std::optional<ListeningRoomNetwork> network_;
+    // S9.1: the guest's player, declared before the guests that use it.
+    std::unique_ptr<RoomPlaybackFollower> follower_;
+    QTimer follow_timer_;
+    QTimer position_timer_;
+    bool local_session_released_{false};
+    bool feeding_position_{false};
     std::unique_ptr<ListeningRoomHost> host_;
     std::unique_ptr<ListeningRoomGuest> guest_;
     // Ended guests waiting for the event loop (never destroyed inside their own callbacks). Declared

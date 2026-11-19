@@ -4,6 +4,7 @@
 #include "../support/FakeRoomTransport.hpp"
 
 #include "m0/application/ListeningRoomGuest.hpp"
+#include "m0/application/RoomPlaybackFollower.hpp"
 #include "m0/application/SessionAutosave.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -95,12 +96,17 @@ struct GuestFixture final {
                 },
             .restore_session =
                 [this](const SessionSnapshot& session) {
+                    if (on_restore)
+                        on_restore();
                     restored.push_back(session);
                     local = session;
                 },
             .schedule = [this](const std::int64_t delay_ms,
                                std::function<void()> task) { timers.schedule(delay_ms, std::move(task)); },
             .files = &inbox,
+            .follower = follower,
+            .local_clock_ms = follower != nullptr ? std::function<std::int64_t()>{[this] { return timers.now; }}
+                                                  : std::function<std::int64_t()>{},
         });
         guest->onChanged = [this] { ++changes; };
         guest->onRejected = [this](const std::uint64_t id, const IntentRejection reason) {
@@ -149,6 +155,9 @@ struct GuestFixture final {
     int changes{};
     std::vector<std::pair<std::uint64_t, IntentRejection>> rejected;
     std::vector<RoomLinkFailure> ended;
+    // S9.1: set before start() to follow the host's time.
+    RoomPlaybackFollower* follower{nullptr};
+    std::function<void()> on_restore;
     std::unique_ptr<ListeningRoomGuest> guest;
 };
 
@@ -978,4 +987,146 @@ TEST_CASE("room guest: a late failure of a replaced transfer leaves the live one
     f.inbox.complete(hashOf('a'));
     REQUIRE(f.guest->localFile(hashOf('a')));
 }
+namespace {
+
+// A silent player: loads are ready at once and the position moves only through seeks.
+class RecordingBackend final : public PlaybackBackend {
+  public:
+    [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override { return snapshot_; }
+    void setEventCallback(PlaybackEventCallback) override {}
+    PlaybackCommandResult load(const std::filesystem::path& source_path) override {
+        loads.push_back(source_path);
+        snapshot_ = {PlaybackStatus::Ready, 0, 240'000, true, snapshot_.generation + 1};
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult play() override {
+        snapshot_.status = PlaybackStatus::Playing;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult pause() override {
+        snapshot_.status = PlaybackStatus::Paused;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult seekTo(const std::int64_t position_ms) override {
+        seeks.push_back(position_ms);
+        snapshot_.position_ms = position_ms;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult setVolume(double) override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult setMuted(bool) override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult unload() override {
+        ++unloads;
+        snapshot_ = {PlaybackStatus::Empty, 0, 0, false, snapshot_.generation + 1};
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult shutdown() override { return unload(); }
+
+    std::vector<std::filesystem::path> loads;
+    std::vector<std::int64_t> seeks;
+    int unloads{0};
+
+  private:
+    PlaybackSnapshot snapshot_{};
+};
+
+struct FollowingGuest final {
+    FollowingGuest() {
+        f.follower = &follower;
+        f.start();
+    }
+    // The host's clock reads local + 100 s; the pong comes back 10 ms after the ping.
+    void answerPing() {
+        const auto pings = f.received<RoomClockPing>();
+        REQUIRE(!pings.empty());
+        f.timers.advance(10);
+        f.send(RoomClockPong{pings.back().sent_local_ms, pings.back().sent_local_ms + 5 + 100'000});
+    }
+    [[nodiscard]] std::int64_t hostNow() const { return f.timers.now + 100'000; }
+    // Item 11 ("aaa...") plays from 1 s, started 2 s ago on the host.
+    [[nodiscard]] RoomStateMessage playingQueue(const std::uint64_t version) const {
+        auto message = roomQueue(version, "ab");
+        message.snapshot.playback = RoomPlayback{11, true, hostNow() - 2'000, 1'000};
+        return message;
+    }
+
+    GuestFixture f;
+    RecordingBackend backend;
+    RoomPlaybackFollower follower{backend, [this] { return f.timers.now; }, room_drift_nudge_ms, room_drift_seek_ms,
+                                  [this](const std::int64_t delay_ms, std::function<void()> task) {
+                                      f.timers.schedule(delay_ms, std::move(task));
+                                  }};
+};
+
+} // namespace
+
+TEST_CASE("room guest: pings the host's clock when admitted and every room_clock_resample_ms",
+          "[core][listening-room][room-guest][room-follow]") {
+    FollowingGuest g;
+    g.f.timers.advance(1'000);
+    g.f.joinAdmitted();
+    REQUIRE(g.f.received<RoomClockPing>() == std::vector{RoomClockPing{1'000}});
+    g.f.timers.advance(room_clock_resample_ms);
+    REQUIRE(g.f.received<RoomClockPing>() == std::vector{RoomClockPing{1'000}, RoomClockPing{6'000}});
+
+    // A dropped link stops them; the next admission starts again.
+    g.f.dropLink(RoomLinkFailure::Unreachable);
+    g.f.timers.advance(room_clock_resample_ms * 2);
+    REQUIRE(g.f.received<RoomClockPing>().size() == 2);
+}
+
+TEST_CASE("room guest: without a follower it sends no clock pings", "[core][listening-room][room-guest][room-follow]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.timers.advance(room_clock_resample_ms * 2);
+    REQUIRE(f.received<RoomClockPing>().empty());
+}
+
+TEST_CASE("room guest: the current item's local file follows the host's time",
+          "[core][listening-room][room-guest][room-follow]") {
+    FollowingGuest g;
+    g.f.inbox.files[hashOf('a')] = "cache/a";
+    g.f.joinAdmitted();
+    g.answerPing();
+    g.f.send(g.playingQueue(1));
+    REQUIRE(g.backend.loads == std::vector<std::filesystem::path>{"cache/a"});
+    REQUIRE(g.backend.seeks == std::vector<std::int64_t>{3'000});
+    REQUIRE(g.backend.snapshot().status == PlaybackStatus::Playing);
+}
+
+TEST_CASE("room guest: a file that arrives late enters at the expected position",
+          "[core][listening-room][room-guest][room-follow]") {
+    FollowingGuest g;
+    g.f.joinAdmitted();
+    g.answerPing();
+    g.f.send(g.playingQueue(1));
+    REQUIRE(g.backend.loads.empty());
+    g.f.send(RoomFileOffer{hashOf('a'), 1000, 4});
+    g.f.timers.advance(4'000);
+    g.f.inbox.complete(hashOf('a'));
+    REQUIRE(g.backend.loads == std::vector<std::filesystem::path>{std::filesystem::path{"cache"} / hashOf('a')});
+    REQUIRE(g.backend.seeks == std::vector<std::int64_t>{7'000});
+    REQUIRE(g.backend.snapshot().status == PlaybackStatus::Playing);
+}
+
+TEST_CASE("room guest: leaving unloads the room file before the local session comes back",
+          "[core][listening-room][room-guest][room-follow]") {
+    FollowingGuest g;
+    g.f.inbox.files[hashOf('a')] = "cache/a";
+    g.f.joinAdmitted();
+    g.answerPing();
+    g.f.send(g.playingQueue(1));
+    REQUIRE(g.backend.snapshot().status == PlaybackStatus::Playing);
+    std::optional<PlaybackStatus> at_restore;
+    g.f.on_restore = [&g, &at_restore] { at_restore = g.backend.snapshot().status; };
+    g.f.guest->leave();
+    REQUIRE(at_restore == PlaybackStatus::Empty);
+    REQUIRE(g.backend.unloads == 1);
+
+    // The next room starts without the old host's clock.
+    g.f.joinAdmitted();
+    g.f.send(g.playingQueue(2));
+    REQUIRE(g.backend.snapshot().status != PlaybackStatus::Playing);
+}
+
 } // namespace music_player::m0::test

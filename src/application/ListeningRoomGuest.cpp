@@ -54,11 +54,14 @@ ListeningRoomGuest::ListeningRoomGuest(ListeningRoomGuestDependencies dependenci
       stored_custom_avatar_sha256_(std::move(dependencies.stored_custom_avatar_sha256)),
       capture_session_(std::move(dependencies.capture_session)),
       restore_session_(std::move(dependencies.restore_session)), schedule_(std::move(dependencies.schedule)),
-      files_(dependencies.files), alive_(std::make_shared<Alive>(Alive{this})) {
+      files_(dependencies.files), follower_(dependencies.follower),
+      local_clock_ms_(std::move(dependencies.local_clock_ms)), alive_(std::make_shared<Alive>(Alive{this})) {
     if (!capture_session_ || !restore_session_ || !schedule_)
         throw std::invalid_argument{"the listening room guest needs the local session seam and a scheduler"};
     if (!isValidListenerProfile(profile_))
         throw std::invalid_argument{"the listening room guest needs a valid listener profile"};
+    if (follower_ != nullptr && !local_clock_ms_)
+        throw std::invalid_argument{"the listening room guest needs the follower's clock"};
     if (files_ != nullptr) {
         // One guest at a time uses the inbox: a newer guest replaces these callbacks, and they do
         // nothing once this guest is gone.
@@ -220,6 +223,9 @@ void ListeningRoomGuest::onControl(const std::uint64_t link_id, const RoomContro
     } else if (const auto* offer = std::get_if<RoomFileOffer>(&message)) {
         if (state_ == GuestRoomState::Joined)
             onOffer(*offer);
+    } else if (const auto* pong = std::get_if<RoomClockPong>(&message)) {
+        if (state_ == GuestRoomState::Joined && follower_ != nullptr)
+            follower_->addClockSample({pong->sent_local_ms, pong->host_ms, local_clock_ms_()});
     } else if (const auto* lyrics = std::get_if<RoomLyrics>(&message)) {
         if (state_ == GuestRoomState::Joined && snapshot_.playback.current_item == lyrics->item_id &&
             lyrics->lrc_text.size() <= maximum_room_lyrics_bytes && lyrics_ != *lyrics) {
@@ -227,7 +233,7 @@ void ListeningRoomGuest::onControl(const std::uint64_t link_id, const RoomContro
             changed();
         }
     }
-    // Clock and catalog messages belong to later tasks (S9-S11).
+    // Catalog messages belong to later tasks (S10-S11).
 }
 
 void ListeningRoomGuest::onLinkClosed(const std::uint64_t link_id, const RoomLinkFailure failure) {
@@ -252,6 +258,7 @@ void ListeningRoomGuest::onJoinResult(const JoinDecision decision) {
         state_ = GuestRoomState::Joined;
         changed();
         updateFiles();
+        ping(link_id_);
         return;
     case JoinDecision::Pending:
         if (state_ == GuestRoomState::WaitingApproval || state_ == GuestRoomState::Joined)
@@ -289,6 +296,32 @@ void ListeningRoomGuest::onState(const RoomStateMessage& message) {
     permissions_ = message.my_permissions;
     changed();
     updateFiles();
+    follow();
+}
+
+// The follower gets the room's playback and the local copy of the current item, when there is one.
+void ListeningRoomGuest::follow() {
+    if (follower_ == nullptr || state_ != GuestRoomState::Joined)
+        return;
+    std::optional<std::filesystem::path> file;
+    if (const auto* item = itemWithId(snapshot_, snapshot_.playback.current_item);
+        item != nullptr && lowerHex64(item->content_sha256))
+        file = localFile(item->content_sha256);
+    follower_->apply(snapshot_.playback, std::move(file));
+}
+
+// One ping now and one every room_clock_resample_ms while this link stays the joined one.
+void ListeningRoomGuest::ping(const std::uint64_t link_id) {
+    if (follower_ == nullptr || link_id != link_id_ || state_ != GuestRoomState::Joined || !link_)
+        return;
+    // Keep the link alive even if the send makes the host answer synchronously.
+    const auto link = link_;
+    static_cast<void>(link->sendControl(RoomClockPing{local_clock_ms_()}));
+    const std::weak_ptr<Alive> alive = alive_;
+    schedule_(room_clock_resample_ms, [alive, link_id] {
+        if (const auto self = alive.lock())
+            self->guest->ping(link_id);
+    });
 }
 
 std::vector<std::string> ListeningRoomGuest::fileWindow() const {
@@ -350,6 +383,7 @@ void ListeningRoomGuest::onFileStatus(const std::uint64_t epoch, const std::stri
     if (status.complete) {
         local_files_[sha256] = status.file;
         changed();
+        follow();
         return;
     }
     if (state_ != GuestRoomState::Joined || !link_)
@@ -415,6 +449,7 @@ void ListeningRoomGuest::onFileComplete(const std::string& sha256, const std::fi
         return;
     local_files_[sha256] = file;
     changed();
+    follow();
 }
 
 void ListeningRoomGuest::onFileFailed(const std::string& sha256, const std::uint32_t transfer_id,
@@ -541,6 +576,9 @@ void ListeningRoomGuest::stop() {
     snapshot_ = {};
     permissions_.reset();
     fresh_link_ = false;
+    // The room file goes before the local session comes back to the same player.
+    if (follower_ != nullptr)
+        follower_->stop();
     if (auto saved = std::exchange(saved_session_, std::nullopt))
         restore_session_(*saved);
 }

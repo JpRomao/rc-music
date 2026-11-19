@@ -5,6 +5,7 @@
 #include "../support/FakeRoomTransport.hpp"
 
 #include "m0/domain/RoomInviteLink.hpp"
+#include "m0/ports/PlaybackBackend.hpp"
 #include "presentation/ListeningRoomBinding.hpp"
 #include "presentation/RoomQueueModel.hpp"
 
@@ -34,6 +35,48 @@ const std::string own_hex = "1122" + std::string(60, '0');
         hex += "ab";
     return hex;
 }
+
+// A silent player for the guest's follower: it records commands and plays nothing.
+class SilentBackend final : public PlaybackBackend {
+  public:
+    [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override { return snapshot_; }
+    void setEventCallback(PlaybackEventCallback) override {}
+    PlaybackCommandResult load(const std::filesystem::path& source) override {
+        loads.push_back(source);
+        snapshot_ = PlaybackSnapshot{PlaybackStatus::Paused, 0, 600'000, true};
+        ++snapshot_.generation;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult play() override {
+        snapshot_.status = PlaybackStatus::Playing;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult pause() override {
+        snapshot_.status = PlaybackStatus::Paused;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult seekTo(const std::int64_t position_ms) override {
+        seeks.push_back(position_ms);
+        snapshot_.position_ms = position_ms;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult setVolume(double) override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult setMuted(bool) override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult unload() override {
+        ++unloads;
+        snapshot_ = PlaybackSnapshot{};
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult shutdown() override { return PlaybackCommandResult::Accepted; }
+    void setPosition(const std::int64_t position_ms) { snapshot_.position_ms = position_ms; }
+
+    std::vector<std::filesystem::path> loads;
+    std::vector<std::int64_t> seeks;
+    int unloads{0};
+
+  private:
+    PlaybackSnapshot snapshot_{};
+};
 
 struct Fixture final {
     Fixture() : player({"music/a.mp3", "music/b.mp3"}) {}
@@ -77,6 +120,9 @@ struct Fixture final {
             .file_outbox = &outbox,
             .file_inbox = &inbox,
             .room_lyrics = [this](const QString& lrc) { room_lyrics.push_back(lrc); },
+            .guest_backend = guest_backend,
+            .release_local_session = [this] { ++releases; },
+            .room_position = [this](const std::optional<std::int64_t> position) { room_positions.push_back(position); },
         });
     }
     void completeNetwork() {
@@ -125,6 +171,9 @@ struct Fixture final {
     std::uint8_t next_random{1};
     int network_loads{0};
     int captures{0};
+    int releases{0};
+    std::vector<std::optional<std::int64_t>> room_positions;
+    PlaybackBackend* guest_backend{nullptr};
     int session_changes{0};
     bool defer_network{false};
     bool identity_fails{false};
@@ -300,6 +349,8 @@ class ListeningRoomBindingTests final : public QObject {
         QCOMPARE(binding->hostNickname(), QStringLiteral("Joao"));
         QCOMPARE(binding->members()->index(1, 0).data(RoomMembersModel::SelfRole).toBool(), true);
         QCOMPARE(f.captures, 1);
+        // Without a guest player nothing plays, so the local queue stays where it is.
+        QCOMPARE(f.releases, 0);
         QVERIFY(binding->holdsLocalSession());
         const auto pre_room = f.player.sessionSnapshot();
         QVERIFY(f.player.next());
@@ -312,6 +363,67 @@ class ListeningRoomBindingTests final : public QObject {
         QCOMPARE(f.restored.front(), pre_room);
         QVERIFY(guest_side->closed);
         QCOMPARE(binding->sessionForAutosave(f.player.sessionSnapshot()), f.player.sessionSnapshot());
+    }
+
+    // S9.1: with the app's player the guest puts its local queue away once, plays the room's file at
+    // the host's time, feeds the lyrics its position and gives the player back when it leaves.
+    void aGuestPlaysTheRoomInTimeOnTheSharedPlayer() {
+        Fixture f;
+        SilentBackend backend;
+        f.guest_backend = &backend;
+        auto binding = f.make();
+        binding->setOutputOffsetMs(0);
+        QVERIFY(binding->join(Fixture::validLink()));
+        auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, inviteHostHex());
+        f.connector->complete(guest_side);
+        QVERIFY(host_side->sendControl(RoomJoinResult{JoinDecision::Admitted}));
+        QCOMPARE(f.captures, 1);
+        QCOMPARE(f.releases, 1);
+        QVERIFY(binding->holdsLocalSession());
+
+        // The binding's clock reads 50 s; the host's reads 150 s.
+        const RoomClockPing* ping = nullptr;
+        for (const auto& message : guest_side->sent_control)
+            if (const auto* const found = std::get_if<RoomClockPing>(&message))
+                ping = found;
+        QVERIFY(ping != nullptr);
+        QVERIFY(host_side->sendControl(RoomClockPong{ping->sent_local_ms, 150'000}));
+
+        RoomSnapshot room;
+        room.version = 1;
+        room.members.push_back(RoomMember{inviteHostHex(), "Joao", {}, MemberState::Admitted});
+        room.members.push_back(RoomMember{own_hex, "Ana", {}, MemberState::Admitted});
+        RoomItem item;
+        item.id = 7;
+        item.origin = RoomItemOrigin::HostTrack;
+        item.owner_fingerprint = inviteHostHex();
+        item.content_sha256 = std::string(64, 'a');
+        item.size_bytes = 1000;
+        item.summary = RoomTrackSummary{"Primeira", "Artista", "Album", 600'000};
+        item.added_by = "Joao";
+        room.queue.push_back(item);
+        // Item 7 plays from 1 s, started 2 s ago on the host.
+        room.playback = RoomPlayback{7, true, 148'000, 1'000};
+        QVERIFY(host_side->sendControl(RoomStateMessage{room, {}}));
+        QVERIFY(backend.loads.empty());
+        QVERIFY(host_side->sendControl(RoomFileOffer{std::string(64, 'a'), 1000, 1}));
+        f.inbox.complete(std::string(64, 'a'));
+        QCOMPARE(backend.loads.size(), std::size_t{1});
+        QCOMPARE(backend.seeks, std::vector<std::int64_t>{3'000});
+        QCOMPARE(backend.snapshot().status, PlaybackStatus::Playing);
+        QCOMPARE(f.releases, 1);
+
+        backend.setPosition(3'400);
+        QTRY_VERIFY(!f.room_positions.empty() && f.room_positions.back() == std::optional<std::int64_t>{3'400});
+
+        binding->leave();
+        QCOMPARE(backend.unloads, 1);
+        QCOMPARE(f.restored.size(), std::size_t{1});
+        QVERIFY(!f.room_positions.empty());
+        QCOMPARE(f.room_positions.back(), std::optional<std::int64_t>{});
+        const auto fed = f.room_positions.size();
+        QTest::qWait(250);
+        QCOMPARE(f.room_positions.size(), fed);
     }
 
     // S8.2: the guest's room queue says which items are still loading and who added them; the host's

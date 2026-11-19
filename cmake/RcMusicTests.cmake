@@ -32,6 +32,7 @@ function(rc_music_add_core_tests target test_prefix test_labels)
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/FakeRoomTransportTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/ListeningRoomHostTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/ListeningRoomGuestTests.cpp"
+        "${RC_MUSIC_SOURCE_ROOT}/tests/core/RoomPlaybackFollowerTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/LocalLibraryTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/LyricsTests.cpp"
         "${RC_MUSIC_SOURCE_ROOT}/tests/core/ArtworkLimitsTests.cpp"

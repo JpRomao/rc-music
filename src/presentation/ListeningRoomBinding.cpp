@@ -18,6 +18,9 @@
 namespace music_player::m0 {
 namespace {
 
+// How often a guest playing the room feeds the lyrics panel its position.
+constexpr int room_position_feed_ms = 100;
+
 [[nodiscard]] std::string lowerHex(const std::array<std::uint8_t, 32>& bytes) {
     static constexpr char digits[] = "0123456789abcdef";
     std::string text;
@@ -45,13 +48,28 @@ ListeningRoomBinding::ListeningRoomBinding(ListeningRoomBindingDependencies depe
         (dependencies_.host_player == nullptr || dependencies_.catalog == nullptr ||
          dependencies_.roster_store == nullptr || !dependencies_.clock_ms || !dependencies_.random_bytes))
         throw std::invalid_argument{"the listening room needs its player, catalog, roster, clock and random source"};
+    if (available() && dependencies_.guest_backend != nullptr)
+        follower_ =
+            std::make_unique<RoomPlaybackFollower>(*dependencies_.guest_backend, dependencies_.clock_ms,
+                                                   room_drift_nudge_ms, room_drift_seek_ms, dependencies_.schedule);
+    follow_timer_.setInterval(room_drift_check_ms);
+    position_timer_.setInterval(room_position_feed_ms);
+    connect(&follow_timer_, &QTimer::timeout, this, &ListeningRoomBinding::followTick);
+    connect(&position_timer_, &QTimer::timeout, this, &ListeningRoomBinding::feedPosition);
 }
 
 ListeningRoomBinding::~ListeningRoomBinding() {
     // Neither destructor calls back; the host still removes its guest items from the player.
+    follow_timer_.stop();
+    position_timer_.stop();
     retired_guests_.clear();
     guest_.reset();
     host_.reset();
+}
+
+void ListeningRoomBinding::setOutputOffsetMs(const int offset_ms) {
+    if (follower_)
+        follower_->setOutputOffsetMs(offset_ms);
 }
 
 bool ListeningRoomBinding::available() const noexcept { return !dependencies_.signaling_origin.isEmpty(); }
@@ -362,6 +380,8 @@ void ListeningRoomBinding::startGuest() {
         .restore_session = dependencies_.restore_session,
         .schedule = dependencies_.schedule,
         .files = dependencies_.file_inbox,
+        .follower = follower_.get(),
+        .local_clock_ms = dependencies_.clock_ms,
     });
     guest_->onChanged = [this] { guestChanged(); };
     guest_->onEnded = [this](RoomLinkFailure) { guestEnded(); };
@@ -420,8 +440,37 @@ void ListeningRoomBinding::hostEndpointFailed(const RoomLinkFailure failure) {
 }
 
 void ListeningRoomBinding::guestChanged() {
+    // The guest captured its pre-room session: the local queue leaves the shared player before the room
+    // plays on it. Once per room; a reconnect keeps the same saved session.
+    if (follower_ && !local_session_released_ && guest_ && guest_->holdsLocalSession()) {
+        local_session_released_ = true;
+        if (dependencies_.release_local_session)
+            dependencies_.release_local_session();
+        follow_timer_.start();
+        position_timer_.start();
+    }
     refreshMembers();
     publish();
+}
+
+void ListeningRoomBinding::followTick() {
+    if (follower_ && guest_)
+        follower_->tick();
+}
+
+void ListeningRoomBinding::feedPosition() {
+    if (!follower_ || !guest_ || !local_session_released_ || !dependencies_.room_position)
+        return;
+    feeding_position_ = true;
+    dependencies_.room_position(std::max<std::int64_t>(dependencies_.guest_backend->snapshot().position_ms, 0));
+}
+
+void ListeningRoomBinding::stopFollowing() {
+    follow_timer_.stop();
+    position_timer_.stop();
+    local_session_released_ = false;
+    if (std::exchange(feeding_position_, false) && dependencies_.room_position)
+        dependencies_.room_position(std::nullopt);
 }
 
 void ListeningRoomBinding::guestEnded() {
@@ -499,6 +548,7 @@ void ListeningRoomBinding::endHost() {
 void ListeningRoomBinding::retireGuest() {
     if (!guest_)
         return;
+    stopFollowing();
     // This may run inside the guest's own callback: destroy it from the event loop instead.
     guest_->onChanged = nullptr;
     guest_->onEnded = nullptr;

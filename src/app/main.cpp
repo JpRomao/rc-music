@@ -913,6 +913,9 @@ int main(int argc, char* argv[]) {
                                  roles.contains(Queue::FileNameRole))
                                  refresh_lyrics_target();
                          });
+        // S9.1: while a guest plays the room, the lyrics follow the room's position instead of the local
+        // queue's (which is put away until the guest leaves).
+        std::optional<qint64> room_lyrics_position;
         const auto update_lyrics = [&] {
             if (presenter.exiting()) {
                 static_cast<void>(lyrics_binding.prepareExit());
@@ -921,7 +924,7 @@ int main(int argc, char* argv[]) {
             lyrics_binding.setTrack(presenter.detailsFilePath(), presenter.detailsTitle(), presenter.detailsArtist(),
                                     presenter.detailsAlbum(), presenter.hasDuration() ? presenter.durationMs() : 0,
                                     presenter.currentOccurrenceId());
-            lyrics_binding.setPosition(presenter.confirmedPositionMs());
+            lyrics_binding.setPosition(room_lyrics_position.value_or(presenter.confirmedPositionMs()));
         };
         QObject::connect(&presenter, &PlayerPresenter::stateChanged, &lyrics_binding, update_lyrics);
         QObject::connect(&presenter, &PlayerPresenter::playbackChanged, &lyrics_binding, update_lyrics);
@@ -975,6 +978,20 @@ int main(int argc, char* argv[]) {
                 });
             watcher->setFuture(QtConcurrent::run([root] { return music_player::m0::loadOrCreateRoomIdentity(root); }));
         };
+        // S9.1: a guest plays the room on the app's one player, in time with the host. Its local queue is
+        // put away first and comes back from the saved session when it leaves.
+        room_dependencies.guest_backend = &backend;
+        room_dependencies.release_local_session = [&presenter] {
+            static_cast<void>(presenter.restoreRoomSession(music_player::m0::SessionSnapshot{}));
+        };
+        room_dependencies.room_position = [&room_lyrics_position, &lyrics_binding,
+                                           &update_lyrics](const std::optional<std::int64_t> position_ms) {
+            room_lyrics_position = position_ms;
+            if (position_ms.has_value())
+                lyrics_binding.setPosition(*position_ms);
+            else
+                update_lyrics();
+        };
 #endif
         room_dependencies.host_player = &room_host_player;
         room_dependencies.room_lyrics = [&lyrics_binding](const QString& lrc) { lyrics_binding.setRoomLyrics(lrc); };
@@ -1017,6 +1034,10 @@ int main(int argc, char* argv[]) {
         music_player::m0::ListeningRoomBinding room_binding(std::move(room_dependencies));
 #if defined(RC_MUSIC_LISTENING_ROOM_AVAILABLE) && defined(M0_QT_COMBINED_AUDIO)
         room_network_context = &room_binding;
+        room_binding.setOutputOffsetMs(presenter.roomOutputOffsetMs());
+        QObject::connect(&presenter, &PlayerPresenter::preferencesChanged, &room_binding, [&room_binding, &presenter] {
+            room_binding.setOutputOffsetMs(presenter.roomOutputOffsetMs());
+        });
 #endif
         // Autosave stores what the room allows (never guest items; a guest's own pre-room session);
         // leaving or closing runs in requestExit before the final save.
