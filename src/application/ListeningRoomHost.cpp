@@ -260,13 +260,27 @@ bool ListeningRoomHost::reject(const std::string_view fingerprint) {
 bool ListeningRoomHost::kick(const std::string_view fingerprint, const bool block) {
     if (!room_ || !room_->kick(fingerprint, block))
         return false;
-    held_.erase(std::string{fingerprint});
-    if (block)
-        saveRoster();
-    if (auto* connection = findMember(fingerprint)) {
+    const std::string key{fingerprint};
+    const bool was_held = held_.erase(key) > 0;
+    // Blocked, or forgotten so that coming back needs a new approval.
+    saveRoster();
+    if (auto* connection = findMember(key)) {
         const auto link = connection->link;
         static_cast<void>(link->sendControl(RoomBye{RoomByeReason::Kicked}));
         drop(link);
+    } else if (was_held) {
+        // Kicked while the link was down: the app retrying inside the reconnect window hears it.
+        const auto token = ++next_hold_;
+        kicked_away_[key] = token;
+        schedule_(room_reconnect_window_ms,
+                  [alive = std::weak_ptr<Alive>{alive_}, generation = generation_, key, token] {
+                      const auto self = alive.lock();
+                      if (!self || self->host->generation_ != generation)
+                          return;
+                      auto& kicked = self->host->kicked_away_;
+                      if (const auto found = kicked.find(key); found != kicked.end() && found->second == token)
+                          kicked.erase(found);
+                  });
     }
     static_cast<void>(refresh());
     return true;
@@ -545,6 +559,12 @@ void ListeningRoomHost::onHello(const std::shared_ptr<RoomLink>& link, const Roo
     const auto fingerprint = connection->fingerprint;
     // One live link per identity: the newer link replaces the older one.
     std::vector<std::shared_ptr<RoomLink>> older;
+    if (const auto kicked = kicked_away_.find(fingerprint); kicked != kicked_away_.end()) {
+        kicked_away_.erase(kicked);
+        static_cast<void>(link->sendControl(RoomBye{RoomByeReason::Kicked}));
+        drop(link);
+        return;
+    }
     for (const auto& other : connections_)
         if (other.link != link && other.fingerprint == fingerprint)
             older.push_back(other.link);
@@ -983,6 +1003,7 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
     held_.clear();
     reanchor_ = false;
     current_ = RoomSnapshot{.version = current_.version + 1};
+    kicked_away_.clear();
     sent_view_ = {};
     if (onChanged)
         onChanged(current_);

@@ -101,6 +101,9 @@ bool ListeningRoom::kick(const std::string_view fingerprint, const bool block) {
             }
         }
         (void)roster_.setBlocked(fingerprint, true);
+    } else {
+        // "Expulsar": out now, and back only through a new approval.
+        (void)roster_.forget(member.fingerprint);
     }
     return true;
 }

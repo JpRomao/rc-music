@@ -133,8 +133,10 @@ TEST_CASE("kick removes a member and can block them", "[core][listening-room][ro
     admitNew(room, "fp-a");
     REQUIRE(room.kick("fp-a", false));
     REQUIRE(room.members().empty());
-    REQUIRE_FALSE(roster.find("fp-a")->blocked);
-    REQUIRE(room.requestJoin(candidate("fp-a")) == JoinDecision::Admitted);
+    // A kick without block forgets the person: next time they wait for approval again.
+    REQUIRE(roster.find("fp-a") == nullptr);
+    REQUIRE(room.requestJoin(candidate("fp-a")) == JoinDecision::Pending);
+    REQUIRE(room.approve("fp-a"));
     REQUIRE(room.kick("fp-a", true));
     REQUIRE(roster.find("fp-a")->blocked);
     REQUIRE(room.requestJoin(candidate("fp-a")) == JoinDecision::RejectedBlocked);

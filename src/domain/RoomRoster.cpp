@@ -164,6 +164,10 @@ bool RoomRoster::setBlocked(const std::string_view fingerprint, const bool block
     return true;
 }
 
+bool RoomRoster::forget(const std::string_view fingerprint) {
+    return std::erase_if(state_.listeners, [&](const KnownListener& l) { return l.fingerprint == fingerprint; }) > 0;
+}
+
 const KnownListener* RoomRoster::find(const std::string_view fingerprint) const noexcept {
     const auto it = std::find_if(state_.listeners.begin(), state_.listeners.end(),
                                  [&](const KnownListener& l) { return l.fingerprint == fingerprint; });

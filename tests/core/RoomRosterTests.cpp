@@ -106,6 +106,17 @@ TEST_CASE("unknown and blocked people have no permissions", "[core][listening-ro
     REQUIRE_FALSE(roster.setBlocked("nobody", true));
 }
 
+TEST_CASE("forget removes a known person with their role and overrides", "[core][listening-room][roster]") {
+    auto roster = withAna();
+    REQUIRE(roster.setOverride("fp-ana", RoomPermission::Pause, false));
+    REQUIRE(roster.forget("fp-ana"));
+    REQUIRE(roster.find("fp-ana") == nullptr);
+    REQUIRE(roster.snapshot().listeners.empty());
+    REQUIRE_FALSE(roster.forget("fp-ana"));
+    roster.remember("fp-ana", "Ana", 1);
+    REQUIRE(roster.find("fp-ana")->overrides.empty());
+}
+
 TEST_CASE("remember updates only the nickname of known people", "[core][listening-room][roster]") {
     auto roster = withAna();
     REQUIRE(roster.assignRole("fp-ana", 1));

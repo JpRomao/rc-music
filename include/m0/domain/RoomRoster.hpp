@@ -80,6 +80,8 @@ class RoomRoster final {
     [[nodiscard]] bool setOverride(std::string_view fingerprint, RoomPermission permission,
                                    std::optional<bool> allowed);
     [[nodiscard]] bool setBlocked(std::string_view fingerprint, bool blocked);
+    // The person is no longer known (role and overrides go too): next time they wait for approval.
+    [[nodiscard]] bool forget(std::string_view fingerprint);
     [[nodiscard]] const KnownListener* find(std::string_view fingerprint) const noexcept;
     // Empty for unknown or blocked people.
     [[nodiscard]] RoomPermissionSet effectivePermissions(std::string_view fingerprint) const;

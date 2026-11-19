@@ -87,7 +87,9 @@ struct ListeningRoomHostDependencies final {
 //     leaves at once. A RoomBye from a guest (it left) is an immediate leave: the link is closed,
 //     there is no reconnect hold, and the version bumps.
 //   - kick(fp, block) sends RoomBye{Kicked} and closes; blocking someone present is always
-//     kick(fp, true), never a bare roster change.
+//     kick(fp, true), never a bare roster change. Without block the person is forgotten (role and
+//     overrides too), so coming back is a new request for approval. Someone kicked while held (link
+//     down) gets RoomBye{Kicked} if they say hello again within room_reconnect_window_ms.
 //
 // Intents: every RoomIntentMessage goes through ListeningRoom::authorize against the current
 // snapshot (requiredPermission alone is never the gate). NotAdmitted is dropped silently (pending
@@ -193,7 +195,8 @@ class ListeningRoomHost final {
     // nullopt clears the override (the role decides again).
     [[nodiscard]] bool setOverride(std::string_view fingerprint, RoomPermission permission,
                                    std::optional<bool> allowed);
-    // "Desbloquear": the person may ask to come in again. False when not known or not blocked.
+    // "Desbloquear": the person is known again and comes back in without a new approval, with their role.
+    // False when not known or not blocked.
     [[nodiscard]] bool unblock(std::string_view fingerprint);
 
     // For the guest-file transfer (S8/S12): a guest's file already in the host's room cache joins the
@@ -289,6 +292,8 @@ class ListeningRoomHost final {
     bool reanchor_{false};
     bool refreshing_{false};
     bool refresh_again_{false};
+    // People kicked while held, told RoomBye{Kicked} if they come back within room_reconnect_window_ms.
+    std::map<std::string, std::uint64_t, std::less<>> kicked_away_;
     std::shared_ptr<Alive> alive_;
 };
 

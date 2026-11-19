@@ -764,7 +764,9 @@ class ListeningRoomBindingTests final : public QObject {
         QVERIFY(back_guest->sendControl(RoomHello{room_protocol_version, "Lia", {}}));
         QCOMPARE(back_host->sent_control.front(), RoomControlMessage{RoomJoinResult{JoinDecision::Admitted}});
         QVERIFY(binding->kick(QStringLiteral("fp-lia")));
-        QVERIFY(!f.roster.stored.listeners.front().blocked);
+        // A kick without block forgets the person: they ask again next time.
+        QVERIFY(f.roster.stored.listeners.empty());
+        QCOMPARE(binding->knownPeople()->rowCount(), 0);
 
         binding->closeRoom();
         QCOMPARE(binding->createRole(QStringLiteral("Fora"), 0), 0);

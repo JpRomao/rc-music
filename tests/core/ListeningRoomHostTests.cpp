@@ -1106,7 +1106,7 @@ TEST_CASE("room host: a per-person override wins over the role in the next state
     REQUIRE_FALSE(f.host->setOverride("fp-nobody", RoomPermission::Pause, true));
 }
 
-TEST_CASE("room host: unblocking lets a blocked person in again; a kick without block does not block",
+TEST_CASE("room host: unblocking lets a blocked person in again; after a kick without block they ask again",
           "[core][listening-room][room-host][room-roles]") {
     HostFixture f;
     f.start();
@@ -1123,9 +1123,58 @@ TEST_CASE("room host: unblocking lets a blocked person in again; a kick without 
     REQUIRE_FALSE(f.host->unblock("fp-dj"));
 
     REQUIRE(f.host->kick("fp-dj", false));
-    REQUIRE_FALSE(storedListener(f, "fp-dj")->blocked);
+    REQUIRE(back->inbox.back() == RoomControlMessage{RoomBye{RoomByeReason::Kicked}});
+    REQUIRE(storedListener(f, "fp-dj") == nullptr);
+    REQUIRE(f.host->roster().listeners.size() == 1);
+    f.join_requests.clear();
     auto again = f.join("fp-dj");
-    REQUIRE(again->inbox.front() == RoomControlMessage{RoomJoinResult{JoinDecision::Admitted}});
+    REQUIRE(again->inbox == std::vector<RoomControlMessage>{RoomJoinResult{JoinDecision::Pending}});
+    REQUIRE(f.join_requests.size() == 1);
+    REQUIRE(f.host->approve("fp-dj"));
+    REQUIRE(again->inbox.at(1) == RoomControlMessage{RoomJoinResult{JoinDecision::Admitted}});
+}
+
+TEST_CASE("room host: someone kicked while their link is down hears it on reconnect and then asks again",
+          "[core][listening-room][room-host][room-roles]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    dj->link->close();
+    REQUIRE(f.isMember("fp-dj"));
+
+    REQUIRE(f.host->kick("fp-dj", false));
+    REQUIRE_FALSE(f.isMember("fp-dj"));
+    REQUIRE(storedListener(f, "fp-dj") == nullptr);
+    // The guest's app retries inside the reconnect window: it is told it was kicked, not let back in.
+    auto retry = f.join("fp-dj");
+    REQUIRE(retry->inbox == std::vector<RoomControlMessage>{RoomBye{RoomByeReason::Kicked}});
+    REQUIRE(retry->link->closed);
+    REQUIRE_FALSE(f.isMember("fp-dj"));
+    REQUIRE(f.join_requests.empty());
+
+    // Once told, the person may ask again like anyone new.
+    auto asks = f.join("fp-dj");
+    REQUIRE(asks->inbox == std::vector<RoomControlMessage>{RoomJoinResult{JoinDecision::Pending}});
+    REQUIRE(f.join_requests.size() == 1);
+}
+
+TEST_CASE("room host: the kick notice for a disconnected person lasts only the reconnect window",
+          "[core][listening-room][room-host][room-roles]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    auto listener = f.join("fp-listener", "Lia");
+    listener->link->close();
+    dj->link->close();
+    REQUIRE(f.host->kick("fp-dj", false));
+    REQUIRE(f.host->kick("fp-listener", true));
+    f.runScheduled();
+    auto later = f.join("fp-dj");
+    REQUIRE(later->inbox == std::vector<RoomControlMessage>{RoomJoinResult{JoinDecision::Pending}});
+    auto blocked = f.join("fp-listener", "Lia");
+    REQUIRE(blocked->inbox == std::vector<RoomControlMessage>{RoomJoinResult{JoinDecision::RejectedBlocked}});
 }
 
 TEST_CASE("room host: the invite's initial role cannot be removed; people in a removed role fall back to it",

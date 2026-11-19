@@ -107,7 +107,8 @@ class ListeningRoom final {
     // Removes a pending person without blocking.
     [[nodiscard]] bool reject(std::string_view fingerprint);
     void leave(std::string_view fingerprint);
-    // Removes a member; block=true leaves them blocked in the roster. False when not a member.
+    // Removes a member; block=true leaves them blocked in the roster, block=false forgets them (their role
+    // and overrides too), so coming back needs a new approval. False when not a member.
     [[nodiscard]] bool kick(std::string_view fingerprint, bool block);
     // Checks the intent against the current snapshot and roster permissions at call time.
     [[nodiscard]] std::optional<IntentRejection> authorize(std::string_view fingerprint, const RoomIntent& intent,
