@@ -5,6 +5,7 @@
 #include "../support/FakeRoomTransport.hpp"
 
 #include "m0/domain/RoomInviteLink.hpp"
+#include "m0/ports/AudioFilesPicker.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
 #include "presentation/ListeningRoomBinding.hpp"
 #include "presentation/RoomCatalogModel.hpp"
@@ -20,6 +21,7 @@
 #include <QTest>
 
 #include <algorithm>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -82,6 +84,25 @@ class SilentBackend final : public PlaybackBackend {
     PlaybackSnapshot snapshot_{};
 };
 
+// S12.1: the guest's "Adicionar música minha" dialog.
+class UploadPicker final : public AudioFilesPicker {
+  public:
+    bool pick(AudioFilesSelectionCompletion completion) override {
+        if (pending)
+            return false;
+        pending = std::move(completion);
+        return true;
+    }
+    void cancel() noexcept override {
+        ++cancellations;
+        pending = {};
+    }
+    void complete(AudioFilesSelectionResult result) { std::exchange(pending, {})(std::move(result)); }
+
+    AudioFilesSelectionCompletion pending;
+    int cancellations{0};
+};
+
 struct Fixture final {
     Fixture() : player({"music/a.mp3", "music/b.mp3"}) {}
 
@@ -136,6 +157,9 @@ struct Fixture final {
                 },
             .room_position = [this](const std::optional<std::int64_t> position) { room_positions.push_back(position); },
             .playlists = [this] { return library; },
+            .upload_picker = &upload_picker,
+            .upload_inbox = &upload_inbox,
+            .upload_probe = &upload_probe,
         });
     }
     void completeNetwork() {
@@ -193,6 +217,10 @@ struct Fixture final {
     PlaybackBackend* guest_backend{nullptr};
     // S11.2: the host's saved playlists.
     PlaylistLibrarySnapshot library;
+    // S12.1: the guest's dialog, the host's upload cache and its check.
+    UploadPicker upload_picker;
+    testing::FakeRoomFileInbox upload_inbox;
+    testing::FakeRoomUploadProbe upload_probe;
     int session_changes{0};
     bool defer_network{false};
     bool identity_fails{false};
@@ -1041,6 +1069,102 @@ class ListeningRoomBindingTests final : public QObject {
         binding->leave();
         QCOMPARE(catalog->rowCount(), 0);
         QVERIFY(!binding->canAddPlaylist());
+    }
+
+    // S12.1: "Adicionar música minha" only with the permission; the dialog's file goes to the room and a
+    // refusal says why.
+    void aGuestSendsItsOwnTrackOnlyWithThePermission() {
+        Fixture f;
+        auto binding = f.make();
+        QVERIFY(binding->join(Fixture::validLink()));
+        auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, inviteHostHex());
+        f.connector->complete(guest_side);
+        QVERIFY(host_side->sendControl(RoomJoinResult{JoinDecision::Admitted}));
+        RoomSnapshot room;
+        room.version = 1;
+        room.members.push_back(RoomMember{inviteHostHex(), "Joao", {}, MemberState::Admitted});
+        QVERIFY(host_side->sendControl(RoomStateMessage{room, {}}));
+        QVERIFY(!binding->canUploadOwnTracks());
+        QVERIFY(!binding->roomUploadOwnTrack());
+        QVERIFY(!f.upload_picker.pending);
+        const auto uploads = [&] {
+            std::vector<RoomIntentMessage> sent;
+            for (const auto& message : guest_side->sent_control)
+                if (const auto* const intent = std::get_if<RoomIntentMessage>(&message);
+                    intent && intent->intent.uploaded)
+                    sent.push_back(*intent);
+            return sent;
+        };
+
+        RoomPermissionSet upload;
+        upload.set(static_cast<std::size_t>(RoomPermission::UploadOwnTracks));
+        room.version = 2;
+        QVERIFY(host_side->sendControl(RoomStateMessage{room, upload}));
+        QVERIFY(binding->canUploadOwnTracks());
+        QVERIFY(!binding->uploading());
+        QVERIFY(binding->roomUploadOwnTrack());
+        QVERIFY(binding->uploading()); // the dialog is open
+        QVERIFY(!binding->roomUploadOwnTrack());
+        const std::filesystem::path mine{"music/minha.mp3"};
+        f.upload_picker.complete({AudioFilesSelectionStatus::Selected, {mine}});
+        QCOMPARE(uploads().size(), std::size_t{1});
+        QCOMPARE(uploads().front().intent.uploaded->content_sha256, testing::FakeRoomTrackCatalog::fakeSha256(mine));
+        QVERIFY(binding->uploading());
+        // The host found no audio in it.
+        QVERIFY(
+            host_side->sendControl(RoomIntentRejected{uploads().front().request_id, IntentRejection::InvalidArgument}));
+        QCOMPARE(binding->errorText(), QStringLiteral("Arquivo de áudio inválido"));
+        QVERIFY(!binding->uploading());
+
+        // A file a local import refuses, or one above 50 MiB, never leaves.
+        binding->dismissError();
+        QVERIFY(binding->roomUploadOwnTrack());
+        f.upload_picker.complete({AudioFilesSelectionStatus::Selected, {std::filesystem::path{"notas/letra.txt"}}});
+        QCOMPARE(binding->errorText(), QStringLiteral("Arquivo de áudio inválido"));
+        binding->dismissError();
+        f.catalog.size_override = maximum_guest_upload_bytes + 1;
+        QVERIFY(binding->roomUploadOwnTrack());
+        f.upload_picker.complete({AudioFilesSelectionStatus::Selected, {std::filesystem::path{"music/enorme.flac"}}});
+        QCOMPARE(binding->errorText(), QStringLiteral("A música passa de 50 MB."));
+        QCOMPARE(uploads().size(), std::size_t{1});
+        QVERIFY(!binding->uploading());
+
+        // A cancelled dialog sends nothing; leaving with the dialog open closes it.
+        QVERIFY(binding->roomUploadOwnTrack());
+        f.upload_picker.complete({AudioFilesSelectionStatus::Cancelled, {}});
+        QVERIFY(!binding->uploading());
+        QVERIFY(binding->roomUploadOwnTrack());
+        binding->leave();
+        QVERIFY(!f.upload_picker.pending);
+        QVERIFY(!binding->canUploadOwnTracks());
+        QVERIFY(!binding->uploading());
+    }
+
+    // S12.1: the host's room checks uploads with its own upload cache and probe; closing it empties the cache.
+    void theHostReceivesUploadsInItsOwnCache() {
+        Fixture f;
+        auto binding = f.make();
+        QVERIFY(binding->openRoom(5, false));
+        QVERIFY(binding->setRolePermission(binding->initialRoleId(), static_cast<int>(RoomPermission::UploadOwnTracks),
+                                           true));
+        auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, "fp-lia");
+        f.endpoint->admit(host_side);
+        QVERIFY(guest_side->sendControl(RoomHello{room_protocol_version, "Lia", {}}));
+        QVERIFY(binding->approve(QStringLiteral("fp-lia")));
+        RoomItem item;
+        item.origin = RoomItemOrigin::GuestTrack;
+        item.content_sha256 = std::string(64, 'e');
+        item.size_bytes = 5000;
+        QVERIFY(guest_side->sendControl(
+            RoomIntentMessage{1, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = item}}));
+        QVERIFY(std::any_of(host_side->sent_control.begin(), host_side->sent_control.end(), [](const auto& message) {
+            const auto* const request = std::get_if<RoomFileRequest>(&message);
+            return request != nullptr && request->content_sha256 == std::string(64, 'e');
+        }));
+        QVERIFY(!f.upload_inbox.log.empty());
+        QVERIFY(f.inbox.log.empty());
+        binding->closeRoom();
+        QCOMPARE(f.upload_inbox.purges, 1);
     }
 
     void thePrivacyNoticeIsAcknowledgedOnce() {

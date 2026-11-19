@@ -97,6 +97,8 @@ constexpr std::size_t json_playlist_keys_bytes = 96;
 constexpr std::size_t json_entry_keys_bytes = 128; // id and the summary keys
 // Catalog files the host asks the track catalog for at a time (each one is hashed).
 constexpr std::size_t catalog_describing_limit = 8;
+// S12.1: upload chunks kept per link for offers still on their way, like the guest's early chunks.
+constexpr std::size_t maximum_early_upload_bytes = 2 * 1024 * 1024;
 
 std::size_t estimatedPlaylistBytes(const RoomCatalogPlaylist& playlist) {
     return json_playlist_keys_bytes + json_number_bytes + jsonTextBytes(playlist.name);
@@ -144,6 +146,11 @@ struct ListeningRoomHost::Connection final {
     // outbox (transfer_id -> sha).
     std::map<std::string, std::uint64_t, std::less<>> wanted{};
     std::map<std::uint32_t, std::string> transfers{};
+    // S12.1: chunks of this member's upload that came before their offer (its transfer id -> chunks), their
+    // size, and the highest upload offer seen on this link.
+    std::map<std::uint32_t, std::vector<RoomFileChunk>> early_upload{};
+    std::size_t early_upload_bytes{0};
+    std::uint32_t last_upload_offer{0};
 };
 
 struct ListeningRoomHost::WindowFile final {
@@ -157,7 +164,8 @@ ListeningRoomHost::ListeningRoomHost(ListeningRoomHostDependencies dependencies)
       random_bytes_(std::move(dependencies.random_bytes)), host_fingerprint_(dependencies.host_fingerprint),
       host_fingerprint_hex_(lowerHex(dependencies.host_fingerprint)),
       host_profile_(std::move(dependencies.host_profile)), schedule_(std::move(dependencies.schedule)),
-      files_(dependencies.files), alive_(std::make_shared<Alive>(Alive{this})) {
+      files_(dependencies.files), uploads_(dependencies.uploads), upload_probe_(dependencies.upload_probe),
+      alive_(std::make_shared<Alive>(Alive{this})) {
     if (!host_clock_ms_ || !random_bytes_ || !schedule_)
         throw std::invalid_argument{"the listening room host needs a clock, a random source and a scheduler"};
     const auto loaded = roster_store_.load();
@@ -171,6 +179,18 @@ ListeningRoomHost::ListeningRoomHost(ListeningRoomHostDependencies dependencies)
         if (const auto self = alive.lock())
             static_cast<void>(self->host->refresh());
     };
+    if (uploads_ != nullptr) {
+        const std::weak_ptr<Alive> alive = alive_;
+        uploads_->onComplete = [alive](std::string sha256, std::filesystem::path file) {
+            if (const auto self = alive.lock())
+                self->host->onUploadComplete(sha256, file);
+        };
+        uploads_->onFailed = [alive](std::string sha256, const std::uint32_t transfer_id,
+                                     const RoomFileFailure failure) {
+            if (const auto self = alive.lock())
+                self->host->onUploadFailed(sha256, transfer_id, failure);
+        };
+    }
 }
 
 ListeningRoomHost::~ListeningRoomHost() {
@@ -187,9 +207,12 @@ ListeningRoomHost::~ListeningRoomHost() {
     }
     if (invite_)
         endpoint_.closeAll();
-    // As in end(): guest items never outlive the room in the host's queue.
+    // As in end(): guest items never outlive the room in the host's queue, nor their files the upload cache
+    // (end() already emptied it when the room is closed).
     for (const auto& guest : guest_items_)
         static_cast<void>(player_.remove(LocalQueueOccurrenceId{guest.first}));
+    if (room_)
+        stopUploads();
 }
 
 std::optional<RoomInviteLink> ListeningRoomHost::open(const RoomOpenOptions& options) {
@@ -451,7 +474,13 @@ void ListeningRoomHost::attach(const std::shared_ptr<RoomLink>& link) {
         if (self && strong)
             self->host->onLinkControl(strong, std::move(message));
     };
-    link->onMedia = [](RoomFileChunk) {}; // File transfer: S8.
+    // Guests send media only for their uploads (S12.1).
+    link->onMedia = [alive, weak](RoomFileChunk chunk) {
+        const auto self = alive.lock();
+        const auto strong = weak.lock();
+        if (self && strong)
+            self->host->onUploadChunk(strong.get(), std::move(chunk));
+    };
     link->onClosed = [alive, weak](RoomLinkFailure) {
         const auto self = alive.lock();
         const auto strong = weak.lock();
@@ -534,6 +563,9 @@ void ListeningRoomHost::onLinkControl(const std::shared_ptr<RoomLink>& link, Roo
     } else if (const auto* request = std::get_if<RoomFileRequest>(&message)) {
         if (memberState(connection->fingerprint) == MemberState::Admitted)
             onFileRequest(*find(link.get()), *request);
+    } else if (const auto* offer = std::get_if<RoomFileOffer>(&message)) {
+        if (memberState(connection->fingerprint) == MemberState::Admitted)
+            onUploadOffer(*find(link.get()), *offer);
     } else if (std::holds_alternative<RoomBye>(message)) {
         // The guest left ("Sair da sala"): no reconnect hold, the seat is free at once.
         const auto fingerprint = connection->fingerprint;
@@ -542,7 +574,7 @@ void ListeningRoomHost::onLinkControl(const std::shared_ptr<RoomLink>& link, Roo
         room_->leave(fingerprint);
         static_cast<void>(refresh());
     }
-    // A second hello and other file messages (S12) are ignored here.
+    // A second hello is ignored here.
 }
 
 void ListeningRoomHost::onLinkClosed(const std::shared_ptr<RoomLink>& link) {
@@ -554,6 +586,7 @@ void ListeningRoomHost::onLinkClosed(const std::shared_ptr<RoomLink>& link) {
     std::erase_if(connections_, [&](const Connection& c) { return c.link == link; });
     forgetFiles(*link);
     forgetDrift(fingerprint);
+    stopUploadsOf(fingerprint);
     if (!greeted || !room_)
         return;
     if (memberState(fingerprint) == MemberState::Admitted) {
@@ -640,6 +673,12 @@ void ListeningRoomHost::onIntent(const std::shared_ptr<RoomLink>& link, const Ro
         static_cast<void>(link->sendControl(RoomIntentRejected{message.request_id, *rejection}));
         return;
     }
+    // S12.1: an upload changes nothing until its file arrives and passes the checks.
+    if (message.intent.kind == RoomIntentKind::AddItems && message.intent.uploaded) {
+        if (const auto refused = startUpload(*message.intent.uploaded, fingerprint, message.request_id))
+            static_cast<void>(link->sendControl(RoomIntentRejected{message.request_id, *refused}));
+        return;
+    }
     rejection = apply(message.intent, fingerprint);
     if (rejection)
         static_cast<void>(link->sendControl(RoomIntentRejected{message.request_id, *rejection}));
@@ -679,7 +718,7 @@ std::optional<IntentRejection> ListeningRoomHost::apply(const RoomIntent& intent
             player_.move(LocalQueueOccurrenceId{intent.item_id}, static_cast<std::size_t>(local - items.begin())));
     }
     case RoomIntentKind::AddItems: {
-        // Uploads need the guest-file transfer (S12). authorize already checked the room left in the queue.
+        // Uploads go through startUpload (onIntent). authorize already checked the room left in the queue.
         if (intent.uploaded)
             return IntentRejection::InvalidArgument;
         std::vector<std::filesystem::path> sources;
@@ -1086,10 +1125,15 @@ void ListeningRoomHost::forgetDrift(const std::string_view fingerprint) {
 }
 
 void ListeningRoomHost::drop(const std::shared_ptr<RoomLink>& link) {
-    if (const auto* connection = find(link.get()))
+    std::optional<std::string> fingerprint;
+    if (const auto* connection = find(link.get())) {
+        fingerprint = connection->fingerprint;
         forgetDrift(connection->fingerprint);
+    }
     std::erase_if(connections_, [&](const Connection& c) { return c.link == link; });
     forgetFiles(*link);
+    if (fingerprint)
+        stopUploadsOf(*fingerprint);
     link->close();
 }
 
@@ -1196,6 +1240,222 @@ void ListeningRoomHost::forgetFiles(const RoomLink& link) {
         files_->forget(link);
 }
 
+// S12.1: guest uploads. Only the hash and size of the declared item are used; the rest comes from the probe
+// and the link.
+std::optional<IntentRejection> ListeningRoomHost::startUpload(const RoomItem& item, const std::string& fingerprint,
+                                                              const std::uint64_t request_id) {
+    if (uploads_ == nullptr || upload_probe_ == nullptr || item.origin != RoomItemOrigin::GuestTrack ||
+        !lowerHex64(item.content_sha256) || item.size_bytes == 0 || item.size_bytes > maximum_guest_upload_bytes ||
+        uploading_.contains(item.content_sha256))
+        return IntentRejection::InvalidArgument;
+    uploading_.emplace(item.content_sha256, Upload{fingerprint, request_id, item.size_bytes, ++next_upload_token_});
+    askUpload(item.content_sha256);
+    return std::nullopt;
+}
+
+// Asks the upload cache where the file stands; the answer leads to a request to the owner (or to the probe).
+void ListeningRoomHost::askUpload(const std::string& sha256) {
+    const auto found = uploading_.find(sha256);
+    if (found == uploading_.end())
+        return;
+    found->second.requested = false;
+    const auto token = found->second.token;
+    uploads_->status(sha256, [alive = std::weak_ptr<Alive>{alive_}, token, sha256](const RoomFileStatus& status) {
+        if (const auto self = alive.lock())
+            self->host->onUploadStatus(token, sha256, status);
+    });
+}
+
+void ListeningRoomHost::onUploadStatus(const std::uint64_t token, const std::string& sha256,
+                                       const RoomFileStatus& status) {
+    const auto found = uploading_.find(sha256);
+    if (found == uploading_.end() || found->second.token != token)
+        return;
+    if (status.complete) {
+        probeUpload(sha256, status.file);
+        return;
+    }
+    auto* owner = findMember(found->second.owner);
+    if (owner == nullptr) {
+        auto node = uploading_.extract(found);
+        discardUpload(sha256, node.mapped());
+        return;
+    }
+    found->second.requested = true;
+    // Keep the link alive even if the send makes the guest answer synchronously.
+    const auto link = owner->link;
+    static_cast<void>(link->sendControl(RoomFileRequest{sha256, status.resume_offset}));
+}
+
+void ListeningRoomHost::onUploadOffer(Connection& connection, const RoomFileOffer& offer) {
+    connection.last_upload_offer = std::max(connection.last_upload_offer, offer.transfer_id);
+    auto early = connection.early_upload.extract(offer.transfer_id);
+    if (!early.empty())
+        for (const auto& chunk : early.mapped())
+            connection.early_upload_bytes -= chunk.payload.size();
+    const auto found = uploading_.find(offer.content_sha256);
+    if (uploads_ == nullptr || found == uploading_.end() || found->second.owner != connection.fingerprint ||
+        !found->second.requested)
+        return;
+    const auto owner = connection.fingerprint;
+    // The cache checks the bytes against the offer: the offer must be the item the guest declared.
+    if (offer.size_bytes != found->second.size_bytes) {
+        refuseUpload(offer.content_sha256, IntentRejection::InvalidArgument);
+        return;
+    }
+    auto& upload = found->second;
+    upload.requested = false;
+    if (upload.receiving)
+        uploads_->abandon(*upload.receiving);
+    upload.offered = offer.transfer_id;
+    // Guests choose their transfer ids: the cache gets one of the host's, unique across guests.
+    const auto receiving = ++next_upload_transfer_id_;
+    upload.receiving = receiving;
+    uploads_->accept(RoomFileOffer{offer.content_sha256, offer.size_bytes, receiving});
+    if (!early.empty())
+        for (auto& chunk : early.mapped()) {
+            chunk.transfer_id = receiving;
+            uploads_->consume(std::move(chunk));
+        }
+    if (std::none_of(uploading_.begin(), uploading_.end(),
+                     [&](const auto& entry) { return entry.second.owner == owner && entry.second.requested; })) {
+        if (auto* still = findMember(owner)) {
+            still->early_upload.clear();
+            still->early_upload_bytes = 0;
+        }
+    }
+}
+
+void ListeningRoomHost::onUploadChunk(const RoomLink* link, RoomFileChunk chunk) {
+    auto* connection = find(link);
+    if (uploads_ == nullptr || connection == nullptr || !connection->greeted ||
+        memberState(connection->fingerprint) != MemberState::Admitted)
+        return;
+    bool awaiting = false;
+    for (const auto& [sha, upload] : uploading_) {
+        if (upload.owner != connection->fingerprint)
+            continue;
+        if (upload.offered == chunk.transfer_id && upload.receiving) {
+            chunk.transfer_id = *upload.receiving;
+            uploads_->consume(std::move(chunk));
+            return;
+        }
+        awaiting = awaiting || upload.requested;
+    }
+    // Before its offer (control and media are not ordered with each other): kept while a request is out.
+    if (!awaiting || chunk.transfer_id <= connection->last_upload_offer ||
+        connection->early_upload_bytes + chunk.payload.size() > maximum_early_upload_bytes)
+        return;
+    connection->early_upload_bytes += chunk.payload.size();
+    connection->early_upload[chunk.transfer_id].push_back(std::move(chunk));
+}
+
+void ListeningRoomHost::onUploadComplete(const std::string& sha256, const std::filesystem::path& file) {
+    const auto found = uploading_.find(sha256);
+    if (found == uploading_.end() || !found->second.receiving)
+        return;
+    found->second.receiving.reset();
+    found->second.offered.reset();
+    probeUpload(sha256, file);
+}
+
+void ListeningRoomHost::onUploadFailed(const std::string& sha256, const std::uint32_t transfer_id,
+                                       const RoomFileFailure failure) {
+    const auto found = uploading_.find(sha256);
+    if (found == uploading_.end() || found->second.receiving != transfer_id)
+        return;
+    found->second.receiving.reset();
+    found->second.offered.reset();
+    // A Gap keeps the partial file: asking again resumes from it.
+    if (failure == RoomFileFailure::Gap) {
+        askUpload(sha256);
+        return;
+    }
+    if (found->second.retries < room_file_retries) {
+        ++found->second.retries;
+        askUpload(sha256);
+        return;
+    }
+    refuseUpload(sha256, IntentRejection::InvalidArgument);
+}
+
+// The same rules as a local import, away from the host's thread.
+void ListeningRoomHost::probeUpload(const std::string& sha256, const std::filesystem::path& file) {
+    const auto token = uploading_.at(sha256).token;
+    upload_probe_->probe(file, [alive = std::weak_ptr<Alive>{alive_}, token, sha256,
+                                file](const std::optional<RoomTrackSummary>& summary) {
+        if (const auto self = alive.lock())
+            self->host->onUploadProbed(token, sha256, file, summary);
+    });
+}
+
+void ListeningRoomHost::onUploadProbed(const std::uint64_t token, const std::string& sha256,
+                                       const std::filesystem::path& file,
+                                       const std::optional<RoomTrackSummary>& summary) {
+    const auto found = uploading_.find(sha256);
+    if (found == uploading_.end() || found->second.token != token)
+        return;
+    if (!summary) {
+        refuseUpload(sha256, IntentRejection::InvalidArgument);
+        return;
+    }
+    const bool full = current_.queue.size() >= maximum_room_queue_items;
+    RoomItem item;
+    item.origin = RoomItemOrigin::GuestTrack;
+    item.content_sha256 = sha256;
+    item.size_bytes = found->second.size_bytes;
+    item.summary = *summary;
+    const auto owner = found->second.owner;
+    if (!full && addGuestTrack(owner, file, std::move(item))) {
+        uploading_.erase(sha256);
+        return;
+    }
+    refuseUpload(sha256, full ? IntentRejection::QueueFull : IntentRejection::InvalidArgument);
+}
+
+// Tells the owner (when still here) and leaves nothing of the file behind.
+void ListeningRoomHost::refuseUpload(const std::string& sha256, const IntentRejection reason) {
+    auto node = uploading_.extract(sha256);
+    if (node.empty())
+        return;
+    const auto& upload = node.mapped();
+    if (const auto* owner = findMember(upload.owner)) {
+        const auto link = owner->link;
+        static_cast<void>(link->sendControl(RoomIntentRejected{upload.request_id, reason}));
+    }
+    discardUpload(sha256, upload);
+}
+
+void ListeningRoomHost::discardUpload(const std::string& sha256, const Upload& upload) {
+    if (uploads_ == nullptr)
+        return;
+    if (upload.receiving)
+        uploads_->abandon(*upload.receiving);
+    // The same file may already be a queued guest item (uploaded before): that copy stays.
+    const bool queued = std::any_of(guest_items_.begin(), guest_items_.end(),
+                                    [&](const auto& guest) { return guest.second.content_sha256 == sha256; });
+    if (!queued)
+        uploads_->discard(sha256);
+}
+
+void ListeningRoomHost::stopUploadsOf(const std::string_view fingerprint) {
+    std::vector<std::string> owned;
+    for (const auto& [sha, upload] : uploading_)
+        if (upload.owner == fingerprint)
+            owned.push_back(sha);
+    for (const auto& sha : owned) {
+        auto node = uploading_.extract(sha);
+        discardUpload(sha, node.mapped());
+    }
+}
+
+// The room ended: every upload stops and the upload cache is emptied (its files were the guests').
+void ListeningRoomHost::stopUploads() {
+    uploading_.clear();
+    if (uploads_ != nullptr)
+        uploads_->purge();
+}
+
 void ListeningRoomHost::end(const RoomByeReason reason) {
     if (!invite_)
         return;
@@ -1211,12 +1471,13 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
         connection.link->close();
     }
     endpoint_.closeAll();
-    // Guest items never outlive the room in the host's queue.
+    // Guest items never outlive the room in the host's queue, nor their files the upload cache.
     auto guests = std::move(guest_items_);
     guest_items_.clear();
     for (const auto& guest : guests)
         static_cast<void>(player_.remove(LocalQueueOccurrenceId{guest.first}));
     guest_files_.clear();
+    stopUploads();
     room_catalog_ = {};
     catalog_sources_.clear();
     catalog_playlist_ids_.clear();

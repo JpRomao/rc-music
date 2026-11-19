@@ -35,10 +35,12 @@ class FakeExtractor final : public MetadataExtractor {
         metadata.tags = tags;
         metadata.display_title = source.stem().string();
         metadata.audio.duration_ms = 61'000;
+        metadata.audio.container = container;
         return metadata;
     }
     QThread* main_thread{QThread::currentThread()};
     MetadataTags tags{};
+    std::string container{"MP3"};
     bool fail{false};
     mutable std::atomic<bool> read_off_main{false};
 };
@@ -76,6 +78,21 @@ class QtRoomTrackCatalogTests final : public QObject {
         std::optional<std::optional<RoomTrackDescription>> outcome;
         QThread* delivered_on = nullptr;
         catalog.describe(source, [&](std::optional<RoomTrackDescription> found) {
+            delivered_on = QThread::currentThread();
+            outcome = std::move(found);
+        });
+        if (!QTest::qWaitFor([&] { return outcome.has_value(); }, 5000))
+            return std::nullopt;
+        if (delivered_on != QThread::currentThread())
+            return std::nullopt;
+        return outcome;
+    }
+
+    std::optional<std::optional<RoomTrackSummary>> probe(const std::filesystem::path& file) {
+        QtRoomTrackCatalog catalog{extractor_, lyrics_};
+        std::optional<std::optional<RoomTrackSummary>> outcome;
+        QThread* delivered_on = nullptr;
+        catalog.probe(file, [&](std::optional<RoomTrackSummary> found) {
             delivered_on = QThread::currentThread();
             outcome = std::move(found);
         });
@@ -169,6 +186,45 @@ class QtRoomTrackCatalogTests final : public QObject {
 
     void aMissingFileIsNotDescribed() {
         const auto outcome = describe(track_.parent_path() / "nao-existe.mp3");
+        QVERIFY(outcome.has_value());
+        QVERIFY(!outcome->has_value());
+    }
+
+    // S12.1: an uploaded file has no name; the container the probe finds must be one a local import takes.
+    void probesAnUploadWithTheLocalImportRulesOffTheCallingThread() {
+        const auto upload = track_.parent_path() / std::string(64, 'a');
+        QVERIFY(QFile::copy(QString::fromStdWString(track_.wstring()), QString::fromStdWString(upload.wstring())));
+        extractor_->tags.title = "Can\xc3\xa7\xc3\xa3o";
+        extractor_->tags.artist = std::string{"Ban\x01"} + "da";
+        for (const auto* container : {"MP3", "WAV", "FLAC", "ISO MP4/M4A", "Ogg"}) {
+            extractor_->container = container;
+            const auto outcome = probe(upload);
+            QVERIFY(outcome.has_value());
+            QVERIFY2(outcome->has_value(), container);
+            QCOMPARE((*outcome)->title, std::string{"Can\xc3\xa7\xc3\xa3o"});
+            QCOMPARE((*outcome)->artist, sanitizeMetadataText(std::string{"Ban\x01"} + "da").text);
+            QCOMPARE((*outcome)->duration_ms, std::int64_t{61'000});
+        }
+        QVERIFY(extractor_->read_off_main);
+        // No title tag: the title stays empty (the cache names the file by its hash, never shown).
+        extractor_->tags = {};
+        extractor_->container = "MP3";
+        QVERIFY((*probe(upload))->title.empty());
+    }
+
+    void anUploadThatIsNotAudioALocalImportTakesIsRefused() {
+        extractor_->container = "Matroska";
+        auto outcome = probe(track_);
+        QVERIFY(outcome.has_value());
+        QVERIFY(!outcome->has_value());
+        // A text file renamed .mp3: the probe reads no audio.
+        extractor_->container = "MP3";
+        extractor_->fail = true;
+        outcome = probe(track_);
+        QVERIFY(outcome.has_value());
+        QVERIFY(!outcome->has_value());
+        extractor_->fail = false;
+        outcome = probe(track_.parent_path() / "nao-existe");
         QVERIFY(outcome.has_value());
         QVERIFY(!outcome->has_value());
     }

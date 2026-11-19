@@ -82,6 +82,12 @@ class FakeRoomFileInbox final : public RoomFileInbox {
         log.push_back("purge");
         ++purges;
     }
+    void discard(const std::string& sha256) override {
+        log.push_back("discard:" + sha256.substr(0, 4));
+        discarded.push_back(sha256);
+        files.erase(sha256);
+        partial.erase(sha256);
+    }
 
     void answerAll() {
         auto pending = std::move(pending_);
@@ -117,6 +123,7 @@ class FakeRoomFileInbox final : public RoomFileInbox {
     std::vector<RoomFileChunk> consumed;
     std::vector<std::uint32_t> abandoned;
     std::vector<std::string> played;
+    std::vector<std::string> discarded;
     int purges{0};
 
   private:

@@ -949,6 +949,16 @@ int main(int argc, char* argv[]) {
         music_player::m0::QtRoomFileInbox room_file_inbox(playlists_config_root);
         room_dependencies.file_outbox = &room_file_outbox;
         room_dependencies.file_inbox = &room_file_inbox;
+        // S12.1: a guest's "Adicionar música minha" dialog; the host keeps guest uploads in
+        // <config>/room-uploads (purged at startup and when the room ends) and checks each one with
+        // room_catalog under the local-import rules.
+        music_player::m0::QtAudioFilesPicker room_upload_picker(
+            music_player::m0::ApplicationText::roomUploadDialogTitle(), localAudioDialogFilter());
+        music_player::m0::QtRoomFileInbox room_upload_inbox(playlists_config_root, QStringLiteral("room-uploads"),
+                                                            music_player::m0::maximum_guest_upload_bytes);
+        room_dependencies.upload_picker = &room_upload_picker;
+        room_dependencies.upload_inbox = &room_upload_inbox;
+        room_dependencies.upload_probe = &room_catalog;
         // The identity (DPAPI, key generation) loads off the UI thread; the transport is built back on it.
         // The watcher belongs to the binding, so a load still running when it goes calls nobody.
         room_dependencies.load_network = [&room_network_context, origin = room_dependencies.signaling_origin,
@@ -1117,6 +1127,9 @@ int main(int argc, char* argv[]) {
         presenter.setAudioFilesPicker(&audio_files_picker);
         playlist_audio_picker.bindWindow(*window);
         playlist_audio_locator.bindWindow(*window);
+#endif
+#if defined(RC_MUSIC_LISTENING_ROOM_AVAILABLE) && defined(M0_QT_COMBINED_AUDIO)
+        room_upload_picker.bindWindow(*window);
 #endif
 #ifdef Q_OS_WIN
         music_player::m0::WindowsSmtcAdapter system_media_controls;

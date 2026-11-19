@@ -12,6 +12,7 @@ class ApplicationText final {
   public:
     [[nodiscard]] static QString locateAudioDialogTitle() { return tr("Localizar arquivo de áudio"); }
     [[nodiscard]] static QString playlistAudioDialogTitle() { return tr("Adicionar arquivos à playlist"); }
+    [[nodiscard]] static QString roomUploadDialogTitle() { return tr("Adicionar música minha à sala"); }
 
     [[nodiscard]] static QString localAudioDialogFilter(const QStringList& patterns) {
         return tr("Áudio local (%1);;Todos os arquivos (*)").arg(patterns.join(QLatin1Char{' '}));

@@ -28,9 +28,14 @@ namespace music_player::m0 {
 // variant gives the first one. Lyrics larger than maximum_room_lyrics_bytes or not valid UTF-8 are
 // left out, never truncated.
 //
+// Uploads (S12.1): probe() is the host's RoomUploadProbe. On the pool it reads the uploaded file with the
+// same MetadataExtractor as a local import; the file must be audio of a container a local import takes
+// (the container stands for the extension the hash-named file lacks, checked with LocalAudioFilePolicy).
+// The summary is the sanitized tags, as in describe().
+//
 // Destroying the catalog drops pending callbacks; running jobs finish in the pool holding only their
 // own shared dependencies.
-class QtRoomTrackCatalog final : public RoomTrackCatalog {
+class QtRoomTrackCatalog final : public RoomTrackCatalog, public RoomUploadProbe {
   public:
     // lyrics may be null (no lyrics are attached).
     QtRoomTrackCatalog(std::shared_ptr<const MetadataExtractor> metadata, std::shared_ptr<LyricsVariantsStore> lyrics);
@@ -39,6 +44,7 @@ class QtRoomTrackCatalog final : public RoomTrackCatalog {
     QtRoomTrackCatalog& operator=(const QtRoomTrackCatalog&) = delete;
 
     void describe(std::filesystem::path source, std::function<void(std::optional<RoomTrackDescription>)> done) override;
+    void probe(std::filesystem::path file, std::function<void(std::optional<RoomTrackSummary>)> done) override;
 
   private:
     std::shared_ptr<const MetadataExtractor> metadata_;

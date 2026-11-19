@@ -17,6 +17,11 @@
 #include "m0/domain/RoomInviteLink.hpp"
 #include "presentation/ListeningRoomBinding.hpp"
 
+#ifdef RC_MUSIC_E2E_UPLOAD_PROBE
+#include "adapters/QtRoomTrackCatalog.hpp"
+#include "m0/adapters/TagLibMetadataExtractor.hpp"
+#endif
+
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -202,6 +207,7 @@ class RecordingInbox final : public RoomFileInbox {
     void abandon(const std::uint32_t transfer_id) override { inner.abandon(transfer_id); }
     void markPlayed(const std::string& sha256) override { inner.markPlayed(sha256); }
     void purge() override { inner.purge(); }
+    void discard(const std::string& sha256) override { inner.discard(sha256); }
     [[nodiscard]] QStringList cachedFiles() {
         inner.waitForWorker();
         return QDir(inner.cacheDirectory()).entryList(QDir::Files | QDir::NoDotAndDotDot);
@@ -247,7 +253,8 @@ struct HostApp final {
 // A guest app: ListeningRoomGuest over the real connector (behind SeverableConnector).
 struct GuestApp final {
     GuestApp(const LoopbackSignaling& relay, const RoomIdentity& identity, std::string nickname,
-             RoomFileInbox* files = nullptr)
+             RoomFileInbox* files = nullptr, RoomTrackCatalog* upload_catalog = nullptr,
+             RoomFileOutbox* upload_files = nullptr)
         : fingerprint(hex(identity.fingerprint)), real(relay.origin(), identity, local_only), connector(real),
           guest(ListeningRoomGuestDependencies{
               .connector = connector,
@@ -261,8 +268,11 @@ struct GuestApp final {
                   },
               .schedule = ListeningRoomBinding::scheduler(&context),
               .files = files,
+              .upload_catalog = upload_catalog,
+              .upload_files = upload_files,
           }) {
         guest.onEnded = [this](const RoomLinkFailure failure) { ended.push_back(failure); };
+        guest.onUploadEnded = [this](const GuestUploadResult result) { uploads.push_back(result); };
     }
 
     std::string fingerprint;
@@ -272,6 +282,7 @@ struct GuestApp final {
     SessionSnapshot local{localQueue()};
     std::vector<SessionSnapshot> restored;
     std::vector<RoomLinkFailure> ended;
+    std::vector<GuestUploadResult> uploads;
     ListeningRoomGuest guest; // last: destroyed first
 };
 
@@ -304,6 +315,55 @@ struct FileHostApp final {
     QtRoomFileOutbox outbox;
     ListeningRoomHost host; // last: destroyed first
 };
+
+#ifdef RC_MUSIC_E2E_UPLOAD_PROBE
+// S12.1: a host that also takes guest uploads into its own upload cache (QtRoomFileInbox in
+// <config>/room-uploads) and checks them with the real probe (QtRoomTrackCatalog over TagLib).
+struct UploadHostApp final {
+    UploadHostApp(const LoopbackSignaling& relay, const RoomIdentity& identity, const QString& config,
+                  std::vector<std::filesystem::path> sources)
+        : player(std::move(sources)), endpoint(relay.origin(), identity, local_only),
+          uploads(config, QStringLiteral("room-uploads"), maximum_guest_upload_bytes),
+          probe(std::make_shared<TagLibMetadataExtractor>(), nullptr),
+          host(ListeningRoomHostDependencies{
+              .roster_store = roster,
+              .player = player,
+              .endpoint = endpoint,
+              .catalog = catalog,
+              .host_clock_ms = [] { return std::int64_t{100'000}; },
+              .random_bytes =
+                  [](std::span<std::uint8_t> bytes) {
+                      QRandomGenerator::system()->generate(bytes.begin(), bytes.end());
+                  },
+              .host_fingerprint = identity.fingerprint,
+              .host_profile = ListenerProfile{"Joao", AvatarChoice{}},
+              .schedule = ListeningRoomBinding::scheduler(&context),
+              .files = &outbox,
+              .uploads = &uploads,
+              .upload_probe = &probe,
+          }) {}
+    [[nodiscard]] QStringList uploadedFiles() {
+        uploads.waitForWorker();
+        return QDir(uploads.cacheDirectory()).entryList(QDir::Files | QDir::NoDotAndDotDot);
+    }
+    [[nodiscard]] std::optional<RoomItem> item(const std::string& sha256) const {
+        const auto queue = host.snapshot().queue;
+        const auto found = std::find_if(queue.begin(), queue.end(),
+                                        [&](const RoomItem& item) { return item.content_sha256 == sha256; });
+        return found == queue.end() ? std::nullopt : std::optional{*found};
+    }
+
+    QObject context;
+    testing::FakeRoomHostPlayer player;
+    HashingCatalog catalog;
+    testing::InMemoryRoomRosterStore roster;
+    DataChannelRoomHostEndpoint endpoint;
+    QtRoomFileOutbox outbox;
+    QtRoomFileInbox uploads;
+    QtRoomTrackCatalog probe;
+    ListeningRoomHost host; // last: destroyed first
+};
+#endif
 
 testing::InMemoryRoomRosterStore rosterWith(std::vector<KnownListener> listeners = {}) {
     testing::InMemoryRoomRosterStore store;
@@ -628,6 +688,103 @@ class ListeningRoomEndToEndTests final : public QObject {
 
         ana.guest.leave();
         QCOMPARE(inbox.cachedFiles(), QStringList{});
+    }
+
+    // S12.1: a DJ's own file goes up through the real transport, the host checks it with the local-import
+    // rules and queues it as Ana's; it stays and reaches Bia after Ana leaves; closing the room empties the
+    // host's upload cache and the queue.
+    void aGuestsOwnTrackIsCheckedQueuedAndOutlivesItsOwnerUntilTheRoomEnds() {
+#ifndef RC_MUSIC_E2E_UPLOAD_PROBE
+        QSKIP("built without the TagLib metadata extractor");
+#else
+        LoopbackSignaling relay;
+        const auto wav = fixture("wav-pcm-mono.wav");
+        const auto mp3 = fixture("mp3-cbr-stereo.mp3");
+        QTemporaryDir host_config;
+        QVERIFY(host_config.isValid());
+        UploadHostApp app(relay, host_id_, host_config.path(), {wav});
+        const auto invite = openRoom(app, relay, {.default_role_id = dj_role});
+        QVERIFY(invite.has_value());
+        HashingCatalog ana_catalog;
+        QtRoomFileOutbox ana_outbox;
+        GuestApp ana(relay, ana_id_, "Ana", nullptr, &ana_catalog, &ana_outbox);
+        QVERIFY(approveIn(app, ana, *invite));
+        QTemporaryDir bia_config;
+        QVERIFY(bia_config.isValid());
+        RecordingInbox bia_inbox(bia_config.path());
+        GuestApp bia(relay, bia_id_, "Bia", &bia_inbox);
+        QVERIFY(approveIn(app, bia, *invite));
+
+        QVERIFY(ana.guest.uploadTrack(mp3));
+        const auto sha = sha256Of(mp3);
+        QTRY_COMPARE_WITH_TIMEOUT(ana.uploads, std::vector<GuestUploadResult>{GuestUploadResult::Added}, connect_ms);
+        const auto queued = app.item(sha);
+        QVERIFY(queued.has_value());
+        QCOMPARE(queued->origin, RoomItemOrigin::GuestTrack);
+        QCOMPARE(queued->owner_fingerprint, ana.fingerprint);
+        QCOMPARE(queued->added_by, std::string{"Ana"});
+        QCOMPARE(queued->size_bytes,
+                 static_cast<std::uint64_t>(QFileInfo(QString::fromStdU16String(mp3.u16string())).size()));
+        QCOMPARE(app.uploadedFiles(), QStringList{QString::fromStdString(sha)});
+        // The host's copy is byte for byte Ana's file.
+        {
+            QFile original(QString::fromStdU16String(mp3.u16string()));
+            QFile copy(QDir(app.uploads.cacheDirectory()).filePath(QString::fromStdString(sha)));
+            QVERIFY(original.open(QIODevice::ReadOnly) && copy.open(QIODevice::ReadOnly));
+            QCOMPARE(copy.readAll(), original.readAll());
+        }
+
+        // Ana leaves: her track stays and Bia, who follows the queue, receives it from the host.
+        ana.guest.leave();
+        QTRY_VERIFY_WITH_TIMEOUT(!hasMember(app.host.snapshot(), ana.fingerprint), connect_ms);
+        QVERIFY(app.item(sha).has_value());
+        QTRY_VERIFY_WITH_TIMEOUT(std::ranges::find(bia_inbox.completed, sha) != bia_inbox.completed.end(), connect_ms);
+        QVERIFY(bia.guest.localFile(sha).has_value());
+
+        // The room ends: the guest item leaves the queue and its file the host's upload cache.
+        app.host.close();
+        QVERIFY(!app.item(sha).has_value());
+        QCOMPARE(app.player.paths().size(), std::size_t{1});
+        QCOMPARE(app.uploadedFiles(), QStringList{});
+#endif
+    }
+
+    // S12.1: a text file renamed .mp3 passes the guest's extension check but not the host's probe: it is
+    // refused as invalid audio and nothing of it stays on the host.
+    void aTextFileRenamedMp3IsRefusedAndLeavesNothingOnTheHost() {
+#ifndef RC_MUSIC_E2E_UPLOAD_PROBE
+        QSKIP("built without the TagLib metadata extractor");
+#else
+        LoopbackSignaling relay;
+        QTemporaryDir host_config;
+        QVERIFY(host_config.isValid());
+        UploadHostApp app(relay, host_id_, host_config.path(), {fixture("wav-pcm-mono.wav")});
+        const auto invite = openRoom(app, relay, {.default_role_id = dj_role});
+        QVERIFY(invite.has_value());
+        QTemporaryDir ana_files;
+        QVERIFY(ana_files.isValid());
+        const auto fake = QDir(ana_files.path()).filePath(QStringLiteral("letra.mp3"));
+        {
+            QFile text(fake);
+            QVERIFY(text.open(QIODevice::WriteOnly));
+            QByteArray lines;
+            for (int line = 0; line < 2000; ++line)
+                lines += "Isto e um texto, nao uma musica.\n";
+            QCOMPARE(text.write(lines), lines.size());
+        }
+        HashingCatalog ana_catalog;
+        QtRoomFileOutbox ana_outbox;
+        GuestApp ana(relay, ana_id_, "Ana", nullptr, &ana_catalog, &ana_outbox);
+        QVERIFY(approveIn(app, ana, *invite));
+        const auto version = app.host.snapshot().version;
+
+        QVERIFY(ana.guest.uploadTrack(std::filesystem::path{fake.toStdU16String()}));
+        QTRY_COMPARE_WITH_TIMEOUT(ana.uploads, std::vector<GuestUploadResult>{GuestUploadResult::InvalidAudio},
+                                  connect_ms);
+        QCOMPARE(app.host.snapshot().version, version);
+        QCOMPARE(app.host.snapshot().queue.size(), std::size_t{1});
+        QCOMPARE(app.uploadedFiles(), QStringList{});
+#endif
     }
 
     void aGuestJoiningMidSongReceivesTheCurrentItemFirst() {

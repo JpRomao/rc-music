@@ -43,6 +43,8 @@ TestCase {
         property ListModel catalog: ListModel {}
         property bool canAddFromRoom: false
         property bool canAddPlaylist: false
+        property bool canUploadOwnTracks: false
+        property bool uploading: false
         property bool roomPlaying: false
         property bool roomHasCurrent: false
         property bool rosterUnsaved: false

@@ -96,6 +96,9 @@ QtObject {
     readonly property string addAll: qsTr("Adicionar todas")
     readonly property string addAllName: qsTr("Adicionar todas as músicas de %1")
     readonly property string untitled: qsTr("Sem título")
+    readonly property string uploadOwn: qsTr("Adicionar música minha")
+    readonly property string uploadOwnName: qsTr("Adicionar uma música sua à fila da sala")
+    readonly property string uploading: qsTr("Enviando sua música…")
 
     function permissionName(index) {
         switch (index) {

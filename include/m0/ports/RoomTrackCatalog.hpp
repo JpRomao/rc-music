@@ -34,4 +34,16 @@ class RoomTrackCatalog {
                           std::function<void(std::optional<RoomTrackDescription>)> done) = 0;
 };
 
+// S12.1: checks a file a guest uploaded with the rules of a local import (LocalAudioFilePolicy and the
+// metadata probe). The file has no name to go by (the host's upload cache names it by its hash), so the
+// container the probe finds stands for the extension. Qt-free port; QtRoomTrackCatalog implements it.
+class RoomUploadProbe {
+  public:
+    virtual ~RoomUploadProbe() = default;
+    // Reads the file away from the calling thread, then calls done exactly once on the calling thread:
+    // the track's summary (tags passed through sanitizeMetadataText, never a file name), or nullopt when
+    // it is not valid audio of a format a local import accepts. Destroying the probe drops pending callbacks.
+    virtual void probe(std::filesystem::path file, std::function<void(std::optional<RoomTrackSummary>)> done) = 0;
+};
+
 } // namespace music_player::m0

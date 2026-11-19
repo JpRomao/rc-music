@@ -14,7 +14,8 @@ namespace music_player::m0 {
 // their content hash: a partial file is "<sha>.part" and becomes "<sha>" (no extension; FFmpeg
 // probes the content) only after RoomFileReceiver has checked its SHA-256. Every method validates
 // the hash itself (exactly 64 lowercase hex digits), so no caller-supplied text reaches a path.
-// The whole cache is disposable: purgeAll() runs when leaving a room and at startup.
+// The whole cache is disposable: purgeAll() runs when leaving a room and at startup. The host keeps the
+// files guests upload (S12.1) in another instance, <config>/room-uploads, under the same rules.
 //
 // Quota: what is on disk in the directory (complete files and .part files) plus the bytes
 // reserved for transfers in flight stays within room_cache_quota_bytes. A receiver reserves the
@@ -23,7 +24,8 @@ namespace music_player::m0 {
 // not marked and .part files are never evicted. Used on the thread that owns it.
 class RoomCache {
   public:
-    explicit RoomCache(QString config_directory); // <config>/room-cache
+    // <config>/<directory_name>; directory_name is a fixed name chosen by the app, never a caller's text.
+    explicit RoomCache(QString config_directory, const QString& directory_name = QStringLiteral("room-cache"));
 
     [[nodiscard]] static bool isValidSha256(std::string_view sha256) noexcept;
     [[nodiscard]] QString directory() const;
@@ -39,6 +41,8 @@ class RoomCache {
     void markPlayed(std::string_view sha256);
     // Removes every .part and complete file; reservations and played marks are forgotten.
     void purgeAll();
+    // Removes the complete file and the .part of one hash (S12.1: a refused upload). Invalid hashes are ignored.
+    void remove(std::string_view sha256);
 
   private:
     [[nodiscard]] std::uint64_t bytesOnDisk() const;

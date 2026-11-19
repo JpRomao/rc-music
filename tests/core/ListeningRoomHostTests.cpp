@@ -86,6 +86,8 @@ struct HostFixture final {
             .schedule = [this](std::int64_t delay_ms,
                                std::function<void()> task) { scheduled.push_back({delay_ms, std::move(task)}); },
             .files = &outbox,
+            .uploads = &uploads,
+            .upload_probe = &probe,
         });
         host->onJoinRequest = [this](const RoomMember& member) { join_requests.push_back(member); };
         host->onDriftsChanged = [this] { ++drift_changes; };
@@ -123,6 +125,8 @@ struct HostFixture final {
     testing::FakeRoomHostEndpoint endpoint;
     testing::FakeRoomTrackCatalog catalog;
     testing::FakeRoomFileOutbox outbox;
+    testing::FakeRoomFileInbox uploads;
+    testing::FakeRoomUploadProbe probe;
     std::int64_t now{10'000};
     std::uint8_t next_random{1};
     std::vector<RoomMember> join_requests;
@@ -1584,6 +1588,299 @@ TEST_CASE("room host: catalog tracks a guest adds carry that guest as who added 
     REQUIRE(reopened.size() == 6);
     REQUIRE(
         std::all_of(reopened.begin(), reopened.end(), [](const RoomItem& item) { return item.added_by == "Joao"; }));
+}
+
+// S12.1: guests send their own tracks. The file goes up first; only a checked file joins the queue.
+namespace {
+
+const std::string upload_sha = std::string(63, '0') + "9";
+
+// What a guest declares: a GuestTrack with its hash and size, and whatever else it claims.
+RoomItem declaredUpload(const std::uint64_t size_bytes = 5000, const std::string& sha256 = upload_sha) {
+    RoomItem item;
+    item.id = 999;
+    item.origin = RoomItemOrigin::GuestTrack;
+    item.owner_fingerprint = "forged";
+    item.content_sha256 = sha256;
+    item.size_bytes = size_bytes;
+    item.summary = RoomTrackSummary{"Falso", "Falso", "Falso", 1};
+    item.added_by = "forged";
+    return item;
+}
+
+RoomFileChunk chunk(const std::uint32_t transfer_id, const std::uint64_t offset, const std::size_t bytes) {
+    return RoomFileChunk{transfer_id, offset, std::vector<std::uint8_t>(bytes, 0x5a)};
+}
+
+// A copy: snapshot() returns by value.
+std::optional<RoomItem> findItem(const RoomSnapshot& snapshot, const std::string& sha256) {
+    const auto found = std::find_if(snapshot.queue.begin(), snapshot.queue.end(),
+                                    [&](const RoomItem& item) { return item.content_sha256 == sha256; });
+    return found == snapshot.queue.end() ? std::nullopt : std::optional{*found};
+}
+
+// The DJ's upload, up to the moment its file is complete in the host's upload cache.
+void uploadUntilComplete(HostFixture& f, Guest& dj, const std::uint64_t request_id = 40) {
+    dj.intent(request_id, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    const auto requests = dj.all<RoomFileRequest>();
+    REQUIRE_FALSE(requests.empty());
+    REQUIRE(requests.back() == RoomFileRequest{upload_sha, 0});
+    static_cast<void>(dj.link->sendControl(RoomFileOffer{upload_sha, 5000, 77}));
+    REQUIRE_FALSE(f.uploads.accepted.empty());
+    static_cast<void>(dj.link->sendMedia(chunk(77, 0, 5000)));
+    f.uploads.complete(upload_sha);
+}
+
+} // namespace
+
+TEST_CASE("room host: without the permission an upload is refused before any byte moves",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto listener = f.join("fp-listener", "Lia");
+    const auto version = f.host->snapshot().version;
+    listener->intent(5, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    REQUIRE(listener->all<RoomIntentRejected>() ==
+            std::vector<RoomIntentRejected>{{5, IntentRejection::MissingPermission}});
+    REQUIRE(listener->all<RoomFileRequest>().empty());
+    // An offer and chunks sent anyway go nowhere.
+    static_cast<void>(listener->link->sendControl(RoomFileOffer{upload_sha, 5000, 1}));
+    static_cast<void>(listener->link->sendMedia(chunk(1, 0, 5000)));
+    REQUIRE(f.uploads.log.empty());
+    REQUIRE(f.uploads.accepted.empty());
+    REQUIRE(f.uploads.consumed.empty());
+    REQUIRE(f.host->snapshot().version == version);
+}
+
+TEST_CASE("room host: an upload above 50 MiB, or not a guest track, is refused before any byte moves",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    REQUIRE(maximum_guest_upload_bytes == 50ull * 1024 * 1024);
+    dj->intent(
+        1, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload(maximum_guest_upload_bytes + 1)});
+    auto youtube = declaredUpload();
+    youtube.origin = RoomItemOrigin::YoutubeVideo;
+    youtube.youtube_id = "dQw4w9WgXcQ";
+    dj->intent(2, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = youtube});
+    auto host_track = declaredUpload();
+    host_track.origin = RoomItemOrigin::HostTrack;
+    dj->intent(3, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = host_track});
+    dj->intent(4, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload(0)});
+    dj->intent(5, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload(10, "nope")});
+    REQUIRE(dj->all<RoomIntentRejected>() == std::vector<RoomIntentRejected>{
+                                                 {1, IntentRejection::InvalidArgument},
+                                                 {2, IntentRejection::InvalidArgument},
+                                                 {3, IntentRejection::InvalidArgument},
+                                                 {4, IntentRejection::InvalidArgument},
+                                                 {5, IntentRejection::InvalidArgument},
+                                             });
+    REQUIRE(dj->all<RoomFileRequest>().empty());
+    REQUIRE(f.uploads.log.empty());
+
+    // Exactly 50 MiB is allowed: the host asks for the file.
+    dj->intent(6, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload(maximum_guest_upload_bytes)});
+    REQUIRE(dj->all<RoomFileRequest>() == std::vector<RoomFileRequest>{{upload_sha, 0}});
+    // A second upload of the same file while it is on its way is refused.
+    dj->intent(7, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload(maximum_guest_upload_bytes)});
+    REQUIRE(dj->all<RoomIntentRejected>().back() == RoomIntentRejected{7, IntentRejection::InvalidArgument});
+    // An offer larger than declared is refused and leaves nothing.
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{upload_sha, maximum_guest_upload_bytes + 1, 3}));
+    REQUIRE(f.uploads.accepted.empty());
+    REQUIRE(dj->all<RoomIntentRejected>().back() == RoomIntentRejected{6, IntentRejection::InvalidArgument});
+    REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
+}
+
+TEST_CASE("room host: an upload goes up, is checked and joins the queue as the guest's track",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    auto listener = f.join("fp-listener", "Lia");
+    f.uploads.partial[upload_sha] = 65536; // a partial file from an earlier attempt: resumed
+    f.probe.deferred = true;
+
+    dj->intent(40, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+    REQUIRE(dj->all<RoomFileRequest>() == std::vector<RoomFileRequest>{{upload_sha, 65536}});
+    REQUIRE(listener->all<RoomFileRequest>().empty());
+    // A chunk that overtakes its offer is kept and handed over once the offer is accepted.
+    static_cast<void>(dj->link->sendMedia(chunk(77, 65536, 100)));
+    REQUIRE(f.uploads.consumed.empty());
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{upload_sha, 5000, 77}));
+    REQUIRE(f.uploads.accepted.size() == 1);
+    const auto cache_transfer = f.uploads.accepted.front().transfer_id;
+    REQUIRE(f.uploads.accepted.front() == RoomFileOffer{upload_sha, 5000, cache_transfer});
+    static_cast<void>(dj->link->sendMedia(chunk(77, 65636, 200)));
+    REQUIRE(f.uploads.consumed.size() == 2);
+    REQUIRE(f.uploads.consumed[0].transfer_id == cache_transfer);
+    REQUIRE(f.uploads.consumed[0].offset == 65536);
+    REQUIRE(f.uploads.consumed[1].offset == 65636);
+    // Chunks of another transfer, or from another member, are not the upload's.
+    static_cast<void>(dj->link->sendMedia(chunk(76, 0, 10)));
+    static_cast<void>(listener->link->sendMedia(chunk(77, 0, 10)));
+    REQUIRE(f.uploads.consumed.size() == 2);
+
+    // Complete and verified by the cache: probed, and only then queued.
+    f.uploads.complete(upload_sha);
+    const auto cached = std::filesystem::path{"cache"} / upload_sha;
+    REQUIRE(f.probe.probed == std::vector<std::filesystem::path>{cached});
+    REQUIRE(findItem(f.host->snapshot(), upload_sha) == std::nullopt);
+    f.probe.completeAll();
+    const auto item = findItem(f.host->snapshot(), upload_sha);
+    REQUIRE(item.has_value());
+    REQUIRE(item->origin == RoomItemOrigin::GuestTrack);
+    REQUIRE(item->owner_fingerprint == "fp-dj");
+    REQUIRE(item->added_by == "Bia");
+    REQUIRE(item->size_bytes == 5000);
+    REQUIRE(item->summary == f.probe.summary);
+    REQUIRE(item->id != 999);
+    REQUIRE(f.player.paths().back() == cached);
+    REQUIRE(findItem(listener->lastState()->snapshot, upload_sha) != std::nullopt);
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+    REQUIRE(f.uploads.discarded.empty());
+    // Like every guest item, it stays out of the saved session.
+    const auto saved = f.host->withoutGuestItems(f.player.sessionSnapshot());
+    REQUIRE(saved.queue.items.size() == 3);
+}
+
+TEST_CASE("room host: a file that is not valid audio is refused and nothing of it stays",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    const auto version = f.host->snapshot().version;
+    f.probe.invalid.insert(std::filesystem::path{"cache"} / upload_sha);
+    uploadUntilComplete(f, *dj, 41);
+    REQUIRE(dj->all<RoomIntentRejected>() == std::vector<RoomIntentRejected>{{41, IntentRejection::InvalidArgument}});
+    REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
+    REQUIRE(findItem(f.host->snapshot(), upload_sha) == std::nullopt);
+    REQUIRE(f.player.paths().size() == 3);
+    REQUIRE(f.host->snapshot().version == version);
+}
+
+TEST_CASE("room host: a gap asks again from the partial file; repeated failures refuse the upload",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    dj->intent(42, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{upload_sha, 5000, 1}));
+    REQUIRE(f.uploads.accepted.size() == 1);
+    f.uploads.partial[upload_sha] = 65536;
+    f.uploads.fail(upload_sha, f.uploads.accepted.back().transfer_id, RoomFileFailure::Gap);
+    REQUIRE(dj->all<RoomFileRequest>().back() == RoomFileRequest{upload_sha, 65536});
+    // The answer to the new request replaces the old transfer.
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{upload_sha, 5000, 2}));
+    REQUIRE(f.uploads.accepted.size() == 2);
+    for (int attempt = 0; attempt < room_file_retries; ++attempt) {
+        f.uploads.fail(upload_sha, f.uploads.accepted.back().transfer_id);
+        REQUIRE(dj->all<RoomFileRequest>().size() == static_cast<std::size_t>(attempt + 3));
+        static_cast<void>(
+            dj->link->sendControl(RoomFileOffer{upload_sha, 5000, static_cast<std::uint32_t>(3 + attempt)}));
+    }
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+    f.uploads.fail(upload_sha, f.uploads.accepted.back().transfer_id);
+    REQUIRE(dj->all<RoomIntentRejected>() == std::vector<RoomIntentRejected>{{42, IntentRejection::InvalidArgument}});
+    REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
+    REQUIRE(dj->all<RoomFileRequest>().size() == static_cast<std::size_t>(room_file_retries + 2));
+}
+
+TEST_CASE("room host: the owner leaving keeps its track, which plays for the others",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    auto listener = f.join("fp-listener", "Lia");
+    uploadUntilComplete(f, *dj);
+    REQUIRE(findItem(f.host->snapshot(), upload_sha) != std::nullopt);
+
+    static_cast<void>(dj->link->sendControl(RoomBye{RoomByeReason::Closed}));
+    REQUIRE_FALSE(f.isMember("fp-dj"));
+    const auto item = findItem(f.host->snapshot(), upload_sha);
+    REQUIRE(item.has_value());
+    REQUIRE(item->added_by == "Bia");
+    REQUIRE(f.uploads.discarded.empty());
+
+    // When it comes up it is in the file window, and the host sends its copy.
+    REQUIRE(f.player.next());
+    REQUIRE(f.player.next());
+    REQUIRE(f.player.next());
+    REQUIRE(f.host->snapshot().playback.current_item == item->id);
+    static_cast<void>(listener->link->sendControl(RoomFileRequest{upload_sha, 0}));
+    f.runScheduled();
+    REQUIRE(f.outbox.sentHashes() == std::vector<std::string>{upload_sha});
+    REQUIRE(f.outbox.sent.back().file == std::filesystem::path{"cache"} / upload_sha);
+}
+
+TEST_CASE("room host: an owner who goes mid-upload leaves nothing behind",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    dj->intent(43, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{upload_sha, 5000, 1}));
+    REQUIRE(f.uploads.accepted.size() == 1);
+    const auto transfer = f.uploads.accepted.back().transfer_id;
+    dj->link->close();
+    REQUIRE(f.uploads.abandoned == std::vector<std::uint32_t>{transfer});
+    REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
+    // A late answer of the cache changes nothing.
+    f.uploads.complete(upload_sha);
+    f.uploads.fail(upload_sha, transfer);
+    REQUIRE(f.probe.probed.empty());
+    REQUIRE(f.player.paths().size() == 3);
+}
+
+TEST_CASE("room host: when the room ends, guest files leave the upload cache and the queue",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    uploadUntilComplete(f, *dj);
+    REQUIRE(f.player.paths().size() == 4);
+    f.host->close();
+    REQUIRE(f.uploads.purges == 1);
+    const auto paths = f.player.paths();
+    REQUIRE(paths.size() == 3);
+    REQUIRE(std::find(paths.begin(), paths.end(), std::filesystem::path{"cache"} / upload_sha) == paths.end());
+
+    // The destructor purges it too (an app closing with the room open).
+    static_cast<void>(f.host->open({}));
+    f.host.reset();
+    REQUIRE(f.uploads.purges == 2);
+}
+
+TEST_CASE("room host: an upload into a full room queue is refused", "[core][listening-room][room-host][room-uploads]") {
+    std::vector<std::filesystem::path> many;
+    for (std::size_t index = 0; index + 1 < maximum_room_queue_items; ++index)
+        many.push_back("music/" + std::to_string(index) + ".mp3");
+    HostFixture f{many};
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    REQUIRE(f.host->snapshot().queue.size() == maximum_room_queue_items - 1);
+    f.probe.deferred = true;
+    const auto other = declaredUpload(5000, std::string(63, '0') + "8");
+    dj->intent(1, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = other});
+    uploadUntilComplete(f, *dj, 2);
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{other.content_sha256, 5000, 90}));
+    f.uploads.complete(other.content_sha256);
+    // The first file checked fills the queue; the other one is refused.
+    f.probe.completeAll();
+    REQUIRE(f.host->snapshot().queue.size() == maximum_room_queue_items);
+    REQUIRE(findItem(f.host->snapshot(), upload_sha) != std::nullopt);
+    REQUIRE(dj->all<RoomIntentRejected>() == std::vector<RoomIntentRejected>{{1, IntentRejection::QueueFull}});
+    REQUIRE(f.uploads.discarded == std::vector<std::string>{other.content_sha256});
 }
 
 } // namespace music_player::m0::test

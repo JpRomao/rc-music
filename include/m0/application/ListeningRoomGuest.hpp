@@ -9,6 +9,7 @@
 #include "m0/domain/RoomRoster.hpp"
 #include "m0/domain/SessionSnapshot.hpp"
 #include "m0/ports/RoomFiles.hpp"
+#include "m0/ports/RoomTrackCatalog.hpp"
 #include "m0/ports/RoomTransport.hpp"
 
 #include <cstdint>
@@ -39,6 +40,16 @@ enum class GuestEndReason : std::uint8_t {
     VersionMismatch, // Bye{VersionMismatch}
 };
 
+// How an upload of the guest's own file ended (S12.1; the UI maps it to text).
+enum class GuestUploadResult : std::uint8_t {
+    Added,             // the host checked it and it is in the room queue
+    InvalidAudio,      // not a local-import audio file (here or at the host)
+    TooLarge,          // above maximum_guest_upload_bytes
+    MissingPermission, // the host refused it: no "send own tracks" permission
+    QueueFull,         // the room queue is full
+    Failed,            // the file could not be read or sent, or the link dropped
+};
+
 struct GuestRoomEnd final {
     GuestEndReason reason{};
     // The value onEnded received.
@@ -67,6 +78,10 @@ struct ListeningRoomGuestDependencies final {
     // nullptr: the guest plays nothing and sends no clock pings. It must outlive the guest.
     RoomPlaybackFollower* follower{nullptr};
     std::function<std::int64_t()> local_clock_ms;
+    // S12.1, "Adicionar música minha": describes the guest's own file (hash, size; off the guest's thread)
+    // and streams it to the host when the host asks. Either nullptr: uploadTrack refuses.
+    RoomTrackCatalog* upload_catalog{nullptr};
+    RoomFileOutbox* upload_files{nullptr};
 };
 
 // Guest side of the listening room (ADR-0022, S7.2). Qt-free, no audio: it keeps the guest's view of
@@ -146,6 +161,18 @@ struct ListeningRoomGuestDependencies final {
 // the follower before restore_session, so the room file is gone when the local session comes back. A
 // dropped link leaves the follower playing the last playback.
 //
+// Uploads (S12.1): uploadTrack(file) returns false and does nothing unless Joined with UploadOwnTracks and
+// both upload seams; otherwise the upload ends exactly once in onUploadEnded. A file LocalAudioFilePolicy
+// refuses ends at once (InvalidAudio). upload_catalog then describes it: unreadable -> InvalidAudio, above
+// maximum_guest_upload_bytes -> TooLarge, both without sending anything. Then the guest sends
+// AddItems{uploaded = RoomItem{GuestTrack, sha, size}}: no path, file name or tags (the host reads its own).
+// Only a RoomFileRequest for the hash of an upload in progress is answered, with
+// upload_files->send(link, file, sha, a new transfer id, offset); a later request for it replaces the earlier
+// transfer. The upload ends Added when a state carries a GuestTrack item with that hash; a rejection of its
+// request id ends it with MissingPermission, QueueFull or InvalidAudio (any other reason) and never reaches
+// onRejected. A dropped link ends every upload in progress (Failed); leave() and the end of the room drop them
+// without a callback.
+//
 // Catalog (S11.2): the last RoomCatalog received while Joined is kept (a dropped link keeps it, the host
 // sends it again on admission); onChanged runs when it changes. join(), leave() and the end of the room
 // clear it. A catalog that arrives before admission is ignored.
@@ -173,13 +200,27 @@ class ListeningRoomGuest final {
     [[nodiscard]] std::optional<RoomLyrics> lyrics() const;
     // S11.2: the host's last catalog while in the room (empty otherwise).
     [[nodiscard]] const RoomCatalog& catalog() const noexcept;
+    // S12.1: sends one of the guest's own audio files to the room (see Uploads).
+    [[nodiscard]] bool uploadTrack(const std::filesystem::path& file);
+    // Uploads started and not ended yet.
+    [[nodiscard]] std::size_t uploadsInProgress() const noexcept;
 
     std::function<void()> onChanged;
     std::function<void(std::uint64_t, IntentRejection)> onRejected;
     std::function<void(RoomLinkFailure)> onEnded;
+    std::function<void(GuestUploadResult)> onUploadEnded;
 
   private:
     struct Alive;
+    struct Upload final {
+        std::filesystem::path file;
+        // 0 while it is being described.
+        std::uint64_t request_id{};
+        std::string sha256;
+        std::optional<std::uint32_t> transfer_id{};
+        // Identifies the upload in the describe callback.
+        std::uint64_t token{};
+    };
 
     void connect();
     void onConnected(std::uint64_t attempt, std::shared_ptr<RoomLink> link);
@@ -203,6 +244,10 @@ class ListeningRoomGuest final {
     void onFileComplete(const std::string& sha256, const std::filesystem::path& file);
     void onFileFailed(const std::string& sha256, std::uint32_t transfer_id, RoomFileFailure failure);
     void stopFiles(bool purge);
+    void onDescribed(std::uint64_t token, const std::optional<RoomTrackDescription>& description);
+    void onUploadRequest(const RoomFileRequest& request);
+    void endUpload(std::uint64_t token, GuestUploadResult result);
+    void stopUploads(bool report);
     void follow();
     void ping(std::uint64_t link_id);
     void changed() const;
@@ -216,6 +261,8 @@ class ListeningRoomGuest final {
     RoomFileInbox* files_;
     RoomPlaybackFollower* follower_;
     std::function<std::int64_t()> local_clock_ms_;
+    RoomTrackCatalog* upload_catalog_;
+    RoomFileOutbox* upload_files_;
 
     GuestRoomState state_{GuestRoomState::Idle};
     std::optional<RoomInviteLink> invite_;
@@ -255,6 +302,10 @@ class ListeningRoomGuest final {
     // offers arrive in order, so a chunk at or below it that is not being received belongs to a transfer
     // that is over (refused, replaced or abandoned) and is dropped instead of kept as early.
     std::uint32_t last_offer_id_{0};
+    // S12.1: uploads in progress, in start order; transfer ids of this guest's own sends (never reused).
+    std::vector<Upload> uploads_;
+    std::uint64_t next_upload_token_{0};
+    std::uint32_t next_upload_transfer_id_{0};
     std::shared_ptr<Alive> alive_;
 };
 

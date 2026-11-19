@@ -2,6 +2,7 @@
 
 #include "adapters/RoomCache.hpp"
 #include "adapters/RoomFileTransfer.hpp"
+#include "m0/domain/ListeningRoomLimits.hpp"
 
 #include <QMetaObject>
 
@@ -12,7 +13,8 @@ namespace music_player::m0 {
 
 // Touched only on the worker thread.
 struct QtRoomFileInbox::Worker final {
-    explicit Worker(QString config_directory) : cache(std::move(config_directory)), receiver(cache) {}
+    Worker(QString config_directory, const QString& directory_name, const std::uint64_t maximum_file_bytes)
+        : cache(std::move(config_directory), directory_name), receiver(cache, maximum_file_bytes) {}
 
     RoomCache cache;
     RoomFileReceiver receiver;
@@ -21,7 +23,12 @@ struct QtRoomFileInbox::Worker final {
 };
 
 QtRoomFileInbox::QtRoomFileInbox(QString config_directory, QObject* parent)
-    : QObject(parent), worker_(std::make_unique<Worker>(std::move(config_directory))) {
+    : QtRoomFileInbox(std::move(config_directory), QStringLiteral("room-cache"), room_cache_quota_bytes, parent) {}
+
+QtRoomFileInbox::QtRoomFileInbox(QString config_directory, const QString& directory_name,
+                                 const std::uint64_t maximum_file_bytes, QObject* parent)
+    : QObject(parent),
+      worker_(std::make_unique<Worker>(std::move(config_directory), directory_name, maximum_file_bytes)) {
     cache_directory_ = worker_->cache.directory();
     worker_->receiver.onComplete = [this](std::string sha256, QString file) {
         std::erase_if(worker_->transfers, [&](const auto& transfer) { return transfer.second == sha256; });
@@ -112,6 +119,19 @@ void QtRoomFileInbox::purge() {
         for (const auto& transfer : std::exchange(worker.transfers, {}))
             worker.receiver.abandon(transfer.first);
         worker.cache.purgeAll();
+    });
+}
+
+void QtRoomFileInbox::discard(const std::string& sha256) {
+    post([sha256](Worker& worker) {
+        // Its transfer stops first (releasing its reservation), so no later chunk writes the file again.
+        std::erase_if(worker.transfers, [&](const auto& transfer) {
+            if (transfer.second != sha256)
+                return false;
+            worker.receiver.abandon(transfer.first);
+            return true;
+        });
+        worker.cache.remove(sha256);
     });
 }
 

@@ -152,6 +152,15 @@ if(TARGET rc_music_listening_room)
         RC_MUSIC_TEST_AUDIO_FIXTURES="${RC_MUSIC_SOURCE_ROOT}/tests/audio/corpus/fixtures/valid")
     set_tests_properties(rc_music.room.end-to-end PROPERTIES TIMEOUT 180 LABELS "ui;qt;listening-room")
     rc_music_copy_listening_room_runtime(rc_music_room_end_to_end_tests)
+    # S12.1: the host checks guest uploads with the real probe (QtRoomTrackCatalog over TagLib); without the
+    # audio support those cases are skipped and say so.
+    if(TARGET m0_taglib_metadata_extractor)
+        target_link_libraries(rc_music_room_end_to_end_tests PRIVATE rc_music_room_catalog m0_taglib_metadata_extractor)
+        target_compile_definitions(rc_music_room_end_to_end_tests PRIVATE RC_MUSIC_E2E_UPLOAD_PROBE)
+        add_custom_command(TARGET rc_music_room_end_to_end_tests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:TagLib::tag>" "$<TARGET_FILE_DIR:rc_music_room_end_to_end_tests>")
+    endif()
 endif()
 add_ui_test(rc_music_avatar_image_tests rc_music.profile.avatar-image
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtAvatarImageTests.cpp" rc_music_profile)

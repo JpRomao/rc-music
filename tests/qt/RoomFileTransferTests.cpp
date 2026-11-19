@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -365,6 +366,77 @@ class RoomFileTransferTests final : public QObject {
         QVERIFY(!guest.accept({sha, room_cache_quota_bytes + 1, 1}));
         QCOMPARE(errors, (std::vector{RoomTransferError::TooLarge, RoomTransferError::TooLarge}));
         QVERIFY(uploads.accept({sha, maximum_guest_upload_bytes, 1}));
+    }
+
+    // S12.1: the host's upload cache is another inbox, in its own directory and with the upload limit.
+    void anUploadInboxKeepsItsOwnDirectoryAndRefusesAboveTheUploadLimit() {
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        QtRoomFileInbox guest_cache(config.path());
+        QtRoomFileInbox uploads(config.path(), QStringLiteral("room-uploads"), maximum_guest_upload_bytes);
+        QCOMPARE(uploads.cacheDirectory(), QDir(config.path()).filePath(QStringLiteral("room-uploads")));
+        std::vector<std::pair<std::string, RoomFileFailure>> failed;
+        std::vector<std::pair<std::string, std::filesystem::path>> completed;
+        uploads.onFailed = [&failed](std::string sha, std::uint32_t, const RoomFileFailure failure) {
+            failed.emplace_back(std::move(sha), failure);
+        };
+        uploads.onComplete = [&completed](std::string sha, std::filesystem::path file) {
+            completed.emplace_back(std::move(sha), std::move(file));
+        };
+
+        uploads.accept({std::string(64, 'c'), maximum_guest_upload_bytes + 1, 1});
+        const auto original = readAll(fixture("mp3-cbr-stereo.mp3"));
+        const auto sha = sha256(original);
+        uploads.accept({sha, static_cast<std::uint64_t>(original.size()), 2});
+        for (std::uint64_t offset = 0; offset < static_cast<std::uint64_t>(original.size());
+             offset += room_file_chunk_bytes)
+            uploads.consume(chunkOf(original, 2, offset));
+        uploads.waitForWorker();
+        QCoreApplication::processEvents();
+
+        QCOMPARE(failed, (std::vector<std::pair<std::string, RoomFileFailure>>{
+                             {std::string(64, 'c'), RoomFileFailure::Failed}}));
+        QCOMPARE(completed.size(), std::size_t{1});
+        QCOMPARE(QString::fromStdU16String(completed.front().second.u16string()),
+                 QDir(uploads.cacheDirectory()).filePath(QString::fromStdString(sha)));
+        QCOMPARE(filesUnder(guest_cache.cacheDirectory()), QStringList{});
+    }
+
+    // S12.1: a refused upload leaves nothing: discard removes the complete file and a partial one, and stops
+    // its transfer so later chunks write nothing.
+    void discardRemovesTheFileAndThePartOfThatHashOnly() {
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        QtRoomFileInbox uploads(config.path(), QStringLiteral("room-uploads"), maximum_guest_upload_bytes);
+        const auto whole = readAll(fixture("ogg-vorbis.ogg"));
+        const auto whole_sha = sha256(whole);
+        uploads.accept({whole_sha, static_cast<std::uint64_t>(whole.size()), 1});
+        for (std::uint64_t offset = 0; offset < static_cast<std::uint64_t>(whole.size());
+             offset += room_file_chunk_bytes)
+            uploads.consume(chunkOf(whole, 1, offset));
+        const auto partial = readAll(fixture("wav-pcm-mono.wav"));
+        const auto partial_sha = sha256(partial);
+        uploads.accept({partial_sha, static_cast<std::uint64_t>(partial.size()), 2});
+        uploads.consume(chunkOf(partial, 2, 0));
+        const auto kept = readAll(fixture("flac-16-stereo.flac"));
+        const auto kept_sha = sha256(kept);
+        uploads.accept({kept_sha, static_cast<std::uint64_t>(kept.size()), 3});
+        for (std::uint64_t offset = 0; offset < static_cast<std::uint64_t>(kept.size());
+             offset += room_file_chunk_bytes)
+            uploads.consume(chunkOf(kept, 3, offset));
+        uploads.waitForWorker();
+        const QDir directory(uploads.cacheDirectory());
+        QVERIFY(QFileInfo::exists(directory.filePath(QString::fromStdString(whole_sha))));
+        QVERIFY(QFileInfo::exists(directory.filePath(QString::fromStdString(partial_sha) + QStringLiteral(".part"))));
+
+        uploads.discard(whole_sha);
+        uploads.discard(partial_sha);
+        uploads.consume(chunkOf(partial, 2, room_file_chunk_bytes));
+        uploads.discard("../" + std::string(61, 'a'));
+        uploads.waitForWorker();
+
+        QCOMPARE(filesUnder(uploads.cacheDirectory()),
+                 QStringList{directory.filePath(QString::fromStdString(kept_sha))});
     }
 
     void malformedOrBusyOffersAndUnknownChunksAreOnlyRefused() {

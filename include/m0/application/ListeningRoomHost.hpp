@@ -55,6 +55,11 @@ struct ListeningRoomHostDependencies final {
     std::function<void(std::int64_t delay_ms, std::function<void()> task)> schedule;
     // Streams the files guests ask for (S8.2); nullptr: file requests are ignored.
     RoomFileOutbox* files{nullptr};
+    // S12.1, guest uploads: the host's own upload cache (a receiver limited to maximum_guest_upload_bytes,
+    // emptied when the room ends) and the check of what arrives. Either nullptr: uploads answer
+    // InvalidArgument.
+    RoomFileInbox* uploads{nullptr};
+    RoomUploadProbe* upload_probe{nullptr};
 };
 
 // Upper bound of the encoded size of a RoomStateMessage (RoomProtocolCodec JSON): every text byte
@@ -110,9 +115,8 @@ struct ListeningRoomHostDependencies final {
 //     and an empty playlist answers InvalidArgument. The tracks are appended to the host's queue as host
 //     tracks, all or none; while the room is open their RoomItem says added_by = the nickname of the guest
 //     who asked (owner stays the host: the file is the host's).
-//   - AddItems with an uploaded item answers InvalidArgument until the guest-file transfer exists
-//     (S8/S12). That transfer will call addGuestTrack(), which overwrites the item's id,
-//     owner_fingerprint (the link fingerprint) and added_by before using it.
+//   - AddItems with an uploaded item (S12.1, see Guest uploads) starts an upload: only its hash and size are
+//     used; nothing else in the item is trusted.
 // There is no guest intent for shuffle, repeat or the end of the queue: they stay with the host's
 // player and reach the room only as the queue order (the play order, see RoomHostPlayer) and current
 // item.
@@ -169,6 +173,30 @@ struct ListeningRoomHostDependencies final {
 // again each time it changes: right away when the library changes (a list made private or visible,
 // renamed, edited), and at most once per room_catalog_refresh_ms while descriptions arrive (one scheduled
 // refresh sends everything described meanwhile). Pending people never get it.
+//
+// Guest uploads (S12.1): the file goes up to the host first, through the same request-driven transfer with
+// the roles reversed, and only a file the host checked joins the queue.
+//   - An admitted member's AddItems{uploaded} needs UploadOwnTracks (authorize: MissingPermission otherwise).
+//     Before any byte moves, an item that is not a GuestTrack, has no valid hash, declares size 0 or more
+//     than maximum_guest_upload_bytes, or whose hash is already being uploaded, answers InvalidArgument, and
+//     so does a host without the upload seams.
+//   - Otherwise the host asks uploads->status() and sends the owner RoomFileRequest{sha, resume offset}. The
+//     owner's RoomFileOffer must name that hash and the declared size (else the upload is refused); the host
+//     accepts it under its own transfer id (guests choose theirs) and hands the owner's chunks to the cache.
+//     Chunks that come before their offer are kept (at most 2 MiB per link) while a request is outstanding.
+//     The cache refuses an offer above maximum_guest_upload_bytes and a chunk past the offered size, and
+//     keeps the file only when its SHA-256 matches the declared hash.
+//   - A Gap asks again at once (the partial file stays); another failure asks again at most
+//     room_file_retries times, then the upload is refused.
+//   - A complete file goes to upload_probe (off the host's thread). Valid audio joins the queue through
+//     addGuestTrack with the probe's summary, owner = the link's fingerprint and added_by = the owner's
+//     nickname. Refused (not audio, a mismatched offer, retries spent, a full queue): RoomIntentRejected{the
+//     intent's request_id, InvalidArgument (QueueFull for a full queue)} and uploads->discard(sha), so
+//     nothing stays unless a queued guest item still uses that file.
+//   - When the owner's link goes (it left, was kicked or dropped), its uploads in flight stop and their files
+//     are discarded. Its items already in the queue stay and play for everyone: the host has the copy. They
+//     leave when someone removes them or the room ends.
+//   - close(), revoke() and the destructor stop every upload and purge the upload cache.
 //
 // Guest items (GuestTrack) never reach the session: the session autosave must store
 // withoutGuestItems(snapshot) while a room is open, and close(), revoke() and the destructor remove
@@ -286,6 +314,35 @@ class ListeningRoomHost final {
     void serveFiles();
     void cancelFilesOutsideWindow();
     void forgetFiles(const RoomLink& link);
+    // A guest upload in flight (S12.1).
+    struct Upload final {
+        std::string owner;
+        std::uint64_t request_id{};
+        std::uint64_t size_bytes{};
+        // Callbacks of status() and probe() carry it: an answer for an upload that ended does nothing.
+        std::uint64_t token{};
+        // A RoomFileRequest went to the owner and its offer is awaited.
+        bool requested{false};
+        // The owner's transfer id and the cache's one, while the file is arriving.
+        std::optional<std::uint32_t> offered{};
+        std::optional<std::uint32_t> receiving{};
+        int retries{0};
+    };
+    [[nodiscard]] std::optional<IntentRejection> startUpload(const RoomItem& item, const std::string& fingerprint,
+                                                             std::uint64_t request_id);
+    void askUpload(const std::string& sha256);
+    void onUploadStatus(std::uint64_t token, const std::string& sha256, const RoomFileStatus& status);
+    void onUploadOffer(Connection& connection, const RoomFileOffer& offer);
+    void onUploadChunk(const RoomLink* link, RoomFileChunk chunk);
+    void onUploadComplete(const std::string& sha256, const std::filesystem::path& file);
+    void probeUpload(const std::string& sha256, const std::filesystem::path& file);
+    void onUploadFailed(const std::string& sha256, std::uint32_t transfer_id, RoomFileFailure failure);
+    void onUploadProbed(std::uint64_t token, const std::string& sha256, const std::filesystem::path& file,
+                        const std::optional<RoomTrackSummary>& summary);
+    void refuseUpload(const std::string& sha256, IntentRejection reason);
+    void discardUpload(const std::string& sha256, const Upload& upload);
+    void stopUploadsOf(std::string_view fingerprint);
+    void stopUploads();
     void drop(const std::shared_ptr<RoomLink>& link);
     void forgetDrift(std::string_view fingerprint);
     void end(RoomByeReason reason);
@@ -307,6 +364,8 @@ class ListeningRoomHost final {
     ListenerProfile host_profile_;
     std::function<void(std::int64_t, std::function<void()>)> schedule_;
     RoomFileOutbox* files_;
+    RoomFileInbox* uploads_;
+    RoomUploadProbe* upload_probe_;
 
     RoomRoster roster_;
     bool roster_writable_{false};
@@ -343,6 +402,10 @@ class ListeningRoomHost final {
     std::map<std::uint64_t, std::filesystem::path> guest_files_;
     std::uint32_t next_transfer_id_{0};
     bool serve_scheduled_{false};
+    // S12.1: guest uploads in flight, by hash; their cache transfer ids and callback tokens.
+    std::map<std::string, Upload, std::less<>> uploading_;
+    std::uint32_t next_upload_transfer_id_{0};
+    std::uint64_t next_upload_token_{0};
     // Admitted members whose link dropped, held for room_reconnect_window_ms (value: hold token).
     std::map<std::string, std::uint64_t, std::less<>> held_;
     std::uint64_t next_hold_{0};

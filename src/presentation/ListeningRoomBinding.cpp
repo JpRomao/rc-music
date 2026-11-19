@@ -65,6 +65,7 @@ ListeningRoomBinding::ListeningRoomBinding(ListeningRoomBindingDependencies depe
 
 ListeningRoomBinding::~ListeningRoomBinding() {
     // Neither destructor calls back; the host still removes its guest items from the player.
+    cancelUploadDialog();
     follow_timer_.stop();
     position_timer_.stop();
     give_back_timer_.stop();
@@ -275,6 +276,15 @@ bool ListeningRoomBinding::roomPlaying() const { return roomHasCurrent() && gues
 
 bool ListeningRoomBinding::rosterUnsaved() const { return role_ == HostRole && host_ && host_->rosterUnsaved(); }
 
+bool ListeningRoomBinding::canUploadOwnTracks() const {
+    return dependencies_.upload_picker != nullptr && dependencies_.catalog != nullptr &&
+           dependencies_.file_outbox != nullptr && guestMay(RoomPermission::UploadOwnTracks);
+}
+
+bool ListeningRoomBinding::uploading() const {
+    return role_ == GuestRole && guest_ && (upload_dialog_open_ || guest_->uploadsInProgress() > 0);
+}
+
 // While a guest (or a local session still held for the room), the shared player belongs to the room.
 bool ListeningRoomBinding::followsRoom() const { return role_ == GuestRole || holdsLocalSession(); }
 
@@ -478,6 +488,63 @@ bool ListeningRoomBinding::roomAddPlaylist(const QString& playlistId) {
                                     RoomIntent{.kind = RoomIntentKind::AddPlaylist, .playlist_id = id});
 }
 
+bool ListeningRoomBinding::roomUploadOwnTrack() {
+    if (!canUploadOwnTracks() || upload_dialog_open_)
+        return false;
+    const auto generation = upload_generation_;
+    if (!dependencies_.upload_picker->pick(
+            [this, generation](const AudioFilesSelectionResult& result) { uploadPicked(generation, result); }))
+        return false;
+    upload_dialog_open_ = true;
+    publish();
+    return true;
+}
+
+void ListeningRoomBinding::uploadPicked(const std::uint64_t generation, const AudioFilesSelectionResult& result) {
+    if (generation != upload_generation_)
+        return;
+    upload_dialog_open_ = false;
+    if (role_ == GuestRole && guest_) {
+        if (result.status == AudioFilesSelectionStatus::Failed)
+            setError(tr("Não foi possível enviar a sua música."));
+        else if (result.status == AudioFilesSelectionStatus::Selected)
+            for (const auto& file : result.source_paths)
+                if (!guest_ || !guest_->uploadTrack(file))
+                    break;
+    }
+    publish();
+}
+
+void ListeningRoomBinding::uploadEnded(const GuestUploadResult result) {
+    switch (result) {
+    case GuestUploadResult::Added:
+        break;
+    case GuestUploadResult::InvalidAudio:
+        setError(tr("Arquivo de áudio inválido"));
+        break;
+    case GuestUploadResult::TooLarge:
+        setError(tr("A música passa de 50 MB."));
+        break;
+    case GuestUploadResult::MissingPermission:
+        setError(tr("Sem permissão"));
+        break;
+    case GuestUploadResult::QueueFull:
+        setError(tr("A fila da sala está cheia."));
+        break;
+    case GuestUploadResult::Failed:
+        setError(tr("Não foi possível enviar a sua música."));
+        break;
+    }
+    publish();
+}
+
+// The dialog's answer is dropped: the guest it was for is gone.
+void ListeningRoomBinding::cancelUploadDialog() {
+    ++upload_generation_;
+    if (std::exchange(upload_dialog_open_, false) && dependencies_.upload_picker != nullptr)
+        dependencies_.upload_picker->cancel();
+}
+
 void ListeningRoomBinding::playlistsChanged() {
     if (role_ == HostRole && host_ && dependencies_.playlists)
         host_->setPlaylists(dependencies_.playlists());
@@ -606,6 +673,8 @@ void ListeningRoomBinding::startHost() {
         .host_profile = *profile,
         .schedule = dependencies_.schedule,
         .files = dependencies_.file_outbox,
+        .uploads = dependencies_.upload_inbox,
+        .upload_probe = dependencies_.upload_probe,
     });
     host_->onChanged = [this](const RoomSnapshot&) { hostChanged(); };
     host_->onDriftsChanged = [this] { refreshMembers(); };
@@ -663,10 +732,13 @@ void ListeningRoomBinding::startGuest() {
         .files = dependencies_.file_inbox,
         .follower = follower_.get(),
         .local_clock_ms = dependencies_.clock_ms,
+        .upload_catalog = dependencies_.upload_picker != nullptr ? dependencies_.catalog : nullptr,
+        .upload_files = dependencies_.file_outbox,
     });
     guest_->onChanged = [this] { guestChanged(); };
     guest_->onEnded = [this](RoomLinkFailure) { guestEnded(); };
     guest_->onRejected = [this](std::uint64_t, const IntentRejection reason) { guestRejected(reason); };
+    guest_->onUploadEnded = [this](const GuestUploadResult result) { uploadEnded(result); };
     role_ = GuestRole;
     host_nickname_.clear();
     guest_->join(*join_invite_);
@@ -866,10 +938,12 @@ void ListeningRoomBinding::retireGuest() {
     if (!guest_)
         return;
     stopFollowing();
+    cancelUploadDialog();
     // This may run inside the guest's own callback: destroy it from the event loop instead.
     guest_->onChanged = nullptr;
     guest_->onEnded = nullptr;
     guest_->onRejected = nullptr;
+    guest_->onUploadEnded = nullptr;
     retired_guests_.push_back(std::move(guest_));
     QMetaObject::invokeMethod(this, [this] { retired_guests_.clear(); }, Qt::QueuedConnection);
 }

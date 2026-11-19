@@ -1,6 +1,7 @@
 // ListeningRoomGuest (S7.2) over the in-memory transport, a fake scheduler with its own clock and a
 // fake local session. No network, files or audio.
 #include "../support/FakeRoomFiles.hpp"
+#include "../support/FakeRoomHost.hpp"
 #include "../support/FakeRoomTransport.hpp"
 
 #include "m0/application/ListeningRoomGuest.hpp"
@@ -107,7 +108,10 @@ struct GuestFixture final {
             .follower = follower,
             .local_clock_ms = follower != nullptr ? std::function<std::int64_t()>{[this] { return timers.now; }}
                                                   : std::function<std::int64_t()>{},
+            .upload_catalog = &upload_catalog,
+            .upload_files = &upload_outbox,
         });
+        guest->onUploadEnded = [this](const GuestUploadResult result) { uploads_ended.push_back(result); };
         guest->onChanged = [this] { ++changes; };
         guest->onRejected = [this](const std::uint64_t id, const IntentRejection reason) {
             rejected.emplace_back(id, reason);
@@ -148,6 +152,9 @@ struct GuestFixture final {
     std::vector<SessionSnapshot> restored;
     FakeTimers timers;
     testing::FakeRoomFileInbox inbox;
+    testing::FakeRoomTrackCatalog upload_catalog;
+    testing::FakeRoomFileOutbox upload_outbox;
+    std::vector<GuestUploadResult> uploads_ended;
     std::shared_ptr<testing::FakeRoomLink> host_side;
     std::shared_ptr<testing::FakeRoomLink> guest_end;
     std::vector<RoomControlMessage> host_inbox;
@@ -1198,6 +1205,177 @@ TEST_CASE("room guest: keeps the host's last catalog while in the room and forge
     REQUIRE(f.guest->catalog() == catalog);
     f.guest->leave();
     REQUIRE(f.guest->catalog().playlists.empty());
+}
+
+// S12.1: "Adicionar música minha". The guest describes its own file, sends only hash and size, and streams
+// the file when the host asks for it.
+namespace {
+
+RoomPermissionSet uploadPermission() {
+    return RoomPermissionSet{}.set(static_cast<std::size_t>(RoomPermission::UploadOwnTracks));
+}
+
+std::vector<RoomIntentMessage> sentIntents(const GuestFixture& f) { return f.received<RoomIntentMessage>(); }
+
+RoomStateMessage withGuestTrack(const std::uint64_t version, const std::string& sha256) {
+    auto message = state(version, uploadPermission());
+    RoomItem item;
+    item.id = 50;
+    item.origin = RoomItemOrigin::GuestTrack;
+    item.owner_fingerprint = guest_hex;
+    item.content_sha256 = sha256;
+    item.size_bytes = 1000;
+    item.added_by = "Ana";
+    message.snapshot.queue.push_back(item);
+    return message;
+}
+
+} // namespace
+
+TEST_CASE("room guest: uploadTrack needs the room, the permission and the upload seams",
+          "[core][listening-room][room-guest][room-uploads]") {
+    GuestFixture f;
+    f.start();
+    REQUIRE_FALSE(f.guest->uploadTrack("music/minha.mp3"));
+    f.joinAdmitted();
+    f.send(state(1));
+    REQUIRE_FALSE(f.guest->uploadTrack("music/minha.mp3"));
+    REQUIRE(f.upload_catalog.requests.empty());
+    REQUIRE(sentIntents(f).empty());
+    REQUIRE(f.uploads_ended.empty());
+    REQUIRE(f.guest->uploadsInProgress() == 0);
+}
+
+TEST_CASE("room guest: an upload sends hash and size only, serves the host's request and ends in the queue",
+          "[core][listening-room][room-guest][room-uploads]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(state(1, uploadPermission()));
+    const std::filesystem::path file{"C:/Músicas/Pessoais/minha.mp3"};
+    const auto sha = testing::FakeRoomTrackCatalog::fakeSha256(file);
+
+    REQUIRE(f.guest->uploadTrack(file));
+    REQUIRE(f.upload_catalog.requests == std::vector<std::filesystem::path>{file});
+    REQUIRE(f.guest->uploadsInProgress() == 1);
+    const auto intents = sentIntents(f);
+    REQUIRE(intents.size() == 1);
+    RoomItem expected;
+    expected.origin = RoomItemOrigin::GuestTrack;
+    expected.content_sha256 = sha;
+    expected.size_bytes = 1000;
+    REQUIRE(intents.front().intent == RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = expected});
+
+    // The host asks for the file: it goes from the guest's own path, under a transfer id of the guest's.
+    f.send(RoomFileRequest{sha, 0});
+    REQUIRE(f.upload_outbox.sent.size() == 1);
+    const auto first = f.upload_outbox.sent.front();
+    REQUIRE(first.peer == f.guest_end->peerFingerprint());
+    REQUIRE(first.file == file);
+    REQUIRE(first.sha256 == sha);
+    REQUIRE(first.offset == 0);
+    // Asked again (a resume): the earlier transfer stops and a new one starts from the offset.
+    f.send(RoomFileRequest{sha, 65536});
+    REQUIRE(f.upload_outbox.cancelled ==
+            std::vector<std::pair<std::string, std::uint32_t>>{{f.guest_end->peerFingerprint(), first.transfer_id}});
+    REQUIRE(f.upload_outbox.sent.size() == 2);
+    REQUIRE(f.upload_outbox.sent.back().transfer_id != first.transfer_id);
+    REQUIRE(f.upload_outbox.sent.back().offset == 65536);
+    // Nothing else of the guest's is ever sent.
+    f.send(RoomFileRequest{std::string(64, 'c'), 0});
+    REQUIRE(f.upload_outbox.sent.size() == 2);
+
+    // The host checked it and queued it.
+    f.send(withGuestTrack(2, sha));
+    REQUIRE(f.uploads_ended == std::vector<GuestUploadResult>{GuestUploadResult::Added});
+    REQUIRE(f.guest->uploadsInProgress() == 0);
+    // After that the file is no longer served from the guest's path.
+    f.send(RoomFileRequest{sha, 0});
+    REQUIRE(f.upload_outbox.sent.size() == 2);
+}
+
+TEST_CASE("room guest: a refused upload ends with its reason and never as a plain rejection",
+          "[core][listening-room][room-guest][room-uploads]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(state(1, uploadPermission()));
+    REQUIRE(f.guest->uploadTrack("music/texto.mp3"));
+    const auto sha = testing::FakeRoomTrackCatalog::fakeSha256("music/texto.mp3");
+    f.send(RoomFileRequest{sha, 0});
+    const auto transfer = f.upload_outbox.sent.back().transfer_id;
+    f.send(RoomIntentRejected{sentIntents(f).back().request_id, IntentRejection::InvalidArgument});
+    REQUIRE(f.uploads_ended == std::vector<GuestUploadResult>{GuestUploadResult::InvalidAudio});
+    REQUIRE(f.upload_outbox.cancelled ==
+            std::vector<std::pair<std::string, std::uint32_t>>{{f.guest_end->peerFingerprint(), transfer}});
+
+    REQUIRE(f.guest->uploadTrack("music/b.mp3"));
+    f.send(RoomIntentRejected{sentIntents(f).back().request_id, IntentRejection::MissingPermission});
+    REQUIRE(f.guest->uploadTrack("music/c.mp3"));
+    f.send(RoomIntentRejected{sentIntents(f).back().request_id, IntentRejection::QueueFull});
+    REQUIRE(f.uploads_ended == std::vector<GuestUploadResult>{GuestUploadResult::InvalidAudio,
+                                                              GuestUploadResult::MissingPermission,
+                                                              GuestUploadResult::QueueFull});
+    REQUIRE(f.rejected.empty());
+    REQUIRE(f.guest->uploadsInProgress() == 0);
+
+    // Other intents are still rejected the usual way.
+    const auto next = f.guest->sendIntent(RoomIntent{.kind = RoomIntentKind::Next});
+    f.send(RoomIntentRejected{next, IntentRejection::MissingPermission});
+    REQUIRE(f.rejected ==
+            std::vector<std::pair<std::uint64_t, IntentRejection>>{{next, IntentRejection::MissingPermission}});
+}
+
+TEST_CASE("room guest: files a local import refuses, or above 50 MiB, never leave the guest",
+          "[core][listening-room][room-guest][room-uploads]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(state(1, uploadPermission()));
+    REQUIRE(f.guest->uploadTrack("notas/letra.txt"));
+    REQUIRE(f.upload_catalog.requests.empty());
+    f.upload_catalog.unreadable.insert("music/quebrada.mp3");
+    REQUIRE(f.guest->uploadTrack("music/quebrada.mp3"));
+    f.upload_catalog.size_override = maximum_guest_upload_bytes + 1;
+    REQUIRE(f.guest->uploadTrack("music/enorme.flac"));
+    REQUIRE(f.uploads_ended == std::vector<GuestUploadResult>{GuestUploadResult::InvalidAudio,
+                                                              GuestUploadResult::InvalidAudio,
+                                                              GuestUploadResult::TooLarge});
+    REQUIRE(sentIntents(f).empty());
+    REQUIRE(f.guest->uploadsInProgress() == 0);
+
+    f.upload_catalog.size_override = maximum_guest_upload_bytes;
+    REQUIRE(f.guest->uploadTrack("music/cabe.flac"));
+    REQUIRE(sentIntents(f).size() == 1);
+    REQUIRE(sentIntents(f).front().intent.uploaded->size_bytes == maximum_guest_upload_bytes);
+}
+
+TEST_CASE("room guest: a dropped link ends the uploads in progress; leaving drops them silently",
+          "[core][listening-room][room-guest][room-uploads]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(state(1, uploadPermission()));
+    REQUIRE(f.guest->uploadTrack("music/minha.mp3"));
+    f.send(RoomFileRequest{testing::FakeRoomTrackCatalog::fakeSha256("music/minha.mp3"), 0});
+    f.dropLink(RoomLinkFailure::Unreachable);
+    REQUIRE(f.uploads_ended == std::vector<GuestUploadResult>{GuestUploadResult::Failed});
+    REQUIRE(f.guest->uploadsInProgress() == 0);
+    REQUIRE(f.upload_outbox.forgotten == std::vector<std::string>{f.guest_end->peerFingerprint()});
+
+    // Back in the room, an upload still being described when the guest leaves ends without a word.
+    f.connectLink();
+    f.send(RoomJoinResult{JoinDecision::Admitted});
+    f.send(state(2, uploadPermission()));
+    f.upload_catalog.deferred = true;
+    REQUIRE(f.guest->uploadTrack("music/outra.mp3"));
+    REQUIRE(f.guest->uploadsInProgress() == 1);
+    const auto intents = sentIntents(f).size();
+    f.guest->leave();
+    f.upload_catalog.completeAll();
+    REQUIRE(f.uploads_ended.size() == 1);
+    REQUIRE(sentIntents(f).size() == intents);
+    REQUIRE(f.guest->uploadsInProgress() == 0);
 }
 
 } // namespace music_player::m0::test

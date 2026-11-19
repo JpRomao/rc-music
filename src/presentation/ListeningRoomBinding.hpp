@@ -6,6 +6,7 @@
 #include "m0/domain/ListenerProfile.hpp"
 #include "m0/domain/PlaylistLibrary.hpp"
 #include "m0/domain/SessionSnapshot.hpp"
+#include "m0/ports/AudioFilesPicker.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
 #include "m0/ports/RoomFiles.hpp"
 #include "m0/ports/RoomHostPlayer.hpp"
@@ -102,6 +103,13 @@ struct ListeningRoomBindingDependencies final {
     // S11.2: the host's saved playlists; only the lists visible to the room reach guests. Call
     // playlistsChanged() when they change. Empty: no catalog.
     std::function<PlaylistLibrarySnapshot()> playlists;
+    // S12.1, guest: the dialog of "Adicionar música minha"; the guest describes the chosen file with catalog
+    // and streams it with file_outbox. nullptr: no uploads.
+    AudioFilesPicker* upload_picker{nullptr};
+    // S12.1, host: the cache guest uploads land in (<config>/room-uploads) and the check of each one.
+    // nullptr: uploads are refused. They must outlive the binding.
+    RoomFileInbox* upload_inbox{nullptr};
+    RoomUploadProbe* upload_probe{nullptr};
 };
 
 // "Ouvir junto" for QML (ADR-0022, S7.3): hosts a room (ListeningRoomHost over the real player) or
@@ -149,6 +157,10 @@ class ListeningRoomBinding final : public QObject {
     Q_PROPERTY(bool roomHasCurrent READ roomHasCurrent NOTIFY changed)
     // A roles, overrides or block change the roster file did not take: it lasts only until the room closes.
     Q_PROPERTY(bool rosterUnsaved READ rosterUnsaved NOTIFY changed)
+    // S12.1, guest: whether "Adicionar música minha" is offered, and whether its dialog is open or a file of
+    // the guest's is on its way to the room.
+    Q_PROPERTY(bool canUploadOwnTracks READ canUploadOwnTracks NOTIFY changed)
+    Q_PROPERTY(bool uploading READ uploading NOTIFY changed)
 
   public:
     enum Role { NoRole = 0, HostRole = 1, GuestRole = 2 };
@@ -191,6 +203,8 @@ class ListeningRoomBinding final : public QObject {
     [[nodiscard]] bool roomPlaying() const;
     [[nodiscard]] bool roomHasCurrent() const;
     [[nodiscard]] bool rosterUnsaved() const;
+    [[nodiscard]] bool canUploadOwnTracks() const;
+    [[nodiscard]] bool uploading() const;
     // S10.1: the system media controls (media keys, the Windows flyout) of a guest go to the room, with the
     // same permissions as the in-app controls. followsRoom: they must never drive the local player now.
     [[nodiscard]] bool followsRoom() const;
@@ -245,6 +259,9 @@ class ListeningRoomBinding final : public QObject {
     // S11.2: one track, or a whole list, from the host's playlists (ids from catalog).
     Q_INVOKABLE bool roomAddItem(const QString& entryId);
     Q_INVOKABLE bool roomAddPlaylist(const QString& playlistId);
+    // S12.1: opens the dialog; each chosen file goes to the room as the guest's own track. false when not
+    // allowed or a dialog is already open.
+    Q_INVOKABLE bool roomUploadOwnTrack();
 
     // S11.2, host: the saved playlists changed (a list made visible or private, renamed or edited).
     void playlistsChanged();
@@ -297,6 +314,9 @@ class ListeningRoomBinding final : public QObject {
     [[nodiscard]] bool guestMay(RoomPermission permission) const;
     bool sendGuestIntent(RoomPermission permission, const RoomIntent& intent);
     void guestRejected(IntentRejection reason);
+    void uploadPicked(std::uint64_t generation, const AudioFilesSelectionResult& result);
+    void uploadEnded(GuestUploadResult result);
+    void cancelUploadDialog();
     void publish();
 
     ListeningRoomBindingDependencies dependencies_;
@@ -333,6 +353,9 @@ class ListeningRoomBinding final : public QObject {
     QString invite_link_;
     QString host_nickname_;
     QString error_text_;
+    // S12.1: the upload dialog is open; its answer counts only for the guest of this generation.
+    bool upload_dialog_open_{false};
+    std::uint64_t upload_generation_{0};
 };
 
 } // namespace music_player::m0

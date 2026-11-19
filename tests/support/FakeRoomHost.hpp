@@ -223,7 +223,7 @@ class FakeRoomTrackCatalog final : public RoomTrackCatalog {
         RoomTrackDescription description;
         description.item.origin = RoomItemOrigin::HostTrack;
         description.item.content_sha256 = fakeSha256(source);
-        description.item.size_bytes = 1000;
+        description.item.size_bytes = size_override.value_or(1000);
         description.item.summary =
             summary_override.value_or(RoomTrackSummary{source.stem().string(), "Artista", "Album", 248'000});
         if (const auto found = lyrics.find(source); found != lyrics.end())
@@ -233,12 +233,46 @@ class FakeRoomTrackCatalog final : public RoomTrackCatalog {
 
     bool deferred{false};
     std::optional<RoomTrackSummary> summary_override;
+    std::optional<std::uint64_t> size_override;
     std::set<std::filesystem::path> unreadable;
     std::map<std::filesystem::path, std::string> lyrics;
     std::vector<std::filesystem::path> requests;
 
   private:
     std::vector<std::pair<std::filesystem::path, std::function<void(std::optional<RoomTrackDescription>)>>> pending_;
+};
+
+// Checks uploaded files: every file is valid audio with `summary` unless it is in `invalid`. Answers at
+// once, or keeps the answers for completeAll() when `deferred` is set.
+class FakeRoomUploadProbe final : public RoomUploadProbe {
+  public:
+    void probe(std::filesystem::path file, std::function<void(std::optional<RoomTrackSummary>)> done) override {
+        probed.push_back(file);
+        if (deferred) {
+            pending_.emplace_back(std::move(file), std::move(done));
+            return;
+        }
+        done(lookup(file));
+    }
+    void completeAll() {
+        auto pending = std::move(pending_);
+        pending_.clear();
+        for (auto& [file, done] : pending)
+            done(lookup(file));
+    }
+    [[nodiscard]] std::optional<RoomTrackSummary> lookup(const std::filesystem::path& file) const {
+        if (invalid.contains(file))
+            return std::nullopt;
+        return summary;
+    }
+
+    bool deferred{false};
+    RoomTrackSummary summary{"Minha", "Eu", "Demo", 61'000};
+    std::set<std::filesystem::path> invalid;
+    std::vector<std::filesystem::path> probed;
+
+  private:
+    std::vector<std::pair<std::filesystem::path, std::function<void(std::optional<RoomTrackSummary>)>>> pending_;
 };
 
 class InMemoryRoomRosterStore final : public RoomRosterStore {

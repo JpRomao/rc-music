@@ -47,6 +47,9 @@ FocusScope {
     signal playRequested(string occurrenceId)
     signal addLyricVariantRequested(string occurrenceId, string displayTitle)
 
+    RoomText {
+        id: roomText
+    }
     QueueText {
         id: queueText
     }
@@ -356,6 +359,18 @@ FocusScope {
                 contract: root.contract
                 enabled: root.roomGuest ? root.roomEdit && roomQueueList.currentIndex >= 0 : !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0
                 onClicked: root.roomGuest ? root.removeRoomSelected() : root.removeSelected()
+            }
+            // S12.1: a guest with the permission sends one of its own files to the room's queue.
+            QueueActionButton {
+                id: roomUploadButton
+                controlId: "queue-room-upload"
+                visible: root.roomGuest && root.room.canUploadOwnTracks
+                iconName: "plus"
+                quiet: root.overlayMode
+                accessibleName: roomText.uploadOwnName
+                text: roomText.uploadOwn
+                contract: root.contract
+                onClicked: root.room.roomUploadOwnTrack()
             }
             Item {
                 Layout.fillWidth: true

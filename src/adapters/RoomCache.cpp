@@ -18,8 +18,8 @@ QString fileName(const std::string_view sha256) {
 }
 } // namespace
 
-RoomCache::RoomCache(QString config_directory)
-    : directory_(QDir(std::move(config_directory)).filePath(QStringLiteral("room-cache"))) {}
+RoomCache::RoomCache(QString config_directory, const QString& directory_name)
+    : directory_(QDir(std::move(config_directory)).filePath(directory_name)) {}
 
 bool RoomCache::isValidSha256(const std::string_view sha256) noexcept {
     return sha256.size() == sha256_hex_digits && std::ranges::all_of(sha256, [](const char digit) {
@@ -73,6 +73,14 @@ void RoomCache::purgeAll() {
     QDir(directory_).removeRecursively();
     reserved_bytes_ = 0;
     played_.clear();
+}
+
+void RoomCache::remove(const std::string_view sha256) {
+    if (!isValidSha256(sha256))
+        return;
+    QFile::remove(QDir(directory_).filePath(fileName(sha256)));
+    QFile::remove(*partialPathFor(sha256));
+    std::erase(played_, sha256);
 }
 
 std::uint64_t RoomCache::bytesOnDisk() const {

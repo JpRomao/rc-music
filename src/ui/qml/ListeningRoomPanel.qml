@@ -586,6 +586,30 @@ PageSurface {
                 Accessible.role: Accessible.StaticText
                 Accessible.name: text
             }
+            // S12.1: one of the guest's own audio files to the room's queue.
+            AccessibleTransportButton {
+                objectName: "room-upload-own"
+                visible: root.available && root.room.canUploadOwnTracks
+                contract: root.contract
+                iconName: "plus"
+                iconWithText: true
+                text: roomText.uploadOwn
+                accessibleName: roomText.uploadOwnName
+                onClicked: root.room.roomUploadOwnTrack()
+            }
+            Text {
+                objectName: "room-uploading"
+                Layout.fillWidth: true
+                visible: root.available && root.room.uploading
+                text: roomText.uploading
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+                font.family: root.contract.bodyFontFamily
+                font.pixelSize: root.contract.typeCaption
+                color: root.contract.textSecondaryColor
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
+            }
             AccessibleTransportButton {
                 id: leaveButton
                 objectName: "room-leave"

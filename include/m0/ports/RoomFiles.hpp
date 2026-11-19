@@ -16,7 +16,8 @@ namespace music_player::m0 {
 // RoomFileReceiver and RoomCache. Files are addressed by content hash only: no local path or file
 // name ever goes on the wire.
 
-// Host side: streams one of the host's files to a guest link.
+// Host side: streams one of the host's files to a guest link. A guest uploading its own file (S12.1) uses
+// one the same way over its link to the host.
 class RoomFileOutbox {
   public:
     virtual ~RoomFileOutbox() = default;
@@ -47,7 +48,8 @@ struct RoomFileStatus final {
 // I/O, quota, size, a chunk out of order); the partial file is gone.
 enum class RoomFileFailure : std::uint8_t { Failed, Gap };
 
-// Guest side: the disposable room cache and its receiver. In the app the file work runs on a worker
+// Guest side: the disposable room cache and its receiver. The host receives guest uploads (S12.1) through
+// another instance, its own upload cache, with the roles reversed. In the app the file work runs on a worker
 // thread; every call returns at once and every callback comes back on the guest's thread, in the
 // order of the calls.
 class RoomFileInbox {
@@ -67,6 +69,9 @@ class RoomFileInbox {
     virtual void markPlayed(const std::string& sha256) = 0;
     // Leaving the room: abandons every transfer in flight, then deletes every cached file.
     virtual void purge() = 0;
+    // S12.1, the host's upload cache: a guest file it refused. Abandons any transfer of sha256 and deletes
+    // its partial and complete file, so a refused upload leaves nothing behind.
+    virtual void discard(const std::string& sha256) = 0;
 
     std::function<void(std::string /*sha256*/, std::filesystem::path /*file*/)> onComplete;
     // transfer_id is the accepted offer's: a late answer for a transfer the guest already replaced is

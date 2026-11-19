@@ -6,6 +6,7 @@
 #include <QString>
 #include <QThread>
 
+#include <cstdint>
 #include <memory>
 
 namespace music_player::m0 {
@@ -21,6 +22,10 @@ namespace music_player::m0 {
 class QtRoomFileInbox final : public QObject, public RoomFileInbox {
   public:
     explicit QtRoomFileInbox(QString config_directory, QObject* parent = nullptr);
+    // S12.1: the host's upload cache, <config>/<directory_name> ("room-uploads"), refusing files above
+    // maximum_file_bytes (maximum_guest_upload_bytes).
+    QtRoomFileInbox(QString config_directory, const QString& directory_name, std::uint64_t maximum_file_bytes,
+                    QObject* parent = nullptr);
     ~QtRoomFileInbox() override;
     QtRoomFileInbox(const QtRoomFileInbox&) = delete;
     QtRoomFileInbox& operator=(const QtRoomFileInbox&) = delete;
@@ -31,8 +36,9 @@ class QtRoomFileInbox final : public QObject, public RoomFileInbox {
     void abandon(std::uint32_t transfer_id) override;
     void markPlayed(const std::string& sha256) override;
     void purge() override;
+    void discard(const std::string& sha256) override;
 
-    // <config>/room-cache.
+    // <config>/room-cache (or the directory given).
     [[nodiscard]] QString cacheDirectory() const;
     // Blocks until the worker has done everything queued so far (tests).
     void waitForWorker();

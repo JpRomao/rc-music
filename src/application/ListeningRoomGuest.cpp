@@ -1,5 +1,7 @@
 #include "m0/application/ListeningRoomGuest.hpp"
 
+#include "m0/domain/LocalAudioFilePolicy.hpp"
+
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
@@ -55,7 +57,8 @@ ListeningRoomGuest::ListeningRoomGuest(ListeningRoomGuestDependencies dependenci
       capture_session_(std::move(dependencies.capture_session)),
       restore_session_(std::move(dependencies.restore_session)), schedule_(std::move(dependencies.schedule)),
       files_(dependencies.files), follower_(dependencies.follower),
-      local_clock_ms_(std::move(dependencies.local_clock_ms)), alive_(std::make_shared<Alive>(Alive{this})) {
+      local_clock_ms_(std::move(dependencies.local_clock_ms)), upload_catalog_(dependencies.upload_catalog),
+      upload_files_(dependencies.upload_files), alive_(std::make_shared<Alive>(Alive{this})) {
     if (!capture_session_ || !restore_session_ || !schedule_)
         throw std::invalid_argument{"the listening room guest needs the local session seam and a scheduler"};
     if (!isValidListenerProfile(profile_))
@@ -112,6 +115,8 @@ void ListeningRoomGuest::leave() {
     if (const auto link = std::exchange(link_, nullptr)) {
         ++link_id_;
         static_cast<void>(link->sendControl(RoomBye{RoomByeReason::Closed}));
+        if (upload_files_ != nullptr)
+            upload_files_->forget(*link);
         link->close();
     }
     stop();
@@ -152,6 +157,98 @@ std::optional<std::filesystem::path> ListeningRoomGuest::localFile(const std::st
 std::optional<RoomLyrics> ListeningRoomGuest::lyrics() const { return lyrics_; }
 
 const RoomCatalog& ListeningRoomGuest::catalog() const noexcept { return catalog_; }
+
+bool ListeningRoomGuest::uploadTrack(const std::filesystem::path& file) {
+    if (state_ != GuestRoomState::Joined || !link_ || upload_catalog_ == nullptr || upload_files_ == nullptr ||
+        !permissions_.test(static_cast<std::size_t>(RoomPermission::UploadOwnTracks)))
+        return false;
+    const auto token = ++next_upload_token_;
+    uploads_.push_back(Upload{file, 0, {}, std::nullopt, token});
+    // The same rules as a local import: anything else never leaves the guest.
+    if (!LocalAudioFilePolicy::isCandidate(file)) {
+        endUpload(token, GuestUploadResult::InvalidAudio);
+        return true;
+    }
+    upload_catalog_->describe(
+        file, [alive = std::weak_ptr<Alive>{alive_}, token](const std::optional<RoomTrackDescription>& description) {
+            if (const auto self = alive.lock())
+                self->guest->onDescribed(token, description);
+        });
+    return true;
+}
+
+std::size_t ListeningRoomGuest::uploadsInProgress() const noexcept { return uploads_.size(); }
+
+void ListeningRoomGuest::onDescribed(const std::uint64_t token,
+                                     const std::optional<RoomTrackDescription>& description) {
+    const auto found =
+        std::find_if(uploads_.begin(), uploads_.end(), [&](const Upload& upload) { return upload.token == token; });
+    if (found == uploads_.end())
+        return;
+    if (!description || !lowerHex64(description->item.content_sha256) || description->item.size_bytes == 0) {
+        endUpload(token, GuestUploadResult::InvalidAudio);
+        return;
+    }
+    if (description->item.size_bytes > maximum_guest_upload_bytes) {
+        endUpload(token, GuestUploadResult::TooLarge);
+        return;
+    }
+    found->sha256 = description->item.content_sha256;
+    // Only the hash and the size: the host reads the tags from the file itself.
+    RoomItem item;
+    item.origin = RoomItemOrigin::GuestTrack;
+    item.content_sha256 = description->item.content_sha256;
+    item.size_bytes = description->item.size_bytes;
+    const auto request_id = sendIntent(RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = std::move(item)});
+    // The send may have ended the upload (or the room) synchronously.
+    const auto still =
+        std::find_if(uploads_.begin(), uploads_.end(), [&](const Upload& upload) { return upload.token == token; });
+    if (still == uploads_.end())
+        return;
+    if (request_id == 0) {
+        endUpload(token, GuestUploadResult::Failed);
+        return;
+    }
+    still->request_id = request_id;
+}
+
+// The host asks for the file of an upload in progress: it goes again from the offset, replacing an earlier send.
+void ListeningRoomGuest::onUploadRequest(const RoomFileRequest& request) {
+    const auto found = std::find_if(uploads_.begin(), uploads_.end(), [&](const Upload& upload) {
+        return upload.request_id != 0 && upload.sha256 == request.content_sha256;
+    });
+    if (found == uploads_.end() || upload_files_ == nullptr || !link_)
+        return;
+    const auto link = link_;
+    if (found->transfer_id)
+        upload_files_->cancel(*link, *found->transfer_id);
+    const auto transfer_id = ++next_upload_transfer_id_;
+    found->transfer_id = transfer_id;
+    if (!upload_files_->send(link, found->file, found->sha256, transfer_id, request.offset))
+        found->transfer_id.reset();
+}
+
+void ListeningRoomGuest::endUpload(const std::uint64_t token, const GuestUploadResult result) {
+    const auto found =
+        std::find_if(uploads_.begin(), uploads_.end(), [&](const Upload& upload) { return upload.token == token; });
+    if (found == uploads_.end())
+        return;
+    if (found->transfer_id && upload_files_ != nullptr && link_)
+        upload_files_->cancel(*link_, *found->transfer_id);
+    uploads_.erase(found);
+    if (onUploadEnded)
+        onUploadEnded(result);
+}
+
+// A dropped link ends every upload (report); leaving or the end of the room drops them without a word.
+void ListeningRoomGuest::stopUploads(const bool report) {
+    auto stopped = std::exchange(uploads_, {});
+    if (!report)
+        return;
+    for (std::size_t index = 0; index < stopped.size(); ++index)
+        if (onUploadEnded)
+            onUploadEnded(GuestUploadResult::Failed);
+}
 
 void ListeningRoomGuest::connect() {
     const auto attempt = ++attempt_;
@@ -218,14 +315,27 @@ void ListeningRoomGuest::onControl(const std::uint64_t link_id, const RoomContro
         if (state_ == GuestRoomState::Joined)
             onState(*state);
     } else if (const auto* rejected = std::get_if<RoomIntentRejected>(&message)) {
-        if (onRejected)
+        const auto upload = std::find_if(uploads_.begin(), uploads_.end(), [&](const Upload& item) {
+            return item.request_id != 0 && item.request_id == rejected->request_id;
+        });
+        if (upload != uploads_.end()) {
+            const auto outcome = rejected->reason == IntentRejection::MissingPermission
+                                     ? GuestUploadResult::MissingPermission
+                                 : rejected->reason == IntentRejection::QueueFull ? GuestUploadResult::QueueFull
+                                                                                  : GuestUploadResult::InvalidAudio;
+            endUpload(upload->token, outcome);
+        } else if (onRejected) {
             onRejected(rejected->request_id, rejected->reason);
+        }
     } else if (const auto* bye = std::get_if<RoomBye>(&message)) {
         const auto ending = byeEnd(bye->reason);
         end(ending.reason, ending.failure);
     } else if (const auto* offer = std::get_if<RoomFileOffer>(&message)) {
         if (state_ == GuestRoomState::Joined)
             onOffer(*offer);
+    } else if (const auto* request = std::get_if<RoomFileRequest>(&message)) {
+        if (state_ == GuestRoomState::Joined)
+            onUploadRequest(*request);
     } else if (const auto* pong = std::get_if<RoomClockPong>(&message)) {
         if (state_ == GuestRoomState::Joined && follower_ != nullptr)
             follower_->addClockSample({pong->sent_local_ms, pong->host_ms, local_clock_ms_()});
@@ -247,6 +357,8 @@ void ListeningRoomGuest::onLinkClosed(const std::uint64_t link_id, const RoomLin
     if (link_id != link_id_ || !link_)
         return;
     const auto keep = link_;
+    if (upload_files_ != nullptr)
+        upload_files_->forget(*link_);
     // Closed by the network: no local close is needed, only forget it.
     link_.reset();
     ++link_id_;
@@ -304,6 +416,21 @@ void ListeningRoomGuest::onState(const RoomStateMessage& message) {
     changed();
     updateFiles();
     follow();
+    // An upload ends once the host queued it (the host fills id, owner and added_by).
+    std::vector<std::uint64_t> added;
+    for (const auto& upload : uploads_)
+        if (upload.request_id != 0 &&
+            std::any_of(snapshot_.queue.begin(), snapshot_.queue.end(), [&](const RoomItem& item) {
+                return item.origin == RoomItemOrigin::GuestTrack && item.content_sha256 == upload.sha256;
+            }))
+            added.push_back(upload.token);
+    for (const auto token : added) {
+        const auto found =
+            std::find_if(uploads_.begin(), uploads_.end(), [&](const Upload& upload) { return upload.token == token; });
+        if (found != uploads_.end())
+            found->transfer_id.reset(); // the transfer completed
+        endUpload(token, GuestUploadResult::Added);
+    }
 }
 
 // The follower gets the room's playback and the local copy of the current item, when there is one.
@@ -511,6 +638,7 @@ void ListeningRoomGuest::stopFiles(const bool purge) {
 void ListeningRoomGuest::lost(const RoomLinkFailure failure) {
     last_failure_ = failure;
     stopFiles(false);
+    stopUploads(true);
     switch (state_) {
     case GuestRoomState::Joined: {
         // The window counts from the drop; the first attempt starts at once.
@@ -582,6 +710,7 @@ void ListeningRoomGuest::stop() {
     }
     ++attempt_;
     ++episode_;
+    stopUploads(false);
     detachLink();
     stopFiles(true);
     snapshot_ = {};
@@ -598,8 +727,11 @@ void ListeningRoomGuest::stop() {
 // The link's callbacks are left in place (they may be running) and turn into no-ops with the new id.
 void ListeningRoomGuest::detachLink() {
     ++link_id_;
-    if (const auto link = std::exchange(link_, nullptr))
+    if (const auto link = std::exchange(link_, nullptr)) {
+        if (upload_files_ != nullptr)
+            upload_files_->forget(*link);
         link->close();
+    }
 }
 
 RoomHello ListeningRoomGuest::hello() const {

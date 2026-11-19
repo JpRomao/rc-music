@@ -32,6 +32,8 @@ TestCase {
         property ListModel catalog: ListModel {}
         property bool canAddFromRoom: false
         property bool canAddPlaylist: false
+        property bool canUploadOwnTracks: false
+        property bool uploading: false
         property bool roomPlaying: false
         property bool roomHasCurrent: false
         property bool rosterUnsaved: false
@@ -101,6 +103,11 @@ TestCase {
             record("addPlaylist:" + playlistId);
             return true;
         }
+        function roomUploadOwnTrack() {
+            record("upload");
+            uploading = true;
+            return true;
+        }
     }
 
     Component {
@@ -128,6 +135,8 @@ TestCase {
         fakeRoom.catalog.clear();
         fakeRoom.canAddFromRoom = false;
         fakeRoom.canAddPlaylist = false;
+        fakeRoom.canUploadOwnTracks = false;
+        fakeRoom.uploading = false;
         fakeRoom.calls = [];
     }
     function cleanup() {
@@ -584,6 +593,47 @@ TestCase {
         // The room ends: the lists go.
         fakeRoom.catalog.clear();
         tryVerify(() => !findChild(testCase.shell, "room-catalog-title").visible);
+    }
+
+    // S12.1: "Adicionar música minha" only with the permission, on the room page and in the queue.
+    function test_aGuestSendsItsOwnTrackOnlyWithThePermission() {
+        joinAsGuest();
+        createShell();
+        openPage();
+        const upload = findChild(shell, "room-upload-own");
+        verify(upload);
+        verify(!upload.visible);
+
+        fakeRoom.canUploadOwnTracks = true;
+        tryVerify(() => upload.visible);
+        compare(upload.text, "Adicionar música minha");
+        compare(upload.Accessible.name, "Adicionar uma música sua à fila da sala");
+        verify(!findChild(shell, "room-uploading").visible);
+        mouseClick(upload);
+        compare(fakeRoom.calls, ["upload"]);
+        compare(visibleChild("room-uploading").text, "Enviando sua música…");
+        // A refused file says so.
+        fakeRoom.uploading = false;
+        fakeRoom.errorText = "Arquivo de áudio inválido";
+        compare(visibleChild("room-error").text, "Arquivo de áudio inválido");
+        tryVerify(() => !findChild(testCase.shell, "room-uploading").visible);
+        fakeRoom.canUploadOwnTracks = false;
+        tryVerify(() => !upload.visible);
+
+        // The queue offers it too, with the same gate.
+        shell.setQueueOpen(true);
+        tryVerify(() => findChild(testCase.shell, "queue-panel").visible);
+        const queueUpload = findChild(shell, "queue-room-upload");
+        verify(queueUpload);
+        verify(!queueUpload.visible);
+        fakeRoom.canUploadOwnTracks = true;
+        tryVerify(() => queueUpload.visible);
+        compare(queueUpload.Accessible.name, "Adicionar uma música sua à fila da sala");
+        verify(queueUpload.enabled);
+        mouseClick(queueUpload);
+        compare(fakeRoom.calls, ["upload", "upload"]);
+        fakeRoom.canUploadOwnTracks = false;
+        tryVerify(() => !queueUpload.visible);
     }
 
     function test_anErrorIsShownAndCanBeDismissed() {
