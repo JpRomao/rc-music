@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace music_player::m0 {
 
@@ -59,6 +60,9 @@ class QtMultimediaPlaybackBackend final : public QObject, public PlaybackBackend
     PlaybackCommandResult setMuted(bool muted) override;
     PlaybackCommandResult unload() override;
     PlaybackCommandResult shutdown() override;
+    // Changes the speed with pitch compensation off; Unsupported where Qt keeps it on (S1).
+    PlaybackCommandResult setPlaybackRate(double rate) override;
+    [[nodiscard]] std::optional<std::int64_t> positionUpdatedAtMs() const noexcept override;
     [[nodiscard]] std::vector<AudioOutputDevice> audioOutputs() const override;
     [[nodiscard]] std::string selectedAudioOutputId() const override;
     bool selectAudioOutput(std::string_view id) override;
@@ -88,6 +92,8 @@ class QtMultimediaPlaybackBackend final : public QObject, public PlaybackBackend
     QMediaPlayer* player_{nullptr};
     PlaybackSnapshot snapshot_{};
     std::uint64_t generation_{0};
+    // steady_clock ms of the current player's last positionChanged.
+    std::optional<std::int64_t> position_updated_at_ms_{};
     std::uint32_t source_drive_mask_{0};
     PlaybackEventCallback event_callback_{};
     bool source_volume_removal_pending_{false};

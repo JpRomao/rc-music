@@ -6,6 +6,7 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <utility>
 
@@ -76,6 +77,11 @@ class SystemQtAudioOutputDevices final : public QtAudioOutputDevices {
 #endif
 }
 
+[[nodiscard]] std::int64_t steadyNowMs() noexcept {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
 [[nodiscard]] std::uint32_t sourceDriveMask(const std::filesystem::path& source_path) noexcept {
 #ifdef Q_OS_WIN
     const auto& path = source_path.native();
@@ -140,8 +146,11 @@ void QtMultimediaPlaybackBackend::connectPlayerSignals(QMediaPlayer& player) {
             [this, signal_player, signal_generation] { refreshSnapshot(signal_player, signal_generation); });
     connect(&player, &QMediaPlayer::durationChanged, this,
             [this, signal_player, signal_generation] { refreshSnapshot(signal_player, signal_generation); });
-    connect(&player, &QMediaPlayer::positionChanged, this,
-            [this, signal_player, signal_generation] { refreshSnapshot(signal_player, signal_generation); });
+    connect(&player, &QMediaPlayer::positionChanged, this, [this, signal_player, signal_generation] {
+        if (signal_player == player_ && signal_generation == generation_)
+            position_updated_at_ms_ = steadyNowMs();
+        refreshSnapshot(signal_player, signal_generation);
+    });
     connect(&player, &QMediaPlayer::seekableChanged, this,
             [this, signal_player, signal_generation] { refreshSnapshot(signal_player, signal_generation); });
     connect(&player, &QMediaPlayer::hasAudioChanged, this,
@@ -380,6 +389,47 @@ PlaybackCommandResult QtMultimediaPlaybackBackend::setMuted(const bool muted) {
     return PlaybackCommandResult::Accepted;
 }
 
+PlaybackCommandResult QtMultimediaPlaybackBackend::setPlaybackRate(const double rate) {
+    if (shutdown_) {
+        return PlaybackCommandResult::Shutdown;
+    }
+    if (!std::isfinite(rate) || rate <= 0.0) {
+        return PlaybackCommandResult::InvalidArgument;
+    }
+    if (player_ == nullptr || source_volume_removal_pending_) {
+        return PlaybackCommandResult::NotReady;
+    }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    // S1: with pitch compensation (Qt's default) every change away from 1.0 is followed by about 115 ms
+    // of silence and the sound lags 104 to 116 ms while the rate differs from 1.0. Without it the pitch
+    // moves with the speed (1% = about 17 cents) and there is no gap.
+    if (rate != 1.0) {
+        switch (player_->pitchCompensationAvailability()) {
+        case QMediaPlayer::PitchCompensationAvailability::AlwaysOn:
+            return PlaybackCommandResult::Unsupported;
+        case QMediaPlayer::PitchCompensationAvailability::Available:
+            if (player_->pitchCompensation()) {
+                player_->setPitchCompensation(false);
+            }
+            if (player_->pitchCompensation()) {
+                return PlaybackCommandResult::Unsupported;
+            }
+            break;
+        case QMediaPlayer::PitchCompensationAvailability::Unavailable:
+            break;
+        }
+    }
+    player_->setPlaybackRate(rate);
+    return PlaybackCommandResult::Accepted;
+#else
+    return rate == 1.0 ? PlaybackCommandResult::Accepted : PlaybackCommandResult::Unsupported;
+#endif
+}
+
+std::optional<std::int64_t> QtMultimediaPlaybackBackend::positionUpdatedAtMs() const noexcept {
+    return position_updated_at_ms_;
+}
+
 PlaybackCommandResult QtMultimediaPlaybackBackend::unload() {
     if (shutdown_) {
         return PlaybackCommandResult::Shutdown;
@@ -476,6 +526,7 @@ void QtMultimediaPlaybackBackend::invalidateCurrentSource() {
 }
 
 void QtMultimediaPlaybackBackend::advanceGeneration() noexcept {
+    position_updated_at_ms_.reset();
     ++generation_;
     if (generation_ == 0) {
         ++generation_;

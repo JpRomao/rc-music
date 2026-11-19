@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -90,6 +91,19 @@ class QtMultimediaPlaybackBackendTests final : public QObject {
     Q_OBJECT
 
   private slots:
+    // S9.1: no source is loaded, so nothing reaches Qt Multimedia and nothing plays.
+    void playbackRateNeedsASourceAndAFiniteRateAndPositionTimeStartsUnknown() {
+        QtMultimediaPlaybackBackend backend{std::make_unique<FakeAudioOutputDevices>()};
+        QVERIFY(!backend.positionUpdatedAtMs().has_value());
+        QCOMPARE(backend.setPlaybackRate(1.01), PlaybackCommandResult::NotReady);
+        QCOMPARE(backend.setPlaybackRate(0.0), PlaybackCommandResult::InvalidArgument);
+        QCOMPARE(backend.setPlaybackRate(-1.0), PlaybackCommandResult::InvalidArgument);
+        QCOMPARE(backend.setPlaybackRate(std::numeric_limits<double>::quiet_NaN()),
+                 PlaybackCommandResult::InvalidArgument);
+        QCOMPARE(backend.shutdown(), PlaybackCommandResult::Accepted);
+        QCOMPARE(backend.setPlaybackRate(1.0), PlaybackCommandResult::Shutdown);
+    }
+
 #ifdef Q_OS_WIN
     void sourceVolumeMatchingUsesOnlyAnAbsoluteDriveLetter_data() {
         QTest::addColumn<QString>("path");
