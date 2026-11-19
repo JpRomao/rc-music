@@ -19,6 +19,15 @@ struct SystemMediaRoomRoute final {
     std::function<void(const SystemMediaCommand&)> send;
 };
 
+// A room route whose every copy (the tray's, the system controls') goes inert once unhook runs: not following,
+// nothing allowed, send does nothing. The app unhooks it before the room binding it calls into is destroyed.
+struct UnhookableRoomRoute final {
+    SystemMediaRoomRoute route;
+    std::function<void()> unhook;
+};
+
+[[nodiscard]] UnhookableRoomRoute unhookableRoomRoute(SystemMediaRoomRoute target);
+
 class SystemMediaControlsBinding final : public QObject {
   public:
     SystemMediaControlsBinding(PlayerPresenter& presenter, SystemMediaControls& controls, QObject* parent = nullptr);

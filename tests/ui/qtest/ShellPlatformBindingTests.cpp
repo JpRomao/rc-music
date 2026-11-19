@@ -547,6 +547,44 @@ class ShellPlatformBindingTests final : public QObject {
         QCOMPARE(sent.size(), std::size_t{4});
     }
 
+    // The tray keeps its own copy of the room route, alive in connections that outlive the room binding. Once
+    // the app unhooks the route, the tray's refreshes and requests never call into the room again.
+    void anUnhookedRoomRouteNeverCallsIntoTheRoomFromTheTray() {
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player M0"), labels(), [] { return true; }, [] {});
+        PlayerPresenter presenter(frozenBundle(), platform);
+        QWindow window;
+        window.resize(640, 480);
+        window.show();
+        int room_calls = 0;
+        std::vector<SystemMediaCommand> sent;
+        auto hook = unhookableRoomRoute({
+            .following = [&] { return ++room_calls > 0; },
+            .allows = [&](SystemMediaCommandKind) { return ++room_calls > 0; },
+            .send =
+                [&](const SystemMediaCommand& command) {
+                    ++room_calls;
+                    sent.push_back(command);
+                },
+        });
+        const auto refresh_tray = bindShellPlatform(presenter, platform, window, hook.route);
+        QVERIFY(presenter.loadFrozenQueue());
+        const auto occurrence = presenter.currentOccurrenceId();
+        emit platform.nextRequested();
+        QCOMPARE(sent, (std::vector<SystemMediaCommand>{{SystemMediaCommandKind::Next, 0}}));
+        QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+
+        hook.unhook();
+        room_calls = 0;
+        refresh_tray();
+        // The local player now answers, and its state changes refresh the tray without touching the room.
+        emit platform.nextRequested();
+        QVERIFY(presenter.currentOccurrenceId() != occurrence);
+        emit platform.playPauseRequested();
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+        QCOMPARE(room_calls, 0);
+        QCOMPARE(sent.size(), std::size_t{1});
+    }
+
     void destroyingThePresenterDisconnectsFallbackNotifications() {
         bool available = true;
         QtShellPlatform platform(testIcon(), QStringLiteral("Player M0"), labels(), [&] { return available; }, [] {});

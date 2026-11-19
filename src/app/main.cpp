@@ -1086,7 +1086,9 @@ int main(int argc, char* argv[]) {
             throw std::runtime_error{"the QML root became visible before startup placement was resolved"};
         (void)applyRestoredWindowPlacement(*window, presenter.preferences().window_placement);
         // S10.1: a guest's tray, media keys and Windows flyout go to the room, never to the local player.
-        const music_player::m0::SystemMediaRoomRoute room_media_route{
+        // The tray keeps its copy in connections owned by the presenter and the platform, which outlive
+        // room_binding; the guard below makes every copy inert before room_binding is destroyed.
+        const auto room_media_hook = music_player::m0::unhookableRoomRoute({
             .following = [&room_binding] { return room_binding.followsRoom(); },
             .allows =
                 [&room_binding](const music_player::m0::SystemMediaCommandKind kind) {
@@ -1096,7 +1098,9 @@ int main(int argc, char* argv[]) {
                 [&room_binding](const music_player::m0::SystemMediaCommand& command) {
                     static_cast<void>(room_binding.roomCommand(command));
                 },
-        };
+        });
+        const auto unhook_room_media = qScopeGuard(room_media_hook.unhook);
+        const auto& room_media_route = room_media_hook.route;
         const auto refresh_tray = music_player::m0::bindShellPlatform(presenter, platform, *window, room_media_route);
         QObject::connect(&room_binding, &music_player::m0::ListeningRoomBinding::changed, &platform, refresh_tray);
 #ifdef M0_QT_COMBINED_AUDIO

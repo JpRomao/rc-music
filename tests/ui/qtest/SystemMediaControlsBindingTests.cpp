@@ -191,6 +191,38 @@ class SystemMediaControlsBindingTests final : public QObject {
         QCOMPARE(sent.size(), std::size_t{3});
     }
 
+    // The app unhooks the room route before the room binding goes away: from then on the system controls never
+    // call into the room again, whatever copy of the route they hold.
+    void anUnhookedRoomRouteNeverCallsIntoTheRoom() {
+        TestPlatform platform;
+        PlayerPresenter presenter(frozenBundle(), platform);
+        FakeSystemMediaControls controls;
+        SystemMediaControlsBinding binding(presenter, controls);
+        QVERIFY(presenter.loadFrozenQueue());
+        int room_calls = 0;
+        std::vector<SystemMediaCommand> sent;
+        const auto hook = unhookableRoomRoute({
+            .following = [&] { return ++room_calls > 0; },
+            .allows = [&](SystemMediaCommandKind) { return ++room_calls > 0; },
+            .send =
+                [&](const SystemMediaCommand& command) {
+                    ++room_calls;
+                    sent.push_back(command);
+                },
+        });
+        binding.setRoomRoute(hook.route);
+        controls.send({SystemMediaCommandKind::Pause, 0});
+        QCOMPARE(sent, (std::vector<SystemMediaCommand>{{SystemMediaCommandKind::Pause, 0}}));
+
+        hook.unhook();
+        room_calls = 0;
+        binding.refresh();
+        QCOMPARE(controls.snapshots.back(), playingSnapshot(presenter));
+        controls.send({SystemMediaCommandKind::Next, 0});
+        QCOMPARE(room_calls, 0);
+        QCOMPARE(sent.size(), std::size_t{1});
+    }
+
     void exitPublishesClosedAndMakesLateCommandsInert() {
         TestPlatform platform;
         PlayerPresenter presenter(frozenBundle(), platform);

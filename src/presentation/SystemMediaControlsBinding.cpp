@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <utility>
 
 namespace music_player::m0 {
@@ -95,6 +96,19 @@ void SystemMediaControlsBinding::refresh() {
         return;
     if (controls_.publish(snapshot))
         published_snapshot_ = snapshot;
+}
+
+UnhookableRoomRoute unhookableRoomRoute(SystemMediaRoomRoute target) {
+    // Every copy of the route shares the target; unhook empties it in place, so all of them go inert at once.
+    const auto shared = std::make_shared<SystemMediaRoomRoute>(std::move(target));
+    return {{.following = [shared] { return shared->following && shared->following(); },
+             .allows = [shared](const SystemMediaCommandKind kind) { return shared->allows && shared->allows(kind); },
+             .send =
+                 [shared](const SystemMediaCommand& command) {
+                     if (shared->send)
+                         shared->send(command);
+                 }},
+            [shared] { *shared = {}; }};
 }
 
 void SystemMediaControlsBinding::setRoomRoute(SystemMediaRoomRoute route) {
