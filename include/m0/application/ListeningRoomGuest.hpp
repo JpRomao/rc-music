@@ -168,10 +168,12 @@ struct ListeningRoomGuestDependencies final {
 // AddItems{uploaded = RoomItem{GuestTrack, sha, size}}: no path, file name or tags (the host reads its own).
 // Only a RoomFileRequest for the hash of an upload in progress is answered, with
 // upload_files->send(link, file, sha, a new transfer id, offset); a later request for it replaces the earlier
-// transfer. The upload ends Added when a state carries a GuestTrack item with that hash; a rejection of its
-// request id ends it with MissingPermission, QueueFull or InvalidAudio (any other reason) and never reaches
-// onRejected. A dropped link ends every upload in progress (Failed); leave() and the end of the room drop them
-// without a callback.
+// transfer, and a send that fails (the file is gone or unreadable) ends the upload (Failed). The upload ends
+// Added when a state carries a GuestTrack item with that hash; a rejection of its request id ends it with
+// MissingPermission, QueueFull, InvalidAudio (InvalidArgument) or Failed (any other reason: UnknownItem when
+// the host dropped a stalled upload) and never reaches onRejected, not even after the upload ended here. A
+// dropped link ends every upload in progress (Failed); leave() and the end of the room drop them without a
+// callback.
 //
 // Catalog (S11.2): the last RoomCatalog received while Joined is kept (a dropped link keeps it, the host
 // sends it again on admission); onChanged runs when it changes. join(), leave() and the end of the room
@@ -304,6 +306,8 @@ class ListeningRoomGuest final {
     std::uint32_t last_offer_id_{0};
     // S12.1: uploads in progress, in start order; transfer ids of this guest's own sends (never reused).
     std::vector<Upload> uploads_;
+    // Request ids of uploads that ended here first (a failed send): the host's later answer is swallowed.
+    std::set<std::uint64_t> ended_upload_requests_;
     std::uint64_t next_upload_token_{0};
     std::uint32_t next_upload_transfer_id_{0};
     std::shared_ptr<Alive> alive_;

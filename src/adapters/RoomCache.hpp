@@ -41,7 +41,9 @@ class RoomCache {
     void markPlayed(std::string_view sha256);
     // Removes every .part and complete file; reservations and played marks are forgotten.
     void purgeAll();
-    // Removes the complete file and the .part of one hash (S12.1: a refused upload). Invalid hashes are ignored.
+    // Removes the complete file and the .part of one hash (S12.1: a refused upload, or a guest item that left
+    // the queue). A complete file that cannot go yet (still open elsewhere, on Windows) is marked as played, so
+    // reserve() evicts it later. Invalid hashes are ignored.
     void remove(std::string_view sha256);
 
   private:

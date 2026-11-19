@@ -186,13 +186,25 @@ struct ListeningRoomHostDependencies final {
 //     Chunks that come before their offer are kept (at most 2 MiB per link) while a request is outstanding.
 //     The cache refuses an offer above maximum_guest_upload_bytes and a chunk past the offered size, and
 //     keeps the file only when its SHA-256 matches the declared hash.
+//   - The same owner declaring a hash it is already uploading replaces that upload (its partial file stays
+//     for resume; the old request gets no answer). Another member declaring it answers InvalidArgument.
+//     A hash already complete in the upload cache (another queued guest item uses it) is not sent again: the
+//     declared size must be the cached file's (InvalidArgument otherwise) and it goes straight to the probe;
+//     anyone with UploadOwnTracks may so queue it again and owns the new item.
 //   - A Gap asks again at once (the partial file stays); another failure asks again at most
 //     room_file_retries times, then the upload is refused.
+//   - An upload that gets no byte (offer or chunk) from its owner for room_upload_stall_ms is dropped:
+//     RoomIntentRejected{request_id, UnknownItem} and uploads->discard(sha). Any upload chunk of the owner
+//     counts (its files go up one after the other on its link); a file being probed never stalls.
 //   - A complete file goes to upload_probe (off the host's thread). Valid audio joins the queue through
 //     addGuestTrack with the probe's summary, owner = the link's fingerprint and added_by = the owner's
 //     nickname. Refused (not audio, a mismatched offer, retries spent, a full queue): RoomIntentRejected{the
 //     intent's request_id, InvalidArgument (QueueFull for a full queue)} and uploads->discard(sha), so
 //     nothing stays unless a queued guest item still uses that file.
+//   - A roster change that takes UploadOwnTracks away from an owner refuses its uploads in flight
+//     (MissingPermission, files discarded); the probe's answer is checked against the permission again.
+//   - A guest item that leaves the player's queue frees its file (uploads->discard) once no other guest item
+//     and no upload in flight uses that hash, so the upload cache holds only files of the queue.
 //   - When the owner's link goes (it left, was kicked or dropped), its uploads in flight stop and their files
 //     are discarded. Its items already in the queue stay and play for everyone: the host has the copy. They
 //     leave when someone removes them or the room ends.
@@ -327,10 +339,16 @@ class ListeningRoomHost final {
         std::optional<std::uint32_t> offered{};
         std::optional<std::uint32_t> receiving{};
         int retries{0};
+        // The file is complete and upload_probe is checking it: the host's own work, never a stall.
+        bool probing{false};
     };
     [[nodiscard]] std::optional<IntentRejection> startUpload(const RoomItem& item, const std::string& fingerprint,
                                                              std::uint64_t request_id);
     void askUpload(const std::string& sha256);
+    void watchUpload(const std::string& sha256, std::uint64_t token, std::uint64_t seen_activity);
+    void onUploadWatch(const std::string& sha256, std::uint64_t token, std::uint64_t seen_activity);
+    [[nodiscard]] bool mayUpload(std::string_view fingerprint) const;
+    void freeUploadFiles(const std::vector<std::string>& hashes);
     void onUploadStatus(std::uint64_t token, const std::string& sha256, const RoomFileStatus& status);
     void onUploadOffer(Connection& connection, const RoomFileOffer& offer);
     void onUploadChunk(const RoomLink* link, RoomFileChunk chunk);

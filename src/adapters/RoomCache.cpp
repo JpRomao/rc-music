@@ -78,9 +78,12 @@ void RoomCache::purgeAll() {
 void RoomCache::remove(const std::string_view sha256) {
     if (!isValidSha256(sha256))
         return;
-    QFile::remove(QDir(directory_).filePath(fileName(sha256)));
     QFile::remove(*partialPathFor(sha256));
     std::erase(played_, sha256);
+    const auto complete = QDir(directory_).filePath(fileName(sha256));
+    // Still open elsewhere (Windows: the player or an outgoing transfer closing it): reserve() evicts it later.
+    if (QFileInfo::exists(complete) && !QFile::remove(complete))
+        played_.emplace_back(sha256);
 }
 
 std::uint64_t RoomCache::bytesOnDisk() const {

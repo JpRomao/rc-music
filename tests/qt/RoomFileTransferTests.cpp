@@ -400,6 +400,16 @@ class RoomFileTransferTests final : public QObject {
         QCOMPARE(QString::fromStdU16String(completed.front().second.u16string()),
                  QDir(uploads.cacheDirectory()).filePath(QString::fromStdString(sha)));
         QCOMPARE(filesUnder(guest_cache.cacheDirectory()), QStringList{});
+
+        // S12.1 fix round 1: status() gives a complete file's real size (the host checks a declaration of a
+        // file it does not receive again against it).
+        std::optional<RoomFileStatus> status;
+        uploads.status(sha, [&status](const RoomFileStatus& answer) { status = answer; });
+        uploads.waitForWorker();
+        QCoreApplication::processEvents();
+        QVERIFY(status.has_value());
+        QVERIFY(status->complete);
+        QCOMPARE(status->size_bytes, static_cast<std::uint64_t>(original.size()));
     }
 
     // S12.1: a refused upload leaves nothing: discard removes the complete file and a partial one, and stops

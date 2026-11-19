@@ -151,6 +151,8 @@ struct ListeningRoomHost::Connection final {
     std::map<std::uint32_t, std::vector<RoomFileChunk>> early_upload{};
     std::size_t early_upload_bytes{0};
     std::uint32_t last_upload_offer{0};
+    // Counts this member's upload offers and chunks: the stall watch of its uploads compares it.
+    std::uint64_t upload_activity{0};
 };
 
 struct ListeningRoomHost::WindowFile final {
@@ -979,12 +981,17 @@ bool ListeningRoomHost::refresh() {
 bool ListeningRoomHost::rebuild() {
     const auto player = player_.state();
     const auto& items = player.queue.items;
+    std::vector<std::string> left;
     std::erase_if(guest_items_, [&](const auto& guest) {
-        return std::none_of(items.begin(), items.end(), [&](const LocalFileQueueSnapshotItem& item) {
+        const bool gone = std::none_of(items.begin(), items.end(), [&](const LocalFileQueueSnapshotItem& item) {
             return item.occurrence_id.value == guest.first;
         });
+        if (gone)
+            left.push_back(guest.second.content_sha256);
+        return gone;
     });
     std::erase_if(guest_files_, [&](const auto& guest) { return !guest_items_.contains(guest.first); });
+    freeUploadFiles(left);
     std::erase_if(catalog_adders_, [&](const auto& added) {
         return std::none_of(items.begin(), items.end(), [&](const LocalFileQueueSnapshotItem& item) {
             return item.occurrence_id.value == added.first;
@@ -1245,12 +1252,64 @@ void ListeningRoomHost::forgetFiles(const RoomLink& link) {
 std::optional<IntentRejection> ListeningRoomHost::startUpload(const RoomItem& item, const std::string& fingerprint,
                                                               const std::uint64_t request_id) {
     if (uploads_ == nullptr || upload_probe_ == nullptr || item.origin != RoomItemOrigin::GuestTrack ||
-        !lowerHex64(item.content_sha256) || item.size_bytes == 0 || item.size_bytes > maximum_guest_upload_bytes ||
-        uploading_.contains(item.content_sha256))
+        !lowerHex64(item.content_sha256) || item.size_bytes == 0 || item.size_bytes > maximum_guest_upload_bytes)
         return IntentRejection::InvalidArgument;
-    uploading_.emplace(item.content_sha256, Upload{fingerprint, request_id, item.size_bytes, ++next_upload_token_});
+    if (const auto found = uploading_.find(item.content_sha256); found != uploading_.end()) {
+        if (found->second.owner != fingerprint)
+            return IntentRejection::InvalidArgument;
+        // The same guest sends it again (its own send failed, say): this upload replaces the one on its way.
+        // The partial file stays for resume.
+        if (found->second.receiving)
+            uploads_->abandon(*found->second.receiving);
+        uploading_.erase(found);
+    }
+    const auto token = ++next_upload_token_;
+    uploading_.emplace(item.content_sha256, Upload{fingerprint, request_id, item.size_bytes, token});
+    const auto* owner = findMember(fingerprint);
+    watchUpload(item.content_sha256, token, owner != nullptr ? owner->upload_activity : 0);
     askUpload(item.content_sha256);
     return std::nullopt;
+}
+
+void ListeningRoomHost::watchUpload(const std::string& sha256, const std::uint64_t token,
+                                    const std::uint64_t seen_activity) {
+    schedule_(room_upload_stall_ms, [alive = std::weak_ptr<Alive>{alive_}, sha256, token, seen_activity] {
+        if (const auto self = alive.lock())
+            self->host->onUploadWatch(sha256, token, seen_activity);
+    });
+}
+
+// No offer or chunk from the owner during a whole period: the upload is dropped and the file can be sent again.
+void ListeningRoomHost::onUploadWatch(const std::string& sha256, const std::uint64_t token,
+                                      const std::uint64_t seen_activity) {
+    const auto found = uploading_.find(sha256);
+    if (found == uploading_.end() || found->second.token != token || found->second.probing)
+        return;
+    const auto* owner = findMember(found->second.owner);
+    if (owner == nullptr)
+        return;
+    if (owner->upload_activity != seen_activity) {
+        watchUpload(sha256, token, owner->upload_activity);
+        return;
+    }
+    refuseUpload(sha256, IntentRejection::UnknownItem);
+}
+
+bool ListeningRoomHost::mayUpload(const std::string_view fingerprint) const {
+    return roster_.effectivePermissions(fingerprint).test(static_cast<std::size_t>(RoomPermission::UploadOwnTracks));
+}
+
+// Files of guest items that left the queue go, unless another guest item or an upload in flight uses them.
+void ListeningRoomHost::freeUploadFiles(const std::vector<std::string>& hashes) {
+    if (uploads_ == nullptr)
+        return;
+    for (const auto& sha : hashes) {
+        const bool used = uploading_.contains(sha) ||
+                          std::any_of(guest_items_.begin(), guest_items_.end(),
+                                      [&](const auto& guest) { return guest.second.content_sha256 == sha; });
+        if (!used)
+            uploads_->discard(sha);
+    }
 }
 
 // Asks the upload cache where the file stands; the answer leads to a request to the owner (or to the probe).
@@ -1272,6 +1331,12 @@ void ListeningRoomHost::onUploadStatus(const std::uint64_t token, const std::str
     if (found == uploading_.end() || found->second.token != token)
         return;
     if (status.complete) {
+        // Already in the cache (another queued guest item uses it) and not sent again: the declared size must be
+        // the cached file's.
+        if (status.size_bytes != found->second.size_bytes) {
+            refuseUpload(sha256, IntentRejection::InvalidArgument);
+            return;
+        }
         probeUpload(sha256, status.file);
         return;
     }
@@ -1304,6 +1369,7 @@ void ListeningRoomHost::onUploadOffer(Connection& connection, const RoomFileOffe
         return;
     }
     auto& upload = found->second;
+    ++connection.upload_activity;
     upload.requested = false;
     if (upload.receiving)
         uploads_->abandon(*upload.receiving);
@@ -1336,6 +1402,7 @@ void ListeningRoomHost::onUploadChunk(const RoomLink* link, RoomFileChunk chunk)
         if (upload.owner != connection->fingerprint)
             continue;
         if (upload.offered == chunk.transfer_id && upload.receiving) {
+            ++connection->upload_activity;
             chunk.transfer_id = *upload.receiving;
             uploads_->consume(std::move(chunk));
             return;
@@ -1346,6 +1413,7 @@ void ListeningRoomHost::onUploadChunk(const RoomLink* link, RoomFileChunk chunk)
     if (!awaiting || chunk.transfer_id <= connection->last_upload_offer ||
         connection->early_upload_bytes + chunk.payload.size() > maximum_early_upload_bytes)
         return;
+    ++connection->upload_activity;
     connection->early_upload_bytes += chunk.payload.size();
     connection->early_upload[chunk.transfer_id].push_back(std::move(chunk));
 }
@@ -1381,7 +1449,9 @@ void ListeningRoomHost::onUploadFailed(const std::string& sha256, const std::uin
 
 // The same rules as a local import, away from the host's thread.
 void ListeningRoomHost::probeUpload(const std::string& sha256, const std::filesystem::path& file) {
-    const auto token = uploading_.at(sha256).token;
+    auto& upload = uploading_.at(sha256);
+    upload.probing = true;
+    const auto token = upload.token;
     upload_probe_->probe(file, [alive = std::weak_ptr<Alive>{alive_}, token, sha256,
                                 file](const std::optional<RoomTrackSummary>& summary) {
         if (const auto self = alive.lock())
@@ -1397,6 +1467,10 @@ void ListeningRoomHost::onUploadProbed(const std::uint64_t token, const std::str
         return;
     if (!summary) {
         refuseUpload(sha256, IntentRejection::InvalidArgument);
+        return;
+    }
+    if (!mayUpload(found->second.owner)) {
+        refuseUpload(sha256, IntentRejection::MissingPermission);
         return;
     }
     const bool full = current_.queue.size() >= maximum_room_queue_items;
@@ -1511,6 +1585,13 @@ void ListeningRoomHost::rosterChanged() {
     saveRoster();
     if (!room_)
         return;
+    // Uploads whose owner lost UploadOwnTracks stop here.
+    std::vector<std::string> revoked;
+    for (const auto& [sha, upload] : uploading_)
+        if (!mayUpload(upload.owner))
+            revoked.push_back(sha);
+    for (const auto& sha : revoked)
+        refuseUpload(sha, IntentRejection::MissingPermission);
     ++current_.version;
     sent_view_ = guestView(current_);
     // Iterate over a copy: a synchronous transport may call back into the host while sending.

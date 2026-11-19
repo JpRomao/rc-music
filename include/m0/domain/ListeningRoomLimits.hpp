@@ -19,6 +19,9 @@ inline constexpr std::size_t room_prefetch_items = 3;
 // A guest asks again for a file whose transfer failed at most this many times while its item stays in
 // the window (a new window entry starts over); then the item stays unavailable.
 inline constexpr int room_file_retries = 2;
+// The host drops a guest upload that got no byte from its owner for this long (S12.1). The owner's files go
+// up one after the other on its link, so any of its chunks counts; a file the host is checking never stalls.
+inline constexpr std::int32_t room_upload_stall_ms = 60000;
 inline constexpr std::size_t maximum_nickname_code_points = 32;
 inline constexpr std::size_t maximum_custom_avatar_input_bytes = 2 * 1024 * 1024;
 inline constexpr std::uint32_t avatar_pixels = 256;

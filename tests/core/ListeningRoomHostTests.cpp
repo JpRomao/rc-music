@@ -1684,13 +1684,16 @@ TEST_CASE("room host: an upload above 50 MiB, or not a guest track, is refused b
     // Exactly 50 MiB is allowed: the host asks for the file.
     dj->intent(6, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload(maximum_guest_upload_bytes)});
     REQUIRE(dj->all<RoomFileRequest>() == std::vector<RoomFileRequest>{{upload_sha, 0}});
-    // A second upload of the same file while it is on its way is refused.
+    // The same guest sending the same file again (fix round 1: after its own send failed, say) replaces the
+    // upload on its way: the host asks for the file again and answers nothing for the old request.
     dj->intent(7, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload(maximum_guest_upload_bytes)});
-    REQUIRE(dj->all<RoomIntentRejected>().back() == RoomIntentRejected{7, IntentRejection::InvalidArgument});
+    REQUIRE(dj->all<RoomIntentRejected>().size() == 5);
+    REQUIRE(dj->all<RoomFileRequest>() == std::vector<RoomFileRequest>{{upload_sha, 0}, {upload_sha, 0}});
     // An offer larger than declared is refused and leaves nothing.
     static_cast<void>(dj->link->sendControl(RoomFileOffer{upload_sha, maximum_guest_upload_bytes + 1, 3}));
     REQUIRE(f.uploads.accepted.empty());
-    REQUIRE(dj->all<RoomIntentRejected>().back() == RoomIntentRejected{6, IntentRejection::InvalidArgument});
+    REQUIRE(dj->all<RoomIntentRejected>().size() == 6);
+    REQUIRE(dj->all<RoomIntentRejected>().back() == RoomIntentRejected{7, IntentRejection::InvalidArgument});
     REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
 }
 
@@ -1881,6 +1884,174 @@ TEST_CASE("room host: an upload into a full room queue is refused", "[core][list
     REQUIRE(findItem(f.host->snapshot(), upload_sha) != std::nullopt);
     REQUIRE(dj->all<RoomIntentRejected>() == std::vector<RoomIntentRejected>{{1, IntentRejection::QueueFull}});
     REQUIRE(f.uploads.discarded == std::vector<std::string>{other.content_sha256});
+}
+
+// S12.1 fix round 1: an upload nobody feeds (a guest that never answers the request, or stops mid-file) ends
+// after room_upload_stall_ms without a byte from its owner, and the same file can be sent again.
+TEST_CASE("room host: an upload with no bytes for room_upload_stall_ms is dropped and can be sent again",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    const auto watches = [&f] {
+        return std::count_if(f.scheduled.begin(), f.scheduled.end(),
+                             [](const auto& task) { return task.first == room_upload_stall_ms; });
+    };
+    REQUIRE(room_upload_stall_ms == 60000);
+    dj->intent(40, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    REQUIRE(watches() == 1);
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{upload_sha, 5000, 77}));
+    static_cast<void>(dj->link->sendMedia(chunk(77, 0, 1000)));
+    const auto transfer = f.uploads.accepted.back().transfer_id;
+    // Bytes came in during the period: the watch goes on.
+    f.runScheduled();
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+    REQUIRE(watches() == 1);
+    // A whole period without a byte: dropped (UnknownItem, the host no longer has it) and nothing stays.
+    f.runScheduled();
+    REQUIRE(dj->all<RoomIntentRejected>() == std::vector<RoomIntentRejected>{{40, IntentRejection::UnknownItem}});
+    REQUIRE(std::ranges::find(f.uploads.abandoned, transfer) != f.uploads.abandoned.end());
+    REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
+    REQUIRE(watches() == 0);
+    // The same file can be sent again at once.
+    dj->intent(41, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    REQUIRE(dj->all<RoomFileRequest>().size() == 2);
+    REQUIRE(dj->all<RoomIntentRejected>().size() == 1);
+}
+
+// A guest's files go up one after the other on its link: bytes of any of its uploads keep all of them alive,
+// and a file being checked is the host's own work, never a stall.
+TEST_CASE("room host: an upload waiting behind another of the same guest, or being checked, is not dropped",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    f.probe.deferred = true;
+    const auto other = declaredUpload(5000, std::string(63, '0') + "8");
+    dj->intent(40, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    dj->intent(41, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = other});
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{upload_sha, 5000, 77}));
+    for (std::uint64_t period = 0; period < 3; ++period) {
+        static_cast<void>(dj->link->sendMedia(chunk(77, period * 1000, 1000)));
+        f.runScheduled();
+    }
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+    f.uploads.complete(upload_sha);
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{other.content_sha256, 5000, 78}));
+    static_cast<void>(dj->link->sendMedia(chunk(78, 0, 5000)));
+    f.uploads.complete(other.content_sha256);
+    REQUIRE(f.probe.probed.size() == 2);
+    f.runScheduled();
+    f.runScheduled();
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+    f.probe.completeAll();
+    REQUIRE(findItem(f.host->snapshot(), upload_sha).has_value());
+    REQUIRE(findItem(f.host->snapshot(), other.content_sha256).has_value());
+}
+
+// S12.1 fix round 1: the upload cache only holds files of the queue (its quota would otherwise run out).
+TEST_CASE("room host: a guest track that leaves the queue frees its file unless another item or upload uses it",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    uploadUntilComplete(f, *dj, 40);
+    const auto first = findItem(f.host->snapshot(), upload_sha);
+    REQUIRE(first.has_value());
+
+    // The same file again is in the cache already: checked again, not sent again.
+    f.probe.deferred = true;
+    dj->intent(41, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    REQUIRE(dj->all<RoomFileRequest>().size() == 1);
+    // The first item leaves while that upload is being checked: the file stays for it.
+    REQUIRE(f.player.remove(LocalQueueOccurrenceId{first->id}));
+    REQUIRE(findItem(f.host->snapshot(), upload_sha) == std::nullopt);
+    REQUIRE(f.uploads.discarded.empty());
+    f.probe.completeAll();
+    const auto second = findItem(f.host->snapshot(), upload_sha);
+    REQUIRE(second.has_value());
+    REQUIRE(second->id != first->id);
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+
+    // A copy of the same file stays while one of two items leaves.
+    f.probe.deferred = false;
+    dj->intent(42, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    const auto queue = f.host->snapshot().queue;
+    REQUIRE(std::count_if(queue.begin(), queue.end(),
+                          [](const RoomItem& item) { return item.content_sha256 == upload_sha; }) == 2);
+    REQUIRE(f.player.remove(LocalQueueOccurrenceId{second->id}));
+    REQUIRE(f.uploads.discarded.empty());
+    // The last item using it leaves: the file goes.
+    const auto third = findItem(f.host->snapshot(), upload_sha);
+    REQUIRE(third.has_value());
+    REQUIRE(f.player.remove(LocalQueueOccurrenceId{third->id}));
+    REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
+    REQUIRE(f.player.paths().size() == 3);
+}
+
+// S12.1 fix round 1: a file already in the upload cache is not sent again, so its size is the cached file's:
+// a declaration that does not match it is refused. Anyone with the permission who declares the right hash
+// and size may queue it again (as with a duplicate from the catalog), and owns that new item.
+TEST_CASE("room host: a file already in the upload cache keeps its real size; another declared size is refused",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    auto listener = f.join("fp-listener", "Lia");
+    uploadUntilComplete(f, *dj, 40);
+    REQUIRE(f.uploads.lookup(upload_sha).size_bytes == 5000);
+    REQUIRE(f.host->setOverride("fp-listener", RoomPermission::UploadOwnTracks, true));
+    const auto version = f.host->snapshot().version;
+
+    listener->intent(1, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload(4000)});
+    REQUIRE(listener->all<RoomIntentRejected>() ==
+            std::vector<RoomIntentRejected>{{1, IntentRejection::InvalidArgument}});
+    REQUIRE(listener->all<RoomFileRequest>().empty());
+    REQUIRE(f.host->snapshot().version == version);
+    // Refused, but the file stays: the DJ's item still uses it.
+    REQUIRE(f.uploads.discarded.empty());
+
+    listener->intent(2, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload(5000)});
+    REQUIRE(listener->all<RoomIntentRejected>().size() == 1);
+    const auto queue = f.host->snapshot().queue;
+    const auto copy = std::find_if(queue.begin(), queue.end(), [](const RoomItem& item) {
+        return item.content_sha256 == upload_sha && item.owner_fingerprint == "fp-listener";
+    });
+    REQUIRE(copy != queue.end());
+    REQUIRE(copy->size_bytes == 5000);
+    REQUIRE(copy->added_by == "Lia");
+}
+
+// S12.1 fix round 1: a permission taken away mid-upload stops it; the file never joins the queue.
+TEST_CASE("room host: taking the upload permission away stops the guest's uploads",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    dj->intent(40, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{upload_sha, 5000, 77}));
+    static_cast<void>(dj->link->sendMedia(chunk(77, 0, 1000)));
+    const auto transfer = f.uploads.accepted.back().transfer_id;
+    REQUIRE(f.host->setOverride("fp-dj", RoomPermission::UploadOwnTracks, false));
+    REQUIRE(dj->all<RoomIntentRejected>() == std::vector<RoomIntentRejected>{{40, IntentRejection::MissingPermission}});
+    REQUIRE(std::ranges::find(f.uploads.abandoned, transfer) != f.uploads.abandoned.end());
+    REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
+
+    // Taken away while the file is being checked: it never joins the queue.
+    REQUIRE(f.host->setOverride("fp-dj", RoomPermission::UploadOwnTracks, std::nullopt));
+    f.probe.deferred = true;
+    uploadUntilComplete(f, *dj, 41);
+    REQUIRE(f.probe.probed.size() == 1);
+    REQUIRE(f.host->setOverride("fp-dj", RoomPermission::UploadOwnTracks, false));
+    REQUIRE(dj->all<RoomIntentRejected>().back() == RoomIntentRejected{41, IntentRejection::MissingPermission});
+    f.probe.completeAll();
+    REQUIRE(findItem(f.host->snapshot(), upload_sha) == std::nullopt);
+    REQUIRE(f.player.paths().size() == 3);
 }
 
 } // namespace music_player::m0::test

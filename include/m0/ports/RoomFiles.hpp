@@ -39,6 +39,8 @@ struct RoomFileStatus final {
     std::uint64_t resume_offset{};
     // The cached file when complete.
     std::filesystem::path file{};
+    // Its size in bytes when complete (S12.1: the host's upload cache, for a file it is not sent again).
+    std::uint64_t size_bytes{};
     bool operator==(const RoomFileStatus&) const = default;
 };
 
@@ -69,8 +71,9 @@ class RoomFileInbox {
     virtual void markPlayed(const std::string& sha256) = 0;
     // Leaving the room: abandons every transfer in flight, then deletes every cached file.
     virtual void purge() = 0;
-    // S12.1, the host's upload cache: a guest file it refused. Abandons any transfer of sha256 and deletes
-    // its partial and complete file, so a refused upload leaves nothing behind.
+    // S12.1, the host's upload cache: a guest file it refused, or one no queued guest item uses any more.
+    // Abandons any transfer of sha256 and deletes its partial and complete file, so nothing is left behind (a
+    // complete file still open elsewhere goes later, when the cache needs the room).
     virtual void discard(const std::string& sha256) = 0;
 
     std::function<void(std::string /*sha256*/, std::filesystem::path /*file*/)> onComplete;

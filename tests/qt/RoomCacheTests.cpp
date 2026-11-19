@@ -102,6 +102,36 @@ class RoomCacheTests final : public QObject {
         QVERIFY(QFileInfo::exists(file_a));
     }
 
+    // S12.1 fix round 1: remove() drops the complete file and the partial one of that hash. A complete file
+    // still open elsewhere (Windows: the player or an outgoing transfer closing it) cannot go yet: it stays
+    // marked as played, so reserve() evicts it once it is closed instead of keeping it until the room ends.
+    void removeDeletesBothFilesOrLeavesAnOpenFileEvictable() {
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        RoomCache cache(config.path());
+        QVERIFY(QDir().mkpath(cache.directory()));
+        const auto file_a = QDir(cache.directory()).filePath(QString::fromStdString(sha_a));
+        QVERIFY(writeFile(file_a, 1000));
+        QVERIFY(writeFile(*cache.partialPathFor(sha_a), 10));
+        cache.remove(sha_a);
+        QVERIFY(!QFileInfo::exists(file_a));
+        QVERIFY(!QFileInfo::exists(*cache.partialPathFor(sha_a)));
+
+#ifndef Q_OS_WIN
+        QSKIP("an open file can be deleted here; only Windows keeps it");
+#else
+        QVERIFY(writeFile(file_a, 1000));
+        {
+            QFile open(file_a);
+            QVERIFY(open.open(QIODevice::ReadOnly));
+            cache.remove(sha_a);
+            QVERIFY(QFileInfo::exists(file_a));
+        }
+        QVERIFY(cache.reserve(room_cache_quota_bytes));
+        QVERIFY(!QFileInfo::exists(file_a));
+#endif
+    }
+
     // The file name comes only from a validated hash.
     void refusesHashesThatAreNotLowercaseHex() {
         QTemporaryDir config;

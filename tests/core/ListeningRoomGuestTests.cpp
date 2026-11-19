@@ -1326,6 +1326,43 @@ TEST_CASE("room guest: a refused upload ends with its reason and never as a plai
             std::vector<std::pair<std::uint64_t, IntentRejection>>{{next, IntentRejection::MissingPermission}});
 }
 
+// S12.1 fix round 1: a file the guest can no longer read (moved, deleted, its drive removed) ends the upload
+// at once instead of leaving it "in progress" until the guest leaves.
+TEST_CASE("room guest: an upload whose file cannot be sent ends as failed",
+          "[core][listening-room][room-guest][room-uploads]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(state(1, uploadPermission()));
+    REQUIRE(f.guest->uploadTrack("music/sumiu.mp3"));
+    const auto sha = testing::FakeRoomTrackCatalog::fakeSha256("music/sumiu.mp3");
+    REQUIRE(f.guest->uploadsInProgress() == 1);
+    f.upload_outbox.accepts = false;
+    f.send(RoomFileRequest{sha, 0});
+    REQUIRE(f.uploads_ended == std::vector<GuestUploadResult>{GuestUploadResult::Failed});
+    REQUIRE(f.guest->uploadsInProgress() == 0);
+    REQUIRE(f.upload_outbox.cancelled.empty());
+    // The host's later answer for it changes nothing.
+    f.send(RoomIntentRejected{sentIntents(f).back().request_id, IntentRejection::UnknownItem});
+    REQUIRE(f.uploads_ended.size() == 1);
+    REQUIRE(f.rejected.empty());
+}
+
+// S12.1 fix round 1: the host drops an upload that stalled or that the guest sent again (UnknownItem): that is
+// a failed send, not invalid audio.
+TEST_CASE("room guest: an upload the host dropped ends as failed, not as invalid audio",
+          "[core][listening-room][room-guest][room-uploads]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(state(1, uploadPermission()));
+    REQUIRE(f.guest->uploadTrack("music/lenta.mp3"));
+    f.send(RoomIntentRejected{sentIntents(f).back().request_id, IntentRejection::UnknownItem});
+    REQUIRE(f.uploads_ended == std::vector<GuestUploadResult>{GuestUploadResult::Failed});
+    REQUIRE(f.rejected.empty());
+    REQUIRE(f.guest->uploadsInProgress() == 0);
+}
+
 TEST_CASE("room guest: files a local import refuses, or above 50 MiB, never leave the guest",
           "[core][listening-room][room-guest][room-uploads]") {
     GuestFixture f;

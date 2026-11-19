@@ -86,6 +86,7 @@ class FakeRoomFileInbox final : public RoomFileInbox {
         log.push_back("discard:" + sha256.substr(0, 4));
         discarded.push_back(sha256);
         files.erase(sha256);
+        sizes.erase(sha256);
         partial.erase(sha256);
     }
 
@@ -95,9 +96,14 @@ class FakeRoomFileInbox final : public RoomFileInbox {
         for (auto& [sha, done] : pending)
             done(lookup(sha));
     }
-    // The receiver finished: the file is in the cache.
+    // The receiver finished: the file is in the cache, with the size of the last offer accepted for it.
     void complete(const std::string& sha256) {
         files[sha256] = std::filesystem::path{"cache"} / sha256;
+        for (auto offer = accepted.rbegin(); offer != accepted.rend(); ++offer)
+            if (offer->content_sha256 == sha256) {
+                sizes[sha256] = offer->size_bytes;
+                break;
+            }
         if (onComplete)
             onComplete(sha256, files[sha256]);
     }
@@ -108,8 +114,10 @@ class FakeRoomFileInbox final : public RoomFileInbox {
             onFailed(sha256, transfer_id, failure);
     }
     [[nodiscard]] RoomFileStatus lookup(const std::string& sha256) const {
-        if (const auto found = files.find(sha256); found != files.end())
-            return {true, 0, found->second};
+        if (const auto found = files.find(sha256); found != files.end()) {
+            const auto size = sizes.find(sha256);
+            return {true, 0, found->second, size == sizes.end() ? 0 : size->second};
+        }
         if (const auto found = partial.find(sha256); found != partial.end())
             return {false, found->second, {}};
         return {};
@@ -117,6 +125,7 @@ class FakeRoomFileInbox final : public RoomFileInbox {
 
     bool deferred{false};
     std::map<std::string, std::filesystem::path> files;
+    std::map<std::string, std::uint64_t> sizes;
     std::map<std::string, std::uint64_t> partial;
     std::vector<std::string> log;
     std::vector<RoomFileOffer> accepted;

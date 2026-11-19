@@ -4,6 +4,7 @@
 #include "adapters/RoomFileTransfer.hpp"
 #include "m0/domain/ListeningRoomLimits.hpp"
 
+#include <QFileInfo>
 #include <QMetaObject>
 
 #include <map>
@@ -80,6 +81,7 @@ void QtRoomFileInbox::status(const std::string& sha256, std::function<void(RoomF
         if (const auto file = worker.cache.pathFor(sha256)) {
             status.complete = true;
             status.file = std::filesystem::path{file->toStdU16String()};
+            status.size_bytes = static_cast<std::uint64_t>(QFileInfo(*file).size());
         } else if (const auto resume = worker.receiver.resumeRequest(sha256)) {
             status.resume_offset = resume->offset;
         }

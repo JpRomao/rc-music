@@ -43,6 +43,22 @@ GuestRoomEnd byeEnd(const RoomByeReason reason) {
     return {GuestEndReason::Closed, RoomLinkFailure::Closed};
 }
 
+// How the host's rejection of an upload reads to the guest. UnknownItem: the host dropped it (nothing arrived
+// for room_upload_stall_ms).
+GuestUploadResult uploadResultOf(const IntentRejection reason) {
+    switch (reason) {
+    case IntentRejection::MissingPermission:
+        return GuestUploadResult::MissingPermission;
+    case IntentRejection::QueueFull:
+        return GuestUploadResult::QueueFull;
+    case IntentRejection::InvalidArgument:
+        return GuestUploadResult::InvalidAudio;
+    case IntentRejection::NotAdmitted:
+    case IntentRejection::UnknownItem:
+        break;
+    }
+    return GuestUploadResult::Failed;
+}
 } // namespace
 
 // Callbacks handed to the connector, links and the scheduler hold a weak reference to this token, so
@@ -224,8 +240,13 @@ void ListeningRoomGuest::onUploadRequest(const RoomFileRequest& request) {
         upload_files_->cancel(*link, *found->transfer_id);
     const auto transfer_id = ++next_upload_transfer_id_;
     found->transfer_id = transfer_id;
-    if (!upload_files_->send(link, found->file, found->sha256, transfer_id, request.offset))
-        found->transfer_id.reset();
+    if (upload_files_->send(link, found->file, found->sha256, transfer_id, request.offset))
+        return;
+    // The file can no longer be read (moved, deleted, its drive removed): the upload ends here. The host
+    // drops its side once nothing arrives for room_upload_stall_ms.
+    found->transfer_id.reset();
+    ended_upload_requests_.insert(found->request_id);
+    endUpload(found->token, GuestUploadResult::Failed);
 }
 
 void ListeningRoomGuest::endUpload(const std::uint64_t token, const GuestUploadResult result) {
@@ -242,6 +263,7 @@ void ListeningRoomGuest::endUpload(const std::uint64_t token, const GuestUploadR
 
 // A dropped link ends every upload (report); leaving or the end of the room drops them without a word.
 void ListeningRoomGuest::stopUploads(const bool report) {
+    ended_upload_requests_.clear();
     auto stopped = std::exchange(uploads_, {});
     if (!report)
         return;
@@ -319,11 +341,9 @@ void ListeningRoomGuest::onControl(const std::uint64_t link_id, const RoomContro
             return item.request_id != 0 && item.request_id == rejected->request_id;
         });
         if (upload != uploads_.end()) {
-            const auto outcome = rejected->reason == IntentRejection::MissingPermission
-                                     ? GuestUploadResult::MissingPermission
-                                 : rejected->reason == IntentRejection::QueueFull ? GuestUploadResult::QueueFull
-                                                                                  : GuestUploadResult::InvalidAudio;
-            endUpload(upload->token, outcome);
+            endUpload(upload->token, uploadResultOf(rejected->reason));
+        } else if (ended_upload_requests_.erase(rejected->request_id) > 0) {
+            // An upload that already ended here.
         } else if (onRejected) {
             onRejected(rejected->request_id, rejected->reason);
         }
