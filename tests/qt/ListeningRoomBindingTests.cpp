@@ -13,6 +13,7 @@
 #include <QCryptographicHash>
 #include <QFile>
 #include <QObject>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -373,6 +374,31 @@ class ListeningRoomBindingTests final : public QObject {
         QVERIFY(ana->sendControl(RoomBye{RoomByeReason::Closed}));
         QCOMPARE(binding->memberCount(), 1);
         QCOMPARE(row(0).data(RoomMembersModel::HasSyncDriftRole).toBool(), false);
+    }
+
+    void aChangedSyncDifferenceUpdatesTheRowWithoutResettingTheList() {
+        Fixture f;
+        auto binding = f.make();
+        QVERIFY(binding->openRoom(5, false));
+        const auto ana = f.arrive("fp-ana", "Ana");
+        QVERIFY(binding->approve(QStringLiteral("fp-ana")));
+        QVERIFY(ana->sendControl(RoomDriftReport{-35}));
+
+        QSignalSpy resets(binding->members(), &QAbstractItemModel::modelReset);
+        QSignalSpy changes(binding->members(), &QAbstractItemModel::dataChanged);
+        QVERIFY(ana->sendControl(RoomDriftReport{12}));
+        QCOMPARE(resets.size(), 0);
+        QCOMPARE(changes.size(), 1);
+        QCOMPARE(changes.front().at(0).toModelIndex().row(), 1);
+        QCOMPARE(changes.front().at(1).toModelIndex().row(), 1);
+        const auto roles = changes.front().at(2).value<QList<int>>();
+        QVERIFY(roles.contains(RoomMembersModel::HasSyncDriftRole));
+        QVERIFY(roles.contains(RoomMembersModel::SyncDriftMsRole));
+        QCOMPARE(binding->members()->index(1, 0).data(RoomMembersModel::SyncDriftMsRole).toLongLong(), qlonglong{12});
+
+        // Someone leaving changes the members: that is a reset.
+        QVERIFY(ana->sendControl(RoomBye{RoomByeReason::Closed}));
+        QCOMPARE(resets.size(), 1);
     }
 
     void theGuestFollowsItsRoomAndExplainsWhyItEnded() {

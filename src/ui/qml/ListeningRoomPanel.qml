@@ -565,7 +565,8 @@ PageSurface {
                 Layout.fillWidth: true
                 spacing: root.contract.spacingUnit
                 Accessible.role: Accessible.ListItem
-                Accessible.name: memberName.text + (member.hasSyncDrift ? ", " + memberDrift.text : "")
+                Accessible.name: memberName.text
+                Accessible.description: member.hasSyncDrift ? memberDrift.text : ""
                 ListenerAvatar {
                     source: member.avatarSource
                     size: 32

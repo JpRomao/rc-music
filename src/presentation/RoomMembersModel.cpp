@@ -50,9 +50,23 @@ QHash<int, QByteArray> RoomMembersModel::roleNames() const {
 void RoomMembersModel::replace(std::vector<RoomMember> members, const std::string& host_fingerprint,
                                const std::string& self_fingerprint,
                                std::map<std::string, std::int64_t, std::less<>> sync_drifts) {
-    if (members == members_ && host_fingerprint == host_fingerprint_ && self_fingerprint == self_fingerprint_ &&
-        sync_drifts == sync_drifts_)
+    if (members == members_ && host_fingerprint == host_fingerprint_ && self_fingerprint == self_fingerprint_) {
+        // Only the sync differences may differ: update the rows, keep the delegates (and focus) alive.
+        if (sync_drifts == sync_drifts_)
+            return;
+        auto previous = std::exchange(sync_drifts_, std::move(sync_drifts));
+        for (std::size_t row = 0; row < members_.size(); ++row) {
+            const auto& fingerprint = members_[row].fingerprint;
+            const auto before = previous.find(fingerprint);
+            const auto after = sync_drifts_.find(fingerprint);
+            const bool had = before != previous.end();
+            const bool has = after != sync_drifts_.end();
+            if (had != has || (had && before->second != after->second))
+                emit dataChanged(index(static_cast<int>(row)), index(static_cast<int>(row)),
+                                 {HasSyncDriftRole, SyncDriftMsRole});
+        }
         return;
+    }
     const bool count_changed = members.size() != members_.size();
     beginResetModel();
     members_ = std::move(members);
