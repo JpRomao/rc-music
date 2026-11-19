@@ -351,6 +351,7 @@ void ListeningRoomBinding::startHost() {
         .files = dependencies_.file_outbox,
     });
     host_->onChanged = [this](const RoomSnapshot&) { hostChanged(); };
+    host_->onDriftsChanged = [this] { refreshMembers(); };
     host_->onJoinRequest = [this](const RoomMember& member) { hostJoinRequest(member); };
     host_->onEndpointFailed = [this](const RoomLinkFailure failure) { hostEndpointFailed(failure); };
     if (dependencies_.set_room_play_order)
@@ -640,7 +641,7 @@ void ListeningRoomBinding::refreshMembers() {
         std::vector<RoomMember> pending;
         for (auto& member : host_->snapshot().members)
             (member.state == MemberState::Pending ? pending : admitted).push_back(std::move(member));
-        members_.replace(std::move(admitted), self, self);
+        members_.replace(std::move(admitted), self, self, host_->memberDrifts());
         pending_.replace(std::move(pending), self, self);
         return;
     }

@@ -33,6 +33,7 @@ QtObject {
     readonly property string approveName: qsTr("Aceitar %1")
     readonly property string rejectName: qsTr("Recusar %1")
     readonly property string hostTag: qsTr("anfitrião")
+    readonly property string syncDrift: qsTr("diferença de sincronia: %1 ms")
     readonly property string selfTag: qsTr("você")
     readonly property string revoke: qsTr("Revogar convite")
     readonly property string close: qsTr("Fechar sala")

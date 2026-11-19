@@ -82,6 +82,7 @@ struct HostFixture final {
             .files = &outbox,
         });
         host->onJoinRequest = [this](const RoomMember& member) { join_requests.push_back(member); };
+        host->onDriftsChanged = [this] { ++drift_changes; };
     }
     std::unique_ptr<Guest> connect(const std::string& fingerprint) {
         auto guest = std::make_unique<Guest>();
@@ -119,6 +120,7 @@ struct HostFixture final {
     std::int64_t now{10'000};
     std::uint8_t next_random{1};
     std::vector<RoomMember> join_requests;
+    int drift_changes{0};
     std::vector<std::pair<std::int64_t, std::function<void()>>> scheduled;
     std::unique_ptr<ListeningRoomHost> host;
 };
@@ -957,5 +959,79 @@ TEST_CASE("room host: lyrics above maximum_room_lyrics_bytes are not sent",
     dj->intent(1, RoomIntent{.kind = RoomIntentKind::Next});
     REQUIRE(dj->all<RoomLyrics>() ==
             std::vector<RoomLyrics>{RoomLyrics{f.player.occurrenceAt(1), std::string(maximum_room_lyrics_bytes, 'b')}});
+}
+
+TEST_CASE("room host: keeps the latest sync difference of each admitted member", "[core][listening-room][room-host]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    auto listener = f.join("fp-listener", "Lia");
+    REQUIRE(f.host->memberDrifts().empty());
+
+    static_cast<void>(dj->link->sendControl(RoomDriftReport{-42}));
+    static_cast<void>(listener->link->sendControl(RoomDriftReport{15}));
+    static_cast<void>(dj->link->sendControl(RoomDriftReport{7}));
+    REQUIRE(f.host->memberDrifts() ==
+            std::map<std::string, std::int64_t, std::less<>>{{"fp-dj", 7}, {"fp-listener", 15}});
+    REQUIRE(f.drift_changes == 3);
+
+    // The same value again changes nothing; the limits themselves are valid.
+    static_cast<void>(dj->link->sendControl(RoomDriftReport{7}));
+    REQUIRE(f.drift_changes == 3);
+    static_cast<void>(dj->link->sendControl(RoomDriftReport{room_drift_report_limit_ms}));
+    REQUIRE(f.host->memberDrifts().at("fp-dj") == room_drift_report_limit_ms);
+    static_cast<void>(dj->link->sendControl(RoomDriftReport{-room_drift_report_limit_ms}));
+    REQUIRE(f.host->memberDrifts().at("fp-dj") == -room_drift_report_limit_ms);
+
+    // Absurd values are ignored: the previous one stays.
+    static_cast<void>(dj->link->sendControl(RoomDriftReport{room_drift_report_limit_ms + 1}));
+    static_cast<void>(dj->link->sendControl(RoomDriftReport{-room_drift_report_limit_ms - 1}));
+    REQUIRE(f.host->memberDrifts().at("fp-dj") == -room_drift_report_limit_ms);
+}
+
+TEST_CASE("room host: a pending person's sync difference is ignored", "[core][listening-room][room-host]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto stranger = f.join("fp-new", "Caio");
+    static_cast<void>(stranger->link->sendControl(RoomDriftReport{9}));
+    REQUIRE(f.host->memberDrifts().empty());
+    REQUIRE(f.host->approve("fp-new"));
+    REQUIRE(f.host->memberDrifts().empty());
+    static_cast<void>(stranger->link->sendControl(RoomDriftReport{9}));
+    REQUIRE(f.host->memberDrifts().at("fp-new") == 9);
+}
+
+TEST_CASE("room host: the sync difference goes away with the person", "[core][listening-room][room-host]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    auto listener = f.join("fp-listener", "Lia");
+    auto third = f.join("fp-new", "Caio");
+    REQUIRE(f.host->approve("fp-new"));
+    for (auto* guest : {dj.get(), listener.get(), third.get()})
+        static_cast<void>(guest->link->sendControl(RoomDriftReport{11}));
+    REQUIRE(f.host->memberDrifts().size() == 3);
+
+    // A dropped link: the value is stale at once, before the reconnect window ends.
+    dj->link->close();
+    REQUIRE(f.isMember("fp-dj"));
+    REQUIRE_FALSE(f.host->memberDrifts().contains("fp-dj"));
+
+    static_cast<void>(listener->link->sendControl(RoomBye{RoomByeReason::Closed}));
+    REQUIRE_FALSE(f.host->memberDrifts().contains("fp-listener"));
+
+    REQUIRE(f.host->kick("fp-new", false));
+    REQUIRE(f.host->memberDrifts().empty());
+
+    // Coming back starts without a value; closing the room forgets everything.
+    auto back = f.join("fp-dj");
+    REQUIRE(f.host->memberDrifts().empty());
+    static_cast<void>(back->link->sendControl(RoomDriftReport{3}));
+    REQUIRE(f.host->memberDrifts().size() == 1);
+    f.host->close();
+    REQUIRE(f.host->memberDrifts().empty());
 }
 } // namespace music_player::m0::test

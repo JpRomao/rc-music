@@ -394,6 +394,16 @@ void ListeningRoomHost::onLinkControl(const std::shared_ptr<RoomLink>& link, Roo
     } else if (const auto* ping = std::get_if<RoomClockPing>(&message)) {
         if (memberState(connection->fingerprint) == MemberState::Admitted)
             static_cast<void>(link->sendControl(RoomClockPong{ping->sent_local_ms, host_clock_ms_()}));
+    } else if (const auto* report = std::get_if<RoomDriftReport>(&message)) {
+        if (memberState(connection->fingerprint) == MemberState::Admitted &&
+            report->drift_ms >= -room_drift_report_limit_ms && report->drift_ms <= room_drift_report_limit_ms) {
+            const auto [entry, inserted] = drifts_.try_emplace(connection->fingerprint, report->drift_ms);
+            if (inserted || entry->second != report->drift_ms) {
+                entry->second = report->drift_ms;
+                if (onDriftsChanged)
+                    onDriftsChanged();
+            }
+        }
     } else if (const auto* request = std::get_if<RoomFileRequest>(&message)) {
         if (memberState(connection->fingerprint) == MemberState::Admitted)
             onFileRequest(*find(link.get()), *request);
@@ -405,7 +415,7 @@ void ListeningRoomHost::onLinkControl(const std::shared_ptr<RoomLink>& link, Roo
         room_->leave(fingerprint);
         static_cast<void>(refresh());
     }
-    // A second hello, other file messages (S12) and drift reports (S9.2) are ignored here.
+    // A second hello and other file messages (S12) are ignored here.
 }
 
 void ListeningRoomHost::onLinkClosed(const std::shared_ptr<RoomLink>& link) {
@@ -416,6 +426,7 @@ void ListeningRoomHost::onLinkClosed(const std::shared_ptr<RoomLink>& link) {
     const bool greeted = connection->greeted;
     std::erase_if(connections_, [&](const Connection& c) { return c.link == link; });
     forgetFiles(*link);
+    forgetDrift(fingerprint);
     if (!greeted || !room_)
         return;
     if (memberState(fingerprint) == MemberState::Admitted) {
@@ -730,7 +741,22 @@ void ListeningRoomHost::sendLyrics(Connection& connection) const {
         static_cast<void>(link->sendControl(RoomLyrics{id, found->second.lyrics_lrc}));
 }
 
+const std::map<std::string, std::int64_t, std::less<>>& ListeningRoomHost::memberDrifts() const noexcept {
+    return drifts_;
+}
+
+void ListeningRoomHost::forgetDrift(const std::string_view fingerprint) {
+    const auto found = drifts_.find(fingerprint);
+    if (found == drifts_.end())
+        return;
+    drifts_.erase(found);
+    if (onDriftsChanged)
+        onDriftsChanged();
+}
+
 void ListeningRoomHost::drop(const std::shared_ptr<RoomLink>& link) {
+    if (const auto* connection = find(link.get()))
+        forgetDrift(connection->fingerprint);
     std::erase_if(connections_, [&](const Connection& c) { return c.link == link; });
     forgetFiles(*link);
     link->close();
@@ -859,6 +885,11 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
     for (const auto& guest : guests)
         static_cast<void>(player_.remove(LocalQueueOccurrenceId{guest.first}));
     guest_files_.clear();
+    if (!drifts_.empty()) {
+        drifts_.clear();
+        if (onDriftsChanged)
+            onDriftsChanged();
+    }
     serve_scheduled_ = false;
     descriptions_.clear();
     describing_.clear();

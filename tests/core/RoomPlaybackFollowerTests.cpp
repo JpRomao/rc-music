@@ -469,4 +469,30 @@ TEST_CASE("Holding a following player cancels its pending work and leaves the pl
     CHECK(h.backend.unloads == 0);
 }
 
+TEST_CASE("The follower exposes its latest drift only while an evaluation is valid", "[room][follower]") {
+    Harness h;
+    CHECK_FALSE(h.follower.lastDriftMs().has_value());
+    followRunningTrack(h);
+    h.tickFor(1);
+    CHECK(h.follower.lastDriftMs() == std::optional<std::int64_t>{0});
+
+    h.backend.jump(60);
+    h.tickFor(1);
+    CHECK(h.follower.lastDriftMs() == std::optional<std::int64_t>{60});
+
+    SECTION("a stale position is no evaluation") {
+        h.backend.position_frozen = true;
+        h.tickFor(1);
+        CHECK_FALSE(h.follower.lastDriftMs().has_value());
+    }
+    SECTION("held, and leaving the room, clear it") {
+        h.follower.setHeld(true);
+        CHECK_FALSE(h.follower.lastDriftMs().has_value());
+        h.follower.setHeld(false);
+        h.tickFor(1);
+        h.follower.stop();
+        CHECK_FALSE(h.follower.lastDriftMs().has_value());
+    }
+}
+
 } // namespace music_player::m0::test

@@ -64,7 +64,10 @@ void RoomPlaybackFollower::apply(const RoomPlayback& playback, std::optional<std
     enter();
 }
 
+std::optional<std::int64_t> RoomPlaybackFollower::lastDriftMs() const noexcept { return last_drift_ms_; }
+
 void RoomPlaybackFollower::tick() {
+    last_drift_ms_.reset();
     if (held_ || !playback_ || !playback_->playing || !file_ || start_pending_ || retry_pending_ || !ownsBackend())
         return;
     const auto& snapshot = backend_.snapshot();
@@ -82,6 +85,7 @@ void RoomPlaybackFollower::tick() {
     if (updated && local_clock_ms_() - *updated > room_drift_stale_position_ms)
         return; // a stalled main thread kept the position from moving: not a real drift
     const auto drift = estimatedPositionMs() - *expected;
+    last_drift_ms_ = drift;
     if (nudge_direction_ != 0 && (magnitude(drift) <= nudge_ms_ / 2 || (drift > 0) == (nudge_direction_ > 0)))
         endNudge();
     // S1's thresholds are exclusive ("acima de"); classifyDrift's are inclusive.
@@ -136,6 +140,7 @@ void RoomPlaybackFollower::stop() {
 }
 
 void RoomPlaybackFollower::reset() {
+    last_drift_ms_.reset();
     ++epoch_;
     start_pending_ = false;
     retry_pending_ = false;

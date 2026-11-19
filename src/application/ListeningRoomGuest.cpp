@@ -317,6 +317,10 @@ void ListeningRoomGuest::ping(const std::uint64_t link_id) {
     // Keep the link alive even if the send makes the host answer synchronously.
     const auto link = link_;
     static_cast<void>(link->sendControl(RoomClockPing{local_clock_ms_()}));
+    // The follower's latest drift, when it has one (S9.2); an absurd one is clamped to what the host takes.
+    if (const auto drift = follower_->lastDriftMs())
+        static_cast<void>(link->sendControl(
+            RoomDriftReport{std::clamp(*drift, -room_drift_report_limit_ms, room_drift_report_limit_ms)}));
     const std::weak_ptr<Alive> alive = alive_;
     schedule_(room_clock_resample_ms, [alive, link_id] {
         if (const auto self = alive.lock())

@@ -560,10 +560,12 @@ PageSurface {
                 required property url avatarSource
                 required property bool isHost
                 required property bool isSelf
+                required property bool hasSyncDrift
+                required property int syncDriftMs
                 Layout.fillWidth: true
                 spacing: root.contract.spacingUnit
                 Accessible.role: Accessible.ListItem
-                Accessible.name: memberName.text
+                Accessible.name: memberName.text + (member.hasSyncDrift ? ", " + memberDrift.text : "")
                 ListenerAvatar {
                     source: member.avatarSource
                     size: 32
@@ -578,6 +580,16 @@ PageSurface {
                     font.family: root.contract.bodyFontFamily
                     font.pixelSize: root.contract.typeBody
                     color: root.contract.textPrimaryColor
+                }
+                Text {
+                    id: memberDrift
+                    objectName: "room-member-sync-drift"
+                    visible: member.hasSyncDrift
+                    text: roomText.syncDrift.arg(member.syncDriftMs > 0 ? "+" + member.syncDriftMs : member.syncDriftMs)
+                    textFormat: Text.PlainText
+                    font.family: root.contract.bodyFontFamily
+                    font.pixelSize: root.contract.typeBody
+                    color: root.contract.textSecondaryColor
                 }
             }
         }

@@ -42,6 +42,11 @@ inline constexpr double room_drift_nudge_rate_delta = 0.01;
 inline constexpr std::int64_t room_drift_nudge_max_ms = 10000;
 inline constexpr std::int64_t room_drift_stale_position_ms = 150;
 inline constexpr std::int32_t room_drift_check_ms = 1000;
+// Sync difference reports (S9.2). A guest sends the follower's latest drift with every clock ping,
+// clamped to +-room_drift_report_limit_ms; the host ignores a report beyond it (an absurd value is no
+// measurement: past the reconnect window the person is gone, or its clock is wrong). Same value as
+// room_reconnect_window_ms; the codec accepts a wider +-60 s.
+inline constexpr std::int64_t room_drift_report_limit_ms = 30000;
 // While the backend is still loading a room file, the guest looks again after this long.
 inline constexpr std::int32_t room_follow_retry_ms = 50;
 // Title, artist and album of a room item, cut at a code point boundary.

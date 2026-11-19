@@ -1074,6 +1074,48 @@ TEST_CASE("room guest: pings the host's clock when admitted and every room_clock
     REQUIRE(g.f.received<RoomClockPing>().size() == 2);
 }
 
+TEST_CASE("room guest: reports the follower's latest drift with each clock ping, only when there is one",
+          "[core][listening-room][room-guest][room-follow]") {
+    FollowingGuest g;
+    g.f.inbox.files[hashOf('a')] = "cache/a";
+    g.f.joinAdmitted();
+    // No evaluation yet: the first ping goes alone.
+    REQUIRE(g.f.received<RoomClockPing>().size() == 1);
+    REQUIRE(g.f.received<RoomDriftReport>().empty());
+    g.answerPing();
+    g.f.send(g.playingQueue(1));
+
+    // The backend does not move, so the guest falls behind the host as time passes.
+    g.f.timers.advance(1'000);
+    g.follower.tick();
+    const auto drift = g.follower.lastDriftMs();
+    REQUIRE(drift.has_value());
+    REQUIRE(*drift < 0);
+    g.f.timers.advance(room_clock_resample_ms);
+    REQUIRE(g.f.received<RoomClockPing>().size() == 2);
+    REQUIRE(g.f.received<RoomDriftReport>() == std::vector{RoomDriftReport{*drift}});
+
+    // Without a valid evaluation (held) the next ping carries no report.
+    g.follower.setHeld(true);
+    g.f.timers.advance(room_clock_resample_ms);
+    REQUIRE(g.f.received<RoomClockPing>().size() == 3);
+    REQUIRE(g.f.received<RoomDriftReport>().size() == 1);
+}
+
+TEST_CASE("room guest: a drift beyond the report limit is clamped to it",
+          "[core][listening-room][room-guest][room-follow]") {
+    FollowingGuest g;
+    g.f.inbox.files[hashOf('a')] = "cache/a";
+    g.f.joinAdmitted();
+    g.answerPing();
+    g.f.send(g.playingQueue(1));
+    g.f.timers.advance(room_drift_report_limit_ms + 5'000);
+    g.follower.tick();
+    REQUIRE(*g.follower.lastDriftMs() < -room_drift_report_limit_ms);
+    g.f.timers.advance(room_clock_resample_ms);
+    REQUIRE(g.f.received<RoomDriftReport>().back() == RoomDriftReport{-room_drift_report_limit_ms});
+}
+
 TEST_CASE("room guest: without a follower it sends no clock pings", "[core][listening-room][room-guest][room-follow]") {
     GuestFixture f;
     f.start();

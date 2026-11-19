@@ -140,7 +140,8 @@ struct ListeningRoomGuestDependencies final {
 //
 // Time (S9.1), with a follower: on admission and then every room_clock_resample_ms while that link
 // stays joined, the guest sends RoomClockPing{local_clock_ms()}; each RoomClockPong becomes a
-// ClockSample for the follower. Every applied state, and every current-item file that becomes local,
+// ClockSample for the follower. Right after each ping the guest sends RoomDriftReport{follower->lastDriftMs()}
+// when the follower has a valid evaluation (S9.2). Every applied state, and every current-item file that becomes local,
 // calls follower->apply(playback, local file of the current item or nullopt). Ending or leaving stops
 // the follower before restore_session, so the room file is gone when the local session comes back. A
 // dropped link leaves the follower playing the last playback.

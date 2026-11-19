@@ -352,6 +352,29 @@ class ListeningRoomBindingTests final : public QObject {
         QVERIFY(!binding->approve(QStringLiteral("fp-ninguem")));
     }
 
+    void theHostListsTheSyncDifferenceOfEachMemberWithoutShowingFingerprints() {
+        Fixture f;
+        auto binding = f.make();
+        QVERIFY(binding->openRoom(5, false));
+        const auto ana = f.arrive("fp-ana", "Ana");
+        QVERIFY(binding->approve(QStringLiteral("fp-ana")));
+        QCOMPARE(binding->memberCount(), 2);
+        const auto row = [&](const int index) { return binding->members()->index(index, 0); };
+        QCOMPARE(row(1).data(RoomMembersModel::HasSyncDriftRole).toBool(), false);
+
+        QVERIFY(ana->sendControl(RoomDriftReport{-35}));
+        QCOMPARE(row(1).data(RoomMembersModel::HasSyncDriftRole).toBool(), true);
+        QCOMPARE(row(1).data(RoomMembersModel::SyncDriftMsRole).toLongLong(), qlonglong{-35});
+        QCOMPARE(row(1).data(RoomMembersModel::NicknameRole).toString(), QStringLiteral("Ana"));
+        // The host itself has no difference to report.
+        QCOMPARE(row(0).data(RoomMembersModel::HasSyncDriftRole).toBool(), false);
+
+        // It goes away with the person.
+        QVERIFY(ana->sendControl(RoomBye{RoomByeReason::Closed}));
+        QCOMPARE(binding->memberCount(), 1);
+        QCOMPARE(row(0).data(RoomMembersModel::HasSyncDriftRole).toBool(), false);
+    }
+
     void theGuestFollowsItsRoomAndExplainsWhyItEnded() {
         Fixture f;
         auto binding = f.make();

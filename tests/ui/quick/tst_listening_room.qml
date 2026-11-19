@@ -217,7 +217,9 @@ TestCase {
             nickname: "Joao",
             avatarSource: "qrc:/rc_music/avatars/avatar-04.svg",
             isHost: true,
-            isSelf: false
+            isSelf: false,
+            hasSyncDrift: false,
+            syncDriftMs: 0
         });
         fakeRoom.queue.append({
             itemId: "7",
@@ -383,14 +385,18 @@ TestCase {
             nickname: "Bia",
             avatarSource: "qrc:/rc_music/avatars/avatar-03.svg",
             isHost: true,
-            isSelf: false
+            isSelf: false,
+            hasSyncDrift: false,
+            syncDriftMs: 0
         });
         fakeRoom.members.append({
             fingerprint: "fp-eu",
             nickname: "Eu",
             avatarSource: "qrc:/rc_music/avatars/avatar-04.svg",
             isHost: false,
-            isSelf: true
+            isSelf: true,
+            hasSyncDrift: false,
+            syncDriftMs: 0
         });
         tryVerify(() => badge.visible);
         compare(badge.text, "Na sala de Bia · 2 pessoas");
@@ -399,6 +405,55 @@ TestCase {
         fakeRoom.role = 0;
         fakeRoom.state = "idle";
         tryVerify(() => !badge.visible);
+    }
+
+    // S9.2: the host's member list shows each person's sync difference, never the fingerprint.
+    function test_theHostSeesTheSyncDifferenceOfEachPerson() {
+        fakeRoom.role = 1;
+        fakeRoom.state = "open";
+        fakeRoom.members.append({
+            fingerprint: "fp-secreto-do-anfitriao",
+            nickname: "Joao",
+            avatarSource: "qrc:/rc_music/avatars/avatar-04.svg",
+            isHost: true,
+            isSelf: true,
+            hasSyncDrift: false,
+            syncDriftMs: 0
+        });
+        fakeRoom.members.append({
+            fingerprint: "fp-secreto-da-ana",
+            nickname: "Ana",
+            avatarSource: "qrc:/rc_music/avatars/avatar-02.svg",
+            isHost: false,
+            isSelf: false,
+            hasSyncDrift: true,
+            syncDriftMs: 35
+        });
+        fakeRoom.members.append({
+            fingerprint: "fp-secreto-do-caio",
+            nickname: "Caio",
+            avatarSource: "qrc:/rc_music/avatars/avatar-03.svg",
+            isHost: false,
+            isSelf: false,
+            hasSyncDrift: true,
+            syncDriftMs: -120
+        });
+        createShell();
+        openPage();
+        const drifts = [];
+        const names = [];
+        const collect = item => {
+            if (item.objectName === "room-member-sync-drift" && item.visible)
+                drifts.push(item.text);
+            if (item.objectName === "room-member-name")
+                names.push(item.text);
+            for (let i = 0; item.children && i < item.children.length; ++i)
+                collect(item.children[i]);
+        };
+        collect(testCase.shell.contentItem);
+        compare(names.length, 3);
+        compare(drifts, ["diferença de sincronia: +35 ms", "diferença de sincronia: -120 ms"]);
+        verify(names.concat(drifts).every(text => text.indexOf("fp-") < 0));
     }
 
     // S9.1: a guest adjusts its output offset on the room page, by keyboard.

@@ -59,6 +59,10 @@ class RoomPlaybackFollower final {
     [[nodiscard]] std::int64_t outputOffsetMs() const noexcept;
     void apply(const RoomPlayback& playback, std::optional<std::filesystem::path> local_file);
     void tick();
+    // The drift of the latest tick() evaluation (backend position minus expected, positive = ahead).
+    // Empty when the latest tick had no valid evaluation (not playing, held, stale position, no file, no
+    // clock) and after apply()/stop()/setHeld() until the next tick.
+    [[nodiscard]] std::optional<std::int64_t> lastDriftMs() const noexcept;
     void addClockSample(const ClockSample& sample);
     // Held: the player belongs to someone else (the local queue has not let go of it yet). The follower
     // keeps the room's playback, file and clock but never touches the player; pending starts, retries and
@@ -104,6 +108,7 @@ class RoomPlaybackFollower final {
     std::uint64_t nudge_epoch_{0};
     bool rate_supported_{true};
     bool held_{false};
+    std::optional<std::int64_t> last_drift_ms_;
     std::shared_ptr<Alive> alive_;
 };
 

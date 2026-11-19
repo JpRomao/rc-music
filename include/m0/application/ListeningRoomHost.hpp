@@ -133,6 +133,12 @@ struct ListeningRoomHostDependencies final {
 // sha replaces the first. When the window changes, transfers whose item left it are cancelled; a link
 // that goes is forgotten by the outbox.
 //
+// Sync difference (S9.2): an admitted member's RoomDriftReport{drift_ms} replaces its last value
+// (memberDrifts(), keyed by fingerprint, nothing persisted). Reports from pending or unknown links and
+// values beyond +-room_drift_report_limit_ms are ignored. A member's value goes away when its link
+// drops (even while its seat is held), when it leaves or is kicked, and when the room closes.
+// onDriftsChanged is called when the map changes. It never touches the room state or its version.
+//
 // Guest items (GuestTrack) never reach the session: the session autosave must store
 // withoutGuestItems(snapshot) while a room is open, and close(), revoke() and the destructor remove
 // them from the player's queue.
@@ -175,6 +181,9 @@ class ListeningRoomHost final {
     std::function<void(const RoomSnapshot&)> onChanged;
     std::function<void(const RoomMember&)> onJoinRequest;
     std::function<void(RoomLinkFailure)> onEndpointFailed;
+    std::function<void()> onDriftsChanged;
+    // The latest reported sync difference (ms, positive = the guest is ahead) of each admitted member.
+    [[nodiscard]] const std::map<std::string, std::int64_t, std::less<>>& memberDrifts() const noexcept;
 
   private:
     struct Alive;
@@ -206,6 +215,7 @@ class ListeningRoomHost final {
     void cancelFilesOutsideWindow();
     void forgetFiles(const RoomLink& link);
     void drop(const std::shared_ptr<RoomLink>& link);
+    void forgetDrift(std::string_view fingerprint);
     void end(RoomByeReason reason);
     void saveRoster();
     [[nodiscard]] Connection* find(const RoomLink* link);
@@ -243,6 +253,7 @@ class ListeningRoomHost final {
     // Admitted members whose link dropped, held for room_reconnect_window_ms (value: hold token).
     std::map<std::string, std::uint64_t, std::less<>> held_;
     std::uint64_t next_hold_{0};
+    std::map<std::string, std::int64_t, std::less<>> drifts_;
     // The last state guests received (admitted members only), to broadcast only what they would see.
     RoomSnapshot sent_view_;
     bool reanchor_{false};

@@ -26,6 +26,12 @@ QVariant RoomMembersModel::data(const QModelIndex& index, const int role) const 
         return !host_fingerprint_.empty() && member.fingerprint == host_fingerprint_;
     case SelfRole:
         return !self_fingerprint_.empty() && member.fingerprint == self_fingerprint_;
+    case HasSyncDriftRole:
+        return sync_drifts_.contains(member.fingerprint);
+    case SyncDriftMsRole: {
+        const auto found = sync_drifts_.find(member.fingerprint);
+        return found == sync_drifts_.end() ? 0 : static_cast<qlonglong>(found->second);
+    }
     default:
         return {};
     }
@@ -36,18 +42,23 @@ QHash<int, QByteArray> RoomMembersModel::roleNames() const {
             {NicknameRole, "nickname"},
             {AvatarSourceRole, "avatarSource"},
             {HostRole, "isHost"},
-            {SelfRole, "isSelf"}};
+            {SelfRole, "isSelf"},
+            {HasSyncDriftRole, "hasSyncDrift"},
+            {SyncDriftMsRole, "syncDriftMs"}};
 }
 
 void RoomMembersModel::replace(std::vector<RoomMember> members, const std::string& host_fingerprint,
-                               const std::string& self_fingerprint) {
-    if (members == members_ && host_fingerprint == host_fingerprint_ && self_fingerprint == self_fingerprint_)
+                               const std::string& self_fingerprint,
+                               std::map<std::string, std::int64_t, std::less<>> sync_drifts) {
+    if (members == members_ && host_fingerprint == host_fingerprint_ && self_fingerprint == self_fingerprint_ &&
+        sync_drifts == sync_drifts_)
         return;
     const bool count_changed = members.size() != members_.size();
     beginResetModel();
     members_ = std::move(members);
     host_fingerprint_ = host_fingerprint;
     self_fingerprint_ = self_fingerprint;
+    sync_drifts_ = std::move(sync_drifts);
     endResetModel();
     if (count_changed)
         emit countChanged();
