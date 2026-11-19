@@ -55,8 +55,10 @@ struct ListeningRoomBindingDependencies final {
     // SHA-256 (lowercase hex) of <config>/avatars/custom.png, nullopt when missing or unreadable.
     std::function<std::optional<std::string>()> custom_avatar_sha256;
     // The guest's seam to the local queue (PlayerPresenter::liveSessionSnapshot / restoreRoomSession).
+    // restore_session returns false when the local player refuses it for now (busy); the binding keeps
+    // the session, still holds it for the autosave and tries again every room_give_back_retry_ms.
     std::function<SessionSnapshot()> capture_session;
-    std::function<void(const SessionSnapshot&)> restore_session;
+    std::function<bool(const SessionSnapshot&)> restore_session;
     // PlayerPresenter::setRoomPlayOrder while a hosted room is open.
     std::function<void(bool)> set_room_play_order;
     // PlayerPresenter::refreshRoomSession: what sessionForAutosave filters may have changed.
@@ -190,6 +192,8 @@ class ListeningRoomBinding final : public QObject {
     void guestEnded();
     void endHost();
     void retireGuest();
+    void giveBackLocalSession(const SessionSnapshot& saved);
+    void retryGiveBack();
     void followTick();
     void feedPosition();
     void stopFollowing();
@@ -209,6 +213,9 @@ class ListeningRoomBinding final : public QObject {
     QTimer follow_timer_;
     QTimer position_timer_;
     bool local_session_released_{false};
+    // A pre-room session the local player refused back: kept (and held for the autosave) until accepted.
+    std::optional<SessionSnapshot> pending_give_back_;
+    QTimer give_back_timer_;
     bool feeding_position_{false};
     std::unique_ptr<ListeningRoomHost> host_;
     std::unique_ptr<ListeningRoomGuest> guest_;

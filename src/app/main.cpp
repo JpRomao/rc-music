@@ -1005,7 +1005,7 @@ int main(int argc, char* argv[]) {
         };
         room_dependencies.capture_session = [&presenter] { return presenter.liveSessionSnapshot(); };
         room_dependencies.restore_session = [&presenter](const music_player::m0::SessionSnapshot& snapshot) {
-            static_cast<void>(presenter.restoreRoomSession(snapshot));
+            return presenter.restoreRoomSession(snapshot);
         };
         room_dependencies.set_room_play_order = [&presenter](const bool enabled) {
             presenter.setRoomPlayOrder(enabled);

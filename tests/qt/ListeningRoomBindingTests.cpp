@@ -102,7 +102,11 @@ struct Fixture final {
                     ++captures;
                     return player.sessionSnapshot();
                 },
-            .restore_session = [this](const SessionSnapshot& saved) { restored.push_back(saved); },
+            .restore_session =
+                [this](const SessionSnapshot& saved) {
+                    restored.push_back(saved);
+                    return restore_accepts;
+                },
             .set_room_play_order = [this](const bool enabled) { play_order.push_back(enabled); },
             .session_changed = [this] { ++session_changes; },
             .clock_ms = [] { return std::int64_t{50'000}; },
@@ -165,6 +169,8 @@ struct Fixture final {
     std::function<void(std::optional<ListeningRoomNetwork>)> pending_load;
     std::optional<ListenerProfile> profile{ListenerProfile{"Joao", AvatarChoice{}}};
     std::vector<SessionSnapshot> restored;
+    // false: the local player refuses the session back (busy importing or appending a download).
+    bool restore_accepts{true};
     std::vector<bool> play_order;
     std::vector<std::pair<std::string, std::string>> notifications;
     QString copied;
@@ -363,6 +369,75 @@ class ListeningRoomBindingTests final : public QObject {
         QCOMPARE(f.restored.front(), pre_room);
         QVERIFY(guest_side->closed);
         QCOMPARE(binding->sessionForAutosave(f.player.sessionSnapshot()), f.player.sessionSnapshot());
+    }
+
+    // A local player that refuses the session back (busy) never loses it: the binding keeps it for the
+    // autosave and gives it back once the player accepts. The same on app exit.
+    void aRefusedGiveBackKeepsThePreRoomSessionUntilItIsAccepted() {
+        for (const bool exiting : {false, true}) {
+            Fixture f;
+            auto binding = f.make();
+            QVERIFY(binding->join(Fixture::validLink()));
+            auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, inviteHostHex());
+            f.connector->complete(guest_side);
+            QVERIFY(host_side->sendControl(RoomJoinResult{JoinDecision::Admitted}));
+            const auto pre_room = f.player.sessionSnapshot();
+            QVERIFY(f.player.next());
+            const auto live = f.player.sessionSnapshot();
+            QVERIFY(live != pre_room);
+
+            f.restore_accepts = false;
+            if (exiting)
+                binding->shutdown();
+            else
+                binding->leave();
+            QCOMPARE(binding->role(), int{ListeningRoomBinding::NoRole});
+            QCOMPARE(f.restored.size(), std::size_t{1});
+            QVERIFY(binding->holdsLocalSession());
+            QCOMPARE(binding->sessionForAutosave(live), pre_room);
+
+            f.restore_accepts = true;
+            QTRY_VERIFY(!binding->holdsLocalSession());
+            QCOMPARE(f.restored.back(), pre_room);
+            const auto attempts = f.restored.size();
+            QCOMPARE(binding->sessionForAutosave(live), live);
+            QTest::qWait(250);
+            QCOMPARE(f.restored.size(), attempts);
+        }
+    }
+
+    // Joining again while the old pre-room session still waits to go back: the new room holds that one,
+    // not the emptied live queue.
+    void aNewRoomKeepsTheSessionStillWaitingToGoBack() {
+        Fixture f;
+        auto binding = f.make();
+        // The links stay alive for the whole test.
+        std::vector<std::shared_ptr<testing::FakeRoomLink>> links;
+        const auto join = [&] {
+            if (!binding->join(Fixture::validLink()))
+                return false;
+            auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, inviteHostHex());
+            links.push_back(host_side);
+            links.push_back(guest_side);
+            f.connector->complete(guest_side);
+            return host_side->sendControl(RoomJoinResult{JoinDecision::Admitted});
+        };
+        QVERIFY(join());
+        const auto pre_room = f.player.sessionSnapshot();
+        f.restore_accepts = false;
+        binding->leave();
+        QVERIFY(binding->holdsLocalSession());
+        QVERIFY(f.player.next());
+
+        QVERIFY(join());
+        QCOMPARE(f.captures, 1);
+        QCOMPARE(binding->sessionForAutosave(f.player.sessionSnapshot()), pre_room);
+        f.restore_accepts = true;
+        QTest::qWait(250);
+        QCOMPARE(f.restored.size(), std::size_t{1});
+        binding->leave();
+        QCOMPARE(f.restored.back(), pre_room);
+        QVERIFY(!binding->holdsLocalSession());
     }
 
     // S9.1: with the app's player the guest puts its local queue away once, plays the room's file at

@@ -20,6 +20,8 @@ namespace {
 
 // How often a guest playing the room feeds the lyrics panel its position.
 constexpr int room_position_feed_ms = 100;
+// How often a pre-room session the local player refused is offered again.
+constexpr int room_give_back_retry_ms = 100;
 
 [[nodiscard]] std::string lowerHex(const std::array<std::uint8_t, 32>& bytes) {
     static constexpr char digits[] = "0123456789abcdef";
@@ -41,7 +43,7 @@ ListeningRoomBinding::ListeningRoomBinding(ListeningRoomBindingDependencies depe
     if (!dependencies_.capture_session)
         dependencies_.capture_session = [] { return SessionSnapshot{}; };
     if (!dependencies_.restore_session)
-        dependencies_.restore_session = [](const SessionSnapshot&) {};
+        dependencies_.restore_session = [](const SessionSnapshot&) { return true; };
     if (!dependencies_.custom_avatar_sha256)
         dependencies_.custom_avatar_sha256 = [] { return std::optional<std::string>{}; };
     if (available() &&
@@ -56,12 +58,15 @@ ListeningRoomBinding::ListeningRoomBinding(ListeningRoomBindingDependencies depe
     position_timer_.setInterval(room_position_feed_ms);
     connect(&follow_timer_, &QTimer::timeout, this, &ListeningRoomBinding::followTick);
     connect(&position_timer_, &QTimer::timeout, this, &ListeningRoomBinding::feedPosition);
+    give_back_timer_.setInterval(room_give_back_retry_ms);
+    connect(&give_back_timer_, &QTimer::timeout, this, &ListeningRoomBinding::retryGiveBack);
 }
 
 ListeningRoomBinding::~ListeningRoomBinding() {
     // Neither destructor calls back; the host still removes its guest items from the player.
     follow_timer_.stop();
     position_timer_.stop();
+    give_back_timer_.stop();
     retired_guests_.clear();
     guest_.reset();
     host_.reset();
@@ -244,12 +249,16 @@ void ListeningRoomBinding::shutdown() {
 SessionSnapshot ListeningRoomBinding::sessionForAutosave(SessionSnapshot live) const {
     if (host_)
         return host_->withoutGuestItems(std::move(live));
-    if (guest_)
+    if (guest_ && guest_->holdsLocalSession())
         return guest_->sessionForAutosave(std::move(live));
+    if (pending_give_back_)
+        return *pending_give_back_;
     return live;
 }
 
-bool ListeningRoomBinding::holdsLocalSession() const { return guest_ && guest_->holdsLocalSession(); }
+bool ListeningRoomBinding::holdsLocalSession() const {
+    return (guest_ && guest_->holdsLocalSession()) || pending_give_back_.has_value();
+}
 
 ListeningRoomSchedule ListeningRoomBinding::scheduler(QObject* context) {
     return [guard = QPointer<QObject>{context}](const std::int64_t delay_ms, std::function<void()> task) {
@@ -376,8 +385,16 @@ void ListeningRoomBinding::startGuest() {
         .connector = *network_->guest_connector,
         .profile = *profile,
         .stored_custom_avatar_sha256 = dependencies_.custom_avatar_sha256,
-        .capture_session = dependencies_.capture_session,
-        .restore_session = dependencies_.restore_session,
+        // A session still waiting to go back is the pre-room session of the next room too.
+        .capture_session =
+            [this] {
+                if (auto pending = std::exchange(pending_give_back_, std::nullopt)) {
+                    give_back_timer_.stop();
+                    return *pending;
+                }
+                return dependencies_.capture_session();
+            },
+        .restore_session = [this](const SessionSnapshot& saved) { giveBackLocalSession(saved); },
         .schedule = dependencies_.schedule,
         .files = dependencies_.file_inbox,
         .follower = follower_.get(),
@@ -463,6 +480,26 @@ void ListeningRoomBinding::feedPosition() {
         return;
     feeding_position_ = true;
     dependencies_.room_position(std::max<std::int64_t>(dependencies_.guest_backend->snapshot().position_ms, 0));
+}
+
+// The guest's pre-room session goes back to the local player. A refusal (the player is busy) never loses
+// it: it stays held for the autosave and is offered again until accepted.
+void ListeningRoomBinding::giveBackLocalSession(const SessionSnapshot& saved) {
+    pending_give_back_ = saved;
+    retryGiveBack();
+}
+
+void ListeningRoomBinding::retryGiveBack() {
+    if (!pending_give_back_)
+        return;
+    if (!dependencies_.restore_session(*pending_give_back_)) {
+        give_back_timer_.start();
+        return;
+    }
+    pending_give_back_.reset();
+    give_back_timer_.stop();
+    if (dependencies_.session_changed)
+        dependencies_.session_changed();
 }
 
 void ListeningRoomBinding::stopFollowing() {

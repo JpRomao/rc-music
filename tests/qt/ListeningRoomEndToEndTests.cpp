@@ -431,7 +431,7 @@ class ListeningRoomEndToEndTests final : public QObject {
             .profile = [] { return std::optional{ListenerProfile{"Bia", AvatarChoice{}}}; },
             .custom_avatar_sha256 = [] { return std::optional<std::string>{}; },
             .capture_session = [&] { return other_player.sessionSnapshot(); },
-            .restore_session = [](const SessionSnapshot&) {},
+            .restore_session = [](const SessionSnapshot&) { return true; },
             .set_room_play_order = [](bool) {},
             .session_changed = [] {},
             .clock_ms = [] { return std::int64_t{50'000}; },
