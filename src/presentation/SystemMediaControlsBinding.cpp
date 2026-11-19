@@ -76,14 +76,41 @@ SystemMediaControlsBinding::~SystemMediaControlsBinding() {
 }
 
 void SystemMediaControlsBinding::refresh() {
-    const SystemMediaSnapshot snapshot = snapshotFor(presenter_);
+    SystemMediaSnapshot snapshot = snapshotFor(presenter_);
+    if (followingRoom()) {
+        // What the local player shows stays; what may be pressed is what the room allows.
+        const bool transport = snapshot.status == SystemMediaPlaybackStatus::Playing ||
+                               snapshot.status == SystemMediaPlaybackStatus::Paused ||
+                               snapshot.status == SystemMediaPlaybackStatus::Stopped;
+        const auto allows = [&](const SystemMediaCommandKind kind) {
+            return transport && room_.allows && room_.allows(kind);
+        };
+        snapshot.play_enabled = allows(SystemMediaCommandKind::Play);
+        snapshot.pause_enabled = allows(SystemMediaCommandKind::Pause);
+        snapshot.previous_enabled = allows(SystemMediaCommandKind::Previous);
+        snapshot.next_enabled = allows(SystemMediaCommandKind::Next);
+        snapshot.seek_enabled = allows(SystemMediaCommandKind::Seek) && snapshot.duration_ms > 0;
+    }
     if (published_snapshot_ == snapshot)
         return;
     if (controls_.publish(snapshot))
         published_snapshot_ = snapshot;
 }
 
+void SystemMediaControlsBinding::setRoomRoute(SystemMediaRoomRoute route) {
+    room_ = std::move(route);
+    refresh();
+}
+
+bool SystemMediaControlsBinding::followingRoom() const { return room_.following && room_.following(); }
+
 void SystemMediaControlsBinding::dispatch(const SystemMediaCommand command) {
+    if (followingRoom()) {
+        // The local player only mirrors the room: never drive it from here.
+        if (room_.allows && room_.send && room_.allows(command.kind))
+            room_.send(command);
+        return;
+    }
     switch (command.kind) {
     case SystemMediaCommandKind::Play:
         static_cast<void>(presenter_.play());

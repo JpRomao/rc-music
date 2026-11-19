@@ -271,6 +271,45 @@ bool ListeningRoomBinding::roomPlaying() const { return roomHasCurrent() && gues
 
 bool ListeningRoomBinding::rosterUnsaved() const { return role_ == HostRole && host_ && host_->rosterUnsaved(); }
 
+// While a guest (or a local session still held for the room), the shared player belongs to the room.
+bool ListeningRoomBinding::followsRoom() const { return role_ == GuestRole || holdsLocalSession(); }
+
+bool ListeningRoomBinding::roomAllows(const SystemMediaCommandKind kind) const {
+    if (role_ != GuestRole)
+        return false;
+    switch (kind) {
+    case SystemMediaCommandKind::Play:
+        return canPause() && roomHasCurrent() && !roomPlaying();
+    case SystemMediaCommandKind::Pause:
+        return canPause() && roomPlaying();
+    case SystemMediaCommandKind::Previous:
+    case SystemMediaCommandKind::Next:
+        return canSkip();
+    case SystemMediaCommandKind::Seek:
+        return canSkip() && roomHasCurrent();
+    }
+    return false;
+}
+
+bool ListeningRoomBinding::roomCommand(const SystemMediaCommand& command) {
+    if (!roomAllows(command.kind))
+        return false;
+    switch (command.kind) {
+    case SystemMediaCommandKind::Play:
+    case SystemMediaCommandKind::Pause:
+        return roomTogglePlayback();
+    case SystemMediaCommandKind::Previous:
+        return roomPrevious();
+    case SystemMediaCommandKind::Next:
+        return roomNext();
+    case SystemMediaCommandKind::Seek:
+        return sendGuestIntent(
+            RoomPermission::Skip,
+            RoomIntent{.kind = RoomIntentKind::Seek, .position_ms = std::max<std::int64_t>(command.position_ms, 0)});
+    }
+    return false;
+}
+
 // Every roster change goes through the host (saved, then sent to the members) and refreshes the page.
 bool ListeningRoomBinding::hostEdited(const bool done) {
     if (!done)

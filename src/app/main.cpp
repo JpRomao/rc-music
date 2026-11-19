@@ -1097,6 +1097,20 @@ int main(int argc, char* argv[]) {
 #ifdef Q_OS_WIN
         music_player::m0::WindowsSmtcAdapter system_media_controls;
         music_player::m0::SystemMediaControlsBinding system_media_controls_binding(presenter, system_media_controls);
+        // S10.1: a guest's media keys and Windows flyout go to the room, never to the local player.
+        system_media_controls_binding.setRoomRoute({
+            .following = [&room_binding] { return room_binding.followsRoom(); },
+            .allows =
+                [&room_binding](const music_player::m0::SystemMediaCommandKind kind) {
+                    return room_binding.roomAllows(kind);
+                },
+            .send =
+                [&room_binding](const music_player::m0::SystemMediaCommand& command) {
+                    static_cast<void>(room_binding.roomCommand(command));
+                },
+        });
+        QObject::connect(&room_binding, &music_player::m0::ListeningRoomBinding::changed,
+                         &system_media_controls_binding, &music_player::m0::SystemMediaControlsBinding::refresh);
         static_cast<void>(system_media_controls.bindWindow(*window));
         music_player::m0::WindowsPowerEvents system_power_events;
         music_player::m0::SystemPowerEventsBinding system_power_events_binding(presenter, system_power_events);

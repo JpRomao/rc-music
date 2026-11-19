@@ -11,6 +11,7 @@
 #include "m0/ports/RoomRosterStore.hpp"
 #include "m0/ports/RoomTrackCatalog.hpp"
 #include "m0/ports/RoomTransport.hpp"
+#include "m0/ports/SystemMediaControls.hpp"
 #include "presentation/RoomMembersModel.hpp"
 #include "presentation/RoomQueueModel.hpp"
 #include "presentation/RoomRolesModel.hpp"
@@ -176,6 +177,11 @@ class ListeningRoomBinding final : public QObject {
     [[nodiscard]] bool roomPlaying() const;
     [[nodiscard]] bool roomHasCurrent() const;
     [[nodiscard]] bool rosterUnsaved() const;
+    // S10.1: the system media controls (media keys, the Windows flyout) of a guest go to the room, with the
+    // same permissions as the in-app controls. followsRoom: they must never drive the local player now.
+    [[nodiscard]] bool followsRoom() const;
+    [[nodiscard]] bool roomAllows(SystemMediaCommandKind kind) const;
+    bool roomCommand(const SystemMediaCommand& command);
 
     // false when refused at once (limits, no profile, already in a room, unavailable); true when the
     // room opens or is being prepared (identity loading).

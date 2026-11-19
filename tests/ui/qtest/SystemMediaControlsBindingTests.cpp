@@ -6,6 +6,7 @@
 
 #include <QTest>
 
+#include <algorithm>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -125,6 +126,69 @@ class SystemMediaControlsBindingTests final : public QObject {
         QVERIFY(presenter.advanceOneTick());
         QCOMPARE(presenter.confirmedPositionMs(), qint64{73'125});
         QVERIFY(controls.snapshots.back().seek_enabled);
+    }
+
+    // S10.1: while a guest follows a listening room, media keys and the Windows flyout never drive the
+    // local player; they go to the room, and only what the room allows is enabled.
+    void aRoomGuestsSystemControlsGoToTheRoomAndNeverToTheLocalPlayer() {
+        TestPlatform platform;
+        PlayerPresenter presenter(frozenBundle(), platform);
+        FakeSystemMediaControls controls;
+        SystemMediaControlsBinding binding(presenter, controls);
+        QVERIFY(presenter.loadFrozenQueue());
+        const auto occurrence = presenter.currentOccurrenceId();
+        bool following = true;
+        std::vector<SystemMediaCommandKind> allowed;
+        std::vector<SystemMediaCommand> sent;
+        binding.setRoomRoute({
+            .following = [&] { return following; },
+            .allows =
+                [&](const SystemMediaCommandKind kind) {
+                    return std::find(allowed.begin(), allowed.end(), kind) != allowed.end();
+                },
+            .send = [&](const SystemMediaCommand& command) { sent.push_back(command); },
+        });
+
+        // Nothing allowed: every transport control is off, the title stays.
+        auto snapshot = controls.snapshots.back();
+        QCOMPARE(snapshot.title, presenter.currentTitle().toStdU16String());
+        QCOMPARE(snapshot.status, SystemMediaPlaybackStatus::Playing);
+        QVERIFY(!snapshot.play_enabled && !snapshot.pause_enabled && !snapshot.previous_enabled &&
+                !snapshot.next_enabled && !snapshot.seek_enabled);
+        for (const auto kind : {SystemMediaCommandKind::Pause, SystemMediaCommandKind::Play,
+                                SystemMediaCommandKind::Next, SystemMediaCommandKind::Previous})
+            controls.send({kind, 0});
+        controls.send({SystemMediaCommandKind::Seek, 73'125});
+        QVERIFY(sent.empty());
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+        QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+        QVERIFY(!presenter.seekPreviewActive() && !presenter.seekPending());
+
+        // The room allows pausing, skipping and seeking: those turn on and become room commands.
+        allowed = {SystemMediaCommandKind::Pause, SystemMediaCommandKind::Next, SystemMediaCommandKind::Previous,
+                   SystemMediaCommandKind::Seek};
+        binding.refresh();
+        snapshot = controls.snapshots.back();
+        QVERIFY(snapshot.pause_enabled && snapshot.next_enabled && snapshot.previous_enabled && snapshot.seek_enabled);
+        QVERIFY(!snapshot.play_enabled);
+        controls.send({SystemMediaCommandKind::Pause, 0});
+        controls.send({SystemMediaCommandKind::Next, 0});
+        controls.send({SystemMediaCommandKind::Seek, 73'125});
+        controls.send({SystemMediaCommandKind::Play, 0});
+        QCOMPARE(sent, (std::vector<SystemMediaCommand>{{SystemMediaCommandKind::Pause, 0},
+                                                        {SystemMediaCommandKind::Next, 0},
+                                                        {SystemMediaCommandKind::Seek, 73'125}}));
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+        QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+        QVERIFY(!presenter.seekPreviewActive() && !presenter.seekPending());
+
+        // Out of the room, the controls drive the local player again.
+        following = false;
+        binding.refresh();
+        QCOMPARE(controls.snapshots.back(), playingSnapshot(presenter));
+        controls.send({SystemMediaCommandKind::Pause, 0});
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+        QCOMPARE(sent.size(), std::size_t{3});
     }
 
     void exitPublishesClosedAndMakesLateCommandsInert() {

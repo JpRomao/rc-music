@@ -856,12 +856,34 @@ class ListeningRoomBindingTests final : public QObject {
         QCOMPARE(sent[4].item_id, std::uint64_t{8});
         QCOMPARE(sent[4].destination, std::size_t{0});
 
+        // The system media controls (media keys, the Windows flyout) take the same road, with the same rules.
+        QVERIFY(binding->followsRoom());
+        QVERIFY(binding->roomAllows(SystemMediaCommandKind::Pause));
+        QVERIFY(!binding->roomAllows(SystemMediaCommandKind::Play));
+        QVERIFY(!binding->roomAllows(SystemMediaCommandKind::Next));
+        QVERIFY(!binding->roomAllows(SystemMediaCommandKind::Seek));
+        QVERIFY(binding->roomCommand({SystemMediaCommandKind::Pause, 0}));
+        QVERIFY(!binding->roomCommand({SystemMediaCommandKind::Play, 0}));
+        QVERIFY(!binding->roomCommand({SystemMediaCommandKind::Next, 0}));
+        room.version = 3;
+        QVERIFY(host_side->sendControl(RoomStateMessage{room, skip}));
+        QVERIFY(binding->roomAllows(SystemMediaCommandKind::Seek));
+        QVERIFY(binding->roomAllows(SystemMediaCommandKind::Previous));
+        QVERIFY(binding->roomCommand({SystemMediaCommandKind::Seek, 42'000}));
+        const auto system = intents();
+        QCOMPARE(system.size(), std::size_t{7});
+        QCOMPARE(system[5].kind, RoomIntentKind::Pause);
+        QCOMPARE(system[6].kind, RoomIntentKind::Seek);
+        QCOMPARE(system[6].position_ms, std::int64_t{42'000});
+
         // A refusal (the host changed its mind in between) says so.
         QVERIFY(host_side->sendControl(RoomIntentRejected{3, IntentRejection::MissingPermission}));
         QCOMPARE(binding->errorText(), QStringLiteral("Sem permissão"));
         binding->leave();
         QVERIFY(!binding->canPause());
         QVERIFY(!binding->roomTogglePlayback());
+        QVERIFY(!binding->followsRoom());
+        QVERIFY(!binding->roomAllows(SystemMediaCommandKind::Pause));
     }
 
     void thePrivacyNoticeIsAcknowledgedOnce() {
