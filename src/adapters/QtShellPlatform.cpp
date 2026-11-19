@@ -219,7 +219,8 @@ void QtShellPlatform::updateTrayState(const TrayMenuState& state) {
     // Playback snapshots arrive at 5 Hz, but position changes do not change the tray presentation.
     if (state.title == state_.title && state.transport_enabled == state_.transport_enabled &&
         state.playing == state_.playing && state.can_go_previous == state_.can_go_previous &&
-        state.can_go_next == state_.can_go_next && state.interaction_enabled == state_.interaction_enabled) {
+        state.can_go_next == state_.can_go_next && state.interaction_enabled == state_.interaction_enabled &&
+        state.play_pause_enabled == state_.play_pause_enabled) {
         return;
     }
     state_ = state;
@@ -422,7 +423,7 @@ void QtShellPlatform::updateMenu() {
     current_track_->setEnabled(window_ && interaction_enabled);
     play_pause_->setText(state_.playing ? labels_.pause : labels_.play);
     const bool transport_enabled = available_ && state_.transport_enabled && interaction_enabled;
-    play_pause_->setEnabled(transport_enabled);
+    play_pause_->setEnabled(transport_enabled && state_.play_pause_enabled);
     previous_->setEnabled(transport_enabled && state_.can_go_previous);
     next_->setEnabled(transport_enabled && state_.can_go_next);
     const bool shown = window_ && window_->isVisible() && !window_->windowStates().testFlag(Qt::WindowMinimized);

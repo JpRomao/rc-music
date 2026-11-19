@@ -44,6 +44,8 @@ struct TrayMenuState final {
     bool can_go_previous{false};
     bool can_go_next{false};
     bool interaction_enabled{true};
+    // A room guest may skip without being allowed to pause (S10.1).
+    bool play_pause_enabled{true};
 };
 
 struct DefaultAppsSettingsOperations final {

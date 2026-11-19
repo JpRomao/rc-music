@@ -4,7 +4,9 @@
 #include "presentation/PlayerPresenterTestAccess.hpp"
 #include "presentation/ShellPlatformBinding.hpp"
 
+#include <QAction>
 #include <QApplication>
+#include <QMenu>
 #include <QPersistentModelIndex>
 #include <QPixmap>
 #include <QPointer>
@@ -14,6 +16,7 @@
 #include <QVariantMap>
 #include <QWindow>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <memory>
@@ -467,6 +470,81 @@ class ShellPlatformBindingTests final : public QObject {
         QCOMPARE(playbackAndPreferences(presenter), before);
         platform.handleTrayHostRestart();
         QVERIFY(window.isVisible());
+    }
+
+    // S10.1: while a guest follows a listening room, the tray's Play/Pause, Previous and Next never drive the
+    // local player; they go to the room, and only what the room allows is enabled.
+    void aRoomGuestsTrayGoesToTheRoomAndNeverToTheLocalPlayer() {
+        QtShellPlatform platform(testIcon(), QStringLiteral("Player M0"), labels(), [] { return true; }, [] {});
+        PlayerPresenter presenter(frozenBundle(), platform);
+        QWindow window;
+        window.resize(640, 480);
+        window.show();
+        bool following = true;
+        std::vector<SystemMediaCommandKind> allowed;
+        std::vector<SystemMediaCommand> sent;
+        const auto refresh_tray =
+            bindShellPlatform(presenter, platform, window,
+                              SystemMediaRoomRoute{
+                                  .following = [&] { return following; },
+                                  .allows =
+                                      [&](const SystemMediaCommandKind kind) {
+                                          return std::find(allowed.begin(), allowed.end(), kind) != allowed.end();
+                                      },
+                                  .send = [&](const SystemMediaCommand& command) { sent.push_back(command); },
+                              });
+        QVERIFY(presenter.loadFrozenQueue());
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+        const auto occurrence = presenter.currentOccurrenceId();
+        const auto action = [&](const char* name) {
+            return platform.menu()->findChild<QAction*>(QString::fromLatin1(name));
+        };
+        QAction* const play_pause = action("tray-play-pause");
+        QAction* const previous = action("tray-previous");
+        QAction* const next = action("tray-next");
+        QVERIFY(play_pause && previous && next);
+
+        // Nothing allowed: the three are off, and even a stray request never reaches the local player.
+        QVERIFY(!play_pause->isEnabled() && !previous->isEnabled() && !next->isEnabled());
+        emit platform.playPauseRequested();
+        emit platform.previousRequested();
+        emit platform.nextRequested();
+        QVERIFY(sent.empty());
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+        QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+
+        // Skip only: Previous and Next turn on and become room commands; Play/Pause stays off.
+        allowed = {SystemMediaCommandKind::Previous, SystemMediaCommandKind::Next};
+        refresh_tray();
+        QVERIFY(!play_pause->isEnabled());
+        QVERIFY(previous->isEnabled() && next->isEnabled());
+        next->trigger();
+        previous->trigger();
+        // Pause while the room plays: the tray says "Pausar" and asks the room.
+        allowed.push_back(SystemMediaCommandKind::Pause);
+        refresh_tray();
+        QVERIFY(play_pause->isEnabled());
+        QCOMPARE(play_pause->text(), QStringLiteral("Pausar"));
+        play_pause->trigger();
+        // Play when the room is paused (the room allows Play instead of Pause).
+        allowed = {SystemMediaCommandKind::Play};
+        refresh_tray();
+        QVERIFY(play_pause->isEnabled());
+        emit platform.playPauseRequested();
+        QCOMPARE(sent, (std::vector<SystemMediaCommand>{{SystemMediaCommandKind::Next, 0},
+                                                        {SystemMediaCommandKind::Previous, 0},
+                                                        {SystemMediaCommandKind::Pause, 0},
+                                                        {SystemMediaCommandKind::Play, 0}}));
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+        QCOMPARE(presenter.currentOccurrenceId(), occurrence);
+
+        // Out of the room, the tray drives the local player again.
+        following = false;
+        refresh_tray();
+        QVERIFY(play_pause->isEnabled());
+        play_pause->trigger();
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+        QCOMPARE(sent.size(), std::size_t{4});
     }
 
     void destroyingThePresenterDisconnectsFallbackNotifications() {
