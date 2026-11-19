@@ -523,7 +523,7 @@ void ListeningRoomBinding::uploadEnded(const GuestUploadResult result) {
         setError(tr("Arquivo de áudio inválido"));
         break;
     case GuestUploadResult::TooLarge:
-        setError(tr("A música passa de 50 MB."));
+        setError(tr("A música passa de 50 MiB."));
         break;
     case GuestUploadResult::MissingPermission:
         setError(tr("Sem permissão"));

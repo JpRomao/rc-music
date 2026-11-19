@@ -1125,7 +1125,7 @@ class ListeningRoomBindingTests final : public QObject {
         f.catalog.size_override = maximum_guest_upload_bytes + 1;
         QVERIFY(binding->roomUploadOwnTrack());
         f.upload_picker.complete({AudioFilesSelectionStatus::Selected, {std::filesystem::path{"music/enorme.flac"}}});
-        QCOMPARE(binding->errorText(), QStringLiteral("A música passa de 50 MB."));
+        QCOMPARE(binding->errorText(), QStringLiteral("A música passa de 50 MiB."));
         QCOMPARE(uploads().size(), std::size_t{1});
         QVERIFY(!binding->uploading());
 
