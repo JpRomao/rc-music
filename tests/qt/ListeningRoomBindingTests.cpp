@@ -628,6 +628,34 @@ class ListeningRoomBindingTests final : public QObject {
 
     // S8.2: the guest's room queue says which items are still loading and who added them; the host's
     // lyrics for the current item reach the lyrics panel; leaving empties the cache.
+    // Fix round 1 of S11.2: a host track a guest added from the catalog shows that guest's avatar.
+    void aCatalogTrackShowsTheAvatarOfWhoAddedIt() {
+        RoomSnapshot room;
+        room.members.push_back(
+            RoomMember{inviteHostHex(), "Joao", {AvatarKind::Bundled, 3, {}}, MemberState::Admitted});
+        room.members.push_back(RoomMember{"fp-lia", "Lia", {AvatarKind::Bundled, 5, {}}, MemberState::Admitted});
+        room.members.push_back(RoomMember{"fp-ana", "Ana", {AvatarKind::Bundled, 6, {}}, MemberState::Admitted});
+        room.members.push_back(RoomMember{"fp-ana2", "Ana", {AvatarKind::Bundled, 7, {}}, MemberState::Admitted});
+        const auto hostTrack = [&](const std::uint64_t id, std::string added_by) {
+            RoomItem item;
+            item.id = id;
+            item.origin = RoomItemOrigin::HostTrack;
+            item.owner_fingerprint = inviteHostHex();
+            item.content_sha256 = std::string(64, 'a');
+            item.added_by = std::move(added_by);
+            return item;
+        };
+        room.queue = {hostTrack(1, "Lia"), hostTrack(2, "Joao"), hostTrack(3, "Ana"), hostTrack(4, "Saiu")};
+        RoomQueueModel queue;
+        queue.replace(room, {});
+        const auto avatar = [&](const int row) { return queue.index(row, 0).data(RoomQueueModel::AvatarSourceRole); };
+        QCOMPARE(avatar(0).toUrl(), RoomMembersModel::avatarSource(AvatarChoice{AvatarKind::Bundled, 5, {}}));
+        QCOMPARE(avatar(1).toUrl(), RoomMembersModel::avatarSource(AvatarChoice{AvatarKind::Bundled, 3, {}}));
+        // Two people with that nickname, or nobody in the room with it: the owner's avatar.
+        QCOMPARE(avatar(2).toUrl(), RoomMembersModel::avatarSource(AvatarChoice{AvatarKind::Bundled, 3, {}}));
+        QCOMPARE(avatar(3).toUrl(), RoomMembersModel::avatarSource(AvatarChoice{AvatarKind::Bundled, 3, {}}));
+    }
+
     void theGuestSeesLoadingItemsWithTheirAuthorAndTheHostsLyrics() {
         Fixture f;
         auto binding = f.make();

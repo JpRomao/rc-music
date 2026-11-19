@@ -7,6 +7,25 @@
 
 namespace music_player::m0 {
 
+namespace {
+
+// The avatar of who added the item. The owner added its own files; a host track a guest added from the
+// catalog names that guest in added_by (nicknames may repeat: only one member with it counts). Otherwise
+// the owner's avatar, or the first bundled one when the owner left.
+AvatarChoice adderAvatar(const std::vector<RoomMember>& members, const RoomItem& item) {
+    const auto owner = std::find_if(members.begin(), members.end(), [&](const RoomMember& member) {
+        return member.fingerprint == item.owner_fingerprint;
+    });
+    if (owner != members.end() && owner->nickname == item.added_by)
+        return owner->avatar;
+    const auto named = [&](const RoomMember& member) { return member.nickname == item.added_by; };
+    if (std::count_if(members.begin(), members.end(), named) == 1)
+        return std::find_if(members.begin(), members.end(), named)->avatar;
+    return owner == members.end() ? AvatarChoice{} : owner->avatar;
+}
+
+} // namespace
+
 RoomQueueModel::RoomQueueModel(QObject* parent) : QAbstractListModel(parent) {}
 
 int RoomQueueModel::rowCount(const QModelIndex& parent) const {
@@ -52,11 +71,8 @@ void RoomQueueModel::replace(const RoomSnapshot& snapshot, const std::function<b
     std::vector<Row> rows;
     rows.reserve(snapshot.queue.size());
     for (const auto& item : snapshot.queue) {
-        const auto owner =
-            std::find_if(snapshot.members.begin(), snapshot.members.end(),
-                         [&](const RoomMember& member) { return member.fingerprint == item.owner_fingerprint; });
-        rows.push_back(Row{item, owner == snapshot.members.end() ? AvatarChoice{} : owner->avatar,
-                           available && available(item.content_sha256), snapshot.playback.current_item == item.id});
+        rows.push_back(Row{item, adderAvatar(snapshot.members, item), available && available(item.content_sha256),
+                           snapshot.playback.current_item == item.id});
     }
     if (rows == rows_)
         return;

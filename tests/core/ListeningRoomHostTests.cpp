@@ -1554,4 +1554,36 @@ TEST_CASE("room host: descriptions that arrive one after another reach guests in
     REQUIRE(f.scheduled.empty());
 }
 
+// Fix round 1: a track from the catalog is the host's file, but the queue shows who asked for it.
+TEST_CASE("room host: catalog tracks a guest adds carry that guest as who added them",
+          "[core][listening-room][room-host][room-catalog]") {
+    HostFixture f;
+    f.start();
+    f.host->setPlaylists(partyLibrary());
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    const auto party = dj->lastCatalog().playlists.front();
+
+    dj->intent(1, RoomIntent{.kind = RoomIntentKind::AddPlaylist, .playlist_id = party.id});
+    dj->intent(2, RoomIntent{.kind = RoomIntentKind::AddItems, .catalog_entry_ids = {party.entries[1].id}});
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+    const auto queue = f.host->snapshot().queue;
+    REQUIRE(queue.size() == 6);
+    REQUIRE(queue[0].added_by == "Joao");
+    for (std::size_t index = 3; index < 6; ++index) {
+        REQUIRE(queue[index].added_by == "Bia");
+        REQUIRE(queue[index].owner_fingerprint == host_hex);
+        REQUIRE(queue[index].origin == RoomItemOrigin::HostTrack);
+    }
+    REQUIRE(dj->lastState()->snapshot == f.host->snapshot());
+
+    // Once the room closes they are plain host tracks again.
+    f.host->close();
+    static_cast<void>(f.host->open({}));
+    const auto reopened = f.host->snapshot().queue;
+    REQUIRE(reopened.size() == 6);
+    REQUIRE(
+        std::all_of(reopened.begin(), reopened.end(), [](const RoomItem& item) { return item.added_by == "Joao"; }));
+}
+
 } // namespace music_player::m0::test

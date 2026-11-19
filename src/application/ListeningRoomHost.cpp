@@ -640,13 +640,13 @@ void ListeningRoomHost::onIntent(const std::shared_ptr<RoomLink>& link, const Ro
         static_cast<void>(link->sendControl(RoomIntentRejected{message.request_id, *rejection}));
         return;
     }
-    rejection = apply(message.intent);
+    rejection = apply(message.intent, fingerprint);
     if (rejection)
         static_cast<void>(link->sendControl(RoomIntentRejected{message.request_id, *rejection}));
     static_cast<void>(refresh());
 }
 
-std::optional<IntentRejection> ListeningRoomHost::apply(const RoomIntent& intent) {
+std::optional<IntentRejection> ListeningRoomHost::apply(const RoomIntent& intent, const std::string_view fingerprint) {
     const auto accepted = [](const bool ok) {
         return ok ? std::nullopt : std::optional<IntentRejection>{IntentRejection::InvalidArgument};
     };
@@ -689,7 +689,7 @@ std::optional<IntentRejection> ListeningRoomHost::apply(const RoomIntent& intent
                 return IntentRejection::UnknownItem;
             sources.push_back(found->second);
         }
-        return enqueueAll(sources);
+        return enqueueAll(sources, fingerprint);
     }
     case RoomIntentKind::AddPlaylist: {
         const auto& playlists = room_catalog_.playlists;
@@ -704,14 +704,20 @@ std::optional<IntentRejection> ListeningRoomHost::apply(const RoomIntent& intent
         std::vector<std::filesystem::path> sources;
         for (const auto& entry : playlist->entries)
             sources.push_back(catalog_sources_.at(entry.id));
-        return enqueueAll(sources);
+        return enqueueAll(sources, fingerprint);
     }
     }
     return IntentRejection::InvalidArgument;
 }
 
-// Appends host tracks for the room, all or none; the caller refreshes once afterwards.
-std::optional<IntentRejection> ListeningRoomHost::enqueueAll(const std::vector<std::filesystem::path>& sources) {
+// Appends host tracks for the room, all or none, added by that member; the caller refreshes once afterwards.
+std::optional<IntentRejection> ListeningRoomHost::enqueueAll(const std::vector<std::filesystem::path>& sources,
+                                                             const std::string_view fingerprint) {
+    const auto members = room_->members();
+    const auto adder = std::find_if(members.begin(), members.end(),
+                                    [&](const RoomMember& member) { return member.fingerprint == fingerprint; });
+    if (adder == members.end())
+        return IntentRejection::NotAdmitted;
     const bool was_refreshing = refreshing_;
     refreshing_ = true;
     std::vector<LocalQueueOccurrenceId> added;
@@ -725,6 +731,8 @@ std::optional<IntentRejection> ListeningRoomHost::enqueueAll(const std::vector<s
         }
         added.push_back(*occurrence);
     }
+    for (const auto occurrence : added)
+        catalog_adders_[occurrence.value] = adder->nickname;
     refreshing_ = was_refreshing;
     return std::nullopt;
 }
@@ -905,7 +913,8 @@ std::optional<RoomItem> ListeningRoomHost::roomItem(const LocalFileQueueSnapshot
     item.id = entry.occurrence_id.value;
     item.origin = RoomItemOrigin::HostTrack;
     item.owner_fingerprint = host_fingerprint_hex_;
-    item.added_by = host_profile_.nickname;
+    const auto adder = catalog_adders_.find(entry.occurrence_id.value);
+    item.added_by = adder != catalog_adders_.end() ? adder->second : host_profile_.nickname;
     item.youtube_id.clear();
     item.summary = cappedSummary(item.summary);
     return item;
@@ -937,6 +946,11 @@ bool ListeningRoomHost::rebuild() {
         });
     });
     std::erase_if(guest_files_, [&](const auto& guest) { return !guest_items_.contains(guest.first); });
+    std::erase_if(catalog_adders_, [&](const auto& added) {
+        return std::none_of(items.begin(), items.end(), [&](const LocalFileQueueSnapshotItem& item) {
+            return item.occurrence_id.value == added.first;
+        });
+    });
     std::optional<std::size_t> current_index;
     for (std::size_t index = 0; index < items.size(); ++index)
         if (player.queue.current_occurrence_id == std::optional{items[index].occurrence_id})
@@ -1211,6 +1225,7 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
     catalog_again_ = false;
     catalog_waiting_.clear();
     catalog_refresh_scheduled_ = false;
+    catalog_adders_.clear();
     if (!drifts_.empty()) {
         drifts_.clear();
         if (onDriftsChanged)

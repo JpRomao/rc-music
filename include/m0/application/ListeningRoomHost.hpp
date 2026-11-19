@@ -108,7 +108,8 @@ struct ListeningRoomHostDependencies final {
 //     UnknownItem and adds nothing. AddPlaylist adds every catalog entry of that playlist, in order;
 //     past maximum_room_queue_items in the room queue it answers QueueFull (AddItems: checked by authorize),
 //     and an empty playlist answers InvalidArgument. The tracks are appended to the host's queue as host
-//     tracks, all or none.
+//     tracks, all or none; while the room is open their RoomItem says added_by = the nickname of the guest
+//     who asked (owner stays the host: the file is the host's).
 //   - AddItems with an uploaded item answers InvalidArgument until the guest-file transfer exists
 //     (S8/S12). That transfer will call addGuestTrack(), which overwrites the item's id,
 //     owner_fingerprint (the link fingerprint) and added_by before using it.
@@ -125,7 +126,8 @@ struct ListeningRoomHostDependencies final {
 // version gaps.
 //   - Room queue: from the current item forward (the play order), item id = the queue occurrence id.
 //     HostTrack items carry the catalog's hash and summary, owner = the host fingerprint (lowercase
-//     hex) and added_by = the host nickname; an item appears once the catalog described it and a file
+//     hex) and added_by = the host nickname (or the guest who added it from the catalog, see AddItems);
+//     an item appears once the catalog described it and a file
 //     the catalog cannot read stays out. Title, artist and album are cut to
 //     maximum_room_summary_text_bytes at a code point boundary (also for guest items). The window holds
 //     at most maximum_room_queue_items items and only as many as keep estimatedRoomStateBytes of the
@@ -261,8 +263,9 @@ class ListeningRoomHost final {
     void onReconnectExpired(std::uint64_t generation, const std::string& fingerprint, std::uint64_t token);
     void onHello(const std::shared_ptr<RoomLink>& link, const RoomHello& hello);
     void onIntent(const std::shared_ptr<RoomLink>& link, const RoomIntentMessage& message);
-    [[nodiscard]] std::optional<IntentRejection> apply(const RoomIntent& intent);
-    [[nodiscard]] std::optional<IntentRejection> enqueueAll(const std::vector<std::filesystem::path>& sources);
+    [[nodiscard]] std::optional<IntentRejection> apply(const RoomIntent& intent, std::string_view fingerprint);
+    [[nodiscard]] std::optional<IntentRejection> enqueueAll(const std::vector<std::filesystem::path>& sources,
+                                                            std::string_view fingerprint);
     void describeCatalogFiles();
     void scheduleCatalogRefresh();
     void refreshCatalog();
@@ -334,6 +337,8 @@ class ListeningRoomHost final {
     std::deque<std::filesystem::path> catalog_waiting_;
     bool describing_catalog_{false};
     bool catalog_refresh_scheduled_{false};
+    // Who added each catalog track a guest put in the queue (occurrence id -> nickname).
+    std::map<std::uint64_t, std::string> catalog_adders_;
     // The cached file of each guest item, to serve it like a host track.
     std::map<std::uint64_t, std::filesystem::path> guest_files_;
     std::uint32_t next_transfer_id_{0};
