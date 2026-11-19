@@ -298,4 +298,32 @@ TestCase {
                 verify(!overlaps(rects[names[first]], rects[names[second]]), names[first] + " overlaps " + names[second]);
         }
     }
+
+    // S13.1: a guest following a room sees the room's item and its time in the player, not "Abra um áudio para
+    // começar" and 00:00; leaving goes back to its own (here empty) player.
+    function test_aGuestFollowingARoomShowsTheRoomTrackAndItsTime() {
+        const title = findChild(shell, "player-track-title");
+        const elapsed = findChild(shell, "elapsed-time");
+        const duration = findChild(shell, "duration-time");
+        compare(title.text, productContract.emptyTitle);
+        verify(driver.followRoom("Primeira", "Artista", "Album", 600000));
+        tryVerify(() => title.text.startsWith("Primeira"), 5000, title.text);
+        compare(presenter.currentArtist, "Artista");
+        verify(!findChild(shell, "emptyState").visible);
+
+        driver.publishRoomPlayback(true, 1000, 600000);
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        tryCompare(duration, "text", "10:00");
+        compare(elapsed.text, "00:01");
+        driver.publishRoomPlayback(true, 62000, 600000);
+        tryCompare(elapsed, "text", "01:02");
+        driver.publishRoomPlayback(false, 62500, 600000);
+        tryCompare(presenter, "playbackState", PlayerPresenter.Paused);
+        // Nothing of the room entered the guest's own queue.
+        verify(!presenter.queueLoaded);
+
+        driver.stopFollowingRoom();
+        tryCompare(title, "text", productContract.emptyTitle);
+        compare(presenter.hasCurrentTrack, false);
+    }
 }

@@ -1030,6 +1030,10 @@ int main(int argc, char* argv[]) {
             else
                 update_lyrics();
         };
+        // S13.1: the player bar shows the room's item and the follower's playback while the guest follows.
+        room_dependencies.room_now_playing = [&presenter](std::optional<music_player::m0::RoomTrackSummary> track) {
+            presenter.showRoomPlayback(std::move(track));
+        };
 #endif
         room_dependencies.host_player = &room_host_player;
         room_dependencies.room_lyrics = [&lyrics_binding](const QString& lrc) { lyrics_binding.setRoomLyrics(lrc); };

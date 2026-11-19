@@ -800,6 +800,7 @@ void ListeningRoomBinding::guestChanged() {
         position_timer_.start();
         takeOverPlayer();
     }
+    showRoomTrack();
     refreshMembers();
     publish();
 }
@@ -819,6 +820,27 @@ void ListeningRoomBinding::takeOverPlayer() {
     local_session_released_ = true;
     follower_->setHeld(false);
     follow_timer_.start();
+    showRoomTrack();
+}
+
+// While the guest plays the room on the shared player, its bar shows the room's current item, not the empty
+// local queue; nullopt once the guest stops (or the room has no current item).
+void ListeningRoomBinding::showRoomTrack() {
+    if (!dependencies_.room_now_playing || dependencies_.guest_backend == nullptr)
+        return;
+    std::optional<RoomTrackSummary> track;
+    if (local_session_released_ && guest_) {
+        const auto& room = guest_->snapshot();
+        const auto found = std::find_if(room.queue.begin(), room.queue.end(), [&room](const RoomItem& item) {
+            return room.playback.current_item == std::optional{item.id};
+        });
+        if (found != room.queue.end())
+            track = found->summary;
+    }
+    if (track == shown_room_track_)
+        return;
+    shown_room_track_ = track;
+    dependencies_.room_now_playing(std::move(track));
 }
 
 void ListeningRoomBinding::feedPosition() {
@@ -860,6 +882,7 @@ void ListeningRoomBinding::stopFollowing() {
         follower_->setHeld(true);
     if (std::exchange(feeding_position_, false) && dependencies_.room_position)
         dependencies_.room_position(std::nullopt);
+    showRoomTrack();
 }
 
 void ListeningRoomBinding::guestEnded() {

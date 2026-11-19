@@ -662,7 +662,30 @@ class ScenarioDriver final : public QObject {
                                                      "DO NOT EXPOSE: C:\\private\\reader-secret.flac"}}});
     }
     Q_INVOKABLE QString clipboardText() const { return QGuiApplication::clipboard()->text(); }
+    // S13.1: a guest following a room: its local queue put away, the room's item shown, the follower's playback
+    // on the shared (silent) player.
+    Q_INVOKABLE bool followRoom(const QString& title, const QString& artist, const QString& album,
+                                const qlonglong duration) {
+        if (!local_presenter_.restoreRoomSession(music_player::m0::SessionSnapshot{}))
+            return false;
+        local_presenter_.showRoomPlayback(music_player::m0::RoomTrackSummary{title.toStdString(), artist.toStdString(),
+                                                                             album.toStdString(), duration});
+        return true;
+    }
+    Q_INVOKABLE void publishRoomPlayback(const bool playing, const qlonglong position, const qlonglong duration) {
+        local_backend_.snapshot_ = {.status = playing ? music_player::m0::PlaybackStatus::Playing
+                                                      : music_player::m0::PlaybackStatus::Paused,
+                                    .position_ms = position,
+                                    .duration_ms = duration,
+                                    .seekable = true,
+                                    .generation = local_backend_.snapshot_.generation};
+        if (local_backend_.event_callback_)
+            local_backend_.event_callback_(
+                {music_player::m0::PlaybackEventType::SnapshotChanged, local_backend_.snapshot_});
+    }
+    Q_INVOKABLE void stopFollowingRoom() { local_presenter_.showRoomPlayback(std::nullopt); }
     Q_INVOKABLE void resetLocalScenario() {
+        local_presenter_.showRoomPlayback(std::nullopt);
         local_presenter_.setAudioFilesPicker(nullptr);
         local_files_picker_.reset();
         local_presenter_.setAudioFilesPicker(&local_files_picker_);

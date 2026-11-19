@@ -587,6 +587,7 @@ class PlayerPresenterTests final : public QObject {
     void roomSessionGateLeavesTheRoomBeforeTheFinalExitSave();
     void restoredRoomSessionPutsBackTheQueuePaused();
     void anEmptyRoomSessionPutsTheLocalQueueAway();
+    void aGuestFollowingTheRoomShowsTheRoomTrackAndItsTime();
     void aGuestFollowingTheRoomAddsNoLocalSources();
     void hostRoomSessionExcludesGuestItems();
     void guestRoomSessionKeepsThePreRoomSession();
@@ -9843,6 +9844,83 @@ void PlayerPresenterTests::anEmptyRoomSessionPutsTheLocalQueueAway() {
     QCOMPARE(presenter.liveSessionSnapshot().queue, SessionSnapshot{}.queue);
 
     QVERIFY(presenter.restoreRoomSession(saved));
+    QCOMPARE(presenter.playlistQueueSnapshot(), saved.queue);
+}
+
+// S13.1: a guest following the room shows the room's item and the follower's playback (its own generation
+// on the shared player) instead of "Abra um áudio para começar" and 00:00; nothing of it enters the local
+// queue or session, and leaving goes back to the local state.
+void PlayerPresenterTests::aGuestFollowingTheRoomShowsTheRoomTrackAndItsTime() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    PresenterMetadataReader metadata;
+    const auto sources = roomSources(2);
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    QTRY_VERIFY(presenter.hasCurrentTrack());
+    const auto local_generation = backend.snapshot_.generation;
+    const auto saved = presenter.liveSessionSnapshot();
+    const auto local_title = presenter.currentTitle();
+    QVERIFY(presenter.restoreRoomSession(SessionSnapshot{}));
+    QVERIFY(!presenter.hasCurrentTrack());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Unloaded);
+
+    QSignalSpy state_changes(&presenter, &PlayerPresenter::stateChanged);
+    QSignalSpy playback_changes(&presenter, &PlayerPresenter::playbackChanged);
+    presenter.showRoomPlayback(RoomTrackSummary{"Primeira", "Artista", "Album", 600'000});
+    QVERIFY(!state_changes.isEmpty());
+    QVERIFY(presenter.hasCurrentTrack());
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Primeira"));
+    QCOMPARE(presenter.currentArtist(), QStringLiteral("Artista"));
+    QCOMPARE(presenter.currentAlbum(), QStringLiteral("Album"));
+    QCOMPARE(presenter.stateId(), QStringLiteral("playing"));
+    // The file is still on its way: loading, not "open an audio file".
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    // A late event of the local track that was put away is not the room's.
+    backend.publishEvent(PlaybackEventType::SnapshotChanged,
+                         {PlaybackStatus::Playing, 9'000, 30'000, true, local_generation}, false);
+    QCoreApplication::processEvents();
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+
+    // The follower loads the room's file and plays it on the shared player, under its own generation.
+    const auto follower_generation = backend.snapshot_.generation + 50;
+    backend.publish({PlaybackStatus::Playing, 1'000, 600'000, true, follower_generation});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    QVERIFY(!playback_changes.isEmpty());
+    QVERIFY(presenter.hasPosition());
+    QCOMPARE(presenter.positionMs(), qint64{1'000});
+    QVERIFY(presenter.hasDuration());
+    QCOMPARE(presenter.durationMs(), qint64{600'000});
+    // A guest never seeks the shared player locally.
+    QVERIFY(!presenter.seekable());
+    backend.publish({PlaybackStatus::Playing, 2'250, 600'000, true, follower_generation});
+    QTRY_COMPARE(presenter.positionMs(), qint64{2'250});
+    backend.publish({PlaybackStatus::Paused, 2'300, 600'000, true, follower_generation});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+    QCOMPARE(presenter.positionMs(), qint64{2'300});
+
+    // The next room item: new title, the follower's next load.
+    presenter.showRoomPlayback(RoomTrackSummary{"Segunda", "Outra", "Disco", 200'000});
+    QCOMPARE(presenter.currentTitle(), QStringLiteral("Segunda"));
+    backend.publish({PlaybackStatus::Playing, 0, 200'000, true, follower_generation + 1});
+    QTRY_COMPARE(presenter.durationMs(), qint64{200'000});
+    QCOMPARE(presenter.positionMs(), qint64{0});
+
+    // Nothing of the room entered the local queue or the session.
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 0);
+    QCOMPARE(presenter.liveSessionSnapshot().queue, SessionSnapshot{}.queue);
+
+    // Leaving: the player goes back to the local state, then the saved session comes back.
+    backend.publish({PlaybackStatus::Empty, 0, 0, false, follower_generation + 2});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+    presenter.showRoomPlayback(std::nullopt);
+    QVERIFY(!presenter.hasCurrentTrack());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Unloaded);
+    QCOMPARE(presenter.stateId(), QStringLiteral("empty"));
+    QVERIFY(presenter.restoreRoomSession(saved));
+    QTRY_VERIFY(presenter.hasCurrentTrack());
+    QCOMPARE(presenter.currentTitle(), local_title);
     QCOMPARE(presenter.playlistQueueSnapshot(), saved.queue);
 }
 

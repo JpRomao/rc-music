@@ -100,6 +100,9 @@ struct ListeningRoomBindingDependencies final {
     // While a guest plays the room: the player's position every room_position_feed_ms (the lyrics
     // panel follows it), then nullopt once when the guest stops. Only with guest_backend.
     std::function<void(std::optional<std::int64_t> position_ms)> room_position;
+    // S13.1: while a guest plays the room, the room's current item for the player bar (nullopt when the room
+    // has none), then nullopt once when the guest stops. Only with guest_backend.
+    std::function<void(std::optional<RoomTrackSummary> track)> room_now_playing;
     // S11.2: the host's saved playlists; only the lists visible to the room reach guests. Call
     // playlistsChanged() when they change. Empty: no catalog.
     std::function<PlaylistLibrarySnapshot()> playlists;
@@ -306,6 +309,8 @@ class ListeningRoomBinding final : public QObject {
     void takeOverPlayer();
     void feedPosition();
     void stopFollowing();
+    // S13.1: tells room_now_playing the room's current item while the guest plays the room.
+    void showRoomTrack();
     void setError(QString text);
     void refreshMembers();
     void refreshGuestRoom();
@@ -339,6 +344,8 @@ class ListeningRoomBinding final : public QObject {
     std::optional<SessionSnapshot> pending_give_back_;
     QTimer give_back_timer_;
     bool feeding_position_{false};
+    // What room_now_playing last showed.
+    std::optional<RoomTrackSummary> shown_room_track_;
     std::unique_ptr<ListeningRoomHost> host_;
     std::unique_ptr<ListeningRoomGuest> guest_;
     // Ended guests waiting for the event loop (never destroyed inside their own callbacks). Declared

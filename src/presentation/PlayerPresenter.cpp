@@ -848,11 +848,17 @@ QString PlayerPresenter::stateId() const {
     if (uses_frozen_fixture_)
         return state_.state_id;
 #endif
+    if (showsRoomPlayback())
+        return room_playback_.status == PlaybackStatus::Error ? QStringLiteral("error") : QStringLiteral("playing");
     if (controller_.confirmedSnapshot().status == PlaybackStatus::Error)
         return QStringLiteral("error");
     return local_track_session_->hasTrack() ? QStringLiteral("playing") : QStringLiteral("empty");
 }
 PlayerPresenter::PlaybackState PlayerPresenter::playbackState() const {
+    // Following a room whose file is still on its way: loading, not "open an audio file".
+    if (showsRoomPlayback())
+        return room_playback_.status == PlaybackStatus::Empty ? PlaybackState::Loading
+                                                              : mapPlaybackState(room_playback_.status);
     return mapPlaybackState(controller_.confirmedSnapshot().status);
 }
 bool PlayerPresenter::queueLoaded() const noexcept {
@@ -911,10 +917,14 @@ bool PlayerPresenter::hasPosition() const noexcept {
     if (uses_frozen_fixture_)
         return state_.position_ms.has_value();
 #endif
-    return local_track_session_->hasTrack();
+    return local_track_session_->hasTrack() || showsRoomPlayback();
 }
-qint64 PlayerPresenter::positionMs() const noexcept { return controller_.displayedPositionMs(); }
-qint64 PlayerPresenter::confirmedPositionMs() const noexcept { return controller_.confirmedSnapshot().position_ms; }
+qint64 PlayerPresenter::positionMs() const noexcept {
+    return showsRoomPlayback() ? room_playback_.position_ms : controller_.displayedPositionMs();
+}
+qint64 PlayerPresenter::confirmedPositionMs() const noexcept {
+    return showsRoomPlayback() ? room_playback_.position_ms : controller_.confirmedSnapshot().position_ms;
+}
 bool PlayerPresenter::seekPreviewActive() const noexcept { return controller_.seekPreviewActive(); }
 bool PlayerPresenter::seekPending() const noexcept { return controller_.seekPending(); }
 bool PlayerPresenter::hasDuration() const noexcept {
@@ -922,9 +932,14 @@ bool PlayerPresenter::hasDuration() const noexcept {
     if (uses_frozen_fixture_)
         return state_.duration_ms.has_value();
 #endif
+    if (showsRoomPlayback())
+        return durationMs() > 0;
     return localDurationMs().has_value();
 }
 qint64 PlayerPresenter::durationMs() const noexcept {
+    if (showsRoomPlayback())
+        return room_playback_.duration_ms > 0 ? room_playback_.duration_ms
+                                              : std::max<qint64>(room_track_->duration_ms, 0);
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         return hasDuration() ? controller_.confirmedSnapshot().duration_ms : 0;
@@ -932,6 +947,9 @@ qint64 PlayerPresenter::durationMs() const noexcept {
     return localDurationMs().value_or(0);
 }
 bool PlayerPresenter::seekable() const noexcept {
+    // A guest never seeks the shared player locally: only the room moves the music.
+    if (showsRoomPlayback())
+        return false;
     return (uses_frozen_fixture_ ? queueLoaded() : local_track_session_->hasTrack()) &&
            controller_.confirmedSnapshot().seekable;
 }
@@ -1223,7 +1241,7 @@ bool PlayerPresenter::hasCurrentTrack() const noexcept {
     if (uses_frozen_fixture_)
         return currentTrack() != nullptr;
 #endif
-    return local_track_session_->hasTrack();
+    return local_track_session_->hasTrack() || showsRoomPlayback();
 }
 QString PlayerPresenter::currentTitle() const {
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
@@ -1232,6 +1250,8 @@ QString PlayerPresenter::currentTitle() const {
         return track != nullptr ? track->title : QString{};
     }
 #endif
+    if (showsRoomPlayback())
+        return fromUtf8(room_track_->title);
     return fromUtf8(local_track_session_->displayTitle());
 }
 QString PlayerPresenter::currentArtist() const {
@@ -1241,6 +1261,8 @@ QString PlayerPresenter::currentArtist() const {
         return track != nullptr ? track->artist : QString{};
     }
 #endif
+    if (showsRoomPlayback())
+        return fromUtf8(room_track_->artist);
     return fromUtf8(local_track_session_->artist());
 }
 QString PlayerPresenter::currentAlbum() const {
@@ -1250,6 +1272,8 @@ QString PlayerPresenter::currentAlbum() const {
         return track != nullptr ? track->album : QString{};
     }
 #endif
+    if (showsRoomPlayback())
+        return fromUtf8(room_track_->album);
     return fromUtf8(local_track_session_->album());
 }
 QUrl PlayerPresenter::currentArtworkSource() const { return artwork_cache_->currentSource(); }
@@ -2001,6 +2025,20 @@ bool PlayerPresenter::restoreRoomSession(const SessionSnapshot& snapshot) {
         emit playbackChanged();
     return true;
 }
+void PlayerPresenter::showRoomPlayback(std::optional<RoomTrackSummary> track) {
+    if (QThread::currentThread() != thread() || track == room_track_)
+        return;
+    room_track_ = std::move(track);
+    room_playback_ = backend_.snapshot();
+    const QPointer<PlayerPresenter> guard{this};
+    emit stateChanged();
+    if (guard)
+        emit playbackChanged();
+}
+bool PlayerPresenter::showsRoomPlayback() const noexcept {
+    return room_track_.has_value() && !uses_frozen_fixture_ && local_track_session_ != nullptr &&
+           !local_track_session_->hasTrack();
+}
 std::optional<LocalQueueOccurrenceId> PlayerPresenter::appendRoomSource(const std::filesystem::path& source) {
     if (QThread::currentThread() != thread() || download_import_call_in_progress_)
         return std::nullopt;
@@ -2581,6 +2619,15 @@ bool PlayerPresenter::clearQueue() {
 void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
     if (uses_frozen_fixture_ || exit_committed_)
         return;
+    // S13.1: the follower plays the room on the shared player; with no local track every newer event is its own.
+    // A queued event of the local track that was put away (an older generation) changes nothing.
+    if (showsRoomPlayback()) {
+        if (event.snapshot.generation < room_playback_.generation)
+            return;
+        room_playback_ = event.snapshot;
+        emit playbackChanged();
+        return;
+    }
     const bool volume_removed = isSourceVolumeRemoval(event);
     // A volume removal already observed by the backend takes precedence over
     // queued decoder errors or completion from the same generation.

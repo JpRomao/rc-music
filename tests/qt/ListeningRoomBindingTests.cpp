@@ -156,6 +156,8 @@ struct Fixture final {
                     return release_accepts;
                 },
             .room_position = [this](const std::optional<std::int64_t> position) { room_positions.push_back(position); },
+            .room_now_playing =
+                [this](std::optional<RoomTrackSummary> track) { room_tracks.push_back(std::move(track)); },
             .playlists = [this] { return library; },
             .upload_picker = &upload_picker,
             .upload_inbox = &upload_inbox,
@@ -214,6 +216,7 @@ struct Fixture final {
     // false: the local player keeps its queue for now (busy), so the room must wait for it.
     bool release_accepts{true};
     std::vector<std::optional<std::int64_t>> room_positions;
+    std::vector<std::optional<RoomTrackSummary>> room_tracks;
     PlaybackBackend* guest_backend{nullptr};
     // S11.2: the host's saved playlists.
     PlaylistLibrarySnapshot library;
@@ -652,6 +655,46 @@ class ListeningRoomBindingTests final : public QObject {
         const auto fed = f.room_positions.size();
         QTest::qWait(250);
         QCOMPARE(f.room_positions.size(), fed);
+    }
+
+    // S13.1: while it follows the room the guest's player bar shows the room's current item (not "Abra um áudio
+    // para começar"), the next one when the room moves on, and its own state again after leaving.
+    void theGuestsPlayerShowsTheRoomsCurrentItemWhileFollowing() {
+        Fixture f;
+        SilentBackend backend;
+        f.guest_backend = &backend;
+        auto binding = f.make();
+        QVERIFY(binding->join(Fixture::validLink()));
+        auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, inviteHostHex());
+        f.connector->complete(guest_side);
+        QVERIFY(host_side->sendControl(RoomJoinResult{JoinDecision::Admitted}));
+        QVERIFY(followPlayingRoom(host_side, guest_side, f));
+        QVERIFY(!f.room_tracks.empty());
+        const std::optional<RoomTrackSummary> first{RoomTrackSummary{"Primeira", "Artista", "Album", 600'000}};
+        QVERIFY(f.room_tracks.back() == first);
+
+        RoomSnapshot room;
+        room.version = 2;
+        room.members.push_back(RoomMember{inviteHostHex(), "Joao", {}, MemberState::Admitted});
+        room.members.push_back(RoomMember{own_hex, "Ana", {}, MemberState::Admitted});
+        RoomItem item;
+        item.id = 8;
+        item.origin = RoomItemOrigin::HostTrack;
+        item.owner_fingerprint = inviteHostHex();
+        item.content_sha256 = std::string(64, 'b');
+        item.size_bytes = 1000;
+        item.summary = RoomTrackSummary{"Segunda", "Outra", "Disco", 200'000};
+        item.added_by = "Joao";
+        room.queue.push_back(item);
+        room.playback = RoomPlayback{8, true, 149'000, 0};
+        QVERIFY(host_side->sendControl(RoomStateMessage{room, {}}));
+        QVERIFY(f.room_tracks.back() == std::optional{item.summary});
+        const auto shown = f.room_tracks.size();
+        QVERIFY(host_side->sendControl(RoomStateMessage{room, {}})); // the same item: nothing new to show
+        QCOMPARE(f.room_tracks.size(), shown);
+
+        binding->leave();
+        QVERIFY(f.room_tracks.back() == std::nullopt);
     }
 
     // S8.2: the guest's room queue says which items are still loading and who added them; the host's

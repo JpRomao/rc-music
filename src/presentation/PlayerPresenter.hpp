@@ -10,6 +10,7 @@
 #include "m0/application/PlayerController.hpp"
 #include "m0/application/PreferencesAutosave.hpp"
 #include "m0/application/SessionAutosave.hpp"
+#include "m0/domain/ListeningRoom.hpp"
 #include "m0/domain/LocalFileQueue.hpp"
 #include "m0/domain/QueueNavigation.hpp"
 #include "m0/ports/AudioFileLocator.hpp"
@@ -461,6 +462,10 @@ class PlayerPresenter final : public QObject {
     // Puts back a session captured by liveSessionSnapshot (the guest leaving a room): its queue and
     // current item, loaded paused at its position. No-op when the queue already matches.
     [[nodiscard]] bool restoreRoomSession(const SessionSnapshot& snapshot);
+    // S13.1: while a guest follows a room (its local queue put away), the player shows the room's current
+    // item and the shared player's playback (the follower's), never entering the local queue or session.
+    // nullopt goes back to the local state.
+    void showRoomPlayback(std::optional<RoomTrackSummary> track);
     // Appends one file without playback, library admission or download receipt; its new occurrence.
     [[nodiscard]] std::optional<LocalQueueOccurrenceId> appendRoomSource(const std::filesystem::path& source);
     [[nodiscard]] const PlaybackSnapshot& confirmedPlayback() const noexcept;
@@ -578,6 +583,8 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] ExitPreparationState pollExitPreparation();
     [[nodiscard]] bool beginPersistenceExit();
     [[nodiscard]] bool roomHoldsPosition() const;
+    // S13.1: the room's item is shown while the local session has no track (the guest's queue is away).
+    [[nodiscard]] bool showsRoomPlayback() const noexcept;
     void completeExit();
     void cancelPendingExit();
     void completeDefaultAppsSettingsLaunch(DefaultAppsSettingsLaunchResult result, std::uint64_t generation);
@@ -757,6 +764,10 @@ class PlayerPresenter final : public QObject {
         bool source_volume_recovery{false};
     };
     std::optional<RestoredPosition> restored_position_{};
+    // S13.1: the room's current item while a guest follows a room, and the shared player's playback under it
+    // (the follower's generations, which the local track session ignores).
+    std::optional<RoomTrackSummary> room_track_{};
+    PlaybackSnapshot room_playback_{};
     std::optional<std::uint64_t> restored_eof_generation_{};
     bool preferences_future_version_pending_{false};
     bool session_future_version_pending_{false};
