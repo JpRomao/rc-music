@@ -1007,6 +1007,62 @@ TEST_CASE("room guest: a gap asks again at once from the partial file without us
     REQUIRE(requestsFor(f, 'a') == 2 + 2 * static_cast<std::size_t>(room_file_retries));
 }
 
+namespace {
+constexpr std::uint64_t overflow_chunk = 64 * 1024;
+constexpr std::uint64_t overflow_kept = 2 * 1024 * 1024 / overflow_chunk;
+// More chunks of transfer_id than the guest keeps, all before their offer (S13.1).
+void overflowBeforeOffer(GuestFixture& f, const std::uint32_t transfer_id) {
+    for (std::uint64_t index = 0; index < overflow_kept + 3; ++index)
+        REQUIRE(f.host_side->sendMedia(
+            {transfer_id, index * overflow_chunk, std::vector<std::uint8_t>(overflow_chunk, 1)}));
+}
+} // namespace
+
+// S13.1 fix round 1: when the offer of an overflowed transfer cannot be accepted (or its kept chunks not
+// written), the failure counts against room_file_retries like any other; the file ends failed and is not
+// asked for again.
+TEST_CASE("room guest: an overflowed transfer that cannot be accepted uses the retries, then the file fails",
+          "[core][listening-room][room-guest][room-files]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "a"));
+    REQUIRE(requestsFor(f, 'a') == 1);
+    f.inbox.deferred = true; // like the worker: failures of accept() come before the status answer
+    std::uint32_t id = 9;
+    for (int round = 0; round < room_file_retries + 2; ++round) {
+        overflowBeforeOffer(f, id);
+        f.send(RoomFileOffer{hashOf('a'), (overflow_kept + 3) * overflow_chunk, id});
+        f.inbox.fail(hashOf('a'), id++); // QuotaExceeded, say
+        f.inbox.answerAll();
+    }
+    REQUIRE(requestsFor(f, 'a') == 1 + static_cast<std::size_t>(room_file_retries));
+    REQUIRE(f.inbox.accepted.size() == 1 + static_cast<std::size_t>(room_file_retries));
+}
+
+// S13.1 fix round 1: an overflow round that adds nothing to the partial file is a failed try, so the guest
+// does not ask for the whole file again forever.
+TEST_CASE("room guest: overflow rounds that gain nothing use the retries, then the file fails",
+          "[core][listening-room][room-guest][room-files]") {
+    GuestFixture f;
+    f.start();
+    f.joinAdmitted();
+    f.send(roomQueue(1, "a"));
+    REQUIRE(f.received<RoomFileRequest>().back() == RoomFileRequest{hashOf('a'), 0});
+    // The kept chunks are written once; later rounds keep nothing new (the partial file stays the same).
+    f.inbox.partial[hashOf('a')] = overflow_kept * overflow_chunk;
+    std::uint32_t id = 9;
+    for (int round = 0; round < room_file_retries + 3; ++round) {
+        overflowBeforeOffer(f, id);
+        f.send(RoomFileOffer{hashOf('a'), (overflow_kept + 3) * overflow_chunk, id++});
+    }
+    // The first round gained the kept chunks; the next room_file_retries rounds gained nothing and asked again;
+    // the one after that ended the file.
+    REQUIRE(requestsFor(f, 'a') == 2 + static_cast<std::size_t>(room_file_retries));
+    REQUIRE(f.received<RoomFileRequest>().back() == RoomFileRequest{hashOf('a'), overflow_kept * overflow_chunk});
+    REQUIRE(f.inbox.accepted.size() == 2 + static_cast<std::size_t>(room_file_retries));
+}
+
 TEST_CASE("room guest: a late failure of a replaced transfer leaves the live one alone",
           "[core][listening-room][room-guest][room-files]") {
     GuestFixture f;

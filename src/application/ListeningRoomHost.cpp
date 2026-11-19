@@ -1369,9 +1369,31 @@ void ListeningRoomHost::onUploadStatus(const std::uint64_t token, const std::str
         return;
     }
     found->second.requested = true;
+    found->second.asked_offset = status.resume_offset;
     // Keep the link alive even if the send makes the guest answer synchronously.
     const auto link = owner->link;
     static_cast<void>(link->sendControl(RoomFileRequest{sha256, status.resume_offset}));
+}
+
+// The kept chunks of an overflowed upload are written (anything that failed was reported before this answer).
+void ListeningRoomHost::onUploadResumeStatus(const std::uint64_t token, const std::string& sha256,
+                                             const std::uint32_t receiving, const RoomFileStatus& status) {
+    const auto found = uploading_.find(sha256);
+    if (found == uploading_.end() || found->second.token != token || !found->second.resuming ||
+        found->second.receiving != receiving)
+        return;
+    auto& upload = found->second;
+    upload.resuming = false;
+    uploads_->abandon(receiving);
+    upload.receiving.reset();
+    if (!status.complete && upload.asked_offset && status.resume_offset <= *upload.asked_offset) {
+        if (upload.retries >= room_file_retries) {
+            refuseUpload(sha256, IntentRejection::InvalidArgument);
+            return;
+        }
+        ++upload.retries;
+    }
+    onUploadStatus(token, sha256, status);
 }
 
 void ListeningRoomHost::onUploadOffer(Connection& connection, const RoomFileOffer& offer) {
@@ -1398,6 +1420,7 @@ void ListeningRoomHost::onUploadOffer(Connection& connection, const RoomFileOffe
     upload.requested = false;
     if (upload.receiving)
         uploads_->abandon(*upload.receiving);
+    upload.resuming = false;
     upload.offered = offer.transfer_id;
     // Guests choose their transfer ids: the cache gets one of the host's, unique across guests.
     const auto receiving = ++next_upload_transfer_id_;
@@ -1409,13 +1432,19 @@ void ListeningRoomHost::onUploadOffer(Connection& connection, const RoomFileOffe
             uploads_->consume(std::move(chunk));
         }
     // Chunks of this transfer were dropped before it was offered, and the owner may have sent the rest already,
-    // so no later chunk would show the gap. It ends here, after what was kept is written; asking again resumes
-    // from the partial file (like a Gap, without using a retry), and the owner replaces its transfer.
+    // so no later chunk would show the gap. It stays live while the kept chunks are written (a failure counts as
+    // usual, onUploadFailed), but takes no later chunk of the owner's transfer; the status answer then ends it and
+    // asks again from the partial file (onUploadResumeStatus), and the owner replaces its transfer.
     if (overflowed) {
-        uploads_->abandon(receiving);
-        upload.receiving.reset();
         upload.offered.reset();
-        askUpload(offer.content_sha256);
+        upload.resuming = true;
+        const auto token = upload.token;
+        uploads_->status(offer.content_sha256,
+                         [alive = std::weak_ptr<Alive>{alive_}, token, sha256 = offer.content_sha256,
+                          receiving](const RoomFileStatus& status) {
+                             if (const auto self = alive.lock())
+                                 self->host->onUploadResumeStatus(token, sha256, receiving, status);
+                         });
         return;
     }
     if (std::none_of(uploading_.begin(), uploading_.end(),
@@ -1463,6 +1492,7 @@ void ListeningRoomHost::onUploadComplete(const std::string& sha256, const std::f
         return;
     found->second.receiving.reset();
     found->second.offered.reset();
+    found->second.resuming = false;
     probeUpload(sha256, file);
 }
 
@@ -1473,6 +1503,7 @@ void ListeningRoomHost::onUploadFailed(const std::string& sha256, const std::uin
         return;
     found->second.receiving.reset();
     found->second.offered.reset();
+    found->second.resuming = false;
     // A Gap keeps the partial file: asking again resumes from it.
     if (failure == RoomFileFailure::Gap) {
         askUpload(sha256);

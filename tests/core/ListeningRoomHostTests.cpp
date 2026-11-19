@@ -1863,6 +1863,62 @@ TEST_CASE("room host: an upload offer that comes after more chunks than are kept
     REQUIRE(dj->all<RoomIntentRejected>().empty());
 }
 
+namespace {
+constexpr std::size_t overflow_piece = 64 * 1024;
+constexpr std::size_t overflow_kept = 2 * 1024 * 1024 / overflow_piece;
+constexpr std::uint64_t overflow_size = (overflow_kept + 3) * overflow_piece;
+// The owner sends more chunks of transfer_id than the host keeps, all before their offer, then the offer (S13.1).
+void overflowUpload(Guest& dj, const std::uint32_t transfer_id) {
+    for (std::size_t index = 0; index < overflow_kept + 3; ++index)
+        static_cast<void>(dj.link->sendMedia(chunk(transfer_id, index * overflow_piece, overflow_piece)));
+    static_cast<void>(dj.link->sendControl(RoomFileOffer{upload_sha, overflow_size, transfer_id}));
+}
+} // namespace
+
+// S13.1 fix round 1: when the cache cannot accept an overflowed upload (or write its kept chunks), the failure
+// counts against room_file_retries; then the upload is refused and reported, and nothing is asked again.
+TEST_CASE("room host: an overflowed upload that cannot be accepted uses the retries, then it is refused",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    dj->intent(44, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload(overflow_size)});
+    REQUIRE(dj->all<RoomFileRequest>().size() == 1);
+    f.uploads.deferred = true; // like the worker: failures of accept() come before the status answer
+    for (int round = 0; round < room_file_retries + 2; ++round) {
+        overflowUpload(*dj, static_cast<std::uint32_t>(77 + round));
+        if (!f.uploads.accepted.empty())
+            f.uploads.fail(upload_sha, f.uploads.accepted.back().transfer_id); // QuotaExceeded, say
+        f.uploads.answerAll();
+    }
+    REQUIRE(dj->all<RoomFileRequest>().size() == 1 + static_cast<std::size_t>(room_file_retries));
+    REQUIRE(f.uploads.accepted.size() == 1 + static_cast<std::size_t>(room_file_retries));
+    REQUIRE(dj->all<RoomIntentRejected>() == std::vector<RoomIntentRejected>{{44, IntentRejection::InvalidArgument}});
+    REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
+}
+
+// S13.1 fix round 1: an overflow round that adds nothing to the partial file is a failed try, so the host does
+// not ask the owner for the whole file again forever.
+TEST_CASE("room host: upload overflow rounds that gain nothing use the retries, then the upload is refused",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    dj->intent(45, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload(overflow_size)});
+    REQUIRE(dj->all<RoomFileRequest>() == std::vector<RoomFileRequest>{{upload_sha, 0}});
+    // The kept chunks are written once; later rounds keep nothing new (the partial file stays the same).
+    f.uploads.partial[upload_sha] = overflow_kept * overflow_piece;
+    for (int round = 0; round < room_file_retries + 3; ++round)
+        overflowUpload(*dj, static_cast<std::uint32_t>(77 + round));
+    REQUIRE(dj->all<RoomFileRequest>().size() == 2 + static_cast<std::size_t>(room_file_retries));
+    REQUIRE(dj->all<RoomFileRequest>().back() == RoomFileRequest{upload_sha, overflow_kept * overflow_piece});
+    REQUIRE(f.uploads.accepted.size() == 2 + static_cast<std::size_t>(room_file_retries));
+    REQUIRE(dj->all<RoomIntentRejected>() == std::vector<RoomIntentRejected>{{45, IntentRejection::InvalidArgument}});
+    REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
+}
+
 TEST_CASE("room host: an owner who goes mid-upload leaves nothing behind",
           "[core][listening-room][room-host][room-uploads]") {
     HostFixture f;

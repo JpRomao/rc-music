@@ -509,12 +509,14 @@ void ListeningRoomGuest::updateFiles() {
             stopped.push_back(transfer_id);
     for (const auto transfer_id : stopped) {
         receiving_.erase(transfer_id);
+        resuming_.erase(transfer_id);
         files_->abandon(transfer_id);
     }
     std::erase_if(requested_, [&](const std::string& sha) { return !inWindow(sha); });
     std::erase_if(checking_, [&](const std::string& sha) { return !inWindow(sha); });
     std::erase_if(failed_, [&](const std::string& sha) { return !inWindow(sha); });
     std::erase_if(retries_, [&](const auto& retry) { return !inWindow(retry.first); });
+    std::erase_if(asked_offsets_, [&](const auto& asked) { return !inWindow(asked.first); });
     if (requested_.empty())
         dropEarlyChunks();
     const auto epoch = files_epoch_;
@@ -537,6 +539,10 @@ void ListeningRoomGuest::onFileStatus(const std::uint64_t epoch, const std::stri
                                       const RoomFileStatus& status) {
     if (epoch != files_epoch_ || checking_.erase(sha256) == 0)
         return;
+    applyFileStatus(sha256, status);
+}
+
+void ListeningRoomGuest::applyFileStatus(const std::string& sha256, const RoomFileStatus& status) {
     if (status.complete) {
         local_files_[sha256] = status.file;
         changed();
@@ -549,9 +555,34 @@ void ListeningRoomGuest::onFileStatus(const std::uint64_t epoch, const std::stri
     if (std::find(window.begin(), window.end(), sha256) == window.end())
         return;
     requested_.insert(sha256);
+    asked_offsets_[sha256] = status.resume_offset;
     // Keep the link alive even if the send makes the host answer synchronously.
     const auto link = link_;
     static_cast<void>(link->sendControl(RoomFileRequest{sha256, status.resume_offset}));
+}
+
+// The kept chunks of an overflowed transfer are written (anything that failed was reported before this answer):
+// the transfer ends and the file is asked for again from the partial file. A round that did not move past the
+// last request gained nothing and counts as a failed try, so the guest never asks for the same bytes forever.
+void ListeningRoomGuest::onResumeStatus(const std::uint64_t epoch, const std::uint32_t transfer_id,
+                                        const std::string& sha256, const RoomFileStatus& status) {
+    if (epoch != files_epoch_ || resuming_.erase(transfer_id) == 0)
+        return;
+    const auto found = receiving_.find(transfer_id);
+    if (found == receiving_.end() || found->second != sha256)
+        return;
+    receiving_.erase(found);
+    files_->abandon(transfer_id);
+    const auto asked = asked_offsets_.find(sha256);
+    if (!status.complete && asked != asked_offsets_.end() && status.resume_offset <= asked->second) {
+        if (auto& retries = retries_[sha256]; retries < room_file_retries) {
+            ++retries;
+        } else {
+            failed_.insert(sha256);
+            return;
+        }
+    }
+    applyFileStatus(sha256, status);
 }
 
 void ListeningRoomGuest::onOffer(const RoomFileOffer& offer) {
@@ -575,6 +606,7 @@ void ListeningRoomGuest::onOffer(const RoomFileOffer& offer) {
     if (held != receiving_.end()) {
         const auto stale = held->first;
         receiving_.erase(held);
+        resuming_.erase(stale);
         files_->abandon(stale);
     }
     receiving_[offer.transfer_id] = offer.content_sha256;
@@ -583,12 +615,18 @@ void ListeningRoomGuest::onOffer(const RoomFileOffer& offer) {
         for (auto& chunk : early.mapped())
             files_->consume(std::move(chunk));
     // Chunks of this transfer were dropped before it was offered, and the host may have sent the rest
-    // already, so no later chunk would show the gap. It ends here, after what was kept is written; asking
-    // again (status() first) resumes from the partial file, and the host replaces the transfer.
+    // already, so no later chunk would show the gap. It stays live while the kept chunks are written (a failure
+    // counts against the retries as usual); the status answer then ends it and asks again from the partial file
+    // (onResumeStatus), and the host replaces the transfer.
     if (overflowed) {
-        receiving_.erase(offer.transfer_id);
-        files_->abandon(offer.transfer_id);
-        updateFiles();
+        resuming_.insert(offer.transfer_id);
+        const auto epoch = files_epoch_;
+        const std::weak_ptr<Alive> alive = alive_;
+        files_->status(offer.content_sha256, [alive, epoch, transfer_id = offer.transfer_id,
+                                              sha = offer.content_sha256](const RoomFileStatus& status) {
+            if (const auto self = alive.lock())
+                self->guest->onResumeStatus(epoch, transfer_id, sha, status);
+        });
         return;
     }
     if (requested_.empty())
@@ -599,7 +637,9 @@ void ListeningRoomGuest::onChunk(RoomFileChunk chunk) {
     if (files_ == nullptr || state_ != GuestRoomState::Joined)
         return;
     if (receiving_.contains(chunk.transfer_id)) {
-        files_->consume(std::move(chunk));
+        // A late chunk of an overflowed transfer lies past the gap: the transfer ends at the kept chunks.
+        if (!resuming_.contains(chunk.transfer_id))
+            files_->consume(std::move(chunk));
         return;
     }
     if (requested_.empty() || chunk.transfer_id <= last_offer_id_)
@@ -634,6 +674,7 @@ void ListeningRoomGuest::onFileFailed(const std::string& sha256, const std::uint
     if (found == receiving_.end() || found->second != sha256)
         return;
     receiving_.erase(found);
+    resuming_.erase(transfer_id);
     // A Gap is a race, not a fault: the partial file stays and asking again (status() first) resumes
     // from it, so the host replaces the transfer from the right offset.
     if (failure == RoomFileFailure::Gap) {
@@ -657,6 +698,8 @@ void ListeningRoomGuest::stopFiles(const bool purge) {
     requested_.clear();
     failed_.clear();
     retries_.clear();
+    asked_offsets_.clear();
+    resuming_.clear();
     dropEarlyChunks();
     last_offer_id_ = 0;
     auto receiving = std::exchange(receiving_, {});

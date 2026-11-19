@@ -184,9 +184,11 @@ struct ListeningRoomHostDependencies final {
 //     owner's RoomFileOffer must name that hash and the declared size (else the upload is refused); the host
 //     accepts it under its own transfer id (guests choose theirs) and hands the owner's chunks to the cache.
 //     Chunks that come before their offer are kept (at most 2 MiB per link) while a request is outstanding.
-//     When some of a transfer's early chunks were dropped over that limit, its offer is accepted, the kept
-//     chunks are written, and the transfer is abandoned and asked for again from the partial file (S13.1:
-//     the offer can come after the whole file, so no later chunk would show the gap). This uses no retry.
+//     When some of a transfer's early chunks were dropped over that limit, its offer is accepted and the kept
+//     chunks are written (S13.1: the offer can come after the whole file, so no later chunk would show the gap).
+//     A failure of that accept or write counts like any other; otherwise the cache's status answer abandons the
+//     transfer and asks again from the partial file. A round that did not move past the last request's offset
+//     counts as a failed try (room_file_retries), so the owner is never asked for the same bytes forever.
 //     The cache refuses an offer above maximum_guest_upload_bytes and a chunk past the offered size, and
 //     keeps the file only when its SHA-256 matches the declared hash.
 //   - The same owner declaring a hash it is already uploading replaces that upload (its partial file stays
@@ -347,6 +349,11 @@ class ListeningRoomHost final {
         int retries{0};
         // The file is complete and upload_probe is checking it: the host's own work, never a stall.
         bool probing{false};
+        // S13.1: an overflowed transfer whose kept chunks are being written; still live (a failure counts as usual)
+        // until the status answer ends it and asks again (onUploadResumeStatus).
+        bool resuming{false};
+        // The offset of the last request to the owner: an overflow round that does not move past it gained nothing.
+        std::optional<std::uint64_t> asked_offset{};
     };
     [[nodiscard]] std::optional<IntentRejection> startUpload(const RoomItem& item, const std::string& fingerprint,
                                                              std::uint64_t request_id);
@@ -357,6 +364,8 @@ class ListeningRoomHost final {
     void freeUploadFiles(const std::vector<std::string>& hashes);
     void removePlayedGuestItem(std::uint64_t generation, std::uint64_t occurrence);
     void onUploadStatus(std::uint64_t token, const std::string& sha256, const RoomFileStatus& status);
+    void onUploadResumeStatus(std::uint64_t token, const std::string& sha256, std::uint32_t receiving,
+                              const RoomFileStatus& status);
     void onUploadOffer(Connection& connection, const RoomFileOffer& offer);
     void onUploadChunk(const RoomLink* link, RoomFileChunk chunk);
     void onUploadComplete(const std::string& sha256, const std::filesystem::path& file);
