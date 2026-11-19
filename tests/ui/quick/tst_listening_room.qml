@@ -29,6 +29,9 @@ TestCase {
         property bool canSkip: false
         property bool canPause: false
         property bool canEditQueue: false
+        property var roomPlaylists: []
+        property bool canAddFromRoom: false
+        property bool canAddPlaylist: false
         property bool roomPlaying: false
         property bool roomHasCurrent: false
         property bool rosterUnsaved: false
@@ -90,6 +93,14 @@ TestCase {
         function dismissError() {
             errorText = "";
         }
+        function roomAddItem(entryId) {
+            record("add:" + entryId);
+            return true;
+        }
+        function roomAddPlaylist(playlistId) {
+            record("addPlaylist:" + playlistId);
+            return true;
+        }
     }
 
     Component {
@@ -114,6 +125,9 @@ TestCase {
         fakeRoom.untilRevoked = false;
         fakeRoom.errorText = "";
         fakeRoom.privacyNoticeRequired = false;
+        fakeRoom.roomPlaylists = [];
+        fakeRoom.canAddFromRoom = false;
+        fakeRoom.canAddPlaylist = false;
         fakeRoom.calls = [];
     }
     function cleanup() {
@@ -492,6 +506,79 @@ TestCase {
         verify(localPresenter.setRoomOutputOffsetMs(250));
         compare(field.value, 250);
         verify(localPresenter.setRoomOutputOffsetMs(0));
+    }
+
+    // S11.2: a guest sees the host's visible playlists and adds one track or a whole list, by keyboard too,
+    // only with the permissions.
+    function test_aGuestAddsFromTheHostsPlaylists() {
+        joinAsGuest();
+        fakeRoom.roomPlaylists = [
+            {
+                playlistId: "5",
+                name: "Festa",
+                entries: [
+                    {
+                        entryId: "6",
+                        title: "Primeira",
+                        artist: "Artista",
+                        durationMs: 61000
+                    },
+                    {
+                        entryId: "7",
+                        title: "",
+                        artist: "",
+                        durationMs: 0
+                    }
+                ]
+            }
+        ];
+        createShell();
+        openPage();
+        // The page first focuses "Sair da sala".
+        tryVerify(() => findChild(testCase.shell, "room-leave").activeFocus);
+        compare(visibleChild("room-catalog-title").text, "Playlists do host");
+        compare(visibleChild("room-catalog-playlist-name").text, "Festa");
+        const first = findItem(shell.contentItem, "room-catalog-entry-6");
+        verify(first);
+        compare(findItem(first, "room-catalog-entry-title").text, "Primeira");
+        compare(first.Accessible.name, "Primeira");
+        compare(first.Accessible.description, "Artista");
+        compare(findItem(findItem(shell.contentItem, "room-catalog-entry-7"), "room-catalog-entry-title").text, "Sem título");
+
+        // Without the permissions the lists show and the buttons do not.
+        const addAll = findItem(shell.contentItem, "room-catalog-add-all");
+        const addOne = findItem(first, "room-catalog-add");
+        verify(addAll);
+        verify(addOne);
+        verify(!addAll.visible);
+        verify(!addOne.visible);
+        verify(visibleChild("room-catalog-no-permission").text.indexOf("permissão") >= 0);
+
+        fakeRoom.canAddFromRoom = true;
+        fakeRoom.canAddPlaylist = true;
+        tryVerify(() => addAll.visible && addOne.visible);
+        verify(!findChild(shell, "room-catalog-no-permission").visible);
+        compare(addAll.text, "Adicionar todas");
+        compare(addAll.Accessible.name, "Adicionar todas as músicas de Festa");
+        compare(addOne.text, "Adicionar");
+        compare(addOne.Accessible.name, "Adicionar Primeira");
+        mouseClick(addOne);
+        addAll.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        compare(fakeRoom.calls, ["add:6", "addPlaylist:5"]);
+        keyClick(Qt.Key_Tab);
+        tryVerify(() => addOne.activeFocus);
+        keyClick(Qt.Key_Space);
+        compare(fakeRoom.calls, ["add:6", "addPlaylist:5", "add:6"]);
+
+        // Only "add whole lists": the track buttons go.
+        fakeRoom.canAddFromRoom = false;
+        tryVerify(() => !addOne.visible);
+        verify(addAll.visible);
+
+        // The room ends: the lists go.
+        fakeRoom.roomPlaylists = [];
+        tryVerify(() => !findChild(testCase.shell, "room-catalog-title").visible);
     }
 
     function test_anErrorIsShownAndCanBeDismissed() {

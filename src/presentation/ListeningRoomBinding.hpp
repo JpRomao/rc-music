@@ -4,6 +4,7 @@
 #include "m0/application/ListeningRoomHost.hpp"
 #include "m0/application/RoomPlaybackFollower.hpp"
 #include "m0/domain/ListenerProfile.hpp"
+#include "m0/domain/PlaylistLibrary.hpp"
 #include "m0/domain/SessionSnapshot.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
 #include "m0/ports/RoomFiles.hpp"
@@ -20,6 +21,7 @@
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <QVariantList>
 #include <QVariantMap>
 
 #include <array>
@@ -97,6 +99,9 @@ struct ListeningRoomBindingDependencies final {
     // While a guest plays the room: the player's position every room_position_feed_ms (the lyrics
     // panel follows it), then nullopt once when the guest stops. Only with guest_backend.
     std::function<void(std::optional<std::int64_t> position_ms)> room_position;
+    // S11.2: the host's saved playlists; only the lists visible to the room reach guests. Call
+    // playlistsChanged() when they change. Empty: no catalog.
+    std::function<PlaylistLibrarySnapshot()> playlists;
 };
 
 // "Ouvir junto" for QML (ADR-0022, S7.3): hosts a room (ListeningRoomHost over the real player) or
@@ -134,6 +139,11 @@ class ListeningRoomBinding final : public QObject {
     Q_PROPERTY(bool canSkip READ canSkip NOTIFY changed)
     Q_PROPERTY(bool canPause READ canPause NOTIFY changed)
     Q_PROPERTY(bool canEditQueue READ canEditQueue NOTIFY changed)
+    // S11.2, guest: the host's playlists visible to the room, [{playlistId, name, entries: [{entryId, title,
+    // artist, durationMs}]}] (ids as text), and whether it may add single tracks or whole lists from them.
+    Q_PROPERTY(QVariantList roomPlaylists READ roomPlaylists NOTIFY catalogChanged)
+    Q_PROPERTY(bool canAddFromRoom READ canAddFromRoom NOTIFY changed)
+    Q_PROPERTY(bool canAddPlaylist READ canAddPlaylist NOTIFY changed)
     Q_PROPERTY(bool roomPlaying READ roomPlaying NOTIFY changed)
     Q_PROPERTY(bool roomHasCurrent READ roomHasCurrent NOTIFY changed)
     // A roles, overrides or block change the roster file did not take: it lasts only until the room closes.
@@ -174,6 +184,9 @@ class ListeningRoomBinding final : public QObject {
     [[nodiscard]] bool canSkip() const;
     [[nodiscard]] bool canPause() const;
     [[nodiscard]] bool canEditQueue() const;
+    [[nodiscard]] QVariantList roomPlaylists() const;
+    [[nodiscard]] bool canAddFromRoom() const;
+    [[nodiscard]] bool canAddPlaylist() const;
     [[nodiscard]] bool roomPlaying() const;
     [[nodiscard]] bool roomHasCurrent() const;
     [[nodiscard]] bool rosterUnsaved() const;
@@ -228,6 +241,12 @@ class ListeningRoomBinding final : public QObject {
     Q_INVOKABLE bool roomSeekBy(int deltaMs);
     Q_INVOKABLE bool roomRemove(const QString& itemId);
     Q_INVOKABLE bool roomMove(const QString& itemId, int destination);
+    // S11.2: one track, or a whole list, from the host's playlists (ids from roomPlaylists).
+    Q_INVOKABLE bool roomAddItem(const QString& entryId);
+    Q_INVOKABLE bool roomAddPlaylist(const QString& playlistId);
+
+    // S11.2, host: the saved playlists changed (a list made visible or private, renamed or edited).
+    void playlistsChanged();
 
     // S9.1: the guest's output offset (Preferences::room_output_offset_ms); a positive value plays earlier.
     void setOutputOffsetMs(int offset_ms);
@@ -247,6 +266,8 @@ class ListeningRoomBinding final : public QObject {
 
   signals:
     void changed();
+    // roomPlaylists changed.
+    void catalogChanged();
 
   private:
     enum class Pending { None, Open, Join };
@@ -286,6 +307,8 @@ class ListeningRoomBinding final : public QObject {
     RoomRolesModel roles_;
     RoomKnownPeopleModel known_people_;
     QString room_lyrics_;
+    // What roomPlaylists shows (the guest's last catalog).
+    RoomCatalog room_catalog_;
     std::optional<ListeningRoomNetwork> network_;
     // S9.1: the guest's player, declared before the guests that use it.
     std::unique_ptr<RoomPlaybackFollower> follower_;

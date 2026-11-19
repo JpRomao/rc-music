@@ -97,6 +97,7 @@ void ListeningRoomGuest::join(const RoomInviteLink& invite) {
     end_.reset();
     snapshot_ = {};
     permissions_.reset();
+    catalog_ = {};
     fresh_link_ = false;
     changed();
     if (state_ == GuestRoomState::Connecting && !connecting_ && !link_)
@@ -149,6 +150,8 @@ std::optional<std::filesystem::path> ListeningRoomGuest::localFile(const std::st
 }
 
 std::optional<RoomLyrics> ListeningRoomGuest::lyrics() const { return lyrics_; }
+
+const RoomCatalog& ListeningRoomGuest::catalog() const noexcept { return catalog_; }
 
 void ListeningRoomGuest::connect() {
     const auto attempt = ++attempt_;
@@ -226,6 +229,11 @@ void ListeningRoomGuest::onControl(const std::uint64_t link_id, const RoomContro
     } else if (const auto* pong = std::get_if<RoomClockPong>(&message)) {
         if (state_ == GuestRoomState::Joined && follower_ != nullptr)
             follower_->addClockSample({pong->sent_local_ms, pong->host_ms, local_clock_ms_()});
+    } else if (const auto* catalog = std::get_if<RoomCatalog>(&message)) {
+        if (state_ == GuestRoomState::Joined && catalog_ != *catalog) {
+            catalog_ = *catalog;
+            changed();
+        }
     } else if (const auto* lyrics = std::get_if<RoomLyrics>(&message)) {
         if (state_ == GuestRoomState::Joined && snapshot_.playback.current_item == lyrics->item_id &&
             lyrics->lrc_text.size() <= maximum_room_lyrics_bytes && lyrics_ != *lyrics) {
@@ -233,7 +241,6 @@ void ListeningRoomGuest::onControl(const std::uint64_t link_id, const RoomContro
             changed();
         }
     }
-    // Catalog messages belong to later tasks (S10-S11).
 }
 
 void ListeningRoomGuest::onLinkClosed(const std::uint64_t link_id, const RoomLinkFailure failure) {
@@ -579,6 +586,7 @@ void ListeningRoomGuest::stop() {
     stopFiles(true);
     snapshot_ = {};
     permissions_.reset();
+    catalog_ = {};
     fresh_link_ = false;
     // The room file goes before the local session comes back to the same player.
     if (follower_ != nullptr)

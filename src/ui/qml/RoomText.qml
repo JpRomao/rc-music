@@ -89,6 +89,13 @@ QtObject {
     readonly property string block: qsTr("Expulsar e bloquear")
     readonly property string blockName: qsTr("Expulsar e bloquear %1")
     readonly property string closeMenu: qsTr("Fechar")
+    readonly property string catalogTitle: qsTr("Playlists do host")
+    readonly property string catalogNoPermission: qsTr("Para pôr músicas destas playlists na fila, peça permissão ao anfitrião.")
+    readonly property string addItem: qsTr("Adicionar")
+    readonly property string addItemName: qsTr("Adicionar %1")
+    readonly property string addAll: qsTr("Adicionar todas")
+    readonly property string addAllName: qsTr("Adicionar todas as músicas de %1")
+    readonly property string untitled: qsTr("Sem título")
 
     function permissionName(index) {
         switch (index) {

@@ -40,6 +40,9 @@ TestCase {
         property bool canSkip: false
         property bool canPause: false
         property bool canEditQueue: false
+        property var roomPlaylists: []
+        property bool canAddFromRoom: false
+        property bool canAddPlaylist: false
         property bool roomPlaying: false
         property bool roomHasCurrent: false
         property bool rosterUnsaved: false

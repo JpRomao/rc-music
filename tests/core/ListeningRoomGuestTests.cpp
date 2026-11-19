@@ -1171,4 +1171,33 @@ TEST_CASE("room guest: leaving unloads the room file before the local session co
     REQUIRE(g.backend.snapshot().status != PlaybackStatus::Playing);
 }
 
+TEST_CASE("room guest: keeps the host's last catalog while in the room and forgets it when the room ends",
+          "[core][listening-room][room-guest][room-catalog]") {
+    GuestFixture f;
+    f.start();
+    const RoomCatalog catalog{
+        {RoomCatalogPlaylist{5, "Festa", {RoomCatalogEntry{6, RoomTrackSummary{"d", "Artista", "Album", 1000}}}}}};
+    f.guest->join(invite());
+    f.connectLink();
+    f.send(catalog); // before admission: ignored
+    REQUIRE(f.guest->catalog().playlists.empty());
+    f.send(RoomJoinResult{JoinDecision::Admitted});
+
+    const auto changes = f.changes;
+    f.send(catalog);
+    REQUIRE(f.guest->catalog() == catalog);
+    REQUIRE(f.changes == changes + 1);
+    f.send(catalog); // the same catalog again changes nothing
+    REQUIRE(f.changes == changes + 1);
+    f.send(RoomCatalog{});
+    REQUIRE(f.guest->catalog().playlists.empty());
+
+    // A dropped link keeps it; the end of the room forgets it.
+    f.send(catalog);
+    f.dropLink(RoomLinkFailure::Unreachable);
+    REQUIRE(f.guest->catalog() == catalog);
+    f.guest->leave();
+    REQUIRE(f.guest->catalog().playlists.empty());
+}
+
 } // namespace music_player::m0::test

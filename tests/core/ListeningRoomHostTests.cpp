@@ -6,6 +6,7 @@
 
 #include "m0/application/ListeningRoomHost.hpp"
 #include "m0/application/SessionAutosave.hpp"
+#include "m0/domain/PlaylistLibrary.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -40,6 +41,11 @@ struct Guest final {
             if (const auto* typed = std::get_if<T>(&message))
                 result.push_back(*typed);
         return result;
+    }
+    [[nodiscard]] RoomCatalog lastCatalog() const {
+        const auto catalogs = all<RoomCatalog>();
+        REQUIRE_FALSE(catalogs.empty());
+        return catalogs.back();
     }
     [[nodiscard]] std::optional<RoomStateMessage> lastState() const {
         const auto states = all<RoomStateMessage>();
@@ -139,6 +145,21 @@ class RecordingSessionWriter final : public SessionWriter {
     bool shutdown() override { return true; }
     std::vector<SessionWriteRequest> writes;
 };
+
+NamedPlaylist namedPlaylist(const std::uint64_t id, std::string name, const PlaylistVisibility visibility,
+                            const std::vector<std::filesystem::path>& paths) {
+    NamedPlaylist playlist{id, std::move(name), {}, visibility};
+    for (std::size_t index = 0; index < paths.size(); ++index)
+        playlist.entries.push_back(PlaylistEntry{id * 100 + index + 1, paths[index]});
+    return playlist;
+}
+
+// "Festa" (d, e) is visible to the room unless party says otherwise; "Privada" never is.
+PlaylistLibrarySnapshot partyLibrary(const PlaylistVisibility party = PlaylistVisibility::Room,
+                                     std::string party_name = "Festa") {
+    return {{namedPlaylist(1, "Privada", PlaylistVisibility::Private, {"music/segredo.mp3"}),
+             namedPlaylist(2, std::move(party_name), party, {"music/d.mp3", "music/e.mp3"})}};
+}
 
 } // namespace
 
@@ -1280,6 +1301,220 @@ TEST_CASE("room host: changes to a roster file that cannot be written stay unsav
     REQUIRE(newer.host->renameRole(newer.host->roster().roles.back().id, "Turma"));
     REQUIRE(newer.host->rosterUnsaved());
     REQUIRE(newer.store.saves == 1);
+}
+
+// ---- S11.2: the catalog of the host's playlists visible to the room ----------------------------------------
+
+TEST_CASE("room host: the catalog has only the playlists visible to the room, with track summaries and its own ids",
+          "[core][listening-room][room-host][room-catalog]") {
+    HostFixture f;
+    f.start();
+    f.host->setPlaylists(partyLibrary());
+    REQUIRE(f.host->catalog().playlists.empty()); // nothing is described before the room opens
+    static_cast<void>(f.host->open({}));
+    auto stranger = f.join("fp-new", "Caio");
+    REQUIRE(stranger->all<RoomCatalog>().empty()); // pending people get nothing
+
+    auto dj = f.join("fp-dj");
+    REQUIRE(dj->all<RoomCatalog>().size() == 1);
+    const auto catalog = dj->lastCatalog();
+    REQUIRE(catalog == f.host->catalog());
+    REQUIRE(catalog.playlists.size() == 1);
+    const auto& party = catalog.playlists.front();
+    REQUIRE(party.name == "Festa");
+    REQUIRE(party.entries.size() == 2);
+    REQUIRE(party.entries[0].summary == RoomTrackSummary{"d", "Artista", "Album", 248'000});
+    REQUIRE(party.entries[1].summary.title == "e");
+    // The ids are the room's own, never the library's (which would tell about other lists).
+    const std::set<std::uint64_t> ids{party.id, party.entries[0].id, party.entries[1].id};
+    REQUIRE(ids.size() == 3);
+    REQUIRE_FALSE(ids.contains(0));
+    REQUIRE(party.id != 2);
+    REQUIRE_FALSE(ids.contains(201));
+    REQUIRE_FALSE(ids.contains(202));
+    // A private list's files are not even read.
+    REQUIRE(std::find(f.catalog.requests.begin(), f.catalog.requests.end(), "music/segredo.mp3") ==
+            f.catalog.requests.end());
+    // The admitted member gets the state first, then the catalog.
+    const auto first_state = std::find_if(dj->inbox.begin(), dj->inbox.end(), [](const RoomControlMessage& m) {
+        return std::holds_alternative<RoomStateMessage>(m);
+    });
+    const auto first_catalog = std::find_if(dj->inbox.begin(), dj->inbox.end(), [](const RoomControlMessage& m) {
+        return std::holds_alternative<RoomCatalog>(m);
+    });
+    REQUIRE(first_state < first_catalog);
+}
+
+TEST_CASE("room host: a playlist made private during the room leaves the guests' catalog and its ids stop working",
+          "[core][listening-room][room-host][room-catalog]") {
+    HostFixture f;
+    f.start();
+    f.host->setPlaylists(partyLibrary());
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    const auto party = dj->lastCatalog().playlists.front();
+
+    f.host->setPlaylists(partyLibrary(PlaylistVisibility::Private));
+    REQUIRE(dj->all<RoomCatalog>().size() == 2);
+    REQUIRE(dj->lastCatalog().playlists.empty());
+    REQUIRE(f.host->catalog().playlists.empty());
+
+    dj->intent(1, RoomIntent{.kind = RoomIntentKind::AddItems, .catalog_entry_ids = {party.entries[0].id}});
+    dj->intent(2, RoomIntent{.kind = RoomIntentKind::AddPlaylist, .playlist_id = party.id});
+    REQUIRE(dj->all<RoomIntentRejected>() ==
+            std::vector<RoomIntentRejected>{{1, IntentRejection::UnknownItem}, {2, IntentRejection::UnknownItem}});
+    REQUIRE(f.player.paths().size() == 3);
+
+    // The same library again changes nothing and sends nothing.
+    f.host->setPlaylists(partyLibrary(PlaylistVisibility::Private));
+    REQUIRE(dj->all<RoomCatalog>().size() == 2);
+    // Visible again: back in the catalog.
+    f.host->setPlaylists(partyLibrary());
+    REQUIRE(dj->all<RoomCatalog>().size() == 3);
+    REQUIRE(dj->lastCatalog().playlists.size() == 1);
+}
+
+TEST_CASE("room host: renaming or changing a visible playlist sends the new catalog",
+          "[core][listening-room][room-host][room-catalog]") {
+    HostFixture f;
+    f.start();
+    f.host->setPlaylists(partyLibrary());
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    const auto before = dj->lastCatalog();
+
+    f.host->setPlaylists(partyLibrary(PlaylistVisibility::Room, "Festa de sábado"));
+    REQUIRE(dj->all<RoomCatalog>().size() == 2);
+    const auto renamed = dj->lastCatalog();
+    REQUIRE(renamed.playlists.front().name == "Festa de sábado");
+    // Ids stay the same while the room is open.
+    REQUIRE(renamed.playlists.front().id == before.playlists.front().id);
+    REQUIRE(renamed.playlists.front().entries == before.playlists.front().entries);
+
+    auto library = partyLibrary();
+    library.playlists[1].entries.push_back(PlaylistEntry{203, "music/f.mp3"});
+    f.host->setPlaylists(library);
+    REQUIRE(dj->lastCatalog().playlists.front().entries.size() == 3);
+    REQUIRE(dj->lastCatalog().playlists.front().entries[2].summary.title == "f");
+}
+
+TEST_CASE("room host: catalog tracks appear once described and unreadable ones stay out",
+          "[core][listening-room][room-host][room-catalog]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    f.catalog.deferred = true;
+    f.catalog.unreadable.insert("music/d.mp3");
+    f.host->setPlaylists(partyLibrary());
+    REQUIRE(f.host->catalog().playlists.size() == 1);
+    REQUIRE(f.host->catalog().playlists.front().entries.empty());
+    f.catalog.completeAll();
+    const auto& entries = f.host->catalog().playlists.front().entries;
+    REQUIRE(entries.size() == 1);
+    REQUIRE(entries.front().summary.title == "e");
+    REQUIRE(dj->lastCatalog() == f.host->catalog());
+}
+
+TEST_CASE("room host: AddPlaylist with the permission queues every track of the playlist in order",
+          "[core][listening-room][room-host][room-catalog]") {
+    HostFixture f;
+    f.start();
+    f.host->setPlaylists(partyLibrary());
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    const auto party = dj->lastCatalog().playlists.front();
+
+    dj->intent(1, RoomIntent{.kind = RoomIntentKind::AddPlaylist, .playlist_id = party.id});
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+    REQUIRE(f.player.paths() == std::vector<std::filesystem::path>{"music/a.mp3", "music/b.mp3", "music/c.mp3",
+                                                                   "music/d.mp3", "music/e.mp3"});
+    const auto queue = f.host->snapshot().queue;
+    REQUIRE(queue.size() == 5);
+    REQUIRE(queue[3].summary.title == "d");
+    REQUIRE(queue[4].summary.title == "e");
+    REQUIRE(queue[3].owner_fingerprint == host_hex);
+    REQUIRE(dj->lastState()->snapshot == f.host->snapshot());
+
+    // Single tracks, in the order asked.
+    dj->intent(2, RoomIntent{.kind = RoomIntentKind::AddItems,
+                             .catalog_entry_ids = {party.entries[1].id, party.entries[0].id}});
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+    REQUIRE(f.player.paths().size() == 7);
+    REQUIRE(f.player.paths()[5] == "music/e.mp3");
+    REQUIRE(f.player.paths()[6] == "music/d.mp3");
+
+    // One unknown id refuses the whole intent.
+    dj->intent(3, RoomIntent{.kind = RoomIntentKind::AddItems, .catalog_entry_ids = {party.entries[0].id, 999}});
+    dj->intent(4, RoomIntent{.kind = RoomIntentKind::AddPlaylist, .playlist_id = 999});
+    REQUIRE(dj->all<RoomIntentRejected>() ==
+            std::vector<RoomIntentRejected>{{3, IntentRejection::UnknownItem}, {4, IntentRejection::UnknownItem}});
+    REQUIRE(f.player.paths().size() == 7);
+}
+
+TEST_CASE("room host: adding from the catalog without the permission is refused",
+          "[core][listening-room][room-host][room-catalog]") {
+    HostFixture f;
+    f.start();
+    f.host->setPlaylists(partyLibrary());
+    static_cast<void>(f.host->open({}));
+    auto listener = f.join("fp-listener", "Lia");
+    // A listener sees the catalog too; the permissions decide what it may add.
+    const auto party = listener->lastCatalog().playlists.front();
+    listener->intent(1, RoomIntent{.kind = RoomIntentKind::AddPlaylist, .playlist_id = party.id});
+    listener->intent(2, RoomIntent{.kind = RoomIntentKind::AddItems, .catalog_entry_ids = {party.entries[0].id}});
+    REQUIRE(listener->all<RoomIntentRejected>() ==
+            std::vector<RoomIntentRejected>{{1, IntentRejection::MissingPermission},
+                                            {2, IntentRejection::MissingPermission}});
+    REQUIRE(f.player.paths().size() == 3);
+
+    // AddFromRoom alone does not add whole playlists.
+    REQUIRE(f.host->setOverride("fp-listener", RoomPermission::AddFromRoom, true));
+    listener->intent(3, RoomIntent{.kind = RoomIntentKind::AddPlaylist, .playlist_id = party.id});
+    listener->intent(4, RoomIntent{.kind = RoomIntentKind::AddItems, .catalog_entry_ids = {party.entries[0].id}});
+    REQUIRE(listener->all<RoomIntentRejected>().back() == RoomIntentRejected{3, IntentRejection::MissingPermission});
+    REQUIRE(f.player.paths().size() == 4);
+}
+
+TEST_CASE("room host: adding past maximum_room_queue_items is QueueFull and adds nothing",
+          "[core][listening-room][room-host][room-catalog]") {
+    std::vector<std::filesystem::path> sources;
+    for (std::size_t index = 0; index + 1 < maximum_room_queue_items; ++index)
+        sources.emplace_back("music/" + std::to_string(index) + ".mp3");
+    HostFixture f(sources);
+    f.start();
+    f.host->setPlaylists(partyLibrary());
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    REQUIRE(f.host->snapshot().queue.size() == maximum_room_queue_items - 1);
+    const auto party = dj->lastCatalog().playlists.front();
+
+    dj->intent(1, RoomIntent{.kind = RoomIntentKind::AddPlaylist, .playlist_id = party.id});
+    dj->intent(2, RoomIntent{.kind = RoomIntentKind::AddItems,
+                             .catalog_entry_ids = {party.entries[0].id, party.entries[1].id}});
+    REQUIRE(dj->all<RoomIntentRejected>() ==
+            std::vector<RoomIntentRejected>{{1, IntentRejection::QueueFull}, {2, IntentRejection::QueueFull}});
+    REQUIRE(f.player.paths().size() == maximum_room_queue_items - 1);
+
+    dj->intent(3, RoomIntent{.kind = RoomIntentKind::AddItems, .catalog_entry_ids = {party.entries[0].id}});
+    REQUIRE(dj->all<RoomIntentRejected>().size() == 2);
+    REQUIRE(f.host->snapshot().queue.size() == maximum_room_queue_items);
+    dj->intent(4, RoomIntent{.kind = RoomIntentKind::AddPlaylist, .playlist_id = party.id});
+    REQUIRE(dj->all<RoomIntentRejected>().back() == RoomIntentRejected{4, IntentRejection::QueueFull});
+    REQUIRE(f.player.paths().size() == maximum_room_queue_items);
+}
+
+TEST_CASE("room host: closing the room forgets the catalog", "[core][listening-room][room-host][room-catalog]") {
+    HostFixture f;
+    f.start();
+    f.host->setPlaylists(partyLibrary());
+    static_cast<void>(f.host->open({}));
+    REQUIRE(f.host->catalog().playlists.size() == 1);
+    f.host->close();
+    REQUIRE(f.host->catalog().playlists.empty());
+    // Reopened, it is built again from the playlists it was given.
+    static_cast<void>(f.host->open({}));
+    REQUIRE(f.host->catalog().playlists.size() == 1);
 }
 
 } // namespace music_player::m0::test

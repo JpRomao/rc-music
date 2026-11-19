@@ -1,5 +1,7 @@
 #pragma once
 
+#include "m0/domain/PlaylistLibrary.hpp"
+
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -49,6 +51,8 @@ class PlaylistsBinding final : public QObject {
     [[nodiscard]] bool hasPendingChange() const;
     // Paths of every confirmed entry (empty until loaded), for the library's first-use seed.
     [[nodiscard]] Paths entryPaths() const;
+    // The saved lists (empty until loaded), for the listening room's catalog (S11.2).
+    [[nodiscard]] PlaylistLibrarySnapshot librarySnapshot() const;
     // Appends files to a saved playlist (for the library page). Confirmed only by
     // Saved, like every edit here; the page's current selection is kept.
     [[nodiscard]] bool appendToPlaylist(const QString& playlist_id, Paths paths);

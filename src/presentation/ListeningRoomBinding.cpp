@@ -261,6 +261,24 @@ bool ListeningRoomBinding::guestMay(const RoomPermission permission) const {
 bool ListeningRoomBinding::canSkip() const { return guestMay(RoomPermission::Skip); }
 bool ListeningRoomBinding::canPause() const { return guestMay(RoomPermission::Pause); }
 bool ListeningRoomBinding::canEditQueue() const { return guestMay(RoomPermission::EditQueue); }
+bool ListeningRoomBinding::canAddFromRoom() const { return guestMay(RoomPermission::AddFromRoom); }
+bool ListeningRoomBinding::canAddPlaylist() const { return guestMay(RoomPermission::AddPlaylist); }
+
+QVariantList ListeningRoomBinding::roomPlaylists() const {
+    QVariantList playlists;
+    for (const auto& playlist : room_catalog_.playlists) {
+        QVariantList entries;
+        for (const auto& entry : playlist.entries)
+            entries.append(QVariantMap{{QStringLiteral("entryId"), QString::number(entry.id)},
+                                       {QStringLiteral("title"), QString::fromStdString(entry.summary.title)},
+                                       {QStringLiteral("artist"), QString::fromStdString(entry.summary.artist)},
+                                       {QStringLiteral("durationMs"), static_cast<double>(entry.summary.duration_ms)}});
+        playlists.append(QVariantMap{{QStringLiteral("playlistId"), QString::number(playlist.id)},
+                                     {QStringLiteral("name"), QString::fromStdString(playlist.name)},
+                                     {QStringLiteral("entries"), entries}});
+    }
+    return playlists;
+}
 
 bool ListeningRoomBinding::roomHasCurrent() const {
     return role_ == GuestRole && guest_ && guest_->state() == GuestRoomState::Joined &&
@@ -460,10 +478,32 @@ bool ListeningRoomBinding::roomMove(const QString& itemId, const int destination
                                                                  .destination = static_cast<std::size_t>(destination)});
 }
 
+bool ListeningRoomBinding::roomAddItem(const QString& entryId) {
+    bool valid = false;
+    const auto id = entryId.toULongLong(&valid);
+    return valid && sendGuestIntent(RoomPermission::AddFromRoom,
+                                    RoomIntent{.kind = RoomIntentKind::AddItems, .catalog_entry_ids = {id}});
+}
+
+bool ListeningRoomBinding::roomAddPlaylist(const QString& playlistId) {
+    bool valid = false;
+    const auto id = playlistId.toULongLong(&valid);
+    return valid && sendGuestIntent(RoomPermission::AddPlaylist,
+                                    RoomIntent{.kind = RoomIntentKind::AddPlaylist, .playlist_id = id});
+}
+
+void ListeningRoomBinding::playlistsChanged() {
+    if (role_ == HostRole && host_ && dependencies_.playlists)
+        host_->setPlaylists(dependencies_.playlists());
+}
+
 void ListeningRoomBinding::guestRejected(const IntentRejection reason) {
-    if (reason != IntentRejection::MissingPermission)
+    if (reason == IntentRejection::MissingPermission)
+        setError(tr("Sem permissão"));
+    else if (reason == IntentRejection::QueueFull)
+        setError(tr("A fila da sala está cheia."));
+    else
         return;
-    setError(tr("Sem permissão"));
     publish();
 }
 
@@ -586,6 +626,8 @@ void ListeningRoomBinding::startHost() {
     host_->onRosterUnsavedChanged = [this] { publish(); };
     host_->onJoinRequest = [this](const RoomMember& member) { hostJoinRequest(member); };
     host_->onEndpointFailed = [this](const RoomLinkFailure failure) { hostEndpointFailed(failure); };
+    if (dependencies_.playlists)
+        host_->setPlaylists(dependencies_.playlists());
     if (dependencies_.set_room_play_order)
         dependencies_.set_room_play_order(true);
     role_ = HostRole;
@@ -846,8 +888,13 @@ void ListeningRoomBinding::retireGuest() {
     QMetaObject::invokeMethod(this, [this] { retired_guests_.clear(); }, Qt::QueuedConnection);
 }
 
-// The guest's room queue (which files are here yet) and the host's lyrics for the current item.
+// The guest's room queue (which files are here yet), the host's playlists and its lyrics for the current item.
 void ListeningRoomBinding::refreshGuestRoom() {
+    auto catalog = role_ == GuestRole && guest_ ? guest_->catalog() : RoomCatalog{};
+    if (catalog != room_catalog_) {
+        room_catalog_ = std::move(catalog);
+        emit catalogChanged();
+    }
     QString lyrics;
     if (role_ == GuestRole && guest_) {
         const auto* const guest = guest_.get();

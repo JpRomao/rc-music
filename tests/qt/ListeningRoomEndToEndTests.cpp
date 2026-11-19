@@ -395,6 +395,38 @@ class ListeningRoomEndToEndTests final : public QObject {
         QCOMPARE(ana.guest.snapshot().queue.size(), std::size_t{2});
     }
 
+    // S11.2: the host's visible playlists reach a guest through the real codec and transport, a DJ adds a
+    // whole list from them, and a list made private leaves the guest's catalog.
+    void aDjAddsAVisiblePlaylistAndPrivateListsNeverArrive() {
+        LoopbackSignaling relay;
+        HostApp app(relay, host_id_, rosterWith());
+        app.host.setPlaylists(PlaylistLibrarySnapshot{{
+            NamedPlaylist{1, "Segredos", {{11, "music/segredo.mp3"}}, PlaylistVisibility::Private},
+            NamedPlaylist{2, "Festa", {{21, "music/d.mp3"}, {22, "music/e.mp3"}}, PlaylistVisibility::Room},
+        }});
+        const auto invite = openRoom(app, relay, {.default_role_id = dj_role});
+        QVERIFY(invite.has_value());
+        GuestApp ana(relay, ana_id_, "Ana");
+        QVERIFY(approveIn(app, ana, *invite));
+        QTRY_COMPARE_WITH_TIMEOUT(ana.guest.catalog(), app.host.catalog(), connect_ms);
+        const auto catalog = ana.guest.catalog();
+        QCOMPARE(catalog.playlists.size(), std::size_t{1});
+        QCOMPARE(catalog.playlists.front().name, std::string{"Festa"});
+        QCOMPARE(catalog.playlists.front().entries.size(), std::size_t{2});
+
+        QVERIFY(ana.guest.sendIntent(
+                    RoomIntent{.kind = RoomIntentKind::AddPlaylist, .playlist_id = catalog.playlists.front().id}) != 0);
+        QTRY_COMPARE_WITH_TIMEOUT(app.player.paths().size(), std::size_t{5}, connect_ms);
+        QCOMPARE(app.player.paths()[3], std::filesystem::path{"music/d.mp3"});
+        QCOMPARE(app.player.paths()[4], std::filesystem::path{"music/e.mp3"});
+        QTRY_COMPARE_WITH_TIMEOUT(ana.guest.snapshot().queue.size(), std::size_t{5}, connect_ms);
+
+        app.host.setPlaylists(PlaylistLibrarySnapshot{{
+            NamedPlaylist{2, "Festa", {{21, "music/d.mp3"}, {22, "music/e.mp3"}}, PlaylistVisibility::Private},
+        }});
+        QTRY_VERIFY_WITH_TIMEOUT(ana.guest.catalog().playlists.empty(), connect_ms);
+    }
+
     void aKnownListenerArrivingAtAFullRoomIsToldTheRoomIsFull() {
         LoopbackSignaling relay;
         const auto bia_hex = hex(bia_id_.fingerprint);

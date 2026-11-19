@@ -465,6 +465,10 @@ bool PlaylistsBinding::enqueuePlaylist(const QString& value) {
     emit changed();
     return accepted;
 }
+PlaylistLibrarySnapshot PlaylistsBinding::librarySnapshot() const {
+    return impl_->ready ? impl_->library.snapshot() : PlaylistLibrarySnapshot{};
+}
+
 PlaylistsBinding::Paths PlaylistsBinding::entryPaths() const {
     Paths result;
     if (!impl_->ready)

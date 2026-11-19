@@ -1011,6 +1011,11 @@ int main(int argc, char* argv[]) {
             presenter.setRoomPlayOrder(enabled);
         };
         room_dependencies.session_changed = [&presenter] { presenter.refreshRoomSession(); };
+        // S11.2: the room catalog comes from the saved playlists; only the lists visible to the room go out.
+        room_dependencies.playlists = [&playlists_binding] {
+            return playlists_binding ? playlists_binding->librarySnapshot()
+                                     : music_player::m0::PlaylistLibrarySnapshot{};
+        };
         room_dependencies.clock_ms = [] {
             return static_cast<std::int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
                                                  std::chrono::steady_clock::now().time_since_epoch())
@@ -1052,6 +1057,8 @@ int main(int argc, char* argv[]) {
              // the queue or loads over the room.
              .blocks_local_sources = [&room_binding] { return room_binding.holdsLocalSession(); }});
         const auto unhook_room = qScopeGuard([&presenter] { presenter.setRoomSessionGate({}); });
+        QObject::connect(playlists_binding.get(), &music_player::m0::PlaylistsBinding::changed, &room_binding,
+                         [&room_binding] { room_binding.playlistsChanged(); });
         QVariantMap initial_properties{{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
                                        {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},
                                        {QStringLiteral("lyrics"), QVariant::fromValue(&lyrics_binding)},

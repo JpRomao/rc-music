@@ -3,6 +3,7 @@
 #include "m0/domain/ListenerProfile.hpp"
 #include "m0/domain/ListeningRoom.hpp"
 #include "m0/domain/ListeningRoomLimits.hpp"
+#include "m0/domain/PlaylistLibrary.hpp"
 #include "m0/domain/RoomInviteLink.hpp"
 #include "m0/domain/RoomMessages.hpp"
 #include "m0/domain/RoomRoster.hpp"
@@ -25,6 +26,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace music_player::m0 {
@@ -58,6 +60,8 @@ struct ListeningRoomHostDependencies final {
 // counted as its worst JSON escape. The host keeps every state it sends within
 // maximum_room_control_message_bytes by this estimate.
 [[nodiscard]] std::size_t estimatedRoomStateBytes(const RoomStateMessage& message);
+// The same bound for a RoomCatalog: the host keeps its catalog within maximum_room_control_message_bytes.
+[[nodiscard]] std::size_t estimatedRoomCatalogBytes(const RoomCatalog& catalog);
 
 // Host side of the listening room (ADR-0022, S7.1): ties ListeningRoom/RoomRoster, the roster store,
 // the local player (RoomHostPlayer, see that port for why it is not PlayerController directly), the
@@ -98,8 +102,12 @@ struct ListeningRoomHostDependencies final {
 // intents call the player: Next/Previous/Seek/Pause/Resume, RemoveItem and MoveItem (destination is
 // an index of the room queue). Pause/Resume already in that state succeed without a command; a
 // command the player refuses answers InvalidArgument.
-//   - AddItems with catalog ids and AddPlaylist answer UnknownItem until the room catalog exists
-//     (S11.2).
+//   - AddItems with catalog ids and AddPlaylist (S11.2) take tracks from the room catalog (below): an id that
+//     is not in the catalog guests have now (a private list, an entry that left, a closed room) answers
+//     UnknownItem and adds nothing. AddPlaylist adds every catalog entry of that playlist, in order;
+//     past maximum_room_queue_items in the room queue it answers QueueFull (AddItems: checked by authorize),
+//     and an empty playlist answers InvalidArgument. The tracks are appended to the host's queue as host
+//     tracks, all or none.
 //   - AddItems with an uploaded item answers InvalidArgument until the guest-file transfer exists
 //     (S8/S12). That transfer will call addGuestTrack(), which overwrites the item's id,
 //     owner_fingerprint (the link fingerprint) and added_by before using it.
@@ -144,6 +152,18 @@ struct ListeningRoomHostDependencies final {
 // values beyond +-room_drift_report_limit_ms are ignored. A member's value goes away when its link
 // drops (even while its seat is held), when it leaves or is kicked, and when the room closes.
 // onDriftsChanged is called when the map changes. It never touches the room state or its version.
+//
+// Catalog (S11.2): setPlaylists() gives the host the playlist library (any time; kept across rooms). While
+// a room is open, the catalog holds only the playlists marked PlaylistVisibility::Room, in library order:
+// each with its name (cut like a summary text) and, for each entry the track catalog described, the
+// track's capped summary. Nothing else: no path, file name, hash or library id. Playlist and entry ids are
+// the room's own (a counter from 1 per room, never derived from a path or the library), stable while
+// the room is open and the entry stays. Files of private lists are never read; a list's entries appear
+// once described, unreadable files stay out, and the catalog (only as many lists and entries as keep
+// estimatedRoomCatalogBytes within maximum_room_control_message_bytes) asks the track catalog for a few
+// files at a time and stops once it is full. Every admitted member gets the catalog after its state on
+// admission, and again each time it changes (a list made private or visible, renamed, edited, or a
+// description arriving); pending people never get it.
 //
 // Guest items (GuestTrack) never reach the session: the session autosave must store
 // withoutGuestItems(snapshot) while a room is open, and close(), revoke() and the destructor remove
@@ -212,6 +232,11 @@ class ListeningRoomHost final {
     // What session autosave may store while a room is open: the queue without guest items.
     [[nodiscard]] SessionSnapshot withoutGuestItems(SessionSnapshot session) const;
 
+    // S11.2: the host's playlist library; only the lists visible to the room reach guests (see Catalog).
+    void setPlaylists(PlaylistLibrarySnapshot library);
+    // The catalog guests have now (empty while the room is closed).
+    [[nodiscard]] const RoomCatalog& catalog() const noexcept;
+
     std::function<void(const RoomSnapshot&)> onChanged;
     std::function<void(const RoomMember&)> onJoinRequest;
     std::function<void(RoomLinkFailure)> onEndpointFailed;
@@ -234,6 +259,10 @@ class ListeningRoomHost final {
     void onHello(const std::shared_ptr<RoomLink>& link, const RoomHello& hello);
     void onIntent(const std::shared_ptr<RoomLink>& link, const RoomIntentMessage& message);
     [[nodiscard]] std::optional<IntentRejection> apply(const RoomIntent& intent);
+    [[nodiscard]] std::optional<IntentRejection> enqueueAll(const std::vector<std::filesystem::path>& sources);
+    void refreshCatalog();
+    [[nodiscard]] RoomCatalog buildCatalog();
+    void sendCatalog(const Connection& connection) const;
     void onDescribed(std::uint64_t generation, const std::filesystem::path& source,
                      std::optional<RoomTrackDescription> description);
     void requestDescription(const std::filesystem::path& source);
@@ -285,6 +314,16 @@ class ListeningRoomHost final {
     std::set<std::filesystem::path> describing_;
     std::set<std::filesystem::path> unreadable_;
     std::map<std::uint64_t, RoomItem> guest_items_;
+    // S11.2: the library (kept across rooms), the catalog guests have, the file of each catalog entry, and
+    // the room's ids of library playlists and entries (playlist id, entry id).
+    PlaylistLibrarySnapshot library_;
+    RoomCatalog room_catalog_;
+    std::map<std::uint64_t, std::filesystem::path> catalog_sources_;
+    std::map<std::uint64_t, std::uint64_t> catalog_playlist_ids_;
+    std::map<std::pair<std::uint64_t, std::uint64_t>, std::uint64_t> catalog_entry_ids_;
+    std::uint64_t next_catalog_id_{1};
+    bool cataloging_{false};
+    bool catalog_again_{false};
     // The cached file of each guest item, to serve it like a host track.
     std::map<std::uint64_t, std::filesystem::path> guest_files_;
     std::uint32_t next_transfer_id_{0};

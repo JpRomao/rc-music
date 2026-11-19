@@ -134,6 +134,7 @@ struct Fixture final {
                     return release_accepts;
                 },
             .room_position = [this](const std::optional<std::int64_t> position) { room_positions.push_back(position); },
+            .playlists = [this] { return library; },
         });
     }
     void completeNetwork() {
@@ -189,6 +190,8 @@ struct Fixture final {
     bool release_accepts{true};
     std::vector<std::optional<std::int64_t>> room_positions;
     PlaybackBackend* guest_backend{nullptr};
+    // S11.2: the host's saved playlists.
+    PlaylistLibrarySnapshot library;
     int session_changes{0};
     bool defer_network{false};
     bool identity_fails{false};
@@ -884,6 +887,103 @@ class ListeningRoomBindingTests final : public QObject {
         QVERIFY(!binding->roomTogglePlayback());
         QVERIFY(!binding->followsRoom());
         QVERIFY(!binding->roomAllows(SystemMediaCommandKind::Pause));
+    }
+
+    // S11.2: the host hands its saved playlists to the room; only the visible ones reach guests.
+    void theHostSendsItsVisiblePlaylistsAndTheirChanges() {
+        Fixture f;
+        f.library.playlists.push_back(
+            NamedPlaylist{1, "Privada", {{11, "music/segredo.mp3"}}, PlaylistVisibility::Private});
+        f.library.playlists.push_back(NamedPlaylist{2, "Festa", {{21, "music/a.mp3"}}, PlaylistVisibility::Room});
+        auto binding = f.make();
+        QVERIFY(binding->openRoom(5, false));
+        auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, "fp-lia");
+        f.endpoint->admit(host_side);
+        QVERIFY(guest_side->sendControl(RoomHello{room_protocol_version, "Lia", {}}));
+        QVERIFY(binding->approve(QStringLiteral("fp-lia")));
+        const auto lastCatalog = [&]() -> std::optional<RoomCatalog> {
+            for (auto it = host_side->sent_control.rbegin(); it != host_side->sent_control.rend(); ++it)
+                if (const auto* const catalog = std::get_if<RoomCatalog>(&*it))
+                    return *catalog;
+            return std::nullopt;
+        };
+        QVERIFY(lastCatalog().has_value());
+        QCOMPARE(lastCatalog()->playlists.size(), std::size_t{1});
+        QCOMPARE(lastCatalog()->playlists.front().name, std::string{"Festa"});
+        QCOMPARE(lastCatalog()->playlists.front().entries.size(), std::size_t{1});
+
+        f.library.playlists[1].visibility = PlaylistVisibility::Private;
+        binding->playlistsChanged();
+        QVERIFY(lastCatalog()->playlists.empty());
+    }
+
+    // S11.2: a guest sees the host's visible playlists and adds from them only with the permissions.
+    void aGuestSeesTheHostsPlaylistsAndAddsFromThemWithItsPermissions() {
+        Fixture f;
+        auto binding = f.make();
+        QSignalSpy catalog_changes(binding.get(), &ListeningRoomBinding::catalogChanged);
+        QVERIFY(binding->join(Fixture::validLink()));
+        auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, inviteHostHex());
+        f.connector->complete(guest_side);
+        QVERIFY(host_side->sendControl(RoomJoinResult{JoinDecision::Admitted}));
+        RoomSnapshot room;
+        room.version = 1;
+        room.members.push_back(RoomMember{inviteHostHex(), "Joao", {}, MemberState::Admitted});
+        QVERIFY(host_side->sendControl(RoomStateMessage{room, {}}));
+        QVERIFY(binding->roomPlaylists().isEmpty());
+        QVERIFY(host_side->sendControl(RoomCatalog{{RoomCatalogPlaylist{
+            5, "Festa", {RoomCatalogEntry{6, {"Primeira", "Artista", "Album", 61'000}}, RoomCatalogEntry{7, {}}}}}}));
+        QCOMPARE(catalog_changes.count(), 1);
+        const auto playlists = binding->roomPlaylists();
+        QCOMPARE(playlists.size(), 1);
+        const auto festa = playlists.front().toMap();
+        QCOMPARE(festa.value(QStringLiteral("playlistId")).toString(), QStringLiteral("5"));
+        QCOMPARE(festa.value(QStringLiteral("name")).toString(), QStringLiteral("Festa"));
+        const auto entries = festa.value(QStringLiteral("entries")).toList();
+        QCOMPARE(entries.size(), 2);
+        const auto first = entries.front().toMap();
+        QCOMPARE(first.value(QStringLiteral("entryId")).toString(), QStringLiteral("6"));
+        QCOMPARE(first.value(QStringLiteral("title")).toString(), QStringLiteral("Primeira"));
+        QCOMPARE(first.value(QStringLiteral("artist")).toString(), QStringLiteral("Artista"));
+        QCOMPARE(first.value(QStringLiteral("durationMs")).toLongLong(), 61'000LL);
+
+        // Without the permissions nothing is sent.
+        QVERIFY(!binding->canAddFromRoom());
+        QVERIFY(!binding->canAddPlaylist());
+        QVERIFY(!binding->roomAddItem(QStringLiteral("6")));
+        QVERIFY(!binding->roomAddPlaylist(QStringLiteral("5")));
+        const auto intents = [&] {
+            std::vector<RoomIntent> sent;
+            for (const auto& message : guest_side->sent_control)
+                if (const auto* const intent = std::get_if<RoomIntentMessage>(&message))
+                    sent.push_back(intent->intent);
+            return sent;
+        };
+        QVERIFY(intents().empty());
+
+        RoomPermissionSet add;
+        add.set(static_cast<std::size_t>(RoomPermission::AddFromRoom));
+        add.set(static_cast<std::size_t>(RoomPermission::AddPlaylist));
+        room.version = 2;
+        QVERIFY(host_side->sendControl(RoomStateMessage{room, add}));
+        QVERIFY(binding->canAddFromRoom());
+        QVERIFY(binding->canAddPlaylist());
+        QCOMPARE(catalog_changes.count(), 1); // a state alone does not touch the list
+        QVERIFY(binding->roomAddItem(QStringLiteral("6")));
+        QVERIFY(binding->roomAddPlaylist(QStringLiteral("5")));
+        QVERIFY(!binding->roomAddItem(QStringLiteral("seis")));
+        QCOMPARE(intents(),
+                 (std::vector<RoomIntent>{RoomIntent{.kind = RoomIntentKind::AddItems, .catalog_entry_ids = {6}},
+                                          RoomIntent{.kind = RoomIntentKind::AddPlaylist, .playlist_id = 5}}));
+
+        // A full room queue says so.
+        QVERIFY(host_side->sendControl(RoomIntentRejected{2, IntentRejection::QueueFull}));
+        QCOMPARE(binding->errorText(), QStringLiteral("A fila da sala está cheia."));
+
+        binding->leave();
+        QVERIFY(binding->roomPlaylists().isEmpty());
+        QCOMPARE(catalog_changes.count(), 2);
+        QVERIFY(!binding->canAddPlaylist());
     }
 
     void thePrivacyNoticeIsAcknowledgedOnce() {

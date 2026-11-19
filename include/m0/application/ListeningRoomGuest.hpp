@@ -146,7 +146,9 @@ struct ListeningRoomGuestDependencies final {
 // the follower before restore_session, so the room file is gone when the local session comes back. A
 // dropped link leaves the follower playing the last playback.
 //
-// Catalog messages are left to later tasks (S10-S11).
+// Catalog (S11.2): the last RoomCatalog received while Joined is kept (a dropped link keeps it, the host
+// sends it again on admission); onChanged runs when it changes. join(), leave() and the end of the room
+// clear it. A catalog that arrives before admission is ignored.
 class ListeningRoomGuest final {
   public:
     explicit ListeningRoomGuest(ListeningRoomGuestDependencies dependencies);
@@ -169,6 +171,8 @@ class ListeningRoomGuest final {
     [[nodiscard]] std::optional<std::filesystem::path> localFile(std::string_view sha256) const;
     // The host's lyrics for the current item, when it sent them.
     [[nodiscard]] std::optional<RoomLyrics> lyrics() const;
+    // S11.2: the host's last catalog while in the room (empty otherwise).
+    [[nodiscard]] const RoomCatalog& catalog() const noexcept;
 
     std::function<void()> onChanged;
     std::function<void(std::uint64_t, IntentRejection)> onRejected;
@@ -242,6 +246,7 @@ class ListeningRoomGuest final {
     // Bumped when the guest stops its transfers: older status answers do nothing.
     std::uint64_t files_epoch_{0};
     std::optional<RoomLyrics> lyrics_;
+    RoomCatalog catalog_;
     // Chunks that came before their offer (control and media are separate channels, not ordered with
     // each other), kept only while a request is outstanding and up to a fixed total.
     std::map<std::uint32_t, std::vector<RoomFileChunk>> early_chunks_;

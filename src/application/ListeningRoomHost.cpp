@@ -92,6 +92,21 @@ std::size_t estimatedMemberBytes(const RoomMember& member) {
            jsonTextBytes(member.nickname) + jsonTextBytes(member.avatar.custom_sha256);
 }
 
+constexpr std::size_t json_catalog_frame_bytes = 128; // type and the playlists array
+constexpr std::size_t json_playlist_keys_bytes = 96;
+constexpr std::size_t json_entry_keys_bytes = 128; // id and the summary keys
+// Catalog files the host asks the track catalog for at a time (each one is hashed).
+constexpr std::size_t catalog_describing_limit = 8;
+
+std::size_t estimatedPlaylistBytes(const RoomCatalogPlaylist& playlist) {
+    return json_playlist_keys_bytes + json_number_bytes + jsonTextBytes(playlist.name);
+}
+
+std::size_t estimatedEntryBytes(const RoomCatalogEntry& entry) {
+    return json_entry_keys_bytes + 2 * json_number_bytes + jsonTextBytes(entry.summary.title) +
+           jsonTextBytes(entry.summary.artist) + jsonTextBytes(entry.summary.album);
+}
+
 } // namespace
 
 std::size_t estimatedRoomStateBytes(const RoomStateMessage& message) {
@@ -100,6 +115,16 @@ std::size_t estimatedRoomStateBytes(const RoomStateMessage& message) {
         bytes += estimatedMemberBytes(member);
     for (const auto& item : message.snapshot.queue)
         bytes += estimatedItemBytes(item);
+    return bytes;
+}
+
+std::size_t estimatedRoomCatalogBytes(const RoomCatalog& catalog) {
+    std::size_t bytes = json_catalog_frame_bytes;
+    for (const auto& playlist : catalog.playlists) {
+        bytes += estimatedPlaylistBytes(playlist);
+        for (const auto& entry : playlist.entries)
+            bytes += estimatedEntryBytes(entry);
+    }
     return bytes;
 }
 
@@ -215,6 +240,7 @@ std::optional<RoomInviteLink> ListeningRoomHost::open(const RoomOpenOptions& opt
                 self->host->onEndpointFailure(generation, failure);
         });
     static_cast<void>(refresh());
+    refreshCatalog();
     return invite;
 }
 
@@ -652,13 +678,156 @@ std::optional<IntentRejection> ListeningRoomHost::apply(const RoomIntent& intent
         return accepted(
             player_.move(LocalQueueOccurrenceId{intent.item_id}, static_cast<std::size_t>(local - items.begin())));
     }
-    case RoomIntentKind::AddItems:
-        // Uploads need the guest-file transfer (S8/S12); catalog entries need the room catalog (S11.2).
-        return intent.uploaded ? IntentRejection::InvalidArgument : IntentRejection::UnknownItem;
-    case RoomIntentKind::AddPlaylist:
-        return IntentRejection::UnknownItem;
+    case RoomIntentKind::AddItems: {
+        // Uploads need the guest-file transfer (S12). authorize already checked the room left in the queue.
+        if (intent.uploaded)
+            return IntentRejection::InvalidArgument;
+        std::vector<std::filesystem::path> sources;
+        for (const auto id : intent.catalog_entry_ids) {
+            const auto found = catalog_sources_.find(id);
+            if (found == catalog_sources_.end())
+                return IntentRejection::UnknownItem;
+            sources.push_back(found->second);
+        }
+        return enqueueAll(sources);
+    }
+    case RoomIntentKind::AddPlaylist: {
+        const auto& playlists = room_catalog_.playlists;
+        const auto playlist = std::find_if(playlists.begin(), playlists.end(),
+                                           [&](const RoomCatalogPlaylist& p) { return p.id == intent.playlist_id; });
+        if (playlist == playlists.end())
+            return IntentRejection::UnknownItem;
+        if (playlist->entries.empty())
+            return IntentRejection::InvalidArgument;
+        if (current_.queue.size() + playlist->entries.size() > maximum_room_queue_items)
+            return IntentRejection::QueueFull;
+        std::vector<std::filesystem::path> sources;
+        for (const auto& entry : playlist->entries)
+            sources.push_back(catalog_sources_.at(entry.id));
+        return enqueueAll(sources);
+    }
     }
     return IntentRejection::InvalidArgument;
+}
+
+// Appends host tracks for the room, all or none; the caller refreshes once afterwards.
+std::optional<IntentRejection> ListeningRoomHost::enqueueAll(const std::vector<std::filesystem::path>& sources) {
+    const bool was_refreshing = refreshing_;
+    refreshing_ = true;
+    std::vector<LocalQueueOccurrenceId> added;
+    for (const auto& source : sources) {
+        const auto occurrence = player_.enqueue(source);
+        if (!occurrence) {
+            for (auto undo = added.rbegin(); undo != added.rend(); ++undo)
+                static_cast<void>(player_.remove(*undo));
+            refreshing_ = was_refreshing;
+            return IntentRejection::InvalidArgument;
+        }
+        added.push_back(*occurrence);
+    }
+    refreshing_ = was_refreshing;
+    return std::nullopt;
+}
+
+void ListeningRoomHost::setPlaylists(PlaylistLibrarySnapshot library) {
+    if (library == library_)
+        return;
+    library_ = std::move(library);
+    refreshCatalog();
+}
+
+const RoomCatalog& ListeningRoomHost::catalog() const noexcept { return room_catalog_; }
+
+// Builds the catalog again (describe callbacks that run meanwhile ask for another pass) and sends it to
+// every admitted member when it changed.
+void ListeningRoomHost::refreshCatalog() {
+    if (!room_)
+        return;
+    if (cataloging_) {
+        catalog_again_ = true;
+        return;
+    }
+    cataloging_ = true;
+    RoomCatalog next;
+    do {
+        catalog_again_ = false;
+        next = buildCatalog();
+    } while (catalog_again_ && room_);
+    cataloging_ = false;
+    if (!room_ || next == room_catalog_)
+        return;
+    room_catalog_ = std::move(next);
+    // Iterate over a copy: a synchronous transport may call back into the host while sending.
+    std::vector<std::shared_ptr<RoomLink>> links;
+    for (const auto& connection : connections_)
+        links.push_back(connection.link);
+    for (const auto& link : links) {
+        const auto* connection = find(link.get());
+        if (connection != nullptr && connection->greeted &&
+            memberState(connection->fingerprint) == MemberState::Admitted)
+            sendCatalog(*connection);
+    }
+}
+
+RoomCatalog ListeningRoomHost::buildCatalog() {
+    RoomCatalog catalog;
+    std::map<std::uint64_t, std::filesystem::path> sources;
+    std::map<std::uint64_t, std::uint64_t> playlist_ids;
+    std::map<std::pair<std::uint64_t, std::uint64_t>, std::uint64_t> entry_ids;
+    // An id the room already gave stays; anything new takes the next one.
+    const auto idFor = [this](auto& fresh, const auto& known, const auto& key) {
+        const auto found = known.find(key);
+        const auto id = found != known.end() ? found->second : next_catalog_id_++;
+        fresh.emplace(key, id);
+        return id;
+    };
+    std::size_t budget = estimatedRoomCatalogBytes(catalog);
+    bool full = false;
+    // A copy: describe callbacks may run while it is walked.
+    const auto library = library_;
+    for (const auto& list : library.playlists) {
+        if (full)
+            break;
+        if (list.visibility != PlaylistVisibility::Room)
+            continue;
+        RoomCatalogPlaylist playlist{0, summaryText(list.name), {}};
+        if (playlist.name.empty())
+            continue;
+        const auto frame = estimatedPlaylistBytes(playlist);
+        if (budget + frame > maximum_room_control_message_bytes)
+            break;
+        budget += frame;
+        playlist.id = idFor(playlist_ids, catalog_playlist_ids_, list.id);
+        for (const auto& entry : list.entries) {
+            const auto& source = entry.source_path;
+            if (!descriptions_.contains(source) && describing_.size() < catalog_describing_limit)
+                requestDescription(source);
+            const auto found = descriptions_.find(source);
+            if (found == descriptions_.end())
+                continue;
+            RoomCatalogEntry item{0, cappedSummary(found->second.item.summary)};
+            const auto cost = estimatedEntryBytes(item);
+            if (budget + cost > maximum_room_control_message_bytes) {
+                full = true;
+                break;
+            }
+            budget += cost;
+            item.id = idFor(entry_ids, catalog_entry_ids_, std::pair{list.id, entry.id});
+            sources.emplace(item.id, source);
+            playlist.entries.push_back(std::move(item));
+        }
+        catalog.playlists.push_back(std::move(playlist));
+    }
+    catalog_sources_ = std::move(sources);
+    catalog_playlist_ids_ = std::move(playlist_ids);
+    catalog_entry_ids_ = std::move(entry_ids);
+    return catalog;
+}
+
+void ListeningRoomHost::sendCatalog(const Connection& connection) const {
+    // Copied first: the send may run host callbacks that move or erase connections.
+    const auto link = connection.link;
+    static_cast<void>(link->sendControl(room_catalog_));
 }
 
 void ListeningRoomHost::requestDescription(const std::filesystem::path& source) {
@@ -685,6 +854,7 @@ void ListeningRoomHost::onDescribed(const std::uint64_t generation, const std::f
         unreadable_.insert(source);
     }
     static_cast<void>(refresh());
+    refreshCatalog();
 }
 
 std::optional<RoomItem> ListeningRoomHost::roomItem(const LocalFileQueueSnapshotItem& entry) const {
@@ -819,6 +989,8 @@ void ListeningRoomHost::admitted(const std::shared_ptr<RoomLink>& link) {
             sendState(*connection);
     if (auto* connection = find(link.get()))
         sendLyrics(*connection);
+    if (const auto* connection = find(link.get()))
+        sendCatalog(*connection);
 }
 
 void ListeningRoomHost::sendState(const Connection& connection) const {
@@ -993,6 +1165,12 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
     for (const auto& guest : guests)
         static_cast<void>(player_.remove(LocalQueueOccurrenceId{guest.first}));
     guest_files_.clear();
+    room_catalog_ = {};
+    catalog_sources_.clear();
+    catalog_playlist_ids_.clear();
+    catalog_entry_ids_.clear();
+    next_catalog_id_ = 1;
+    catalog_again_ = false;
     if (!drifts_.empty()) {
         drifts_.clear();
         if (onDriftsChanged)
