@@ -29,7 +29,7 @@ TestCase {
         property bool canSkip: false
         property bool canPause: false
         property bool canEditQueue: false
-        property var roomPlaylists: []
+        property ListModel catalog: ListModel {}
         property bool canAddFromRoom: false
         property bool canAddPlaylist: false
         property bool roomPlaying: false
@@ -125,7 +125,7 @@ TestCase {
         fakeRoom.untilRevoked = false;
         fakeRoom.errorText = "";
         fakeRoom.privacyNoticeRequired = false;
-        fakeRoom.roomPlaylists = [];
+        fakeRoom.catalog.clear();
         fakeRoom.canAddFromRoom = false;
         fakeRoom.canAddPlaylist = false;
         fakeRoom.calls = [];
@@ -510,28 +510,23 @@ TestCase {
 
     // S11.2: a guest sees the host's visible playlists and adds one track or a whole list, by keyboard too,
     // only with the permissions.
+    function catalogRow(kind, playlistId, entryId, name, title, artist, entryCount) {
+        return {
+            kind: kind,
+            playlistId: playlistId,
+            entryId: entryId,
+            name: name,
+            title: title,
+            artist: artist,
+            entryCount: entryCount
+        };
+    }
+
     function test_aGuestAddsFromTheHostsPlaylists() {
         joinAsGuest();
-        fakeRoom.roomPlaylists = [
-            {
-                playlistId: "5",
-                name: "Festa",
-                entries: [
-                    {
-                        entryId: "6",
-                        title: "Primeira",
-                        artist: "Artista",
-                        durationMs: 61000
-                    },
-                    {
-                        entryId: "7",
-                        title: "",
-                        artist: "",
-                        durationMs: 0
-                    }
-                ]
-            }
-        ];
+        fakeRoom.catalog.append(catalogRow("playlist", "5", "", "Festa", "", "", 2));
+        fakeRoom.catalog.append(catalogRow("entry", "5", "6", "", "Primeira", "Artista", 0));
+        fakeRoom.catalog.append(catalogRow("entry", "5", "7", "", "", "", 0));
         createShell();
         openPage();
         // The page first focuses "Sair da sala".
@@ -571,13 +566,23 @@ TestCase {
         keyClick(Qt.Key_Space);
         compare(fakeRoom.calls, ["add:6", "addPlaylist:5", "add:6"]);
 
+        // A track described later appears without recreating the others or taking the keyboard away.
+        fakeRoom.catalog.setProperty(0, "entryCount", 3);
+        fakeRoom.catalog.append(catalogRow("entry", "5", "8", "", "Terceira", "", 0));
+        tryVerify(() => findItem(testCase.shell.contentItem, "room-catalog-entry-8") !== null);
+        verify(findItem(shell.contentItem, "room-catalog-entry-6") === first);
+        verify(findItem(shell.contentItem, "room-catalog-add-all") === addAll);
+        verify(addOne.activeFocus);
+        keyClick(Qt.Key_Tab);
+        tryVerify(() => findItem(findItem(testCase.shell.contentItem, "room-catalog-entry-7"), "room-catalog-add").activeFocus);
+
         // Only "add whole lists": the track buttons go.
         fakeRoom.canAddFromRoom = false;
         tryVerify(() => !addOne.visible);
         verify(addAll.visible);
 
         // The room ends: the lists go.
-        fakeRoom.roomPlaylists = [];
+        fakeRoom.catalog.clear();
         tryVerify(() => !findChild(testCase.shell, "room-catalog-title").visible);
     }
 

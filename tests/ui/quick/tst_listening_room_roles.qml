@@ -40,7 +40,7 @@ TestCase {
         property bool canSkip: false
         property bool canPause: false
         property bool canEditQueue: false
-        property var roomPlaylists: []
+        property ListModel catalog: ListModel {}
         property bool canAddFromRoom: false
         property bool canAddPlaylist: false
         property bool roomPlaying: false

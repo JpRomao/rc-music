@@ -783,6 +783,7 @@ RoomCatalog ListeningRoomHost::buildCatalog() {
     };
     std::size_t budget = estimatedRoomCatalogBytes(catalog);
     bool full = false;
+    std::deque<std::filesystem::path> waiting;
     // A copy: describe callbacks may run while it is walked.
     const auto library = library_;
     for (const auto& list : library.playlists) {
@@ -800,8 +801,12 @@ RoomCatalog ListeningRoomHost::buildCatalog() {
         playlist.id = idFor(playlist_ids, catalog_playlist_ids_, list.id);
         for (const auto& entry : list.entries) {
             const auto& source = entry.source_path;
-            if (!descriptions_.contains(source) && describing_.size() < catalog_describing_limit)
-                requestDescription(source);
+            if (!descriptions_.contains(source)) {
+                if (describing_.size() < catalog_describing_limit)
+                    requestDescription(source);
+                else if (!describing_.contains(source) && !unreadable_.contains(source))
+                    waiting.push_back(source);
+            }
             const auto found = descriptions_.find(source);
             if (found == descriptions_.end())
                 continue;
@@ -818,6 +823,7 @@ RoomCatalog ListeningRoomHost::buildCatalog() {
         }
         catalog.playlists.push_back(std::move(playlist));
     }
+    catalog_waiting_ = std::move(waiting);
     catalog_sources_ = std::move(sources);
     catalog_playlist_ids_ = std::move(playlist_ids);
     catalog_entry_ids_ = std::move(entry_ids);
@@ -854,7 +860,39 @@ void ListeningRoomHost::onDescribed(const std::uint64_t generation, const std::f
         unreadable_.insert(source);
     }
     static_cast<void>(refresh());
-    refreshCatalog();
+    if (cataloging_) {
+        catalog_again_ = true; // described while the catalog is being built: that build goes once more
+        return;
+    }
+    if (room_catalog_.playlists.empty())
+        return; // no visible list: nothing for guests to see
+    describeCatalogFiles();
+    scheduleCatalogRefresh();
+}
+
+// Asks for the next catalog files as earlier ones are described, up to catalog_describing_limit at a time.
+void ListeningRoomHost::describeCatalogFiles() {
+    if (std::exchange(describing_catalog_, true))
+        return;
+    while (room_ && describing_.size() < catalog_describing_limit && !catalog_waiting_.empty()) {
+        auto source = std::move(catalog_waiting_.front());
+        catalog_waiting_.pop_front();
+        requestDescription(source);
+    }
+    describing_catalog_ = false;
+}
+
+// Descriptions that arrive close together reach guests in one catalog: one refresh per
+// room_catalog_refresh_ms at most.
+void ListeningRoomHost::scheduleCatalogRefresh() {
+    if (!room_ || std::exchange(catalog_refresh_scheduled_, true))
+        return;
+    schedule_(room_catalog_refresh_ms, [alive = std::weak_ptr<Alive>{alive_}, generation = generation_] {
+        if (const auto self = alive.lock(); self && self->host->generation_ == generation) {
+            self->host->catalog_refresh_scheduled_ = false;
+            self->host->refreshCatalog();
+        }
+    });
 }
 
 std::optional<RoomItem> ListeningRoomHost::roomItem(const LocalFileQueueSnapshotItem& entry) const {
@@ -1171,6 +1209,8 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
     catalog_entry_ids_.clear();
     next_catalog_id_ = 1;
     catalog_again_ = false;
+    catalog_waiting_.clear();
+    catalog_refresh_scheduled_ = false;
     if (!drifts_.empty()) {
         drifts_.clear();
         if (onDriftsChanged)

@@ -53,6 +53,8 @@ inline constexpr std::int32_t room_follow_retry_ms = 50;
 inline constexpr std::size_t maximum_room_summary_text_bytes = 256;
 // A guest link that sends no RoomHello within this time is closed.
 inline constexpr std::int32_t room_hello_timeout_ms = 10000;
+// While catalog tracks are being described, the host sends the room catalog again at most this often.
+inline constexpr std::int32_t room_catalog_refresh_ms = 1500;
 inline constexpr std::int32_t minimum_output_offset_ms = -500;
 inline constexpr std::int32_t maximum_output_offset_ms = 500;
 

@@ -36,7 +36,8 @@ PageSurface {
     // S10.1: the per-person menu holds the keyboard while it is open.
     readonly property bool blockingUiOpen: memberMenu.opened
     // S11.2: a guest's view of the host's playlists visible to the room.
-    readonly property var catalog: available && role === 2 ? room.roomPlaylists : []
+    readonly property var catalog: available && role === 2 ? room.catalog : null
+    readonly property bool hasCatalog: !!catalog && catalog.count > 0
     embedded: true
     padding: 0
     focus: true
@@ -675,7 +676,7 @@ PageSurface {
         // S11.2, a guest: the host's playlists visible to the room, to add one track or a whole list.
         Text {
             objectName: "room-catalog-title"
-            visible: root.catalog.length > 0
+            visible: root.hasCatalog
             text: roomText.catalogTitle
             textFormat: Text.PlainText
             font.family: root.contract.headingFontFamily
@@ -685,7 +686,7 @@ PageSurface {
         Text {
             objectName: "room-catalog-no-permission"
             Layout.fillWidth: true
-            visible: root.catalog.length > 0 && !root.room.canAddFromRoom && !root.room.canAddPlaylist
+            visible: root.hasCatalog && !root.room.canAddFromRoom && !root.room.canAddPlaylist
             text: roomText.catalogNoPermission
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
@@ -695,58 +696,65 @@ PageSurface {
             Accessible.role: Accessible.StaticText
             Accessible.name: text
         }
+        // One row per playlist, then one per track: rows the catalog keeps stay, with their keyboard focus.
         Repeater {
             model: root.catalog
-            delegate: ColumnLayout {
-                id: catalogPlaylist
-                required property var modelData
+            delegate: Loader {
+                id: catalogRow
+                required property string kind
+                required property string playlistId
+                required property string entryId
+                required property string name
+                required property string title
+                required property string artist
+                required property int entryCount
+                readonly property string shownTitle: title.length > 0 ? title : roomText.untitled
                 Layout.fillWidth: true
-                spacing: root.contract.spacingUnit
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: root.contract.spacingUnit
-                    Text {
-                        objectName: "room-catalog-playlist-name"
-                        Layout.fillWidth: true
-                        text: catalogPlaylist.modelData.name
-                        textFormat: Text.PlainText
-                        elide: Text.ElideRight
-                        font.family: root.contract.bodyFontFamily
-                        font.pixelSize: root.contract.typeBody
-                        font.weight: Font.DemiBold
-                        color: root.contract.textPrimaryColor
-                        Accessible.role: Accessible.Heading
-                        Accessible.name: text
-                    }
-                    AccessibleTransportButton {
-                        objectName: "room-catalog-add-all"
-                        visible: root.room.canAddPlaylist
-                        enabled: catalogPlaylist.modelData.entries.length > 0
-                        contract: root.contract
-                        text: roomText.addAll
-                        accessibleName: roomText.addAllName.arg(catalogPlaylist.modelData.name)
-                        onClicked: root.room.roomAddPlaylist(catalogPlaylist.modelData.playlistId)
+                sourceComponent: kind === "playlist" ? catalogPlaylist : catalogEntry
+
+                Component {
+                    id: catalogPlaylist
+                    RowLayout {
+                        spacing: root.contract.spacingUnit
+                        Text {
+                            objectName: "room-catalog-playlist-name"
+                            Layout.fillWidth: true
+                            text: catalogRow.name
+                            textFormat: Text.PlainText
+                            elide: Text.ElideRight
+                            font.family: root.contract.bodyFontFamily
+                            font.pixelSize: root.contract.typeBody
+                            font.weight: Font.DemiBold
+                            color: root.contract.textPrimaryColor
+                            Accessible.role: Accessible.Heading
+                            Accessible.name: text
+                        }
+                        AccessibleTransportButton {
+                            objectName: "room-catalog-add-all"
+                            visible: root.room.canAddPlaylist
+                            enabled: catalogRow.entryCount > 0
+                            contract: root.contract
+                            text: roomText.addAll
+                            accessibleName: roomText.addAllName.arg(catalogRow.name)
+                            onClicked: root.room.roomAddPlaylist(catalogRow.playlistId)
+                        }
                     }
                 }
-                Repeater {
-                    model: catalogPlaylist.modelData.entries
-                    delegate: RowLayout {
-                        id: catalogEntry
-                        required property var modelData
-                        readonly property string title: modelData.title.length > 0 ? modelData.title : roomText.untitled
-                        objectName: "room-catalog-entry-" + modelData.entryId
-                        Layout.fillWidth: true
+                Component {
+                    id: catalogEntry
+                    RowLayout {
+                        objectName: "room-catalog-entry-" + catalogRow.entryId
                         spacing: root.contract.spacingUnit
                         Accessible.role: Accessible.ListItem
-                        Accessible.name: catalogEntry.title
-                        Accessible.description: catalogEntry.modelData.artist
+                        Accessible.name: catalogRow.shownTitle
+                        Accessible.description: catalogRow.artist
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
                             Text {
                                 objectName: "room-catalog-entry-title"
                                 Layout.fillWidth: true
-                                text: catalogEntry.title
+                                text: catalogRow.shownTitle
                                 textFormat: Text.PlainText
                                 elide: Text.ElideRight
                                 font.family: root.contract.bodyFontFamily
@@ -757,7 +765,7 @@ PageSurface {
                             Text {
                                 Layout.fillWidth: true
                                 visible: text.length > 0
-                                text: catalogEntry.modelData.artist
+                                text: catalogRow.artist
                                 textFormat: Text.PlainText
                                 elide: Text.ElideRight
                                 font.family: root.contract.bodyFontFamily
@@ -772,8 +780,8 @@ PageSurface {
                             contract: root.contract
                             flat: true
                             text: roomText.addItem
-                            accessibleName: roomText.addItemName.arg(catalogEntry.title)
-                            onClicked: root.room.roomAddItem(catalogEntry.modelData.entryId)
+                            accessibleName: roomText.addItemName.arg(catalogRow.shownTitle)
+                            onClicked: root.room.roomAddItem(catalogRow.entryId)
                         }
                     }
                 }

@@ -264,21 +264,7 @@ bool ListeningRoomBinding::canEditQueue() const { return guestMay(RoomPermission
 bool ListeningRoomBinding::canAddFromRoom() const { return guestMay(RoomPermission::AddFromRoom); }
 bool ListeningRoomBinding::canAddPlaylist() const { return guestMay(RoomPermission::AddPlaylist); }
 
-QVariantList ListeningRoomBinding::roomPlaylists() const {
-    QVariantList playlists;
-    for (const auto& playlist : room_catalog_.playlists) {
-        QVariantList entries;
-        for (const auto& entry : playlist.entries)
-            entries.append(QVariantMap{{QStringLiteral("entryId"), QString::number(entry.id)},
-                                       {QStringLiteral("title"), QString::fromStdString(entry.summary.title)},
-                                       {QStringLiteral("artist"), QString::fromStdString(entry.summary.artist)},
-                                       {QStringLiteral("durationMs"), static_cast<double>(entry.summary.duration_ms)}});
-        playlists.append(QVariantMap{{QStringLiteral("playlistId"), QString::number(playlist.id)},
-                                     {QStringLiteral("name"), QString::fromStdString(playlist.name)},
-                                     {QStringLiteral("entries"), entries}});
-    }
-    return playlists;
-}
+QAbstractItemModel* ListeningRoomBinding::catalog() noexcept { return &catalog_; }
 
 bool ListeningRoomBinding::roomHasCurrent() const {
     return role_ == GuestRole && guest_ && guest_->state() == GuestRoomState::Joined &&
@@ -893,7 +879,7 @@ void ListeningRoomBinding::refreshGuestRoom() {
     auto catalog = role_ == GuestRole && guest_ ? guest_->catalog() : RoomCatalog{};
     if (catalog != room_catalog_) {
         room_catalog_ = std::move(catalog);
-        emit catalogChanged();
+        catalog_.replace(room_catalog_);
     }
     QString lyrics;
     if (role_ == GuestRole && guest_) {

@@ -1410,6 +1410,7 @@ TEST_CASE("room host: catalog tracks appear once described and unreadable ones s
     REQUIRE(f.host->catalog().playlists.size() == 1);
     REQUIRE(f.host->catalog().playlists.front().entries.empty());
     f.catalog.completeAll();
+    f.runScheduled();
     const auto& entries = f.host->catalog().playlists.front().entries;
     REQUIRE(entries.size() == 1);
     REQUIRE(entries.front().summary.title == "e");
@@ -1515,6 +1516,42 @@ TEST_CASE("room host: closing the room forgets the catalog", "[core][listening-r
     // Reopened, it is built again from the playlists it was given.
     static_cast<void>(f.host->open({}));
     REQUIRE(f.host->catalog().playlists.size() == 1);
+}
+
+// Fix round 1: descriptions keep arriving while people are in the room; they must not each send the whole catalog.
+TEST_CASE("room host: descriptions that arrive one after another reach guests in one catalog per refresh",
+          "[core][listening-room][room-host][room-catalog]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    f.catalog.deferred = true;
+    std::vector<std::filesystem::path> paths;
+    for (int index = 0; index < 20; ++index)
+        paths.emplace_back("music/lista" + std::to_string(index) + ".mp3");
+    f.host->setPlaylists(PlaylistLibrarySnapshot{{namedPlaylist(2, "Festa", PlaylistVisibility::Room, paths)}});
+    const auto sent = dj->all<RoomCatalog>().size();
+    REQUIRE(dj->lastCatalog().playlists.front().entries.empty());
+
+    // Every file gets described (a few at a time) without waiting for a refresh, and nothing is sent meanwhile.
+    for (int round = 0; round < 10; ++round)
+        f.catalog.completeAll();
+    for (const auto& path : paths)
+        REQUIRE(std::count(f.catalog.requests.begin(), f.catalog.requests.end(), path) == 1);
+    REQUIRE(dj->all<RoomCatalog>().size() == sent);
+    const auto refreshes = std::count_if(f.scheduled.begin(), f.scheduled.end(),
+                                         [](const auto& task) { return task.first == room_catalog_refresh_ms; });
+    REQUIRE(refreshes == 1);
+
+    // The refresh sends one catalog with everything described so far, to everyone admitted.
+    f.runScheduled();
+    REQUIRE(dj->all<RoomCatalog>().size() == sent + 1);
+    REQUIRE(dj->lastCatalog().playlists.front().entries.size() == paths.size());
+    REQUIRE(dj->lastCatalog() == f.host->catalog());
+    // Nothing new: no more refreshes and no more catalogs.
+    f.runScheduled();
+    REQUIRE(dj->all<RoomCatalog>().size() == sent + 1);
+    REQUIRE(f.scheduled.empty());
 }
 
 } // namespace music_player::m0::test

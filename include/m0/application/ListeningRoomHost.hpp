@@ -17,6 +17,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -161,9 +162,11 @@ struct ListeningRoomHostDependencies final {
 // the room is open and the entry stays. Files of private lists are never read; a list's entries appear
 // once described, unreadable files stay out, and the catalog (only as many lists and entries as keep
 // estimatedRoomCatalogBytes within maximum_room_control_message_bytes) asks the track catalog for a few
-// files at a time and stops once it is full. Every admitted member gets the catalog after its state on
-// admission, and again each time it changes (a list made private or visible, renamed, edited, or a
-// description arriving); pending people never get it.
+// files at a time and stops once it is full; as each description arrives it asks for the next file,
+// without rebuilding the catalog. Every admitted member gets the catalog after its state on admission, and
+// again each time it changes: right away when the library changes (a list made private or visible,
+// renamed, edited), and at most once per room_catalog_refresh_ms while descriptions arrive (one scheduled
+// refresh sends everything described meanwhile). Pending people never get it.
 //
 // Guest items (GuestTrack) never reach the session: the session autosave must store
 // withoutGuestItems(snapshot) while a room is open, and close(), revoke() and the destructor remove
@@ -260,6 +263,8 @@ class ListeningRoomHost final {
     void onIntent(const std::shared_ptr<RoomLink>& link, const RoomIntentMessage& message);
     [[nodiscard]] std::optional<IntentRejection> apply(const RoomIntent& intent);
     [[nodiscard]] std::optional<IntentRejection> enqueueAll(const std::vector<std::filesystem::path>& sources);
+    void describeCatalogFiles();
+    void scheduleCatalogRefresh();
     void refreshCatalog();
     [[nodiscard]] RoomCatalog buildCatalog();
     void sendCatalog(const Connection& connection) const;
@@ -324,6 +329,11 @@ class ListeningRoomHost final {
     std::uint64_t next_catalog_id_{1};
     bool cataloging_{false};
     bool catalog_again_{false};
+    // Catalog files still to describe, in catalog order (asked for as descriptions arrive), and whether a
+    // catalog refresh is scheduled.
+    std::deque<std::filesystem::path> catalog_waiting_;
+    bool describing_catalog_{false};
+    bool catalog_refresh_scheduled_{false};
     // The cached file of each guest item, to serve it like a host track.
     std::map<std::uint64_t, std::filesystem::path> guest_files_;
     std::uint32_t next_transfer_id_{0};

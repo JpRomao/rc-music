@@ -13,6 +13,7 @@
 #include "m0/ports/RoomTrackCatalog.hpp"
 #include "m0/ports/RoomTransport.hpp"
 #include "m0/ports/SystemMediaControls.hpp"
+#include "presentation/RoomCatalogModel.hpp"
 #include "presentation/RoomMembersModel.hpp"
 #include "presentation/RoomQueueModel.hpp"
 #include "presentation/RoomRolesModel.hpp"
@@ -21,7 +22,6 @@
 #include <QObject>
 #include <QString>
 #include <QTimer>
-#include <QVariantList>
 #include <QVariantMap>
 
 #include <array>
@@ -139,9 +139,10 @@ class ListeningRoomBinding final : public QObject {
     Q_PROPERTY(bool canSkip READ canSkip NOTIFY changed)
     Q_PROPERTY(bool canPause READ canPause NOTIFY changed)
     Q_PROPERTY(bool canEditQueue READ canEditQueue NOTIFY changed)
-    // S11.2, guest: the host's playlists visible to the room, [{playlistId, name, entries: [{entryId, title,
-    // artist, durationMs}]}] (ids as text), and whether it may add single tracks or whole lists from them.
-    Q_PROPERTY(QVariantList roomPlaylists READ roomPlaylists NOTIFY catalogChanged)
+    // S11.2, guest: the host's playlists visible to the room (RoomCatalogModel: a row per playlist, then a
+    // row per track; rows that stay are kept across updates), and whether it may add single tracks or whole
+    // lists from them.
+    Q_PROPERTY(QAbstractItemModel* catalog READ catalog CONSTANT)
     Q_PROPERTY(bool canAddFromRoom READ canAddFromRoom NOTIFY changed)
     Q_PROPERTY(bool canAddPlaylist READ canAddPlaylist NOTIFY changed)
     Q_PROPERTY(bool roomPlaying READ roomPlaying NOTIFY changed)
@@ -184,7 +185,7 @@ class ListeningRoomBinding final : public QObject {
     [[nodiscard]] bool canSkip() const;
     [[nodiscard]] bool canPause() const;
     [[nodiscard]] bool canEditQueue() const;
-    [[nodiscard]] QVariantList roomPlaylists() const;
+    [[nodiscard]] QAbstractItemModel* catalog() noexcept;
     [[nodiscard]] bool canAddFromRoom() const;
     [[nodiscard]] bool canAddPlaylist() const;
     [[nodiscard]] bool roomPlaying() const;
@@ -241,7 +242,7 @@ class ListeningRoomBinding final : public QObject {
     Q_INVOKABLE bool roomSeekBy(int deltaMs);
     Q_INVOKABLE bool roomRemove(const QString& itemId);
     Q_INVOKABLE bool roomMove(const QString& itemId, int destination);
-    // S11.2: one track, or a whole list, from the host's playlists (ids from roomPlaylists).
+    // S11.2: one track, or a whole list, from the host's playlists (ids from catalog).
     Q_INVOKABLE bool roomAddItem(const QString& entryId);
     Q_INVOKABLE bool roomAddPlaylist(const QString& playlistId);
 
@@ -266,8 +267,6 @@ class ListeningRoomBinding final : public QObject {
 
   signals:
     void changed();
-    // roomPlaylists changed.
-    void catalogChanged();
 
   private:
     enum class Pending { None, Open, Join };
@@ -307,8 +306,9 @@ class ListeningRoomBinding final : public QObject {
     RoomRolesModel roles_;
     RoomKnownPeopleModel known_people_;
     QString room_lyrics_;
-    // What roomPlaylists shows (the guest's last catalog).
+    // The guest's last catalog and what QML shows of it.
     RoomCatalog room_catalog_;
+    RoomCatalogModel catalog_;
     std::optional<ListeningRoomNetwork> network_;
     // S9.1: the guest's player, declared before the guests that use it.
     std::unique_ptr<RoomPlaybackFollower> follower_;

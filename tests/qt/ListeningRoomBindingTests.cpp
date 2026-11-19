@@ -7,6 +7,7 @@
 #include "m0/domain/RoomInviteLink.hpp"
 #include "m0/ports/PlaybackBackend.hpp"
 #include "presentation/ListeningRoomBinding.hpp"
+#include "presentation/RoomCatalogModel.hpp"
 #include "presentation/RoomQueueModel.hpp"
 #include "presentation/RoomRolesModel.hpp"
 
@@ -921,7 +922,11 @@ class ListeningRoomBindingTests final : public QObject {
     void aGuestSeesTheHostsPlaylistsAndAddsFromThemWithItsPermissions() {
         Fixture f;
         auto binding = f.make();
-        QSignalSpy catalog_changes(binding.get(), &ListeningRoomBinding::catalogChanged);
+        auto* const catalog = binding->catalog();
+        QSignalSpy resets(catalog, &QAbstractItemModel::modelReset);
+        QSignalSpy inserted(catalog, &QAbstractItemModel::rowsInserted);
+        QSignalSpy removed(catalog, &QAbstractItemModel::rowsRemoved);
+        QSignalSpy changed_rows(catalog, &QAbstractItemModel::dataChanged);
         QVERIFY(binding->join(Fixture::validLink()));
         auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, inviteHostHex());
         f.connector->complete(guest_side);
@@ -930,22 +935,47 @@ class ListeningRoomBindingTests final : public QObject {
         room.version = 1;
         room.members.push_back(RoomMember{inviteHostHex(), "Joao", {}, MemberState::Admitted});
         QVERIFY(host_side->sendControl(RoomStateMessage{room, {}}));
-        QVERIFY(binding->roomPlaylists().isEmpty());
-        QVERIFY(host_side->sendControl(RoomCatalog{{RoomCatalogPlaylist{
-            5, "Festa", {RoomCatalogEntry{6, {"Primeira", "Artista", "Album", 61'000}}, RoomCatalogEntry{7, {}}}}}}));
-        QCOMPARE(catalog_changes.count(), 1);
-        const auto playlists = binding->roomPlaylists();
-        QCOMPARE(playlists.size(), 1);
-        const auto festa = playlists.front().toMap();
-        QCOMPARE(festa.value(QStringLiteral("playlistId")).toString(), QStringLiteral("5"));
-        QCOMPARE(festa.value(QStringLiteral("name")).toString(), QStringLiteral("Festa"));
-        const auto entries = festa.value(QStringLiteral("entries")).toList();
-        QCOMPARE(entries.size(), 2);
-        const auto first = entries.front().toMap();
-        QCOMPARE(first.value(QStringLiteral("entryId")).toString(), QStringLiteral("6"));
-        QCOMPARE(first.value(QStringLiteral("title")).toString(), QStringLiteral("Primeira"));
-        QCOMPARE(first.value(QStringLiteral("artist")).toString(), QStringLiteral("Artista"));
-        QCOMPARE(first.value(QStringLiteral("durationMs")).toLongLong(), 61'000LL);
+        QCOMPARE(catalog->rowCount(), 0);
+        RoomCatalogPlaylist festa{
+            5, "Festa", {RoomCatalogEntry{6, {"Primeira", "Artista", "Album", 61'000}}, RoomCatalogEntry{7, {}}}};
+        QVERIFY(host_side->sendControl(RoomCatalog{{festa}}));
+        // One row per playlist, then one per track of it.
+        QCOMPARE(catalog->rowCount(), 3);
+        const auto row = [&](const int index, const int role) { return catalog->index(index, 0).data(role); };
+        QCOMPARE(row(0, RoomCatalogModel::KindRole).toString(), QStringLiteral("playlist"));
+        QCOMPARE(row(0, RoomCatalogModel::PlaylistIdRole).toString(), QStringLiteral("5"));
+        QCOMPARE(row(0, RoomCatalogModel::NameRole).toString(), QStringLiteral("Festa"));
+        QCOMPARE(row(0, RoomCatalogModel::EntryCountRole).toInt(), 2);
+        QCOMPARE(row(1, RoomCatalogModel::KindRole).toString(), QStringLiteral("entry"));
+        QCOMPARE(row(1, RoomCatalogModel::PlaylistIdRole).toString(), QStringLiteral("5"));
+        QCOMPARE(row(1, RoomCatalogModel::EntryIdRole).toString(), QStringLiteral("6"));
+        QCOMPARE(row(1, RoomCatalogModel::TitleRole).toString(), QStringLiteral("Primeira"));
+        QCOMPARE(row(1, RoomCatalogModel::ArtistRole).toString(), QStringLiteral("Artista"));
+        QCOMPARE(row(2, RoomCatalogModel::EntryIdRole).toString(), QStringLiteral("7"));
+        QCOMPARE(row(2, RoomCatalogModel::TitleRole).toString(), QString{});
+
+        // A track described later is one inserted row: the others stay (and keep the keyboard focus in QML).
+        resets.clear();
+        inserted.clear();
+        removed.clear();
+        changed_rows.clear();
+        festa.entries.push_back(RoomCatalogEntry{8, {"Terceira", "Outra", "Album", 1'000}});
+        QVERIFY(host_side->sendControl(RoomCatalog{{festa}}));
+        QCOMPARE(catalog->rowCount(), 4);
+        QCOMPARE(resets.count(), 0);
+        QCOMPARE(removed.count(), 0);
+        QCOMPARE(inserted.count(), 1);
+        QCOMPARE(inserted.front().at(1).toInt(), 3);
+        QCOMPARE(inserted.front().at(2).toInt(), 3);
+        QCOMPARE(row(3, RoomCatalogModel::TitleRole).toString(), QStringLiteral("Terceira"));
+        // The playlist row only changes its count.
+        QCOMPARE(changed_rows.count(), 1);
+        QCOMPARE(changed_rows.front().at(0).value<QModelIndex>().row(), 0);
+        QCOMPARE(row(0, RoomCatalogModel::EntryCountRole).toInt(), 3);
+        // The same catalog again touches nothing.
+        QVERIFY(host_side->sendControl(RoomCatalog{{festa}}));
+        QCOMPARE(inserted.count(), 1);
+        QCOMPARE(changed_rows.count(), 1);
 
         // Without the permissions nothing is sent.
         QVERIFY(!binding->canAddFromRoom());
@@ -968,7 +998,7 @@ class ListeningRoomBindingTests final : public QObject {
         QVERIFY(host_side->sendControl(RoomStateMessage{room, add}));
         QVERIFY(binding->canAddFromRoom());
         QVERIFY(binding->canAddPlaylist());
-        QCOMPARE(catalog_changes.count(), 1); // a state alone does not touch the list
+        QCOMPARE(inserted.count(), 1); // a state alone does not touch the list
         QVERIFY(binding->roomAddItem(QStringLiteral("6")));
         QVERIFY(binding->roomAddPlaylist(QStringLiteral("5")));
         QVERIFY(!binding->roomAddItem(QStringLiteral("seis")));
@@ -981,8 +1011,7 @@ class ListeningRoomBindingTests final : public QObject {
         QCOMPARE(binding->errorText(), QStringLiteral("A fila da sala está cheia."));
 
         binding->leave();
-        QVERIFY(binding->roomPlaylists().isEmpty());
-        QCOMPARE(catalog_changes.count(), 2);
+        QCOMPARE(catalog->rowCount(), 0);
         QVERIFY(!binding->canAddPlaylist());
     }
 
