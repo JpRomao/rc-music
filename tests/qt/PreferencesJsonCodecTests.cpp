@@ -226,6 +226,37 @@ class PreferencesJsonCodecTests final : public QObject {
         }
     }
 
+    // S9.1: the listening room's output offset, optional and only written when it is not 0.
+    void roomOutputOffsetIsOptionalBoundedAndOnlyWrittenWhenSet() {
+        for (const int offset : {-500, -10, 120, 500}) {
+            auto object = validObject();
+            object.insert(u"roomOutputOffsetMs"_s, offset);
+            const auto decoded = PreferencesJsonCodec::decode(bytes(object));
+            QCOMPARE(decoded.status, PreferencesJsonDecodeStatus::Valid);
+            QVERIFY(decoded.preferences.has_value());
+            QCOMPARE(decoded.preferences->room_output_offset_ms, offset);
+            const auto encoded = QJsonDocument::fromJson(PreferencesJsonCodec::encode(*decoded.preferences)).object();
+            QCOMPARE(encoded.value(u"roomOutputOffsetMs"_s), QJsonValue{offset});
+        }
+        for (const auto& legacy : {validVersionOneObject(), validObject()}) {
+            const auto old = PreferencesJsonCodec::decode(bytes(legacy));
+            QVERIFY(old.preferences.has_value());
+            QCOMPARE(old.preferences->room_output_offset_ms, 0);
+            QVERIFY(!QJsonDocument::fromJson(PreferencesJsonCodec::encode(*old.preferences))
+                         .object()
+                         .contains(u"roomOutputOffsetMs"_s));
+        }
+        for (const auto& value :
+             {QJsonValue{-501}, QJsonValue{501}, QJsonValue{1.5}, QJsonValue{QJsonValue::Null}, QJsonValue{u"100"_s}}) {
+            auto invalid = validObject();
+            invalid.insert(u"roomOutputOffsetMs"_s, value);
+            QCOMPARE(PreferencesJsonCodec::decode(bytes(invalid)).status, PreferencesJsonDecodeStatus::Invalid);
+        }
+        Preferences out_of_range;
+        out_of_range.room_output_offset_ms = 501;
+        QVERIFY(PreferencesJsonCodec::encode(out_of_range).isEmpty());
+    }
+
     void rejectsInvalidShuffleQueueValue() {
         auto object = validObject();
         object.insert(u"shuffleQueueEnabled"_s, u"true"_s);

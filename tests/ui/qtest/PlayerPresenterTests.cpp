@@ -589,6 +589,7 @@ class PlayerPresenterTests final : public QObject {
     void hostRoomSessionExcludesGuestItems();
     void guestRoomSessionKeepsThePreRoomSession();
     void roomPrivacyNoticeIsMarkedOnceAndPersisted();
+    void roomOutputOffsetIsBoundedAndPersisted();
     void disablingShuffleFromAnOrderObserverStopsThePendingPermutation();
     void removingCurrentUsesAForwardSuccessorOrLeavesPlaybackEmpty();
     void removingPausedCurrentKeepsTheSuccessorReady();
@@ -8951,6 +8952,7 @@ void PlayerPresenterTests::exposesReadOnlyLifecycleDefaultsAndOnlyIntentMethods(
                                     "setThemePreference",
                                     "setMotionPreference",
                                     "setLyricsTextSize",
+                                    "setRoomOutputOffsetMs",
                                     "setSkipBackwardSeconds",
                                     "setSkipForwardSeconds",
                                     "setClosePreference",
@@ -9967,6 +9969,33 @@ void PlayerPresenterTests::roomPrivacyNoticeIsMarkedOnceAndPersisted() {
     QVERIFY(preferences_autosave.dirty());
     QCOMPARE(preferences_autosave.flush(), PreferencesSaveStatus::Saved);
     QVERIFY(preferences_writer.flushes.back().preferences.room_privacy_notice_shown);
+}
+
+void PlayerPresenterTests::roomOutputOffsetIsBoundedAndPersisted() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesClock clock;
+    PresenterPreferencesWriter preferences_writer;
+    PreferencesAutosave preferences_autosave{preferences_writer, {}, {.now = [&clock] { return clock.now(); }}};
+    PlayerPresenter presenter(
+        platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; },
+        PlayerPresenterPreferences{.autosave = &preferences_autosave});
+    QCOMPARE(presenter.roomOutputOffsetMs(), 0);
+    QCOMPARE(presenter.property("roomOutputOffsetMinimumMs").toInt(), -500);
+    QCOMPARE(presenter.property("roomOutputOffsetMaximumMs").toInt(), 500);
+    QSignalSpy changed(&presenter, &PlayerPresenter::preferencesChanged);
+    QVERIFY(presenter.setRoomOutputOffsetMs(120));
+    QCOMPARE(presenter.roomOutputOffsetMs(), 120);
+    QCOMPARE(changed.count(), 1);
+    QVERIFY(!presenter.setRoomOutputOffsetMs(120));
+    QVERIFY(!presenter.setRoomOutputOffsetMs(501));
+    QVERIFY(!presenter.setRoomOutputOffsetMs(-501));
+    QCOMPARE(presenter.roomOutputOffsetMs(), 120);
+    QVERIFY(presenter.setRoomOutputOffsetMs(-500));
+    QVERIFY(preferences_autosave.dirty());
+    QCOMPARE(preferences_autosave.flush(), PreferencesSaveStatus::Saved);
+    QCOMPARE(preferences_writer.flushes.back().preferences.room_output_offset_ms, -500);
 }
 
 } // namespace music_player::m0::test

@@ -1,5 +1,6 @@
 #include "m0/application/PlayerController.hpp"
 #include "m0/domain/DownloadDirectory.hpp"
+#include "m0/domain/ListeningRoomLimits.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -254,6 +255,13 @@ bool PlayerController::setRoomPrivacyNoticeShown(const bool shown) {
     if (shown == preferences_.room_privacy_notice_shown)
         return false;
     preferences_.room_privacy_notice_shown = shown;
+    return true;
+}
+bool PlayerController::setRoomOutputOffsetMs(const int offset_ms) {
+    if (offset_ms < minimum_output_offset_ms || offset_ms > maximum_output_offset_ms ||
+        offset_ms == preferences_.room_output_offset_ms)
+        return false;
+    preferences_.room_output_offset_ms = offset_ms;
     return true;
 }
 bool PlayerController::setLyricsTextSize(const int size) {

@@ -379,6 +379,33 @@ TestCase {
         tryVerify(() => !badge.visible);
     }
 
+    // S9.1: a guest adjusts its output offset on the room page, by keyboard.
+    function test_aGuestAdjustsTheOutputOffsetByKeyboard() {
+        verify(localPresenter.setRoomOutputOffsetMs(0) || localPresenter.roomOutputOffsetMs === 0);
+        joinAsGuest();
+        createShell();
+        openPage();
+        const field = visibleChild("room-guest-output-offset");
+        compare(field.Accessible.name, "Ajuste de sincronia");
+        verify(field.Accessible.description.indexOf("Bluetooth") >= 0);
+        compare(field.displayText, "0 ms");
+        // The page focuses "Sair da sala" first; the offset is the next Tab stop.
+        tryVerify(() => findChild(testCase.shell, "room-leave").activeFocus);
+        keyClick(Qt.Key_Tab);
+        tryVerify(() => field.activeFocus);
+        keyClick(Qt.Key_Up);
+        compare(localPresenter.roomOutputOffsetMs, 10);
+        compare(field.displayText, "+10 ms");
+        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Down);
+        compare(localPresenter.roomOutputOffsetMs, -10);
+        compare(field.displayText, "−10 ms");
+        // A change made elsewhere (the preferences page) shows here too.
+        verify(localPresenter.setRoomOutputOffsetMs(250));
+        compare(field.value, 250);
+        verify(localPresenter.setRoomOutputOffsetMs(0));
+    }
+
     function test_anErrorIsShownAndCanBeDismissed() {
         fakeRoom.errorText = "A sala está cheia";
         createShell();

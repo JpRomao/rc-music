@@ -2,6 +2,7 @@
 
 #include "boundary/FilesystemPath.hpp"
 #include "m0/adapters/SingleWorkerLocalSourceDiscovery.hpp"
+#include "m0/domain/ListeningRoomLimits.hpp"
 #include "m0/ports/AudioOutputSelection.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
 
@@ -3830,6 +3831,15 @@ bool PlayerPresenter::setDownloadDirectory(std::string directory) {
     return true;
 }
 int PlayerPresenter::lyricsTextSize() const noexcept { return preferences().lyrics_text_size; }
+int PlayerPresenter::roomOutputOffsetMs() const noexcept { return preferences().room_output_offset_ms; }
+int PlayerPresenter::roomOutputOffsetMinimumMs() noexcept { return minimum_output_offset_ms; }
+int PlayerPresenter::roomOutputOffsetMaximumMs() noexcept { return maximum_output_offset_ms; }
+bool PlayerPresenter::setRoomOutputOffsetMs(const int offset_ms) {
+    if (exiting_ || !controller_.setRoomOutputOffsetMs(offset_ms))
+        return false;
+    preferenceDidChange();
+    return true;
+}
 bool PlayerPresenter::setLyricsTextSize(const int size) {
     if (exiting_ || !controller_.setLyricsTextSize(size))
         return false;

@@ -18,6 +18,8 @@ PageSurface {
     objectName: "room-panel"
     required property ShellUiContract contract
     property var room: null
+    // S9.1: the output offset is a preference of the player.
+    property var presenter: null
     readonly property bool available: room !== null && room.available
     readonly property int role: available ? room.role : 0
     readonly property bool busy: available && room.busy
@@ -525,6 +527,19 @@ PageSurface {
                 iconWithText: true
                 text: roomText.leave
                 onClicked: root.room.leave()
+            }
+            RoomOutputOffsetField {
+                Layout.fillWidth: true
+                visible: root.presenter !== null
+                contract: root.contract
+                controlId: "room-guest-output-offset"
+                label: roomText.outputOffset
+                hint: roomText.outputOffsetHint
+                valueFormat: roomText.outputOffsetValue
+                value: root.presenter !== null ? root.presenter.roomOutputOffsetMs : 0
+                minimum: root.presenter !== null ? root.presenter.roomOutputOffsetMinimumMs : 0
+                maximum: root.presenter !== null ? root.presenter.roomOutputOffsetMaximumMs : 0
+                onValueEdited: value => root.presenter.setRoomOutputOffsetMs(value)
             }
         }
 

@@ -38,6 +38,8 @@ class PlayerController final {
     void setMotionMode(MotionMode motion);
     [[nodiscard]] bool setLyricsTextSize(int size);
     [[nodiscard]] bool setRoomPrivacyNoticeShown(bool shown);
+    // false when out of [minimum_output_offset_ms, maximum_output_offset_ms] or unchanged.
+    [[nodiscard]] bool setRoomOutputOffsetMs(int offset_ms);
     [[nodiscard]] bool setSkipBackwardSeconds(int seconds);
     [[nodiscard]] bool setSkipForwardSeconds(int seconds);
     [[nodiscard]] bool setVolume(double volume);

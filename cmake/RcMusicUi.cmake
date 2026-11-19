@@ -167,6 +167,7 @@ function(rc_music_add_ui target support qml_output)
             PreferenceChoice.qml
             PreferenceToggle.qml
             PreferenceSecondsField.qml
+            RoomOutputOffsetField.qml
             TrackDetailsField.qml
             TrackDetailsPanel.qml
             TrackDetailsText.qml

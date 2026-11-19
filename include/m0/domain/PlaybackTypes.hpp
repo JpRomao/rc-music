@@ -105,6 +105,9 @@ struct Preferences final {
     int lyrics_text_size{18};
     // The listening room's one-time IP privacy notice (FR-058) was shown.
     bool room_privacy_notice_shown{false};
+    // The listening room's output offset (S9.1), minimum_output_offset_ms..maximum_output_offset_ms. A
+    // positive value makes this guest play that much earlier than the host's time.
+    int room_output_offset_ms{0};
 
     [[nodiscard]] bool operator==(const Preferences&) const noexcept = default;
 };

@@ -194,6 +194,10 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(ThemePreference themePreference READ themePreference NOTIFY preferencesChanged)
     Q_PROPERTY(MotionPreference motionPreference READ motionPreference NOTIFY preferencesChanged)
     Q_PROPERTY(int lyricsTextSize READ lyricsTextSize NOTIFY preferencesChanged)
+    // S9.1: how much earlier (positive) or later this guest plays than the room's time.
+    Q_PROPERTY(int roomOutputOffsetMs READ roomOutputOffsetMs NOTIFY preferencesChanged)
+    Q_PROPERTY(int roomOutputOffsetMinimumMs READ roomOutputOffsetMinimumMs CONSTANT)
+    Q_PROPERTY(int roomOutputOffsetMaximumMs READ roomOutputOffsetMaximumMs CONSTANT)
     Q_PROPERTY(ClosePreference closePreference READ closePreference NOTIFY preferencesChanged)
     Q_PROPERTY(QueueEndPreference queueEndPreference READ queueEndPreference NOTIFY preferencesChanged)
     Q_PROPERTY(bool restoreLastSession READ restoreLastSession NOTIFY preferencesChanged)
@@ -492,6 +496,10 @@ class PlayerPresenter final : public QObject {
     Q_INVOKABLE bool setMotionPreference(MotionPreference motion);
     [[nodiscard]] int lyricsTextSize() const noexcept;
     Q_INVOKABLE bool setLyricsTextSize(int size);
+    [[nodiscard]] int roomOutputOffsetMs() const noexcept;
+    [[nodiscard]] static int roomOutputOffsetMinimumMs() noexcept;
+    [[nodiscard]] static int roomOutputOffsetMaximumMs() noexcept;
+    Q_INVOKABLE bool setRoomOutputOffsetMs(int offset_ms);
     Q_INVOKABLE bool setSkipBackwardSeconds(int seconds);
     Q_INVOKABLE bool setSkipForwardSeconds(int seconds);
     Q_INVOKABLE bool setClosePreference(ClosePreference behavior);

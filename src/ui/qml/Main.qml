@@ -962,6 +962,7 @@ ApplicationWindow {
         height: contentArea.height
         contract: window.uiContract
         room: window.room
+        presenter: window.presenter
         enabled: !window.presenter.exiting
         onClosed: {
             if (window.active && !window.presenter.exiting && !libraryPanel.visible && !searchPanel.visible && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && roomButton.visible)

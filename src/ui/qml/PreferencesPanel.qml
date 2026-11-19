@@ -483,6 +483,19 @@ PageSurface {
                     enabled: !root.presenter.exiting
                     onValueActivated: index => root.selectAudioOutput(index)
                 }
+                RoomOutputOffsetField {
+                    Layout.fillWidth: true
+                    contract: root.contract
+                    controlId: "room-output-offset"
+                    label: labels.roomOutputOffset
+                    hint: labels.roomOutputOffsetHint
+                    valueFormat: labels.roomOutputOffsetValue
+                    value: root.presenter.roomOutputOffsetMs
+                    minimum: root.presenter.roomOutputOffsetMinimumMs
+                    maximum: root.presenter.roomOutputOffsetMaximumMs
+                    enabled: !root.presenter.exiting
+                    onValueEdited: value => root.presenter.setRoomOutputOffsetMs(value)
+                }
                 Text {
                     id: audioOutputFeedback
                     objectName: "audio-output-device-feedback"

@@ -216,6 +216,35 @@ TestCase {
         compare(downloads.folderChanges, 1);
         compare(shell.downloads.folderChanges, 0);
     }
+    // S9.1: the listening room's output offset, keyboard-adjustable in steps of 10 ms within ±500 ms.
+    function test_roomOutputOffsetIsAdjustedByKeyboardWithinItsLimits() {
+        driver.resetLocalScenario();
+        verify(localPresenter.setRoomOutputOffsetMs(490) || localPresenter.roomOutputOffsetMs === 490);
+        shell = createTemporaryObject(localShellComponent, null);
+        verify(shell);
+        shell.requestActivate();
+        tryCompare(shell, "active", true);
+        keyClick(Qt.Key_Comma, Qt.ControlModifier);
+        const panel = findChild(shell, "preferences-panel");
+        tryCompare(panel, "opened", true);
+        mouseClick(findChild(shell, "preferences-playback"));
+        const field = findChild(shell, "room-output-offset");
+        verify(field && field.visible);
+        compare(field.Accessible.name, "Ajuste de sincronia na sala");
+        compare(field.displayText, "+490 ms");
+        field.forceActiveFocus(Qt.TabFocusReason);
+        tryVerify(() => field.activeFocus);
+        keyClick(Qt.Key_Up);
+        compare(localPresenter.roomOutputOffsetMs, 500);
+        keyClick(Qt.Key_Up);
+        compare(localPresenter.roomOutputOffsetMs, 500);
+        compare(field.displayText, "+500 ms");
+        keyClick(Qt.Key_Down);
+        compare(localPresenter.roomOutputOffsetMs, 490);
+        verify(localPresenter.setRoomOutputOffsetMs(0));
+        compare(field.displayText, "0 ms");
+    }
+
     function test_audioOutputChoiceUsesConfirmedIdentityAcrossTopologyChanges() {
         driver.resetLocalScenario();
         shell = createTemporaryObject(localShellComponent, null);
@@ -240,7 +269,7 @@ TestCase {
             tryCompare(choice, "count", 3);
             compare(choice.textAt(1), "<b>Saída A</b>");
             verify(!feedback.visible);
-            verifyFocusCycle([findChild(shell, "preferences-general"), findChild(shell, "preferences-playback"), findChild(shell, "preferences-appearance"), findChild(shell, "skip-backward-seconds"), findChild(shell, "skip-forward-seconds"), findChild(shell, "queue-end-behavior"), choice, findChild(shell, "preferences-close")]);
+            verifyFocusCycle([findChild(shell, "preferences-general"), findChild(shell, "preferences-playback"), findChild(shell, "preferences-appearance"), findChild(shell, "skip-backward-seconds"), findChild(shell, "skip-forward-seconds"), findChild(shell, "queue-end-behavior"), choice, findChild(shell, "room-output-offset"), findChild(shell, "preferences-close")]);
             selectChoice(choice, 2);
             compare(localPresenter.selectedAudioOutputId, "second");
             compare(driver.localAudioOutputSelectionCount(), 1);
@@ -458,7 +487,7 @@ TestCase {
         verify(!findChild(shell, "audio-output-device").visible);
         compare(backward.Accessible.role, Accessible.EditableText);
         compare(forward.Accessible.role, Accessible.EditableText);
-        verifyFocusCycle([general, playback, appearance, backward, forward, queueEnd, close]);
+        verifyFocusCycle([general, playback, appearance, backward, forward, queueEnd, findChild(shell, "room-output-offset"), close]);
         compare(backward.text, "5");
         compare(forward.text, "5");
         enterText(backward, "7");

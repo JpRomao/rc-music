@@ -1,5 +1,6 @@
 #include "adapters/PreferencesJsonCodec.hpp"
 #include "m0/domain/DownloadDirectory.hpp"
+#include "m0/domain/ListeningRoomLimits.hpp"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -156,7 +157,9 @@ struct WindowPlacementDecodeResult final {
            (directory.empty() ||
             (validDownloadDirectory(directory) && QString::fromStdString(directory).toStdString() == directory)) &&
            (!preferences.window_placement ||
-            (preferences.window_placement->width > 0 && preferences.window_placement->height > 0));
+            (preferences.window_placement->width > 0 && preferences.window_placement->height > 0)) &&
+           preferences.room_output_offset_ms >= minimum_output_offset_ms &&
+           preferences.room_output_offset_ms <= maximum_output_offset_ms;
 }
 
 } // namespace
@@ -185,6 +188,8 @@ QByteArray PreferencesJsonCodec::encode(const Preferences& preferences) {
     object.insert(QStringLiteral("lyricsTextSize"), preferences.lyrics_text_size);
     if (preferences.room_privacy_notice_shown)
         object.insert(QStringLiteral("roomPrivacyNoticeShown"), true);
+    if (preferences.room_output_offset_ms != 0)
+        object.insert(QStringLiteral("roomOutputOffsetMs"), preferences.room_output_offset_ms);
     return QJsonDocument{object}.toJson(QJsonDocument::Compact);
 }
 
@@ -232,6 +237,11 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
     const auto lyrics_text_size =
         size_value.isUndefined() ? std::optional<int>{18} : decodeBoundedInteger(size_value, 14, 30);
     const QJsonValue room_privacy_notice = object.value(QStringLiteral("roomPrivacyNoticeShown"));
+    const auto offset_value = object.value(QStringLiteral("roomOutputOffsetMs"));
+    const auto room_output_offset =
+        offset_value.isUndefined()
+            ? std::optional<int>{0}
+            : decodeBoundedInteger(offset_value, minimum_output_offset_ms, maximum_output_offset_ms);
 
     if (!theme.has_value() || !motion.has_value() || !volume_value.isDouble() || !std::isfinite(volume) ||
         volume < 0.0 || volume > 1.0 || !muted_value.isBool() || !skip_backward.has_value() ||
@@ -239,7 +249,7 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
         !start_minimized_value.isBool() || !queue_end_behavior.has_value() || !window_placement.valid ||
         (!repeat_queue.isUndefined() && !repeat_queue.isBool()) ||
         (!shuffle_queue.isUndefined() && !shuffle_queue.isBool()) || !lyrics_text_size ||
-        (!room_privacy_notice.isUndefined() && !room_privacy_notice.isBool()) ||
+        (!room_privacy_notice.isUndefined() && !room_privacy_notice.isBool()) || !room_output_offset ||
         (!directory_value.isUndefined() && (!directory_value.isString() || !validDownloadDirectory(directory) ||
                                             QString::fromStdString(directory) != directory_value.toString()))) {
         return {};
@@ -261,7 +271,8 @@ PreferencesJsonDecodeResult PreferencesJsonCodec::decode(const QByteArrayView by
                                        .shuffle_queue_enabled = shuffle_queue.toBool(false),
                                        .download_directory = std::move(directory),
                                        .lyrics_text_size = *lyrics_text_size,
-                                       .room_privacy_notice_shown = room_privacy_notice.toBool(false)}};
+                                       .room_privacy_notice_shown = room_privacy_notice.toBool(false),
+                                       .room_output_offset_ms = *room_output_offset}};
 }
 
 } // namespace music_player::m0
