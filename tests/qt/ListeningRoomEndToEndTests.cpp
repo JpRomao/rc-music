@@ -13,6 +13,7 @@
 #include "adapters/WindowsRoomIdentity.hpp"
 #include "m0/application/ListeningRoomGuest.hpp"
 #include "m0/application/ListeningRoomHost.hpp"
+#include "m0/application/RoomPlaybackFollower.hpp"
 #include "m0/domain/ListeningRoomLimits.hpp"
 #include "m0/domain/RoomInviteLink.hpp"
 #include "presentation/ListeningRoomBinding.hpp"
@@ -32,6 +33,7 @@
 #include <QTest>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -170,6 +172,47 @@ std::filesystem::path randomFile(const QTemporaryDir& directory, const char* nam
     return std::filesystem::path{path.toStdU16String()};
 }
 
+std::int64_t steadyMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+// The guest's player: silent, ready as soon as it loads, and a record of what it loaded.
+class RecordingBackend final : public PlaybackBackend {
+  public:
+    [[nodiscard]] const PlaybackSnapshot& snapshot() const noexcept override { return snapshot_; }
+    void setEventCallback(PlaybackEventCallback) override {}
+    PlaybackCommandResult load(const std::filesystem::path& source) override {
+        loads.push_back(source);
+        snapshot_ = PlaybackSnapshot{PlaybackStatus::Ready, 0, 180'000, true, snapshot_.generation + 1};
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult play() override {
+        snapshot_.status = PlaybackStatus::Playing;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult pause() override {
+        snapshot_.status = PlaybackStatus::Paused;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult seekTo(const std::int64_t position_ms) override {
+        snapshot_.position_ms = position_ms;
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult setVolume(double) override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult setMuted(bool) override { return PlaybackCommandResult::Accepted; }
+    PlaybackCommandResult unload() override {
+        snapshot_ = PlaybackSnapshot{PlaybackStatus::Empty, 0, 0, false, snapshot_.generation + 1};
+        return PlaybackCommandResult::Accepted;
+    }
+    PlaybackCommandResult shutdown() override { return PlaybackCommandResult::Accepted; }
+
+    std::vector<std::filesystem::path> loads;
+
+  private:
+    PlaybackSnapshot snapshot_{};
+};
+
 // Describes real files like QtRoomTrackCatalog: their SHA-256, size and the lyrics the test chose.
 class HashingCatalog final : public RoomTrackCatalog {
   public:
@@ -266,7 +309,7 @@ struct HostApp final {
 struct GuestApp final {
     GuestApp(const LoopbackSignaling& relay, const RoomIdentity& identity, std::string nickname,
              RoomFileInbox* files = nullptr, RoomTrackCatalog* upload_catalog = nullptr,
-             RoomFileOutbox* upload_files = nullptr)
+             RoomFileOutbox* upload_files = nullptr, RoomPlaybackFollower* follower = nullptr)
         : fingerprint(hex(identity.fingerprint)), real(relay.origin(), identity, local_only), connector(real),
           guest(ListeningRoomGuestDependencies{
               .connector = connector,
@@ -280,6 +323,8 @@ struct GuestApp final {
                   },
               .schedule = ListeningRoomBinding::scheduler(&context),
               .files = files,
+              .follower = follower,
+              .local_clock_ms = steadyMs,
               .upload_catalog = upload_catalog,
               .upload_files = upload_files,
           }) {
@@ -301,8 +346,8 @@ struct GuestApp final {
 // A host app that sends real files: the fixtures as its queue, HashingCatalog and QtRoomFileOutbox.
 struct FileHostApp final {
     FileHostApp(const LoopbackSignaling& relay, const RoomIdentity& identity,
-                std::vector<std::filesystem::path> sources)
-        : player(std::move(sources)), endpoint(relay.origin(), identity, local_only),
+                std::vector<std::filesystem::path> sources, const bool select_first = true)
+        : player(std::move(sources), select_first), endpoint(relay.origin(), identity, local_only),
           host(ListeningRoomHostDependencies{
               .roster_store = roster,
               .player = player,
@@ -827,6 +872,37 @@ class ListeningRoomEndToEndTests final : public QObject {
         QTRY_COMPARE_WITH_TIMEOUT(inbox.completed.size(), std::size_t{2}, connect_ms);
         QCOMPARE(inbox.completed, (std::vector<std::string>{sha256Of(left), sha256Of(right)}));
         QVERIFY(inbox.failed.empty());
+    }
+
+    // S13.1: the host queued two tracks without playing either, the guest came in, and only then the host
+    // played the first one. The guest's player (silent) must load the cached file and play.
+    void aGuestWhoJoinedBeforeAnythingPlayedPlaysTheFirstItemWhenTheHostStarts() {
+        QTemporaryDir sources;
+        QVERIFY(sources.isValid());
+        const auto left = randomFile(sources, "left.mp3", 7'202'019);
+        const auto right = randomFile(sources, "right.mp3", 7'202'018);
+        LoopbackSignaling relay;
+        FileHostApp app(relay, host_id_, {left, right}, false);
+        QVERIFY(!app.player.currentIndex());
+        const auto invite = openRoom(app, relay, {});
+        QVERIFY(invite.has_value());
+        QTemporaryDir ana_config;
+        QVERIFY(ana_config.isValid());
+        RecordingInbox inbox(ana_config.path());
+        RecordingBackend backend;
+        QObject follower_context;
+        RoomPlaybackFollower follower(backend, steadyMs, room_drift_nudge_ms, room_drift_seek_ms,
+                                      ListeningRoomBinding::scheduler(&follower_context));
+        GuestApp ana(relay, ana_id_, "Ana", &inbox, nullptr, nullptr, &follower);
+        QVERIFY(approveIn(app, ana, *invite));
+        QTRY_VERIFY_WITH_TIMEOUT(ana.guest.localFile(sha256Of(left)).has_value(), connect_ms);
+        QVERIFY(backend.loads.empty());
+
+        QVERIFY(app.player.playAt(0));
+        QTRY_COMPARE_WITH_TIMEOUT(ana.guest.snapshot().playback.current_item, std::optional{app.player.occurrenceAt(0)},
+                                  connect_ms);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.snapshot().status, PlaybackStatus::Playing, connect_ms);
+        QCOMPARE(backend.loads, std::vector{*ana.guest.localFile(sha256Of(left))});
     }
 
     void aGuestJoiningMidSongReceivesTheCurrentItemFirst() {

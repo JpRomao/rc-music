@@ -38,15 +38,27 @@ class SilentPlatformIntegration final : public PlatformIntegration {
 // Starts Playing at the first item (the DeterministicPlaybackBackend default: 84 s of 248 s).
 class FakeRoomHostPlayer final : public RoomHostPlayer {
   public:
-    explicit FakeRoomHostPlayer(std::vector<std::filesystem::path> sources)
+    explicit FakeRoomHostPlayer(std::vector<std::filesystem::path> sources, const bool select_first = true)
         : controller_(backend_, platform_, backend_.snapshot()) {
         backend_.setEventCallback([this](const PlaybackEvent& event) {
             controller_.applyBackendSnapshot(event.snapshot);
             changed();
         });
         static_cast<void>(queue_.replace(std::move(sources)));
-        if (!queue_.empty())
+        if (!select_first)
+            static_cast<void>(queue_.clearSelection());
+        else if (!queue_.empty())
             static_cast<void>(queue_.select(0));
+    }
+
+    // The host picks an item and plays it (a double click in its queue), also when nothing was current.
+    bool playAt(const std::size_t index) {
+        Batch batch{*this};
+        if (!selectAndLoad(index))
+            return false;
+        static_cast<void>(controller_.play());
+        changed();
+        return true;
     }
 
     [[nodiscard]] RoomHostPlayerState state() const override {
