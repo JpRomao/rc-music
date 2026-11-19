@@ -42,6 +42,7 @@ QtObject {
     readonly property string shortcutMoveDown: qsTr("Alt+↓")
     readonly property string shortcutRemove: qsTr("Delete")
     readonly property string hostControls: qsTr("O host controla")
+    readonly property string hostNotAllowed: qsTr("O host não liberou")
     readonly property string guestLocalQueueHeld: qsTr("Durante a sala você ouve a fila do anfitrião. A sua fila volta quando você sair.")
     readonly property string roomQueue: qsTr("Fila da sala")
     readonly property string loading: qsTr("Carregando…")

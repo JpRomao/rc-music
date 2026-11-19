@@ -29,6 +29,8 @@
 
 namespace music_player::m0 {
 
+enum class RoleRemoval : std::uint8_t { Removed, InitialRole, Refused };
+
 struct RoomOpenOptions final {
     std::size_t max_listeners{default_room_listeners};
     bool until_revoked{false};
@@ -104,10 +106,12 @@ struct ListeningRoomHostDependencies final {
 // item.
 //
 // State: snapshot() is the host's view; its version grows by one each time the members, the room
-// queue or the playback change. Guests get guestView = the same snapshot with ADMITTED members only
-// (pending people stay visible to the host, via snapshot() and onJoinRequest), and only when that view
-// changed: RoomStateMessage goes to every admitted member with ITS OWN effective permissions
-// (RoomRoster::effectivePermissions); a guest may see version gaps.
+// queue or the playback change, and each time the host changes roles or a person's role, overrides
+// (S10.1), so every admitted member gets its new permissions in that state. Guests get guestView = the
+// same snapshot with ADMITTED members only (pending people stay visible to the host, via snapshot() and
+// onJoinRequest), and only when that view changed (or the roster did): RoomStateMessage goes to every
+// admitted member with ITS OWN effective permissions (RoomRoster::effectivePermissions); a guest may see
+// version gaps.
 //   - Room queue: from the current item forward (the play order), item id = the queue occurrence id.
 //     HostTrack items carry the catalog's hash and summary, owner = the host fingerprint (lowercase
 //     hex) and added_by = the host nickname; an item appears once the catalog described it and a file
@@ -169,6 +173,29 @@ class ListeningRoomHost final {
     // The invite kept for "until revoked" rooms, with its settings (for the UI to show).
     [[nodiscard]] std::optional<PersistedInvite> persistedInvite() const;
 
+    // Roles and moderation (S10.1), host-only. Each successful change is saved through the roster store
+    // (when the file is writable) and, while the room is open, reaches every admitted member in a new
+    // state (the version bumps) carrying its effective permissions. A refused change saves and sends
+    // nothing.
+    [[nodiscard]] RoomRosterSnapshot roster() const;
+    // The role people approved from now on get: the open room's, else the persisted invite's, else the
+    // first role.
+    [[nodiscard]] std::uint64_t initialRoleId() const;
+    // Also updates the persisted invite when the open room is that invite (or no room is open).
+    [[nodiscard]] bool setInitialRole(std::uint64_t role_id);
+    [[nodiscard]] std::optional<std::uint64_t> createRole(std::string name, RoomPermissionSet permissions);
+    [[nodiscard]] bool renameRole(std::uint64_t role_id, std::string name);
+    [[nodiscard]] bool setRolePermissions(std::uint64_t role_id, RoomPermissionSet permissions);
+    // The initial role (the open room's or the persisted invite's) is never removed: InitialRole. People
+    // holding the removed role fall back to the initial role, keeping their overrides.
+    [[nodiscard]] RoleRemoval removeRole(std::uint64_t role_id);
+    [[nodiscard]] bool assignRole(std::string_view fingerprint, std::uint64_t role_id);
+    // nullopt clears the override (the role decides again).
+    [[nodiscard]] bool setOverride(std::string_view fingerprint, RoomPermission permission,
+                                   std::optional<bool> allowed);
+    // "Desbloquear": the person may ask to come in again. False when not known or not blocked.
+    [[nodiscard]] bool unblock(std::string_view fingerprint);
+
     // For the guest-file transfer (S8/S12): a guest's file already in the host's room cache joins the
     // queue as a GuestTrack. Overwrites id, origin, owner_fingerprint (= owner_fingerprint) and
     // added_by (the owner's nickname). nullopt when the room is closed, the owner is not admitted,
@@ -218,6 +245,7 @@ class ListeningRoomHost final {
     void forgetDrift(std::string_view fingerprint);
     void end(RoomByeReason reason);
     void saveRoster();
+    void rosterChanged();
     [[nodiscard]] Connection* find(const RoomLink* link);
     [[nodiscard]] Connection* findMember(std::string_view fingerprint);
     [[nodiscard]] std::optional<MemberState> memberState(std::string_view fingerprint) const;
@@ -237,6 +265,8 @@ class ListeningRoomHost final {
 
     RoomRoster roster_;
     bool roster_writable_{false};
+    // The open room was opened from the persisted invite (until revoked).
+    bool uses_persisted_invite_{false};
     std::optional<ListeningRoom> room_;
     std::optional<RoomInviteLink> invite_;
     std::uint64_t generation_{0};

@@ -82,13 +82,15 @@ ApplicationWindow {
     }
     readonly property bool downloadFinalSaveDecisionRequired: downloads !== null && (downloads.canRetryFinalSave || downloads.canCloseAfterFinalSaveFailure)
     readonly property bool profileSetupRequired: profile !== null && profile.needsSetup === true && startupReady && !presenter.exiting
-    readonly property bool windowShortcutsEnabled: !profileSetupDialog.visible && (!playlistsPanel.visible || (inlinePages && !isInside(activeFocusItem, playlistsPanel.contentItem))) && (!libraryPanel.visible || !isInside(activeFocusItem, libraryPanel.contentItem)) && (!searchPanel.visible || !isInside(activeFocusItem, searchPanel.contentItem)) && (!roomPanel.visible || !isInside(activeFocusItem, roomPanel.contentItem)) && !libraryPanel.blockingUiOpen && !lyricsPanel.queryOpen && (!downloadsPanel.visible || (inlinePages && !isInside(activeFocusItem, downloadsPanel.contentItem))) && !playlistsPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool windowShortcutsEnabled: !profileSetupDialog.visible && (!playlistsPanel.visible || (inlinePages && !isInside(activeFocusItem, playlistsPanel.contentItem))) && (!libraryPanel.visible || !isInside(activeFocusItem, libraryPanel.contentItem)) && (!searchPanel.visible || !isInside(activeFocusItem, searchPanel.contentItem)) && (!roomPanel.visible || !isInside(activeFocusItem, roomPanel.contentItem)) && !libraryPanel.blockingUiOpen && !roomPanel.blockingUiOpen && !lyricsPanel.queryOpen && (!downloadsPanel.visible || (inlinePages && !isInside(activeFocusItem, downloadsPanel.contentItem))) && !playlistsPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && transport.enabled
     readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
     readonly property bool primaryKeysEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && !focusOwnsTextInput()
     readonly property bool spaceShortcutEnabled: primaryKeysEnabled
     readonly property bool arrowShortcutsEnabled: primaryKeysEnabled
     readonly property bool seekShortcutsEnabled: arrowShortcutsEnabled && transportShortcutsEnabled && presenter.seekable && !presenter.seekPreviewActive && !presenter.seekPending
+    // S10.1: a guest's transport keys send room intents; the binding refuses each one without its permission.
+    readonly property bool roomKeysEnabled: room !== null && room.available && room.role === 2 && navigationShortcutsEnabled
     readonly property bool inlinePageClosingAllowed: inlinePages && currentPage !== "home" && currentPage !== "queue" && !playlistsPanel.blockingUiOpen && !libraryPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !lyricsPanel.queryOpen && !browserError.visible && !windowNotice.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     property int previousPlaybackState: -1
     property int playbackFocusRepairGeneration: 0
@@ -1146,7 +1148,9 @@ ApplicationWindow {
         enabled: window.spaceShortcutEnabled
         // Reserve Space even in Empty/Loading/Error: never click the last button.
         onActivated: {
-            if (window.transportShortcutsEnabled)
+            if (window.roomKeysEnabled)
+                window.room.roomTogglePlayback();
+            else if (window.transportShortcutsEnabled)
                 window.presenter.togglePlayback();
         }
     }
@@ -1165,7 +1169,9 @@ ApplicationWindow {
         context: Qt.WindowShortcut
         enabled: window.arrowShortcutsEnabled
         onActivated: {
-            if (window.seekShortcutsEnabled)
+            if (window.roomKeysEnabled)
+                window.room.roomSeekBy(-window.presenter.skipBackwardSeconds * 1000);
+            else if (window.seekShortcutsEnabled)
                 window.presenter.skipBackward();
         }
     }
@@ -1174,7 +1180,9 @@ ApplicationWindow {
         context: Qt.WindowShortcut
         enabled: window.arrowShortcutsEnabled
         onActivated: {
-            if (window.seekShortcutsEnabled)
+            if (window.roomKeysEnabled)
+                window.room.roomSeekBy(window.presenter.skipForwardSeconds * 1000);
+            else if (window.seekShortcutsEnabled)
                 window.presenter.skipForward();
         }
     }
@@ -1216,7 +1224,9 @@ ApplicationWindow {
         context: Qt.WindowShortcut
         enabled: window.primaryKeysEnabled
         onActivated: {
-            if (window.navigationShortcutsEnabled && window.presenter.canGoPrevious)
+            if (window.roomKeysEnabled)
+                window.room.roomPrevious();
+            else if (window.navigationShortcutsEnabled && window.presenter.canGoPrevious)
                 window.presenter.previousTrack();
         }
     }
@@ -1225,7 +1235,9 @@ ApplicationWindow {
         context: Qt.WindowShortcut
         enabled: window.primaryKeysEnabled
         onActivated: {
-            if (window.navigationShortcutsEnabled && window.presenter.canGoNext)
+            if (window.roomKeysEnabled)
+                window.room.roomNext();
+            else if (window.navigationShortcutsEnabled && window.presenter.canGoNext)
                 window.presenter.nextTrack();
         }
     }

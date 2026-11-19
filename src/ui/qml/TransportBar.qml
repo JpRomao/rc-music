@@ -23,6 +23,10 @@ GridLayout {
     readonly property bool inRoom: room !== null && room.available && room.role !== 0
     // S8.2: shuffle and repeat belong to the host while this app is a guest.
     readonly property bool roomGuest: inRoom && room.role === 2
+    // S10.1: a guest's transport sends room intents, each one only with the permission the host gave.
+    readonly property bool roomSkip: roomGuest && room.canSkip
+    readonly property bool roomPause: roomGuest && room.canPause && room.roomHasCurrent
+    readonly property bool showsPlaying: roomGuest ? room.roomPlaying : presenter.playbackState === PlayerPresenter.Playing
     signal queueRequested
     signal lyricsRequested
     columns: editorial ? 2 : 1
@@ -38,7 +42,10 @@ GridLayout {
         id: roomLabels
     }
     readonly property bool playbackEnabled: presenter.playbackState === PlayerPresenter.Playing || presenter.playbackState === PlayerPresenter.Paused || presenter.playbackState === PlayerPresenter.Ready
-    enabled: playbackEnabled || presenter.canGoPrevious || presenter.canGoNext
+    enabled: roomGuest || playbackEnabled || presenter.canGoPrevious || presenter.canGoNext
+    function roomDisabledReason(allowed) {
+        return roomGuest && !allowed ? queueLabels.hostNotAllowed : "";
+    }
     function formattedTime(milliseconds) {
         const totalSeconds = Math.floor(milliseconds / 1000);
         const minutes = Math.floor(totalSeconds / 60);
@@ -230,26 +237,27 @@ GridLayout {
             flat: root.editorial
             objectName: "previous"
             font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
-            enabled: root.presenter.canGoPrevious
+            enabled: root.roomGuest ? root.roomSkip : root.presenter.canGoPrevious
             contract: root.contract
             text: "⏮"
             iconName: root.editorial ? "previous" : ""
             accessibleName: root.contract.actionPrevious
             shortcutHint: labels.previousShortcut
-            onClicked: root.presenter.previousTrack()
+            disabledReason: root.roomDisabledReason(root.roomSkip)
+            onClicked: root.roomGuest ? root.room.roomPrevious() : root.presenter.previousTrack()
         }
         AccessibleTransportButton {
             id: skipBackward
             flat: root.editorial
             objectName: "skip-backward"
             visible: root.roomy
-            enabled: root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
+            enabled: root.roomGuest ? root.roomSkip && root.room.roomHasCurrent : root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
             contract: root.contract
             text: root.contract.skipBackwardShort.replace("{seconds}", root.presenter.skipBackwardSeconds)
             accessibleName: labels.backwardName(root.presenter.skipBackwardSeconds)
             shortcutHint: labels.backwardShortcut
-            disabledReason: root.seekDisabledReason()
-            onClicked: root.presenter.skipBackward()
+            disabledReason: root.roomGuest ? root.roomDisabledReason(root.roomSkip) : root.seekDisabledReason()
+            onClicked: root.roomGuest ? root.room.roomSeekBy(-root.presenter.skipBackwardSeconds * 1000) : root.presenter.skipBackward()
         }
         AccessibleTransportButton {
             id: playPause
@@ -266,39 +274,41 @@ GridLayout {
                 }
             }
             font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
-            enabled: root.playbackEnabled
+            enabled: root.roomGuest ? root.roomPause : root.playbackEnabled
             contract: root.contract
-            text: root.presenter.playbackState === PlayerPresenter.Playing ? "⏸" : "▶"
-            iconName: root.editorial ? (root.presenter.playbackState === PlayerPresenter.Playing ? "pause" : "play") : ""
-            accessibleName: root.presenter.playbackState === PlayerPresenter.Playing ? root.contract.actionPause : root.contract.actionPlay
+            text: root.showsPlaying ? "⏸" : "▶"
+            iconName: root.editorial ? (root.showsPlaying ? "pause" : "play") : ""
+            accessibleName: root.showsPlaying ? root.contract.actionPause : root.contract.actionPlay
             shortcutHint: labels.playPauseShortcut
-            onClicked: root.presenter.togglePlayback()
+            disabledReason: root.roomDisabledReason(root.roomGuest && root.room.canPause)
+            onClicked: root.roomGuest ? root.room.roomTogglePlayback() : root.presenter.togglePlayback()
         }
         AccessibleTransportButton {
             id: skipForward
             flat: root.editorial
             objectName: "skip-forward"
             visible: root.roomy
-            enabled: root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
+            enabled: root.roomGuest ? root.roomSkip && root.room.roomHasCurrent : root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
             contract: root.contract
             text: root.contract.skipForwardShort.replace("{seconds}", root.presenter.skipForwardSeconds)
             accessibleName: labels.forwardName(root.presenter.skipForwardSeconds)
             shortcutHint: labels.forwardShortcut
-            disabledReason: root.seekDisabledReason()
-            onClicked: root.presenter.skipForward()
+            disabledReason: root.roomGuest ? root.roomDisabledReason(root.roomSkip) : root.seekDisabledReason()
+            onClicked: root.roomGuest ? root.room.roomSeekBy(root.presenter.skipForwardSeconds * 1000) : root.presenter.skipForward()
         }
         AccessibleTransportButton {
             id: nextTrack
             flat: root.editorial
             objectName: "next"
             font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
-            enabled: root.presenter.canGoNext
+            enabled: root.roomGuest ? root.roomSkip : root.presenter.canGoNext
             contract: root.contract
             text: "⏭"
             iconName: root.editorial ? "next" : ""
             accessibleName: root.contract.actionNext
             shortcutHint: labels.nextShortcut
-            onClicked: root.presenter.nextTrack()
+            disabledReason: root.roomDisabledReason(root.roomSkip)
+            onClicked: root.roomGuest ? root.room.roomNext() : root.presenter.nextTrack()
         }
         AccessibleTransportButton {
             objectName: "player-repeat"

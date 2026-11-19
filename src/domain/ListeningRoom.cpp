@@ -31,6 +31,10 @@ ListeningRoom::ListeningRoom(const std::size_t max_listeners, const std::uint64_
     : max_listeners_(std::clamp<std::size_t>(max_listeners, minimum_room_listeners, maximum_room_listeners)),
       default_role_id_(default_role_id), roster_(roster) {}
 
+std::uint64_t ListeningRoom::defaultRoleId() const noexcept { return default_role_id_; }
+
+void ListeningRoom::setDefaultRole(const std::uint64_t role_id) noexcept { default_role_id_ = role_id; }
+
 JoinDecision ListeningRoom::requestJoin(const RoomMember& candidate) {
     const auto existing = std::find_if(members_.begin(), members_.end(),
                                        [&](const RoomMember& m) { return m.fingerprint == candidate.fingerprint; });

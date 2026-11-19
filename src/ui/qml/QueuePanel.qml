@@ -16,6 +16,8 @@ FocusScope {
     // The listening room (ListeningRoomBinding); as a guest the panel shows the room queue instead.
     property var room: null
     readonly property bool roomGuest: room !== null && room.available && room.role === 2
+    // S10.1: a guest edits the room queue only with the host's permission; the edits are room intents.
+    readonly property bool roomEdit: roomGuest && room.canEditQueue
     property alias listView: queueList
     property string selectedOccurrenceId: ""
     property string selectedTitle: ""
@@ -143,6 +145,21 @@ FocusScope {
         const message = queueText.movedAnnouncement.replace("{position}", destination + 1).replace("{total}", queueList.count).split("{title}").join(displayTitle);
         root.accessibilityAnnouncement = message;
         queueList.Accessible.announce(message, Accessible.Polite);
+    }
+    function roomItemAt(index) {
+        const row = roomQueueList.itemAtIndex(index);
+        return row !== null ? row.itemId : "";
+    }
+    function moveRoomSelected(offset) {
+        const destination = roomQueueList.currentIndex + offset;
+        if (!root.roomEdit || destination < 0 || destination >= roomQueueList.count)
+            return;
+        if (root.room.roomMove(root.roomItemAt(roomQueueList.currentIndex), destination))
+            roomQueueList.currentIndex = destination;
+    }
+    function removeRoomSelected() {
+        if (root.roomEdit && roomQueueList.currentIndex >= 0)
+            root.room.roomRemove(root.roomItemAt(roomQueueList.currentIndex));
     }
     function removeSelected() {
         if (root.selectedOccurrenceId.length > 0)
@@ -310,11 +327,11 @@ FocusScope {
                 iconName: root.overlayMode ? "arrow-up" : ""
                 quiet: root.overlayMode
                 accessibleName: queueText.moveUp
-                shortcutHint: queueText.shortcutMoveUp
+                shortcutHint: root.roomGuest && !root.roomEdit ? queueText.hostNotAllowed : queueText.shortcutMoveUp
                 text: "↑"
                 contract: root.contract
-                enabled: !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex > 0
-                onClicked: root.moveSelected(-1)
+                enabled: root.roomGuest ? root.roomEdit && roomQueueList.currentIndex > 0 : !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex > 0
+                onClicked: root.roomGuest ? root.moveRoomSelected(-1) : root.moveSelected(-1)
             }
             QueueActionButton {
                 id: moveDownButton
@@ -322,11 +339,11 @@ FocusScope {
                 iconName: root.overlayMode ? "arrow-down" : ""
                 quiet: root.overlayMode
                 accessibleName: queueText.moveDown
-                shortcutHint: queueText.shortcutMoveDown
+                shortcutHint: root.roomGuest && !root.roomEdit ? queueText.hostNotAllowed : queueText.shortcutMoveDown
                 text: "↓"
                 contract: root.contract
-                enabled: !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0 && queueList.currentIndex < queueList.count - 1
-                onClicked: root.moveSelected(1)
+                enabled: root.roomGuest ? root.roomEdit && roomQueueList.currentIndex >= 0 && roomQueueList.currentIndex < roomQueueList.count - 1 : !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0 && queueList.currentIndex < queueList.count - 1
+                onClicked: root.roomGuest ? root.moveRoomSelected(1) : root.moveSelected(1)
             }
             QueueActionButton {
                 id: removeButton
@@ -334,11 +351,11 @@ FocusScope {
                 iconName: root.overlayMode ? "minus" : ""
                 quiet: root.overlayMode
                 accessibleName: queueText.remove
-                shortcutHint: queueText.shortcutRemove
+                shortcutHint: root.roomGuest && !root.roomEdit ? queueText.hostNotAllowed : queueText.shortcutRemove
                 text: "−"
                 contract: root.contract
-                enabled: !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0
-                onClicked: root.removeSelected()
+                enabled: root.roomGuest ? root.roomEdit && roomQueueList.currentIndex >= 0 : !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0
+                onClicked: root.roomGuest ? root.removeRoomSelected() : root.removeSelected()
             }
             Item {
                 Layout.fillWidth: true
@@ -616,8 +633,18 @@ FocusScope {
             highlightMoveDuration: 0
             Accessible.role: Accessible.List
             Accessible.name: queueText.roomQueue
+            Accessible.description: root.roomEdit ? "" : queueText.hostNotAllowed
             Accessible.focusable: true
             Accessible.focused: activeFocus
+            Keys.onPressed: event => {
+                if (event.key === Qt.Key_Delete) {
+                    root.removeRoomSelected();
+                    event.accepted = true;
+                } else if ((event.modifiers & Qt.AltModifier) && (event.key === Qt.Key_Up || event.key === Qt.Key_Down)) {
+                    root.moveRoomSelected(event.key === Qt.Key_Up ? -1 : 1);
+                    event.accepted = true;
+                }
+            }
 
             delegate: ItemDelegate {
                 id: roomRow

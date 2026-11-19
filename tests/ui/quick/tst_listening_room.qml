@@ -21,6 +21,16 @@ TestCase {
         property ListModel members: ListModel {}
         property ListModel pendingRequests: ListModel {}
         property ListModel queue: ListModel {}
+        property ListModel roles: ListModel {}
+        property ListModel knownPeople: ListModel {}
+        property int initialRoleId: 1
+        readonly property int permissionCount: 7
+        property int permissions: 0
+        property bool canSkip: false
+        property bool canPause: false
+        property bool canEditQueue: false
+        property bool roomPlaying: false
+        property bool roomHasCurrent: false
         readonly property int memberCount: members.count
         property string hostNickname: ""
         property int maxListeners: 5

@@ -297,4 +297,14 @@ TEST_CASE("authorize: one shape per AddItems intent", "[core][listening-room][ro
     REQUIRE(room.authorize("fp-pending", mixed, snap) == IntentRejection::NotAdmitted);
 }
 
+TEST_CASE("the default role can change while the room is open", "[core][listening-room][room]") {
+    RoomRoster roster;
+    ListeningRoom room(4, listener_role, roster);
+    REQUIRE(room.defaultRoleId() == listener_role);
+    room.setDefaultRole(dj_role);
+    REQUIRE(room.defaultRoleId() == dj_role);
+    admitNew(room, "fp-a");
+    REQUIRE(roster.find("fp-a")->role_id == dj_role);
+}
+
 } // namespace music_player::m0::test

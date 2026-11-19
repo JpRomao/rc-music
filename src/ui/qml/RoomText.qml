@@ -49,4 +49,62 @@ QtObject {
     readonly property string dismissError: qsTr("Fechar aviso")
     readonly property string badge: qsTr("Na sala de %1 · %2 pessoas")
     readonly property string badgeSelf: qsTr("Sua sala · %1 pessoas")
+    readonly property string rolesTitle: qsTr("Cargos")
+    readonly property string rolesHint: qsTr("O que cada cargo pode fazer na sala. As mudanças valem na hora para quem está na sala.")
+    readonly property string initialRole: qsTr("Cargo inicial do convite")
+    readonly property string initialTag: qsTr("cargo inicial")
+    readonly property string roleNameField: qsTr("Nome do cargo %1")
+    readonly property string newRoleName: qsTr("Nome do novo cargo")
+    readonly property string newRolePlaceholder: qsTr("Por exemplo, Amigos")
+    readonly property string createRole: qsTr("Criar cargo")
+    readonly property string removeRole: qsTr("Excluir cargo")
+    readonly property string removeRoleName: qsTr("Excluir o cargo %1")
+    readonly property string chooseAnotherInitialRole: qsTr("Escolha outro cargo inicial antes")
+    readonly property string roleRefused: qsTr("Não foi possível salvar o cargo. Use um nome que ainda não existe.")
+    readonly property string roleHolders: qsTr("%1 pessoas com este cargo")
+    readonly property string permissionForRole: qsTr("%1 — cargo %2")
+    readonly property string permissionSkip: qsTr("Pular")
+    readonly property string permissionPause: qsTr("Pausar")
+    readonly property string permissionAddFromRoom: qsTr("Adicionar da sala")
+    readonly property string permissionAddPlaylist: qsTr("Adicionar playlist")
+    readonly property string permissionEditQueue: qsTr("Editar fila")
+    readonly property string permissionUploadOwnTracks: qsTr("Enviar músicas próprias")
+    readonly property string permissionAddYoutube: qsTr("Adicionar do YouTube")
+    readonly property string knownTitle: qsTr("Pessoas conhecidas")
+    readonly property string knownRole: qsTr("Cargo: %1")
+    readonly property string blockedTag: qsTr("bloqueada")
+    readonly property string unblock: qsTr("Desbloquear")
+    readonly property string unblockName: qsTr("Desbloquear %1")
+    readonly property string memberActions: qsTr("Cargo e permissões")
+    readonly property string memberActionsName: qsTr("Cargo e permissões de %1")
+    readonly property string memberMenuTitle: qsTr("%1 na sala")
+    readonly property string memberRole: qsTr("Cargo de %1")
+    readonly property string overrideFromRole: qsTr("Como o cargo")
+    readonly property string overrideAllow: qsTr("Liberar")
+    readonly property string overrideDeny: qsTr("Negar")
+    readonly property string overrideName: qsTr("%1 para %2")
+    readonly property string kick: qsTr("Expulsar")
+    readonly property string kickName: qsTr("Expulsar %1")
+    readonly property string block: qsTr("Expulsar e bloquear")
+    readonly property string blockName: qsTr("Expulsar e bloquear %1")
+    readonly property string closeMenu: qsTr("Fechar")
+
+    function permissionName(index) {
+        switch (index) {
+        case 0:
+            return permissionSkip;
+        case 1:
+            return permissionPause;
+        case 2:
+            return permissionAddFromRoom;
+        case 3:
+            return permissionAddPlaylist;
+        case 4:
+            return permissionEditQueue;
+        case 5:
+            return permissionUploadOwnTracks;
+        default:
+            return permissionAddYoutube;
+        }
+    }
 }

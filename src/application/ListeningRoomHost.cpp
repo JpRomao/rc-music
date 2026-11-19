@@ -192,7 +192,13 @@ std::optional<RoomInviteLink> ListeningRoomHost::open(const RoomOpenOptions& opt
         }
     }
 
+    // An initial role that no longer exists (removed since it was chosen) becomes the first role.
+    const auto roles = roster_.snapshot().roles;
+    if (!roles.empty() &&
+        std::none_of(roles.begin(), roles.end(), [&](const RoomRole& r) { return r.id == default_role_id; }))
+        default_role_id = roles.front().id;
     room_.emplace(max_listeners, default_role_id, roster_);
+    uses_persisted_invite_ = options.until_revoked;
     invite_ = invite;
     const auto generation = ++generation_;
     const std::weak_ptr<Alive> alive = alive_;
@@ -271,6 +277,85 @@ RoomSnapshot ListeningRoomHost::snapshot() const { return current_; }
 bool ListeningRoomHost::isOpen() const noexcept { return invite_.has_value(); }
 
 std::optional<PersistedInvite> ListeningRoomHost::persistedInvite() const { return roster_.snapshot().invite; }
+
+RoomRosterSnapshot ListeningRoomHost::roster() const { return roster_.snapshot(); }
+
+std::uint64_t ListeningRoomHost::initialRoleId() const {
+    if (room_)
+        return room_->defaultRoleId();
+    const auto roster = roster_.snapshot();
+    if (roster.invite)
+        return roster.invite->default_role_id;
+    return roster.roles.empty() ? 0 : roster.roles.front().id;
+}
+
+bool ListeningRoomHost::setInitialRole(const std::uint64_t role_id) {
+    auto roster = roster_.snapshot();
+    if (std::none_of(roster.roles.begin(), roster.roles.end(), [&](const RoomRole& r) { return r.id == role_id; }))
+        return false;
+    if (room_)
+        room_->setDefaultRole(role_id);
+    if (roster.invite && (!room_ || uses_persisted_invite_) && roster.invite->default_role_id != role_id) {
+        roster.invite->default_role_id = role_id;
+        if (roster_.restore(std::move(roster)))
+            saveRoster();
+    }
+    return true;
+}
+
+std::optional<std::uint64_t> ListeningRoomHost::createRole(std::string name, const RoomPermissionSet permissions) {
+    const auto id = roster_.createRole(std::move(name), permissions);
+    if (id)
+        rosterChanged();
+    return id;
+}
+
+bool ListeningRoomHost::renameRole(const std::uint64_t role_id, std::string name) {
+    if (!roster_.renameRole(role_id, std::move(name)))
+        return false;
+    rosterChanged();
+    return true;
+}
+
+bool ListeningRoomHost::setRolePermissions(const std::uint64_t role_id, const RoomPermissionSet permissions) {
+    if (!roster_.setRolePermissions(role_id, permissions))
+        return false;
+    rosterChanged();
+    return true;
+}
+
+RoleRemoval ListeningRoomHost::removeRole(const std::uint64_t role_id) {
+    const auto roster = roster_.snapshot();
+    if (role_id == initialRoleId() || (roster.invite && roster.invite->default_role_id == role_id))
+        return RoleRemoval::InitialRole;
+    if (!roster_.removeRole(role_id, initialRoleId()))
+        return RoleRemoval::Refused;
+    rosterChanged();
+    return RoleRemoval::Removed;
+}
+
+bool ListeningRoomHost::assignRole(const std::string_view fingerprint, const std::uint64_t role_id) {
+    if (!roster_.assignRole(fingerprint, role_id))
+        return false;
+    rosterChanged();
+    return true;
+}
+
+bool ListeningRoomHost::setOverride(const std::string_view fingerprint, const RoomPermission permission,
+                                    const std::optional<bool> allowed) {
+    if (!roster_.setOverride(fingerprint, permission, allowed))
+        return false;
+    rosterChanged();
+    return true;
+}
+
+bool ListeningRoomHost::unblock(const std::string_view fingerprint) {
+    const auto* known = roster_.find(fingerprint);
+    if (known == nullptr || !known->blocked || !roster_.setBlocked(fingerprint, false))
+        return false;
+    saveRoster();
+    return true;
+}
 
 std::optional<std::uint64_t> ListeningRoomHost::addGuestTrack(const std::string_view owner_fingerprint,
                                                               const std::filesystem::path& cached_file,
@@ -870,6 +955,7 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
         return;
     invite_.reset();
     room_.reset();
+    uses_persisted_invite_ = false;
     ++generation_;
     auto connections = std::move(connections_);
     connections_.clear();
@@ -898,6 +984,28 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
     reanchor_ = false;
     current_ = RoomSnapshot{.version = current_.version + 1};
     sent_view_ = {};
+    if (onChanged)
+        onChanged(current_);
+}
+
+// Permissions are per member and not part of the view: a roster change bumps the version so every
+// admitted member takes the new state (and its own permissions) even when the view is the same.
+void ListeningRoomHost::rosterChanged() {
+    saveRoster();
+    if (!room_)
+        return;
+    ++current_.version;
+    sent_view_ = guestView(current_);
+    // Iterate over a copy: a synchronous transport may call back into the host while sending.
+    std::vector<std::shared_ptr<RoomLink>> links;
+    for (const auto& connection : connections_)
+        links.push_back(connection.link);
+    for (const auto& link : links) {
+        const auto* connection = find(link.get());
+        if (connection != nullptr && connection->greeted &&
+            memberState(connection->fingerprint) == MemberState::Admitted)
+            sendState(*connection);
+    }
     if (onChanged)
         onChanged(current_);
 }

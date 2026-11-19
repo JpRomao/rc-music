@@ -67,7 +67,9 @@ add_library(rc_music_room_ui STATIC
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomMembersModel.hpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomMembersModel.cpp"
     "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomQueueModel.hpp"
-    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomQueueModel.cpp")
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomQueueModel.cpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomRolesModel.hpp"
+    "${RC_MUSIC_SOURCE_ROOT}/src/presentation/RoomRolesModel.cpp")
 target_include_directories(rc_music_room_ui PUBLIC "${RC_MUSIC_SOURCE_ROOT}/src")
 target_link_libraries(rc_music_room_ui PUBLIC rc_music_core Qt6::Core)
 set_target_properties(rc_music_room_ui PROPERTIES AUTOMOC ON)
@@ -168,6 +170,8 @@ function(rc_music_add_ui target support qml_output)
             PreferenceToggle.qml
             PreferenceSecondsField.qml
             RoomOutputOffsetField.qml
+            RoomRolesEditor.qml
+            RoomMemberMenu.qml
             TrackDetailsField.qml
             TrackDetailsPanel.qml
             TrackDetailsText.qml

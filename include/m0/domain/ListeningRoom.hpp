@@ -114,6 +114,9 @@ class ListeningRoom final {
                                                            const RoomSnapshot& current) const;
     [[nodiscard]] std::size_t admittedCount() const noexcept;
     [[nodiscard]] std::vector<RoomMember> members() const;
+    // The role people approved from now on are remembered with (the invite's initial role).
+    [[nodiscard]] std::uint64_t defaultRoleId() const noexcept;
+    void setDefaultRole(std::uint64_t role_id) noexcept;
 
   private:
     std::size_t max_listeners_;

@@ -13,11 +13,13 @@
 #include "m0/ports/RoomTransport.hpp"
 #include "presentation/RoomMembersModel.hpp"
 #include "presentation/RoomQueueModel.hpp"
+#include "presentation/RoomRolesModel.hpp"
 
 #include <QAbstractItemModel>
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <QVariantMap>
 
 #include <array>
 #include <cstdint>
@@ -119,10 +121,26 @@ class ListeningRoomBinding final : public QObject {
     Q_PROPERTY(int minimumListeners READ minimumListeners CONSTANT)
     Q_PROPERTY(int maximumListeners READ maximumListeners CONSTANT)
     Q_PROPERTY(int defaultListeners READ defaultListeners CONSTANT)
+    // S10.1, host: its roles, the people it knows and the invite's initial role (empty and 0 outside a
+    // hosted room).
+    Q_PROPERTY(QAbstractItemModel* roles READ roles CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* knownPeople READ knownPeople CONSTANT)
+    Q_PROPERTY(int initialRoleId READ initialRoleId NOTIFY changed)
+    Q_PROPERTY(int permissionCount READ permissionCount CONSTANT)
+    // S10.1, guest: its permissions in the room's last state (bit i = RoomPermission i) and the room's
+    // playback, for the transport and queue controls. All false outside a joined room.
+    Q_PROPERTY(int permissions READ permissions NOTIFY changed)
+    Q_PROPERTY(bool canSkip READ canSkip NOTIFY changed)
+    Q_PROPERTY(bool canPause READ canPause NOTIFY changed)
+    Q_PROPERTY(bool canEditQueue READ canEditQueue NOTIFY changed)
+    Q_PROPERTY(bool roomPlaying READ roomPlaying NOTIFY changed)
+    Q_PROPERTY(bool roomHasCurrent READ roomHasCurrent NOTIFY changed)
 
   public:
     enum Role { NoRole = 0, HostRole = 1, GuestRole = 2 };
     Q_ENUM(Role)
+    enum RoleRemovalResult { RemovalDone = 0, RemovalInitialRole = 1, RemovalRefused = 2 };
+    Q_ENUM(RoleRemovalResult)
 
     explicit ListeningRoomBinding(ListeningRoomBindingDependencies dependencies, QObject* parent = nullptr);
     ~ListeningRoomBinding() override;
@@ -145,6 +163,16 @@ class ListeningRoomBinding final : public QObject {
     [[nodiscard]] static int minimumListeners() noexcept;
     [[nodiscard]] static int maximumListeners() noexcept;
     [[nodiscard]] static int defaultListeners() noexcept;
+    [[nodiscard]] QAbstractItemModel* roles() noexcept;
+    [[nodiscard]] QAbstractItemModel* knownPeople() noexcept;
+    [[nodiscard]] int initialRoleId() const;
+    [[nodiscard]] static int permissionCount() noexcept;
+    [[nodiscard]] int permissions() const;
+    [[nodiscard]] bool canSkip() const;
+    [[nodiscard]] bool canPause() const;
+    [[nodiscard]] bool canEditQueue() const;
+    [[nodiscard]] bool roomPlaying() const;
+    [[nodiscard]] bool roomHasCurrent() const;
 
     // false when refused at once (limits, no profile, already in a room, unavailable); true when the
     // room opens or is being prepared (identity loading).
@@ -159,6 +187,38 @@ class ListeningRoomBinding final : public QObject {
     Q_INVOKABLE void leave();
     Q_INVOKABLE void acknowledgePrivacyNotice();
     Q_INVOKABLE void dismissError();
+
+    // S10.1, host only (false, 0 or RemovalRefused otherwise). Each change goes through the host, which
+    // saves it in the roster store and sends the members their new permissions in the next state.
+    // permissions: bit i = RoomPermission i. Returns the new role's id, 0 when refused.
+    Q_INVOKABLE int createRole(const QString& name, int permissions);
+    Q_INVOKABLE bool renameRole(int roleId, const QString& name);
+    Q_INVOKABLE bool setRolePermission(int roleId, int permission, bool allowed);
+    // RemovalInitialRole: the invite's initial role is never removed (choose another one first).
+    Q_INVOKABLE int removeRole(int roleId);
+    Q_INVOKABLE bool setInitialRole(int roleId);
+    Q_INVOKABLE bool assignRole(const QString& fingerprint, int roleId);
+    // value: -1 the role decides, 0 denied, 1 allowed.
+    Q_INVOKABLE bool setOverride(const QString& fingerprint, int permission, int value);
+    // Removes the person; they may ask to come in again.
+    Q_INVOKABLE bool kick(const QString& fingerprint);
+    // Removes the person and blocks them: a new join gets RejectedBlocked until unblock().
+    Q_INVOKABLE bool block(const QString& fingerprint);
+    Q_INVOKABLE bool unblock(const QString& fingerprint);
+    // {known, roleId, blocked, overrides: [-1|0|1 per permission]} of a known person; {known: false}
+    // otherwise.
+    Q_INVOKABLE QVariantMap person(const QString& fingerprint) const;
+
+    // S10.1, guest only: what the transport and queue controls do in a room. Each sends one intent to the
+    // host and returns true; false (nothing sent) without the permission or outside a joined room. The
+    // host checks it again and a refusal shows "Sem permissão".
+    Q_INVOKABLE bool roomNext();
+    Q_INVOKABLE bool roomPrevious();
+    Q_INVOKABLE bool roomTogglePlayback();
+    // From where the room plays now on this player (the anchor before it plays here).
+    Q_INVOKABLE bool roomSeekBy(int deltaMs);
+    Q_INVOKABLE bool roomRemove(const QString& itemId);
+    Q_INVOKABLE bool roomMove(const QString& itemId, int destination);
 
     // S9.1: the guest's output offset (Preferences::room_output_offset_ms); a positive value plays earlier.
     void setOutputOffsetMs(int offset_ms);
@@ -203,12 +263,19 @@ class ListeningRoomBinding final : public QObject {
     void setError(QString text);
     void refreshMembers();
     void refreshGuestRoom();
+    void refreshRoster();
+    bool hostEdited(bool done);
+    [[nodiscard]] bool guestMay(RoomPermission permission) const;
+    bool sendGuestIntent(RoomPermission permission, const RoomIntent& intent);
+    void guestRejected(IntentRejection reason);
     void publish();
 
     ListeningRoomBindingDependencies dependencies_;
     RoomMembersModel members_;
     RoomMembersModel pending_;
     RoomQueueModel queue_;
+    RoomRolesModel roles_;
+    RoomKnownPeopleModel known_people_;
     QString room_lyrics_;
     std::optional<ListeningRoomNetwork> network_;
     // S9.1: the guest's player, declared before the guests that use it.

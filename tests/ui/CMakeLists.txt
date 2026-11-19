@@ -163,6 +163,10 @@ add_ui_test(rc_music_listening_room_binding_tests rc_music.room.binding
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/ListeningRoomBindingTests.cpp" rc_music_room_ui)
 set_target_properties(rc_music_listening_room_binding_tests PROPERTIES AUTOMOC ON)
 set_property(TEST rc_music.room.binding APPEND PROPERTY LABELS "listening-room")
+add_ui_test(rc_music_room_roles_model_tests rc_music.room.roles-model
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/RoomRolesModelTests.cpp" rc_music_room_ui)
+set_target_properties(rc_music_room_roles_model_tests PROPERTIES AUTOMOC ON)
+set_property(TEST rc_music.room.roles-model APPEND PROPERTY LABELS "listening-room")
 add_ui_test(rc_music_library_store_tests rc_music.library.store
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/QtJsonLibraryStoreTests.cpp" rc_music_library rc_music_media_data)
 set_target_properties(rc_music_library_store_tests PROPERTIES AUTOMOC ON)

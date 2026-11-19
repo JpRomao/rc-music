@@ -37,7 +37,8 @@ constexpr int room_give_back_retry_ms = 100;
 } // namespace
 
 ListeningRoomBinding::ListeningRoomBinding(ListeningRoomBindingDependencies dependencies, QObject* parent)
-    : QObject(parent), dependencies_(std::move(dependencies)), members_(this), pending_(this), queue_(this) {
+    : QObject(parent), dependencies_(std::move(dependencies)), members_(this), pending_(this), queue_(this),
+      roles_(this), known_people_(this) {
     if (!dependencies_.schedule)
         dependencies_.schedule = scheduler(this);
     if (!dependencies_.capture_session)
@@ -141,8 +142,10 @@ bool ListeningRoomBinding::openRoom(const int maxListeners, const bool untilRevo
         publish();
         return false;
     }
-    open_options_ =
-        RoomOpenOptions{.max_listeners = static_cast<std::size_t>(maxListeners), .until_revoked = untilRevoked};
+    // The initial role chosen in an earlier room of this session is kept (the host checks it exists).
+    open_options_ = RoomOpenOptions{.max_listeners = static_cast<std::size_t>(maxListeners),
+                                    .until_revoked = untilRevoked,
+                                    .default_role_id = open_options_.default_role_id};
     error_text_.clear();
     ensureNetwork(Pending::Open);
     return true;
@@ -233,6 +236,193 @@ void ListeningRoomBinding::dismissError() {
     if (error_text_.isEmpty())
         return;
     error_text_.clear();
+    publish();
+}
+
+QAbstractItemModel* ListeningRoomBinding::roles() noexcept { return &roles_; }
+QAbstractItemModel* ListeningRoomBinding::knownPeople() noexcept { return &known_people_; }
+
+int ListeningRoomBinding::initialRoleId() const {
+    return role_ == HostRole && host_ ? static_cast<int>(host_->initialRoleId()) : 0;
+}
+
+int ListeningRoomBinding::permissionCount() noexcept { return static_cast<int>(room_permission_count); }
+
+int ListeningRoomBinding::permissions() const {
+    if (role_ != GuestRole || !guest_ || guest_->state() != GuestRoomState::Joined)
+        return 0;
+    return static_cast<int>(guest_->permissions().to_ulong());
+}
+
+bool ListeningRoomBinding::guestMay(const RoomPermission permission) const {
+    return (permissions() & (1 << static_cast<int>(permission))) != 0;
+}
+
+bool ListeningRoomBinding::canSkip() const { return guestMay(RoomPermission::Skip); }
+bool ListeningRoomBinding::canPause() const { return guestMay(RoomPermission::Pause); }
+bool ListeningRoomBinding::canEditQueue() const { return guestMay(RoomPermission::EditQueue); }
+
+bool ListeningRoomBinding::roomHasCurrent() const {
+    return role_ == GuestRole && guest_ && guest_->state() == GuestRoomState::Joined &&
+           guest_->snapshot().playback.current_item.has_value();
+}
+
+bool ListeningRoomBinding::roomPlaying() const { return roomHasCurrent() && guest_->snapshot().playback.playing; }
+
+// Every roster change goes through the host (saved, then sent to the members) and refreshes the page.
+bool ListeningRoomBinding::hostEdited(const bool done) {
+    if (!done)
+        return false;
+    refreshMembers();
+    publish();
+    return true;
+}
+
+int ListeningRoomBinding::createRole(const QString& name, const int permissions) {
+    if (role_ != HostRole || !host_ || permissions < 0 || permissions >= (1 << room_permission_count))
+        return 0;
+    const auto id =
+        host_->createRole(name.toStdString(), RoomPermissionSet{static_cast<unsigned long long>(permissions)});
+    return hostEdited(id.has_value()) ? static_cast<int>(*id) : 0;
+}
+
+bool ListeningRoomBinding::renameRole(const int roleId, const QString& name) {
+    return role_ == HostRole && host_ && roleId > 0 &&
+           hostEdited(host_->renameRole(static_cast<std::uint64_t>(roleId), name.toStdString()));
+}
+
+bool ListeningRoomBinding::setRolePermission(const int roleId, const int permission, const bool allowed) {
+    if (role_ != HostRole || !host_ || roleId <= 0 || permission < 0 || permission >= permissionCount())
+        return false;
+    const auto roster = host_->roster();
+    const auto role = std::find_if(roster.roles.begin(), roster.roles.end(),
+                                   [&](const RoomRole& r) { return r.id == static_cast<std::uint64_t>(roleId); });
+    if (role == roster.roles.end())
+        return false;
+    auto permissions = role->permissions;
+    permissions.set(static_cast<std::size_t>(permission), allowed);
+    return hostEdited(host_->setRolePermissions(role->id, permissions));
+}
+
+int ListeningRoomBinding::removeRole(const int roleId) {
+    if (role_ != HostRole || !host_ || roleId <= 0)
+        return RemovalRefused;
+    switch (host_->removeRole(static_cast<std::uint64_t>(roleId))) {
+    case RoleRemoval::Removed:
+        hostEdited(true);
+        return RemovalDone;
+    case RoleRemoval::InitialRole:
+        return RemovalInitialRole;
+    case RoleRemoval::Refused:
+        break;
+    }
+    return RemovalRefused;
+}
+
+bool ListeningRoomBinding::setInitialRole(const int roleId) {
+    if (role_ != HostRole || !host_ || roleId <= 0 || !host_->setInitialRole(static_cast<std::uint64_t>(roleId)))
+        return false;
+    open_options_.default_role_id = static_cast<std::uint64_t>(roleId);
+    return hostEdited(true);
+}
+
+bool ListeningRoomBinding::assignRole(const QString& fingerprint, const int roleId) {
+    return role_ == HostRole && host_ && roleId > 0 &&
+           hostEdited(host_->assignRole(fingerprint.toStdString(), static_cast<std::uint64_t>(roleId)));
+}
+
+bool ListeningRoomBinding::setOverride(const QString& fingerprint, const int permission, const int value) {
+    if (role_ != HostRole || !host_ || permission < 0 || permission >= permissionCount() || value < -1 || value > 1)
+        return false;
+    const auto allowed = value < 0 ? std::optional<bool>{} : std::optional<bool>{value == 1};
+    return hostEdited(host_->setOverride(fingerprint.toStdString(), static_cast<RoomPermission>(permission), allowed));
+}
+
+bool ListeningRoomBinding::kick(const QString& fingerprint) {
+    return role_ == HostRole && host_ && hostEdited(host_->kick(fingerprint.toStdString(), false));
+}
+
+bool ListeningRoomBinding::block(const QString& fingerprint) {
+    return role_ == HostRole && host_ && hostEdited(host_->kick(fingerprint.toStdString(), true));
+}
+
+bool ListeningRoomBinding::unblock(const QString& fingerprint) {
+    return role_ == HostRole && host_ && hostEdited(host_->unblock(fingerprint.toStdString()));
+}
+
+QVariantMap ListeningRoomBinding::person(const QString& fingerprint) const {
+    const QVariantMap unknown{{QStringLiteral("known"), false}};
+    if (role_ != HostRole || !host_)
+        return unknown;
+    const auto roster = host_->roster();
+    const auto key = fingerprint.toStdString();
+    const auto found = std::find_if(roster.listeners.begin(), roster.listeners.end(),
+                                    [&](const KnownListener& l) { return l.fingerprint == key; });
+    if (found == roster.listeners.end())
+        return unknown;
+    QVariantList overrides;
+    for (std::size_t permission = 0; permission < room_permission_count; ++permission) {
+        const auto set =
+            std::find_if(found->overrides.begin(), found->overrides.end(), [&](const PermissionOverride& o) {
+                return static_cast<std::size_t>(o.permission) == permission;
+            });
+        overrides.push_back(set == found->overrides.end() ? -1 : (set->allowed ? 1 : 0));
+    }
+    return {{QStringLiteral("known"), true},
+            {QStringLiteral("roleId"), static_cast<int>(found->role_id)},
+            {QStringLiteral("blocked"), found->blocked},
+            {QStringLiteral("overrides"), overrides}};
+}
+
+bool ListeningRoomBinding::sendGuestIntent(const RoomPermission permission, const RoomIntent& intent) {
+    return guestMay(permission) && guest_->sendIntent(intent) != 0;
+}
+
+bool ListeningRoomBinding::roomNext() {
+    return sendGuestIntent(RoomPermission::Skip, RoomIntent{.kind = RoomIntentKind::Next});
+}
+
+bool ListeningRoomBinding::roomPrevious() {
+    return sendGuestIntent(RoomPermission::Skip, RoomIntent{.kind = RoomIntentKind::Previous});
+}
+
+bool ListeningRoomBinding::roomTogglePlayback() {
+    return roomHasCurrent() &&
+           sendGuestIntent(RoomPermission::Pause,
+                           RoomIntent{.kind = roomPlaying() ? RoomIntentKind::Pause : RoomIntentKind::Resume});
+}
+
+bool ListeningRoomBinding::roomSeekBy(const int deltaMs) {
+    if (!roomHasCurrent())
+        return false;
+    std::int64_t position = guest_->snapshot().playback.anchor_position_ms;
+    if (local_session_released_ && dependencies_.guest_backend != nullptr)
+        position = dependencies_.guest_backend->snapshot().position_ms;
+    return sendGuestIntent(
+        RoomPermission::Skip,
+        RoomIntent{.kind = RoomIntentKind::Seek, .position_ms = std::max<std::int64_t>(position + deltaMs, 0)});
+}
+
+bool ListeningRoomBinding::roomRemove(const QString& itemId) {
+    bool valid = false;
+    const auto id = itemId.toULongLong(&valid);
+    return valid &&
+           sendGuestIntent(RoomPermission::EditQueue, RoomIntent{.kind = RoomIntentKind::RemoveItem, .item_id = id});
+}
+
+bool ListeningRoomBinding::roomMove(const QString& itemId, const int destination) {
+    bool valid = false;
+    const auto id = itemId.toULongLong(&valid);
+    return valid && destination >= 0 &&
+           sendGuestIntent(RoomPermission::EditQueue, RoomIntent{.kind = RoomIntentKind::MoveItem,
+                                                                 .item_id = id,
+                                                                 .destination = static_cast<std::size_t>(destination)});
+}
+
+void ListeningRoomBinding::guestRejected(const IntentRejection reason) {
+    if (reason != IntentRejection::MissingPermission)
+        return;
+    setError(tr("Sem permissão"));
     publish();
 }
 
@@ -406,6 +596,7 @@ void ListeningRoomBinding::startGuest() {
     });
     guest_->onChanged = [this] { guestChanged(); };
     guest_->onEnded = [this](RoomLinkFailure) { guestEnded(); };
+    guest_->onRejected = [this](std::uint64_t, const IntentRejection reason) { guestRejected(reason); };
     role_ = GuestRole;
     host_nickname_.clear();
     guest_->join(*join_invite_);
@@ -608,6 +799,7 @@ void ListeningRoomBinding::retireGuest() {
     // This may run inside the guest's own callback: destroy it from the event loop instead.
     guest_->onChanged = nullptr;
     guest_->onEnded = nullptr;
+    guest_->onRejected = nullptr;
     retired_guests_.push_back(std::move(guest_));
     QMetaObject::invokeMethod(this, [this] { retired_guests_.clear(); }, Qt::QueuedConnection);
 }
@@ -633,8 +825,21 @@ void ListeningRoomBinding::refreshGuestRoom() {
 
 void ListeningRoomBinding::setError(QString text) { error_text_ = std::move(text); }
 
+// The host's roles and known people; empty outside a hosted room.
+void ListeningRoomBinding::refreshRoster() {
+    if (role_ == HostRole && host_) {
+        const auto roster = host_->roster();
+        roles_.replace(roster, host_->initialRoleId());
+        known_people_.replace(roster, host_->snapshot().members);
+        return;
+    }
+    roles_.replace({}, 0);
+    known_people_.replace({}, {});
+}
+
 void ListeningRoomBinding::refreshMembers() {
     refreshGuestRoom();
+    refreshRoster();
     const auto self = network_.has_value() ? lowerHex(network_->fingerprint) : std::string{};
     if (role_ == HostRole && host_) {
         std::vector<RoomMember> admitted;

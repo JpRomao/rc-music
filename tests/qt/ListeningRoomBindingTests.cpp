@@ -8,6 +8,7 @@
 #include "m0/ports/PlaybackBackend.hpp"
 #include "presentation/ListeningRoomBinding.hpp"
 #include "presentation/RoomQueueModel.hpp"
+#include "presentation/RoomRolesModel.hpp"
 
 #include <QAbstractItemModel>
 #include <QCryptographicHash>
@@ -17,6 +18,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -692,6 +694,150 @@ class ListeningRoomBindingTests final : public QObject {
         QCOMPARE(binding->role(), int{ListeningRoomBinding::NoRole});
         QVERIFY(dj->closed);
         QVERIFY(f.endpoint->closed_all);
+    }
+
+    // S10.1: roles and moderation write through the roster store and reach the guest in the next state.
+    void theHostsRolesAndModerationReachTheGuestInTheNextState() {
+        Fixture f;
+        auto binding = f.make();
+        QVERIFY(binding->openRoom(5, false));
+        auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, "fp-lia");
+        f.endpoint->admit(host_side);
+        QVERIFY(guest_side->sendControl(RoomHello{room_protocol_version, "Lia", {}}));
+        QVERIFY(binding->approve(QStringLiteral("fp-lia")));
+        const auto lastPermissions = [&]() -> std::optional<RoomPermissionSet> {
+            for (auto it = host_side->sent_control.rbegin(); it != host_side->sent_control.rend(); ++it)
+                if (const auto* const state = std::get_if<RoomStateMessage>(&*it))
+                    return state->my_permissions;
+            return std::nullopt;
+        };
+        QCOMPARE(lastPermissions(), std::optional{RoomPermissionSet{}});
+        QCOMPARE(binding->roles()->rowCount(), 2);
+        QCOMPARE(binding->initialRoleId(), 1);
+        QCOMPARE(binding->knownPeople()->rowCount(), 1);
+
+        const int skip_and_pause =
+            (1 << static_cast<int>(RoomPermission::Skip)) | (1 << static_cast<int>(RoomPermission::Pause));
+        const int friends = binding->createRole(QStringLiteral("Amigos"), skip_and_pause);
+        QVERIFY(friends > 2);
+        QCOMPARE(binding->roles()->rowCount(), 3);
+        QVERIFY(std::any_of(f.roster.stored.roles.begin(), f.roster.stored.roles.end(),
+                            [](const RoomRole& r) { return r.name == "Amigos" && r.permissions.to_ulong() == 3; }));
+        QVERIFY(binding->assignRole(QStringLiteral("fp-lia"), friends));
+        QCOMPARE(lastPermissions()->to_ulong(), 3UL);
+        QCOMPARE(binding->person(QStringLiteral("fp-lia")).value(QStringLiteral("roleId")).toInt(), friends);
+
+        QVERIFY(binding->setOverride(QStringLiteral("fp-lia"), static_cast<int>(RoomPermission::Pause), 0));
+        QCOMPARE(lastPermissions()->to_ulong(), 1UL);
+        const auto overrides = binding->person(QStringLiteral("fp-lia")).value(QStringLiteral("overrides")).toList();
+        QCOMPARE(overrides.size(), static_cast<qsizetype>(room_permission_count));
+        QCOMPARE(overrides.at(static_cast<int>(RoomPermission::Pause)).toInt(), 0);
+        QCOMPARE(overrides.at(static_cast<int>(RoomPermission::Skip)).toInt(), -1);
+        QVERIFY(binding->setRolePermission(friends, static_cast<int>(RoomPermission::EditQueue), true));
+        QCOMPARE(lastPermissions()->to_ulong(), 1UL | (1UL << static_cast<int>(RoomPermission::EditQueue)));
+        QVERIFY(binding->renameRole(friends, QStringLiteral("Turma")));
+        QCOMPARE(f.roster.stored.roles.back().name, std::string{"Turma"});
+
+        QCOMPARE(binding->removeRole(1), int{ListeningRoomBinding::RemovalInitialRole});
+        QCOMPARE(binding->roles()->rowCount(), 3);
+        QVERIFY(binding->setInitialRole(2));
+        QCOMPARE(binding->initialRoleId(), 2);
+        QCOMPARE(binding->removeRole(friends), int{ListeningRoomBinding::RemovalDone});
+        QCOMPARE(binding->person(QStringLiteral("fp-lia")).value(QStringLiteral("roleId")).toInt(), 2);
+        // The DJ role with the Pause override still in place.
+        QCOMPARE(lastPermissions()->to_ulong(), (1UL << room_permission_count) - 1 - 2UL);
+
+        QVERIFY(binding->block(QStringLiteral("fp-lia")));
+        QCOMPARE(host_side->sent_control.back(), RoomControlMessage{RoomBye{RoomByeReason::Kicked}});
+        QCOMPARE(binding->memberCount(), 1);
+        QVERIFY(binding->knownPeople()->index(0, 0).data(RoomKnownPeopleModel::BlockedRole).toBool());
+        auto [again_host, again_guest] = testing::FakeRoomLink::pair(own_hex, "fp-lia");
+        f.endpoint->admit(again_host);
+        QVERIFY(again_guest->sendControl(RoomHello{room_protocol_version, "Lia", {}}));
+        QCOMPARE(again_host->sent_control.back(), RoomControlMessage{RoomJoinResult{JoinDecision::RejectedBlocked}});
+
+        QVERIFY(binding->unblock(QStringLiteral("fp-lia")));
+        QVERIFY(!f.roster.stored.listeners.front().blocked);
+        QVERIFY(!binding->knownPeople()->index(0, 0).data(RoomKnownPeopleModel::BlockedRole).toBool());
+        auto [back_host, back_guest] = testing::FakeRoomLink::pair(own_hex, "fp-lia");
+        f.endpoint->admit(back_host);
+        QVERIFY(back_guest->sendControl(RoomHello{room_protocol_version, "Lia", {}}));
+        QCOMPARE(back_host->sent_control.front(), RoomControlMessage{RoomJoinResult{JoinDecision::Admitted}});
+        QVERIFY(binding->kick(QStringLiteral("fp-lia")));
+        QVERIFY(!f.roster.stored.listeners.front().blocked);
+
+        binding->closeRoom();
+        QCOMPARE(binding->createRole(QStringLiteral("Fora"), 0), 0);
+        QCOMPARE(binding->roles()->rowCount(), 0);
+    }
+
+    // S10.1: a guest's controls follow its permissions, and a permitted action becomes a room intent.
+    void aGuestsControlsFollowItsPermissionsAndBecomeRoomIntents() {
+        Fixture f;
+        auto binding = f.make();
+        QVERIFY(binding->join(Fixture::validLink()));
+        auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, inviteHostHex());
+        f.connector->complete(guest_side);
+        QVERIFY(host_side->sendControl(RoomJoinResult{JoinDecision::Admitted}));
+        RoomSnapshot room;
+        room.version = 1;
+        room.members.push_back(RoomMember{inviteHostHex(), "Joao", {}, MemberState::Admitted});
+        RoomItem item;
+        item.id = 7;
+        item.content_sha256 = std::string(64, 'a');
+        room.queue.push_back(item);
+        item.id = 8;
+        room.queue.push_back(item);
+        room.playback = RoomPlayback{7, true, 148'000, 1'000};
+        RoomPermissionSet skip;
+        skip.set(static_cast<std::size_t>(RoomPermission::Skip));
+        QVERIFY(host_side->sendControl(RoomStateMessage{room, skip}));
+        QVERIFY(binding->canSkip());
+        QVERIFY(!binding->canPause());
+        QVERIFY(!binding->canEditQueue());
+        QVERIFY(binding->roomPlaying());
+        const auto intents = [&] {
+            std::vector<RoomIntent> sent;
+            for (const auto& message : guest_side->sent_control)
+                if (const auto* const intent = std::get_if<RoomIntentMessage>(&message))
+                    sent.push_back(intent->intent);
+            return sent;
+        };
+        QVERIFY(binding->roomNext());
+        QVERIFY(binding->roomPrevious());
+        QVERIFY(!binding->roomTogglePlayback());
+        QVERIFY(!binding->roomRemove(QStringLiteral("8")));
+        QCOMPARE(intents(), (std::vector<RoomIntent>{RoomIntent{.kind = RoomIntentKind::Next},
+                                                     RoomIntent{.kind = RoomIntentKind::Previous}}));
+
+        // The host takes Skip back and gives Pause and EditQueue: the next state turns the controls over.
+        RoomPermissionSet pause_and_edit;
+        pause_and_edit.set(static_cast<std::size_t>(RoomPermission::Pause));
+        pause_and_edit.set(static_cast<std::size_t>(RoomPermission::EditQueue));
+        room.version = 2;
+        QVERIFY(host_side->sendControl(RoomStateMessage{room, pause_and_edit}));
+        QVERIFY(!binding->canSkip());
+        QVERIFY(binding->canPause());
+        QVERIFY(binding->canEditQueue());
+        QVERIFY(!binding->roomNext());
+        QVERIFY(binding->roomTogglePlayback());
+        QVERIFY(binding->roomRemove(QStringLiteral("8")));
+        QVERIFY(binding->roomMove(QStringLiteral("8"), 0));
+        const auto sent = intents();
+        QCOMPARE(sent.size(), std::size_t{5});
+        QCOMPARE(sent[2].kind, RoomIntentKind::Pause);
+        QCOMPARE(sent[3].kind, RoomIntentKind::RemoveItem);
+        QCOMPARE(sent[3].item_id, std::uint64_t{8});
+        QCOMPARE(sent[4].kind, RoomIntentKind::MoveItem);
+        QCOMPARE(sent[4].item_id, std::uint64_t{8});
+        QCOMPARE(sent[4].destination, std::size_t{0});
+
+        // A refusal (the host changed its mind in between) says so.
+        QVERIFY(host_side->sendControl(RoomIntentRejected{3, IntentRejection::MissingPermission}));
+        QCOMPARE(binding->errorText(), QStringLiteral("Sem permissão"));
+        binding->leave();
+        QVERIFY(!binding->canPause());
+        QVERIFY(!binding->roomTogglePlayback());
     }
 
     void thePrivacyNoticeIsAcknowledgedOnce() {

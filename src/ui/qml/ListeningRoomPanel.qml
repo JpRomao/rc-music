@@ -33,6 +33,8 @@ PageSurface {
     property int capacityIndex: available ? room.defaultListeners - room.minimumListeners : 4
     property int durationIndex: 0
     property bool linkCopied: false
+    // S10.1: the per-person menu holds the keyboard while it is open.
+    readonly property bool blockingUiOpen: memberMenu.opened
     embedded: true
     padding: 0
     focus: true
@@ -500,6 +502,68 @@ PageSurface {
                     }
                 }
             }
+
+            // S10.1: roles, then everyone the host knows (blocked people can be let back in).
+            RoomRolesEditor {
+                objectName: "room-roles-editor"
+                Layout.fillWidth: true
+                contract: root.contract
+                room: root.room
+            }
+            Text {
+                visible: root.available && root.room.knownPeople.count > 0
+                text: roomText.knownTitle
+                textFormat: Text.PlainText
+                font.family: root.contract.headingFontFamily
+                font.pixelSize: root.contract.typeSection
+                color: root.contract.textPrimaryColor
+            }
+            Repeater {
+                model: root.available && root.role === 1 ? root.room.knownPeople : null
+                delegate: RowLayout {
+                    id: known
+                    required property string fingerprint
+                    required property string nickname
+                    required property url avatarSource
+                    required property string roleName
+                    required property bool blocked
+                    Layout.fillWidth: true
+                    spacing: root.contract.spacingUnit
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: knownName.text
+                    Accessible.description: roomText.knownRole.arg(known.roleName)
+                    ListenerAvatar {
+                        source: known.avatarSource
+                        size: 32
+                    }
+                    Text {
+                        id: knownName
+                        objectName: "room-known-name"
+                        Layout.fillWidth: true
+                        text: known.nickname + (known.blocked ? " · " + roomText.blockedTag : "")
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        font.family: root.contract.bodyFontFamily
+                        font.pixelSize: root.contract.typeBody
+                        color: root.contract.textPrimaryColor
+                    }
+                    Text {
+                        text: roomText.knownRole.arg(known.roleName)
+                        textFormat: Text.PlainText
+                        font.family: root.contract.bodyFontFamily
+                        font.pixelSize: root.contract.typeCaption
+                        color: root.contract.textSecondaryColor
+                    }
+                    AccessibleTransportButton {
+                        objectName: "room-unblock"
+                        visible: known.blocked
+                        contract: root.contract
+                        text: roomText.unblock
+                        accessibleName: roomText.unblockName.arg(known.nickname)
+                        onClicked: root.room.unblock(known.fingerprint)
+                    }
+                }
+            }
         }
 
         // A guest: how the room is going, and the way out.
@@ -556,6 +620,7 @@ PageSurface {
             model: root.available && root.role !== 0 ? root.room.members : null
             delegate: RowLayout {
                 id: member
+                required property string fingerprint
                 required property string nickname
                 required property url avatarSource
                 required property bool isHost
@@ -592,10 +657,26 @@ PageSurface {
                     font.pixelSize: root.contract.typeBody
                     color: root.contract.textSecondaryColor
                 }
+                AccessibleTransportButton {
+                    id: memberActions
+                    objectName: "room-member-actions"
+                    visible: root.role === 1 && !member.isHost && !member.isSelf
+                    contract: root.contract
+                    flat: true
+                    text: roomText.memberActions
+                    accessibleName: roomText.memberActionsName.arg(member.nickname)
+                    onClicked: memberMenu.openFor(member.fingerprint, member.nickname, memberActions)
+                }
             }
         }
         Item {
             Layout.fillHeight: true
         }
+    }
+
+    RoomMemberMenu {
+        id: memberMenu
+        contract: root.contract
+        room: root.room
     }
 }

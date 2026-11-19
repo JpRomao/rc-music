@@ -13,6 +13,9 @@ ColumnLayout {
     required property int selected
     property string unselectedText: ""
     property string accessibleDescription: ""
+    // With a model of rows instead of a list of labels (S10.1: the room roles).
+    property string textRole: ""
+    property string valueRole: ""
     readonly property alias control: control
     signal valueActivated(int index)
     spacing: contract.spacingUnit
@@ -33,6 +36,8 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: root.contract.controlTargetPreferred
         model: root.options
+        textRole: root.textRole
+        valueRole: root.valueRole
         currentIndex: root.selected
         displayText: currentIndex < 0 ? root.unselectedText : currentText
         activeFocusOnTab: true

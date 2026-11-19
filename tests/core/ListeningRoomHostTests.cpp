@@ -1034,4 +1034,152 @@ TEST_CASE("room host: the sync difference goes away with the person", "[core][li
     f.host->close();
     REQUIRE(f.host->memberDrifts().empty());
 }
+
+namespace {
+RoomPermissionSet permissionsOf(std::initializer_list<RoomPermission> permissions) {
+    RoomPermissionSet set;
+    for (const auto permission : permissions)
+        set.set(static_cast<std::size_t>(permission));
+    return set;
+}
+const KnownListener* storedListener(const HostFixture& f, const std::string& fingerprint) {
+    const auto& listeners = f.store.stored.listeners;
+    const auto found = std::find_if(listeners.begin(), listeners.end(),
+                                    [&](const KnownListener& l) { return l.fingerprint == fingerprint; });
+    return found == listeners.end() ? nullptr : &*found;
+}
+} // namespace
+
+TEST_CASE("room host: a new role assigned to a member reaches that member in the next state",
+          "[core][listening-room][room-host][room-roles]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto listener = f.join("fp-listener", "Lia");
+    REQUIRE(listener->lastState()->my_permissions == RoomPermissionSet{});
+    const auto version = f.host->snapshot().version;
+
+    const auto friends = f.host->createRole("Amigos", permissionsOf({RoomPermission::Skip, RoomPermission::Pause}));
+    REQUIRE(friends.has_value());
+    REQUIRE(std::any_of(f.store.stored.roles.begin(), f.store.stored.roles.end(),
+                        [&](const RoomRole& r) { return r.id == *friends && r.name == "Amigos"; }));
+    REQUIRE(f.host->assignRole("fp-listener", *friends));
+    REQUIRE(storedListener(f, "fp-listener")->role_id == *friends);
+    const auto state = listener->lastState();
+    REQUIRE(state->my_permissions == permissionsOf({RoomPermission::Skip, RoomPermission::Pause}));
+    REQUIRE(state->snapshot.version > version);
+    REQUIRE(state->snapshot == f.host->snapshot());
+
+    listener->intent(5, RoomIntent{.kind = RoomIntentKind::Next});
+    REQUIRE(listener->all<RoomIntentRejected>().empty());
+    REQUIRE(f.player.currentIndex() == 1);
+
+    // Changing the role's permissions reaches the member too; a rename only persists.
+    REQUIRE(f.host->setRolePermissions(*friends, permissionsOf({RoomPermission::Skip})));
+    REQUIRE(listener->lastState()->my_permissions == permissionsOf({RoomPermission::Skip}));
+    REQUIRE(f.host->renameRole(*friends, "Turma"));
+    REQUIRE(f.host->roster().roles.back().name == "Turma");
+    REQUIRE(f.store.stored.roles.back().name == "Turma");
+    REQUIRE_FALSE(f.host->createRole("Turma", {}).has_value());
+    REQUIRE_FALSE(f.host->assignRole("fp-listener", 99));
+}
+
+TEST_CASE("room host: a per-person override wins over the role in the next state",
+          "[core][listening-room][room-host][room-roles]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    REQUIRE(f.host->setOverride("fp-dj", RoomPermission::Pause, false));
+    REQUIRE_FALSE(dj->lastState()->my_permissions.test(static_cast<std::size_t>(RoomPermission::Pause)));
+    REQUIRE(dj->lastState()->my_permissions.test(static_cast<std::size_t>(RoomPermission::Skip)));
+    const auto& overrides = storedListener(f, "fp-dj")->overrides;
+    REQUIRE(overrides.size() == 1);
+    REQUIRE(overrides[0].permission == RoomPermission::Pause);
+    REQUIRE_FALSE(overrides[0].allowed);
+    dj->intent(3, RoomIntent{.kind = RoomIntentKind::Pause});
+    REQUIRE(dj->all<RoomIntentRejected>() ==
+            std::vector<RoomIntentRejected>{RoomIntentRejected{3, IntentRejection::MissingPermission}});
+
+    REQUIRE(f.host->setOverride("fp-dj", RoomPermission::Pause, std::nullopt));
+    REQUIRE(dj->lastState()->my_permissions == allPermissions());
+    REQUIRE_FALSE(f.host->setOverride("fp-nobody", RoomPermission::Pause, true));
+}
+
+TEST_CASE("room host: unblocking lets a blocked person in again; a kick without block does not block",
+          "[core][listening-room][room-host][room-roles]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    REQUIRE(f.host->kick("fp-dj", true));
+    auto refused = f.join("fp-dj");
+    REQUIRE(refused->inbox == std::vector<RoomControlMessage>{RoomJoinResult{JoinDecision::RejectedBlocked}});
+
+    REQUIRE(f.host->unblock("fp-dj"));
+    REQUIRE_FALSE(storedListener(f, "fp-dj")->blocked);
+    auto back = f.join("fp-dj");
+    REQUIRE(back->inbox.front() == RoomControlMessage{RoomJoinResult{JoinDecision::Admitted}});
+    REQUIRE_FALSE(f.host->unblock("fp-dj"));
+
+    REQUIRE(f.host->kick("fp-dj", false));
+    REQUIRE_FALSE(storedListener(f, "fp-dj")->blocked);
+    auto again = f.join("fp-dj");
+    REQUIRE(again->inbox.front() == RoomControlMessage{RoomJoinResult{JoinDecision::Admitted}});
+}
+
+TEST_CASE("room host: the invite's initial role cannot be removed; people in a removed role fall back to it",
+          "[core][listening-room][room-host][room-roles]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    REQUIRE(f.host->initialRoleId() == 1);
+    REQUIRE(f.host->removeRole(1) == RoleRemoval::InitialRole);
+    REQUIRE(f.host->roster().roles.size() == 2);
+    REQUIRE(f.host->removeRole(77) == RoleRemoval::Refused);
+
+    auto dj = f.join("fp-dj");
+    const auto saves = f.store.saves;
+    REQUIRE(f.host->removeRole(2) == RoleRemoval::Removed);
+    REQUIRE(f.store.saves > saves);
+    REQUIRE(storedListener(f, "fp-dj")->role_id == 1);
+    REQUIRE(dj->lastState()->my_permissions == RoomPermissionSet{});
+    REQUIRE(f.store.stored.roles.size() == 1);
+    // The last role is never removed.
+    REQUIRE(f.host->removeRole(1) == RoleRemoval::InitialRole);
+}
+
+TEST_CASE("room host: choosing another initial role frees the old one and reaches the persisted invite",
+          "[core][listening-room][room-host][room-roles]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({.until_revoked = true, .default_role_id = 2}));
+    REQUIRE(f.host->initialRoleId() == 2);
+    REQUIRE(f.host->removeRole(2) == RoleRemoval::InitialRole);
+    REQUIRE_FALSE(f.host->setInitialRole(99));
+
+    const auto friends = f.host->createRole("Amigos", permissionsOf({RoomPermission::Skip}));
+    REQUIRE(f.host->setInitialRole(*friends));
+    REQUIRE(f.host->initialRoleId() == *friends);
+    REQUIRE(f.store.stored.invite->default_role_id == *friends);
+    auto stranger = f.join("fp-new", "Caio");
+    REQUIRE(f.host->approve("fp-new"));
+    REQUIRE(storedListener(f, "fp-new")->role_id == *friends);
+    REQUIRE(stranger->lastState()->my_permissions == permissionsOf({RoomPermission::Skip}));
+
+    REQUIRE(f.host->removeRole(2) == RoleRemoval::Removed);
+    REQUIRE(storedListener(f, "fp-dj")->role_id == *friends);
+}
+
+TEST_CASE("room host: an initial role removed since it was chosen opens with the first role",
+          "[core][listening-room][room-host][room-roles]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({.default_role_id = 99}));
+    REQUIRE(f.host->initialRoleId() == 1);
+    auto stranger = f.join("fp-new", "Caio");
+    REQUIRE(f.host->approve("fp-new"));
+    REQUIRE(storedListener(f, "fp-new")->role_id == 1);
+}
+
 } // namespace music_player::m0::test
