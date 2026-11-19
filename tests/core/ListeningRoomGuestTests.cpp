@@ -1243,6 +1243,29 @@ TEST_CASE("room guest: a file that arrives late enters at the expected position"
     REQUIRE(g.backend.snapshot().status == PlaybackStatus::Playing);
 }
 
+// S13.1 run 2: the room's current item stayed in room-cache after the room closed. The cache was purged while the
+// player still had that file open (Windows refuses to delete it), and only then unloaded. Leaving, a kick and the
+// end of the room all release the player first.
+TEST_CASE("room guest: the player lets go of the room file before the cache is emptied",
+          "[core][listening-room][room-guest][room-follow]") {
+    for (const auto ending : {0, 1, 2}) {
+        FollowingGuest g;
+        g.f.inbox.files[hashOf('a')] = "cache/a";
+        std::vector<int> unloads_at_purge;
+        g.f.inbox.onPurge = [&] { unloads_at_purge.push_back(g.backend.unloads); };
+        g.f.joinAdmitted();
+        g.answerPing();
+        g.f.send(g.playingQueue(1));
+        REQUIRE(g.backend.loads == std::vector<std::filesystem::path>{"cache/a"});
+        const auto unloads = g.backend.unloads;
+        if (ending == 0)
+            g.f.guest->leave();
+        else
+            g.f.send(RoomBye{ending == 1 ? RoomByeReason::Kicked : RoomByeReason::Closed});
+        REQUIRE(unloads_at_purge == std::vector<int>{unloads + 1});
+    }
+}
+
 TEST_CASE("room guest: leaving unloads the room file before the local session comes back",
           "[core][listening-room][room-guest][room-follow]") {
     FollowingGuest g;

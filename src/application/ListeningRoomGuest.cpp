@@ -791,14 +791,16 @@ void ListeningRoomGuest::stop() {
     ++episode_;
     stopUploads(false);
     detachLink();
+    // The player lets go of the room file before the cache is emptied: Windows does not delete a file that is
+    // still open, and the current item would stay in room-cache (S13.1 run 2). It also goes before the local
+    // session comes back to the same player.
+    if (follower_ != nullptr)
+        follower_->stop();
     stopFiles(true);
     snapshot_ = {};
     permissions_.reset();
     catalog_ = {};
     fresh_link_ = false;
-    // The room file goes before the local session comes back to the same player.
-    if (follower_ != nullptr)
-        follower_->stop();
     if (auto saved = std::exchange(saved_session_, std::nullopt))
         restore_session_(*saved);
 }

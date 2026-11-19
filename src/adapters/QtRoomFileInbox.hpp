@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace music_player::m0 {
 
@@ -17,8 +18,10 @@ namespace music_player::m0 {
 // in order and answers come back to the thread that created the inbox, in the same order.
 //
 // The cache is disposable: construction purges it (app startup), and purge() abandons every transfer
-// in flight before RoomCache::purgeAll(), so its quota accounting never drifts. Destruction waits for
-// the worker to finish what is queued; queued answers are then dropped.
+// in flight before RoomCache::purgeAll(), so its quota accounting never drifts. A file still open when the
+// cache is purged (Windows: the player closing the room's current item) is deleted again a little later,
+// for a few seconds, unless the next room asks for that hash first; the next startup purge catches anything
+// left after that. Destruction waits for the worker to finish what is queued; queued answers are then dropped.
 class QtRoomFileInbox final : public QObject, public RoomFileInbox {
   public:
     explicit QtRoomFileInbox(QString config_directory, QObject* parent = nullptr);
@@ -46,6 +49,9 @@ class QtRoomFileInbox final : public QObject, public RoomFileInbox {
   private:
     struct Worker;
     void post(std::function<void(Worker&)> task);
+    // Worker thread: what purgeAll() could not delete is tried again shortly.
+    void purgeLater(Worker& worker, std::vector<QString> left);
+    void retryPurge(Worker& worker);
 
     QString cache_directory_;
     QThread thread_;

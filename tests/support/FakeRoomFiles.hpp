@@ -81,6 +81,8 @@ class FakeRoomFileInbox final : public RoomFileInbox {
     void purge() override {
         log.push_back("purge");
         ++purges;
+        if (onPurge)
+            onPurge();
     }
     void discard(const std::string& sha256) override {
         log.push_back("discard:" + sha256.substr(0, 4));
@@ -124,6 +126,8 @@ class FakeRoomFileInbox final : public RoomFileInbox {
     }
 
     bool deferred{false};
+    // Called inside purge(): a test can look at what else had happened by then.
+    std::function<void()> onPurge;
     std::map<std::string, std::filesystem::path> files;
     std::map<std::string, std::uint64_t> sizes;
     std::map<std::string, std::uint64_t> partial;

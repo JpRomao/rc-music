@@ -41,8 +41,10 @@ class RoomCache {
     void markPlayed(std::string_view sha256);
     // The file is wanted again (S12.1: a guest item queued again from it): takes back its played mark.
     void keep(std::string_view sha256);
-    // Removes every .part and complete file; reservations and played marks are forgotten.
-    void purgeAll();
+    // Removes every .part and complete file and then the directory; reservations and played marks are forgotten.
+    // Returns the names of the files that could not go yet (still open elsewhere, on Windows: the player closing
+    // the room's current item), for the caller to remove later.
+    std::vector<QString> purgeAll();
     // Removes the complete file and the .part of one hash (S12.1: a refused upload, or a guest item that left
     // the queue). A complete file that cannot go yet (still open elsewhere, on Windows) is marked as played, so
     // reserve() evicts it later. Invalid hashes are ignored.

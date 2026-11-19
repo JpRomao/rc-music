@@ -71,10 +71,17 @@ void RoomCache::markPlayed(const std::string_view sha256) {
 
 void RoomCache::keep(const std::string_view sha256) { std::erase(played_, sha256); }
 
-void RoomCache::purgeAll() {
-    QDir(directory_).removeRecursively();
+std::vector<QString> RoomCache::purgeAll() {
+    QDir directory(directory_);
+    // Goes on past a file it cannot delete; that file and the directory stay.
+    directory.removeRecursively();
     reserved_bytes_ = 0;
     played_.clear();
+    std::vector<QString> left;
+    if (directory.exists())
+        for (const auto& name : directory.entryList(QDir::Files | QDir::Hidden | QDir::System))
+            left.push_back(name);
+    return left;
 }
 
 void RoomCache::remove(const std::string_view sha256) {

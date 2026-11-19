@@ -479,6 +479,65 @@ class RoomFileTransferTests final : public QObject {
                  QStringList{directory.filePath(QString::fromStdString(kept_sha))});
     }
 
+    // S13.1 run 2: the room's current item stayed in room-cache after the room ended, because the player still
+    // had it open when the cache was emptied (Windows deletes no open file). A file that could not go then goes
+    // once it is let go, and the other files go at once.
+    void purgeRemovesAFileThatWasStillOpenOnceItIsLetGo() {
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        QtRoomFileInbox inbox(config.path());
+        inbox.waitForWorker();
+        const QDir directory(inbox.cacheDirectory());
+        QVERIFY(QDir().mkpath(directory.path()));
+        const auto playing = directory.filePath(QString(64, QLatin1Char('a')));
+        const auto other = directory.filePath(QString(64, QLatin1Char('b')));
+        for (const auto& path : {playing, other}) {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QCOMPARE(file.write(QByteArray(1000, 'x')), qint64{1000});
+        }
+        {
+            QFile held(playing); // the player still reading the current item
+            QVERIFY(held.open(QIODevice::ReadOnly));
+            inbox.purge();
+            inbox.waitForWorker();
+            QVERIFY(!QFileInfo::exists(other));
+            QVERIFY(QFileInfo::exists(playing)); // Windows: still open
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(!QFileInfo::exists(playing), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(!QFileInfo::exists(directory.path()), 5000);
+    }
+
+    // ...but a file the next room asks for before it is let go stays: it is that room's file now.
+    void aFileAskedForAgainAfterThePurgeIsNotRemovedLater() {
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        QtRoomFileInbox inbox(config.path());
+        inbox.waitForWorker();
+        const QDir directory(inbox.cacheDirectory());
+        QVERIFY(QDir().mkpath(directory.path()));
+        const std::string sha(64, 'a');
+        const auto path = directory.filePath(QString::fromStdString(sha));
+        {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            QCOMPARE(file.write(QByteArray(1000, 'x')), qint64{1000});
+        }
+        {
+            QFile held(path);
+            QVERIFY(held.open(QIODevice::ReadOnly));
+            inbox.purge();
+            inbox.waitForWorker();
+            std::optional<RoomFileStatus> status;
+            inbox.status(sha, [&status](const RoomFileStatus& answer) { status = answer; });
+            QTRY_VERIFY(status.has_value());
+            QVERIFY(status->complete);
+        }
+        QTest::qWait(1500);
+        inbox.waitForWorker();
+        QVERIFY(QFileInfo::exists(path));
+    }
+
     void malformedOrBusyOffersAndUnknownChunksAreOnlyRefused() {
         QTemporaryDir config;
         QVERIFY(config.isValid());
