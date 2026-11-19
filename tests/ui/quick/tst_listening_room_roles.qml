@@ -516,13 +516,19 @@ TestCase {
         const notice = findItem(shell.contentItem, "room-roster-unsaved");
         verify(notice);
         verify(!notice.visible);
+        driver.clearAccessibleAnnouncements();
         fakeRoom.rosterUnsaved = true;
         tryVerify(() => notice.visible);
         compare(notice.text, "Não deu para salvar cargos, ajustes e bloqueios. Eles valem só até a sala fechar.");
         compare(notice.Accessible.role, Accessible.AlertMessage);
         compare(notice.Accessible.name, notice.text);
+        // Screen readers hear it once, when it appears.
+        tryVerify(() => testCase.driver.accessibleAnnouncementCount() === 1);
+        compare(driver.lastAccessibleAnnouncement(), notice.text);
         fakeRoom.rosterUnsaved = false;
         tryVerify(() => !notice.visible);
+        wait(50);
+        compare(driver.accessibleAnnouncementCount(), 1);
     }
 
     // Even when the local player still mirrors the shared backend, a guest never seeks it: only the

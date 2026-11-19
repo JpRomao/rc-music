@@ -73,9 +73,14 @@ ColumnLayout {
         Accessible.name: text
     }
     Text {
+        id: rosterUnsavedNotice
         objectName: "room-roster-unsaved"
         Layout.fillWidth: true
         visible: root.available && root.room.rosterUnsaved === true
+        onVisibleChanged: {
+            if (visible)
+                rosterUnsavedNotice.Accessible.announce(text, Accessible.Assertive);
+        }
         text: roomText.rosterUnsaved
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
