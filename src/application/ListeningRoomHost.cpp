@@ -557,14 +557,14 @@ void ListeningRoomHost::onHello(const std::shared_ptr<RoomLink>& link, const Roo
     }
     auto* connection = find(link.get());
     const auto fingerprint = connection->fingerprint;
-    // One live link per identity: the newer link replaces the older one.
-    std::vector<std::shared_ptr<RoomLink>> older;
     if (const auto kicked = kicked_away_.find(fingerprint); kicked != kicked_away_.end()) {
         kicked_away_.erase(kicked);
         static_cast<void>(link->sendControl(RoomBye{RoomByeReason::Kicked}));
         drop(link);
         return;
     }
+    // One live link per identity: the newer link replaces the older one.
+    std::vector<std::shared_ptr<RoomLink>> older;
     for (const auto& other : connections_)
         if (other.link != link && other.fingerprint == fingerprint)
             older.push_back(other.link);
@@ -1001,9 +1001,9 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
     describing_.clear();
     unreadable_.clear();
     held_.clear();
+    kicked_away_.clear();
     reanchor_ = false;
     current_ = RoomSnapshot{.version = current_.version + 1};
-    kicked_away_.clear();
     sent_view_ = {};
     if (onChanged)
         onChanged(current_);

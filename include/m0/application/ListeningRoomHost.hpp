@@ -286,14 +286,14 @@ class ListeningRoomHost final {
     // Admitted members whose link dropped, held for room_reconnect_window_ms (value: hold token).
     std::map<std::string, std::uint64_t, std::less<>> held_;
     std::uint64_t next_hold_{0};
+    // People kicked while held, told RoomBye{Kicked} if they come back within room_reconnect_window_ms.
+    std::map<std::string, std::uint64_t, std::less<>> kicked_away_;
     std::map<std::string, std::int64_t, std::less<>> drifts_;
     // The last state guests received (admitted members only), to broadcast only what they would see.
     RoomSnapshot sent_view_;
     bool reanchor_{false};
     bool refreshing_{false};
     bool refresh_again_{false};
-    // People kicked while held, told RoomBye{Kicked} if they come back within room_reconnect_window_ms.
-    std::map<std::string, std::uint64_t, std::less<>> kicked_away_;
     std::shared_ptr<Alive> alive_;
 };
 
