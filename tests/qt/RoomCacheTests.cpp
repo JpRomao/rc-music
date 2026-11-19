@@ -132,6 +132,23 @@ class RoomCacheTests final : public QObject {
 #endif
     }
 
+    // S12.1 fix round 2: a played file wanted again is kept out of eviction.
+    void keepTakesBackAPlayedMark() {
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        RoomCache cache(config.path());
+        QVERIFY(QDir().mkpath(cache.directory()));
+        const auto file_a = QDir(cache.directory()).filePath(QString::fromStdString(sha_a));
+        QVERIFY(writeFile(file_a, 1000));
+        cache.markPlayed(sha_a);
+        cache.keep(sha_a);
+        QVERIFY(!cache.reserve(room_cache_quota_bytes - 999));
+        QVERIFY(QFileInfo::exists(file_a));
+        cache.markPlayed(sha_a);
+        QVERIFY(cache.reserve(room_cache_quota_bytes - 999));
+        QVERIFY(!QFileInfo::exists(file_a));
+    }
+
     // The file name comes only from a validated hash.
     void refusesHashesThatAreNotLowercaseHex() {
         QTemporaryDir config;

@@ -82,6 +82,9 @@ void QtRoomFileInbox::status(const std::string& sha256, std::function<void(RoomF
             status.complete = true;
             status.file = std::filesystem::path{file->toStdU16String()};
             status.size_bytes = static_cast<std::uint64_t>(QFileInfo(*file).size());
+            // Asked for again: wanted, so no longer evictable (a played mark, or a discard that could not
+            // delete it while it was open).
+            worker.cache.keep(sha256);
         } else if (const auto resume = worker.receiver.resumeRequest(sha256)) {
             status.resume_offset = resume->offset;
         }

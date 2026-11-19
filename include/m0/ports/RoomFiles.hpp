@@ -57,7 +57,8 @@ enum class RoomFileFailure : std::uint8_t { Failed, Gap };
 class RoomFileInbox {
   public:
     virtual ~RoomFileInbox() = default;
-    // Calls done once with what is in the cache for sha256.
+    // Calls done once with what is in the cache for sha256. A complete file it reports is wanted again: it
+    // stops being evictable until marked as played again.
     virtual void status(const std::string& sha256, std::function<void(RoomFileStatus)> done) = 0;
     // An offer the guest asked for; a refused offer ends in onFailed (or nothing when malformed).
     virtual void accept(const RoomFileOffer& offer) = 0;

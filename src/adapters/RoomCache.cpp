@@ -69,6 +69,8 @@ void RoomCache::markPlayed(const std::string_view sha256) {
     played_.emplace_back(sha256);
 }
 
+void RoomCache::keep(const std::string_view sha256) { std::erase(played_, sha256); }
+
 void RoomCache::purgeAll() {
     QDir(directory_).removeRecursively();
     reserved_bytes_ = 0;

@@ -39,6 +39,8 @@ class RoomCache {
     void release(std::uint64_t bytes) noexcept;
     // The item was played: its complete file may be evicted by reserve(). Invalid hashes are ignored.
     void markPlayed(std::string_view sha256);
+    // The file is wanted again (S12.1: a guest item queued again from it): takes back its played mark.
+    void keep(std::string_view sha256);
     // Removes every .part and complete file; reservations and played marks are forgotten.
     void purgeAll();
     // Removes the complete file and the .part of one hash (S12.1: a refused upload, or a guest item that left

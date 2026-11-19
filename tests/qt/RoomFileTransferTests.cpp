@@ -351,6 +351,36 @@ class RoomFileTransferTests final : public QObject {
         QVERIFY(!room.cache.pathFor(sha256(original)).has_value());
     }
 
+    // S12.1 fix round 2: a complete file that status() reports is wanted again (the host queues the same hash
+    // from its upload cache), so an earlier played mark (a discard that could not delete an open file) no
+    // longer lets reserve() evict it.
+    void aCompleteFileStatusReportsIsNoLongerEvictable() {
+        QTemporaryDir config;
+        QVERIFY(config.isValid());
+        QtRoomFileInbox inbox(config.path());
+        std::vector<std::pair<std::string, RoomFileFailure>> failed;
+        inbox.onFailed = [&failed](std::string sha, std::uint32_t, const RoomFileFailure failure) {
+            failed.emplace_back(std::move(sha), failure);
+        };
+        const auto original = readAll(fixture("wav-pcm-mono.wav"));
+        const auto sha = sha256(original);
+        inbox.accept({sha, static_cast<std::uint64_t>(original.size()), 1});
+        for (std::uint64_t offset = 0; offset < static_cast<std::uint64_t>(original.size());
+             offset += room_file_chunk_bytes)
+            inbox.consume(chunkOf(original, 1, offset));
+        inbox.markPlayed(sha);
+        std::optional<RoomFileStatus> status;
+        inbox.status(sha, [&status](const RoomFileStatus& answer) { status = answer; });
+        const std::string other(64, 'b');
+        inbox.accept({other, room_cache_quota_bytes - 10, 2});
+        inbox.waitForWorker();
+        QCoreApplication::processEvents();
+
+        QVERIFY(status.has_value() && status->complete);
+        QCOMPARE(failed, (std::vector<std::pair<std::string, RoomFileFailure>>{{other, RoomFileFailure::Failed}}));
+        QVERIFY(QFileInfo::exists(QString::fromStdU16String(status->file.u16string())));
+    }
+
     void offerAboveTheReceiverLimitFailsTooLarge() {
         QTemporaryDir config;
         QVERIFY(config.isValid());
