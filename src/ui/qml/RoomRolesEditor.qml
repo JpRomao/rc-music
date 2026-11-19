@@ -72,6 +72,19 @@ ColumnLayout {
         Accessible.role: Accessible.AlertMessage
         Accessible.name: text
     }
+    Text {
+        objectName: "room-roster-unsaved"
+        Layout.fillWidth: true
+        visible: root.available && root.room.rosterUnsaved === true
+        text: roomText.rosterUnsaved
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        font.family: root.contract.bodyFontFamily
+        font.pixelSize: root.contract.typeBody
+        color: root.contract.errorColor
+        Accessible.role: Accessible.AlertMessage
+        Accessible.name: text
+    }
 
     PreferenceChoice {
         id: initialRoleChoice

@@ -773,6 +773,28 @@ class ListeningRoomBindingTests final : public QObject {
         QCOMPARE(binding->roles()->rowCount(), 0);
     }
 
+    // S10.1 fix: a roster change the file did not take shows a notice until a later save succeeds.
+    void aRosterSaveFailureShowsANoticeUntilALaterSave() {
+        Fixture f;
+        auto binding = f.make();
+        QVERIFY(binding->openRoom(5, false));
+        QVERIFY(!binding->rosterUnsaved());
+        QSignalSpy changed(binding.get(), &ListeningRoomBinding::changed);
+
+        f.roster.save_result = RoomRosterSaveStatus::Failed;
+        const int friends = binding->createRole(QStringLiteral("Amigos"), 0);
+        QVERIFY(friends > 0);
+        QVERIFY(binding->rosterUnsaved());
+        QVERIFY(changed.count() > 0);
+        QVERIFY(std::none_of(f.roster.stored.roles.begin(), f.roster.stored.roles.end(),
+                             [](const RoomRole& r) { return r.name == "Amigos"; }));
+
+        f.roster.save_result = RoomRosterSaveStatus::Saved;
+        QVERIFY(binding->renameRole(friends, QStringLiteral("Turma")));
+        QVERIFY(!binding->rosterUnsaved());
+        QCOMPARE(f.roster.stored.roles.back().name, std::string{"Turma"});
+    }
+
     // S10.1: a guest's controls follow its permissions, and a permitted action becomes a room intent.
     void aGuestsControlsFollowItsPermissionsAndBecomeRoomIntents() {
         Fixture f;

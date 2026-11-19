@@ -1231,4 +1231,55 @@ TEST_CASE("room host: an initial role removed since it was chosen opens with the
     REQUIRE(storedListener(f, "fp-new")->role_id == 1);
 }
 
+TEST_CASE("room host: a roster change the file did not take is reported until a later save succeeds",
+          "[core][listening-room][room-host][room-roles]") {
+    HostFixture f;
+    f.start();
+    int notices = 0;
+    f.host->onRosterUnsavedChanged = [&] { ++notices; };
+    static_cast<void>(f.host->open({}));
+    auto listener = f.join("fp-listener", "Lia");
+    REQUIRE_FALSE(f.host->rosterUnsaved());
+
+    f.store.save_result = RoomRosterSaveStatus::Failed;
+    REQUIRE(f.host->kick("fp-listener", true));
+    REQUIRE(f.host->rosterUnsaved());
+    REQUIRE(notices == 1);
+    // The file still has the person unblocked; this session keeps the block.
+    REQUIRE_FALSE(storedListener(f, "fp-listener")->blocked);
+    auto again = f.join("fp-listener", "Lia");
+    REQUIRE(again->inbox == std::vector<RoomControlMessage>{RoomJoinResult{JoinDecision::RejectedBlocked}});
+    REQUIRE(f.host->createRole("Amigos", {}).has_value());
+    REQUIRE(notices == 1);
+
+    // The next save writes the whole roster, so nothing is pending any more.
+    f.store.save_result = RoomRosterSaveStatus::Saved;
+    REQUIRE(f.host->renameRole(f.host->roster().roles.back().id, "Turma"));
+    REQUIRE_FALSE(f.host->rosterUnsaved());
+    REQUIRE(notices == 2);
+    REQUIRE(storedListener(f, "fp-listener")->blocked);
+    REQUIRE(f.store.stored.roles.back().name == "Turma");
+}
+
+TEST_CASE("room host: changes to a roster file that cannot be written stay unsaved for the session",
+          "[core][listening-room][room-host][room-roles]") {
+    HostFixture f;
+    f.store.status = RoomRosterLoadStatus::Invalid;
+    f.start();
+    REQUIRE_FALSE(f.host->rosterUnsaved());
+    REQUIRE(f.host->createRole("Amigos", {}).has_value());
+    REQUIRE(f.host->rosterUnsaved());
+    REQUIRE(f.store.saves == 0);
+
+    HostFixture newer;
+    newer.start();
+    newer.store.save_result = RoomRosterSaveStatus::BlockedByFutureVersion;
+    REQUIRE(newer.host->createRole("Amigos", {}).has_value());
+    REQUIRE(newer.host->rosterUnsaved());
+    newer.store.save_result = RoomRosterSaveStatus::Saved;
+    REQUIRE(newer.host->renameRole(newer.host->roster().roles.back().id, "Turma"));
+    REQUIRE(newer.host->rosterUnsaved());
+    REQUIRE(newer.store.saves == 1);
+}
+
 } // namespace music_player::m0::test

@@ -41,6 +41,7 @@ TestCase {
         property bool canEditQueue: false
         property bool roomPlaying: false
         property bool roomHasCurrent: false
+        property bool rosterUnsaved: false
         property var calls: []
         function record(call) {
             calls = calls.concat([call]);
@@ -198,6 +199,7 @@ TestCase {
         fakeRoom.canEditQueue = false;
         fakeRoom.roomPlaying = false;
         fakeRoom.roomHasCurrent = false;
+        fakeRoom.rosterUnsaved = false;
         fakeRoom.calls = [];
         fakeRoom.personRoleId = 1;
         fakeRoom.personOverrides = [-1, -1, -1, -1, -1, -1, -1];
@@ -504,6 +506,21 @@ TestCase {
         fakeRoom.canPause = false;
         tryVerify(() => !pause.enabled);
         compare(pause.disabledReason, "O host não liberou");
+    }
+
+    function test_aRosterTheFileDidNotTakeShowsANotice() {
+        createShell();
+        openPage();
+        const notice = findItem(shell.contentItem, "room-roster-unsaved");
+        verify(notice);
+        verify(!notice.visible);
+        fakeRoom.rosterUnsaved = true;
+        tryVerify(() => notice.visible);
+        compare(notice.text, "Não deu para salvar cargos, ajustes e bloqueios. Eles valem só até a sala fechar.");
+        compare(notice.Accessible.role, Accessible.AlertMessage);
+        compare(notice.Accessible.name, notice.text);
+        fakeRoom.rosterUnsaved = false;
+        tryVerify(() => !notice.visible);
     }
 
     function test_aGuestEditsTheRoomQueueOnlyWithPermission() {

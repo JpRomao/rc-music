@@ -269,6 +269,8 @@ bool ListeningRoomBinding::roomHasCurrent() const {
 
 bool ListeningRoomBinding::roomPlaying() const { return roomHasCurrent() && guest_->snapshot().playback.playing; }
 
+bool ListeningRoomBinding::rosterUnsaved() const { return role_ == HostRole && host_ && host_->rosterUnsaved(); }
+
 // Every roster change goes through the host (saved, then sent to the members) and refreshes the page.
 bool ListeningRoomBinding::hostEdited(const bool done) {
     if (!done)
@@ -542,6 +544,7 @@ void ListeningRoomBinding::startHost() {
     });
     host_->onChanged = [this](const RoomSnapshot&) { hostChanged(); };
     host_->onDriftsChanged = [this] { refreshMembers(); };
+    host_->onRosterUnsavedChanged = [this] { publish(); };
     host_->onJoinRequest = [this](const RoomMember& member) { hostJoinRequest(member); };
     host_->onEndpointFailed = [this](const RoomLinkFailure failure) { hostEndpointFailed(failure); };
     if (dependencies_.set_room_play_order)

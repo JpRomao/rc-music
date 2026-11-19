@@ -198,6 +198,10 @@ class ListeningRoomHost final {
     // "Desbloquear": the person is known again and comes back in without a new approval, with their role.
     // False when not known or not blocked.
     [[nodiscard]] bool unblock(std::string_view fingerprint);
+    // True while a roster change of this host is not in the file: the last save failed, or the file cannot
+    // be written (unreadable, invalid or from a newer version). A later save that succeeds writes the whole
+    // roster and clears it. onRosterUnsavedChanged runs each time it flips.
+    [[nodiscard]] bool rosterUnsaved() const noexcept;
 
     // For the guest-file transfer (S8/S12): a guest's file already in the host's room cache joins the
     // queue as a GuestTrack. Overwrites id, origin, owner_fingerprint (= owner_fingerprint) and
@@ -212,6 +216,7 @@ class ListeningRoomHost final {
     std::function<void(const RoomMember&)> onJoinRequest;
     std::function<void(RoomLinkFailure)> onEndpointFailed;
     std::function<void()> onDriftsChanged;
+    std::function<void()> onRosterUnsavedChanged;
     // The latest reported sync difference (ms, positive = the guest is ahead) of each admitted member.
     [[nodiscard]] const std::map<std::string, std::int64_t, std::less<>>& memberDrifts() const noexcept;
 
@@ -268,6 +273,7 @@ class ListeningRoomHost final {
 
     RoomRoster roster_;
     bool roster_writable_{false};
+    bool roster_unsaved_{false};
     // The open room was opened from the persisted invite (until revoked).
     bool uses_persisted_invite_{false};
     std::optional<ListeningRoom> room_;

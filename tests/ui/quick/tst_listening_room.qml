@@ -31,6 +31,7 @@ TestCase {
         property bool canEditQueue: false
         property bool roomPlaying: false
         property bool roomHasCurrent: false
+        property bool rosterUnsaved: false
         readonly property int memberCount: members.count
         property string hostNickname: ""
         property int maxListeners: 5

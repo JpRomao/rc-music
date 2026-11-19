@@ -60,6 +60,7 @@ QtObject {
     readonly property string removeRole: qsTr("Excluir cargo")
     readonly property string removeRoleName: qsTr("Excluir o cargo %1")
     readonly property string chooseAnotherInitialRole: qsTr("Escolha outro cargo inicial antes")
+    readonly property string rosterUnsaved: qsTr("Não deu para salvar cargos, ajustes e bloqueios. Eles valem só até a sala fechar.")
     readonly property string roleRefused: qsTr("Não foi possível salvar o cargo. Use um nome que ainda não existe.")
     readonly property string roleHolders: qsTr("%1 pessoas com este cargo")
     readonly property string permissionForRole: qsTr("%1 — cargo %2")

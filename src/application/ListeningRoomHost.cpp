@@ -294,6 +294,8 @@ std::optional<PersistedInvite> ListeningRoomHost::persistedInvite() const { retu
 
 RoomRosterSnapshot ListeningRoomHost::roster() const { return roster_.snapshot(); }
 
+bool ListeningRoomHost::rosterUnsaved() const noexcept { return roster_unsaved_; }
+
 std::uint64_t ListeningRoomHost::initialRoleId() const {
     if (room_)
         return room_->defaultRoleId();
@@ -1031,11 +1033,20 @@ void ListeningRoomHost::rosterChanged() {
         onChanged(current_);
 }
 
+// The store writes the whole roster, so one save that works leaves nothing unsaved.
 void ListeningRoomHost::saveRoster() {
-    if (!roster_writable_)
+    auto status = RoomRosterSaveStatus::Failed;
+    if (roster_writable_) {
+        status = roster_store_.save(roster_.snapshot());
+        if (status == RoomRosterSaveStatus::BlockedByFutureVersion)
+            roster_writable_ = false;
+    }
+    const bool unsaved = status != RoomRosterSaveStatus::Saved;
+    if (unsaved == roster_unsaved_)
         return;
-    if (roster_store_.save(roster_.snapshot()) == RoomRosterSaveStatus::BlockedByFutureVersion)
-        roster_writable_ = false;
+    roster_unsaved_ = unsaved;
+    if (onRosterUnsavedChanged)
+        onRosterUnsavedChanged();
 }
 
 ListeningRoomHost::Connection* ListeningRoomHost::find(const RoomLink* link) {

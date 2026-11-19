@@ -245,14 +245,18 @@ class InMemoryRoomRosterStore final : public RoomRosterStore {
   public:
     [[nodiscard]] RoomRosterLoadResult load() override { return {stored, status}; }
     [[nodiscard]] RoomRosterSaveStatus save(const RoomRosterSnapshot& snapshot) override {
+        ++saves;
+        if (save_result != RoomRosterSaveStatus::Saved)
+            return save_result;
         stored = snapshot;
         status = RoomRosterLoadStatus::Loaded;
-        ++saves;
         return RoomRosterSaveStatus::Saved;
     }
 
     RoomRosterSnapshot stored{defaultRoomRoster()};
     RoomRosterLoadStatus status{RoomRosterLoadStatus::Missing};
+    // Failed or BlockedByFutureVersion: the file keeps what it had.
+    RoomRosterSaveStatus save_result{RoomRosterSaveStatus::Saved};
     int saves{0};
 };
 

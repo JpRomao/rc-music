@@ -135,6 +135,8 @@ class ListeningRoomBinding final : public QObject {
     Q_PROPERTY(bool canEditQueue READ canEditQueue NOTIFY changed)
     Q_PROPERTY(bool roomPlaying READ roomPlaying NOTIFY changed)
     Q_PROPERTY(bool roomHasCurrent READ roomHasCurrent NOTIFY changed)
+    // A roles, overrides or block change the roster file did not take: it lasts only until the room closes.
+    Q_PROPERTY(bool rosterUnsaved READ rosterUnsaved NOTIFY changed)
 
   public:
     enum Role { NoRole = 0, HostRole = 1, GuestRole = 2 };
@@ -173,6 +175,7 @@ class ListeningRoomBinding final : public QObject {
     [[nodiscard]] bool canEditQueue() const;
     [[nodiscard]] bool roomPlaying() const;
     [[nodiscard]] bool roomHasCurrent() const;
+    [[nodiscard]] bool rosterUnsaved() const;
 
     // false when refused at once (limits, no profile, already in a room, unavailable); true when the
     // room opens or is being prepared (identity loading).
