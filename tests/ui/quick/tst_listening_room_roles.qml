@@ -10,6 +10,7 @@ TestCase {
     name: "ListeningRoomRoles"
     when: windowShown
     readonly property PlayerPresenter localPresenter: testLocalPlayerPresenter // qmllint disable unqualified
+    readonly property var driver: testScenarioDriver // qmllint disable unqualified
     property var shell
 
     QtObject {
@@ -232,6 +233,7 @@ TestCase {
             shell.destroy();
         shell = null;
         wait(0);
+        driver.resetLocalScenario();
     }
     function createShell() {
         shell = createTemporaryObject(shellComponent, null);
@@ -521,6 +523,36 @@ TestCase {
         compare(notice.Accessible.name, notice.text);
         fakeRoom.rosterUnsaved = false;
         tryVerify(() => !notice.visible);
+    }
+
+    // Even when the local player still mirrors the shared backend, a guest never seeks it: only the
+    // room moves the music (the ±s buttons and keys send room intents).
+    function test_aGuestNeverSeeksTheLocalPlayer() {
+        fakeRoom.role = 0;
+        fakeRoom.state = "idle";
+        createShell();
+        driver.enqueueLocalSelection(["C:/Música/Uma.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(localPresenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalPlaying();
+        driver.publishLocalPosition(30000);
+        tryCompare(localPresenter, "playbackState", PlayerPresenter.Playing);
+        const progress = findChild(shell, "progress");
+        tryVerify(() => progress.enabled);
+
+        joinAsGuest();
+        tryVerify(() => !progress.enabled);
+        compare(progress.Accessible.description, "O host controla");
+        mousePress(progress, progress.width * 0.25, progress.height / 2);
+        mouseMove(progress, progress.width * 0.7, progress.height / 2);
+        mouseRelease(progress, progress.width * 0.7, progress.height / 2);
+        progress.value = 90000;
+        // A verse tapped in the lyrics reader asks the transport for the same seek.
+        findChild(shell, "transport-bar").commitImmediateSeek(60000);
+        verify(!findChild(shell, "lyrics-panel").readerCanSeek);
+        compare(driver.localSeekCount(), 0);
+        verify(!localPresenter.seekPreviewActive && !localPresenter.seekPending);
+        compare(fakeRoom.calls, []);
     }
 
     function test_aGuestEditsTheRoomQueueOnlyWithPermission() {

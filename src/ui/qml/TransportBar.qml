@@ -52,7 +52,10 @@ GridLayout {
         const seconds = totalSeconds % 60;
         return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
     }
+    // A guest never seeks the shared player locally: only the room moves the music.
     function commitImmediateSeek(target) {
+        if (roomGuest)
+            return;
         if (presenter.beginSeekPreview(target))
             presenter.commitSeekPreview();
     }
@@ -66,6 +69,8 @@ GridLayout {
         return (item === previousTrack && presenter.canGoPrevious) || (item === nextTrack && presenter.canGoNext);
     }
     function seekDisabledReason() {
+        if (roomGuest)
+            return queueLabels.hostControls;
         if (!presenter.hasCurrentTrack)
             return labels.seekRequiresTrack;
         if (presenter.playbackState === PlayerPresenter.Loading)
@@ -126,7 +131,7 @@ GridLayout {
                 }
             }
             stepSize: 1000
-            enabled: root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPending
+            enabled: !root.roomGuest && root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPending
             Accessible.role: Accessible.Slider
             Accessible.id: "progress"
             Accessible.name: root.contract.progressName

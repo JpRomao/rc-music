@@ -88,7 +88,7 @@ ApplicationWindow {
     readonly property bool primaryKeysEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && !focusOwnsTextInput()
     readonly property bool spaceShortcutEnabled: primaryKeysEnabled
     readonly property bool arrowShortcutsEnabled: primaryKeysEnabled
-    readonly property bool seekShortcutsEnabled: arrowShortcutsEnabled && transportShortcutsEnabled && presenter.seekable && !presenter.seekPreviewActive && !presenter.seekPending
+    readonly property bool seekShortcutsEnabled: arrowShortcutsEnabled && transportShortcutsEnabled && !transport.roomGuest && presenter.seekable && !presenter.seekPreviewActive && !presenter.seekPending
     // S10.1: a guest's transport keys send room intents; the binding refuses each one without its permission.
     readonly property bool roomKeysEnabled: room !== null && room.available && room.role === 2 && navigationShortcutsEnabled
     readonly property bool inlinePageClosingAllowed: inlinePages && currentPage !== "home" && currentPage !== "queue" && !playlistsPanel.blockingUiOpen && !libraryPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !lyricsPanel.queryOpen && !browserError.visible && !windowNotice.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
@@ -675,7 +675,7 @@ ApplicationWindow {
             contract: window.uiContract
             lyrics: window.lyrics
             trackIdentity: window.presenter.currentOccurrenceId
-            readerCanSeek: window.presenter.seekable
+            readerCanSeek: window.presenter.seekable && !transport.roomGuest
             readerBottomInset: playerFooter.height
             readerTextSize: window.presenter.lyricsTextSize
             enabled: !window.presenter.exiting
