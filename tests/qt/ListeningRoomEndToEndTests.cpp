@@ -691,9 +691,9 @@ class ListeningRoomEndToEndTests final : public QObject {
     }
 
     // S12.1: a DJ's own file goes up through the real transport, the host checks it with the local-import
-    // rules and queues it as Ana's; it stays and reaches Bia after Ana leaves; once it leaves the queue its file
-    // leaves the host's upload cache.
-    void aGuestsOwnTrackIsCheckedQueuedOutlivesItsOwnerAndFreesItsFileOnceItLeaves() {
+    // rules and queues it as Ana's; it stays and reaches Bia after Ana leaves; once it has played it leaves the
+    // queue and its file the host's upload cache.
+    void aGuestsOwnTrackIsCheckedQueuedOutlivesItsOwnerAndLeavesOnceItHasPlayed() {
 #ifndef RC_MUSIC_E2E_UPLOAD_PROBE
         QSKIP("built without the TagLib metadata extractor");
 #else
@@ -741,10 +741,13 @@ class ListeningRoomEndToEndTests final : public QObject {
         QTRY_VERIFY_WITH_TIMEOUT(std::ranges::find(bia_inbox.completed, sha) != bia_inbox.completed.end(), connect_ms);
         QVERIFY(bia.guest.localFile(sha).has_value());
 
-        // Fix round 1: the item leaves the queue, and its file the host's upload cache at once (not only when the
-        // room ends), so the cache's quota is not used up by tracks that are gone.
-        QVERIFY(app.player.remove(LocalQueueOccurrenceId{queued->id}));
-        QVERIFY(!app.item(sha).has_value());
+        // Fix rounds 1 and 2: once it has played (current, then the room moves on) it leaves the queue, and its
+        // file the host's upload cache, so the cache's quota is not used up by tracks that are gone.
+        QVERIFY(app.player.next());
+        QCOMPARE(app.host.snapshot().playback.current_item, queued->id);
+        app.player.repeat = true;
+        QVERIFY(app.player.next());
+        QTRY_VERIFY_WITH_TIMEOUT(!app.item(sha).has_value() && app.player.paths().size() == 1, connect_ms);
         QTRY_COMPARE_WITH_TIMEOUT(app.uploadedFiles(), QStringList{}, connect_ms);
 
         // The room ends with the host's own track only.

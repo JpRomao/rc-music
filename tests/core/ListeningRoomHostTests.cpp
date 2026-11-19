@@ -2054,4 +2054,124 @@ TEST_CASE("room host: taking the upload permission away stops the guest's upload
     REQUIRE(f.player.paths().size() == 3);
 }
 
+// S12.1 fix round 2 (spec: guest songs leave "quando tocam"): once a guest item has been current and the room
+// moves on to another item, it leaves the host's queue (on the next scheduler turn) and frees its file.
+TEST_CASE("room host: a guest track leaves the queue once it has played and frees its file",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    uploadUntilComplete(f, *dj);
+    const auto item = findItem(f.host->snapshot(), upload_sha);
+    REQUIRE(item.has_value());
+    // a, guest, b, c
+    REQUIRE(f.player.move(LocalQueueOccurrenceId{item->id}, 1));
+    f.runScheduled();
+    REQUIRE(f.player.paths().size() == 4);
+
+    REQUIRE(f.player.next());
+    REQUIRE(f.host->snapshot().playback.current_item == item->id);
+    f.runScheduled();
+    // While it is current it stays.
+    REQUIRE(f.player.paths().size() == 4);
+    REQUIRE(f.uploads.discarded.empty());
+
+    REQUIRE(f.player.next());
+    f.runScheduled();
+    REQUIRE(f.player.paths() == std::vector<std::filesystem::path>{"music/a.mp3", "music/b.mp3", "music/c.mp3"});
+    REQUIRE(findItem(f.host->snapshot(), upload_sha) == std::nullopt);
+    REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
+    // Host tracks that played stay; Previous goes back to them, never to the guest track.
+    REQUIRE(f.player.previous());
+    REQUIRE(f.player.currentIndex() == std::size_t{0});
+    REQUIRE(f.player.paths().size() == 3);
+}
+
+// The last item: the end of the queue, or a wrap with repeat on, is moving on too. A guest track never yet
+// current stays, and one that comes back to current before the scheduler turn stays.
+TEST_CASE("room host: a played guest track also leaves at the end of the queue or when repeat wraps",
+          "[core][listening-room][room-host][room-uploads]") {
+    SECTION("repeat wraps to the first item") {
+        HostFixture f;
+        f.start();
+        static_cast<void>(f.host->open({}));
+        auto dj = f.join("fp-dj", "Bia");
+        uploadUntilComplete(f, *dj);
+        const auto item = findItem(f.host->snapshot(), upload_sha);
+        REQUIRE(item.has_value());
+        f.player.repeat = true;
+        REQUIRE(f.player.next());
+        REQUIRE(f.player.next());
+        f.runScheduled();
+        REQUIRE(f.player.paths().size() == 4); // not yet current: stays
+        REQUIRE(f.player.next());
+        REQUIRE(f.host->snapshot().playback.current_item == item->id);
+        REQUIRE(f.player.next());
+        REQUIRE(f.player.currentIndex() == std::size_t{0});
+        f.runScheduled();
+        REQUIRE(f.player.paths().size() == 3);
+        REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
+    }
+    SECTION("the queue ends and clears the selection") {
+        HostFixture f;
+        f.start();
+        static_cast<void>(f.host->open({}));
+        auto dj = f.join("fp-dj", "Bia");
+        uploadUntilComplete(f, *dj);
+        f.player.queue_end = QueueEndBehavior::StopClearSelection;
+        for (int step = 0; step < 3; ++step)
+            REQUIRE(f.player.next());
+        f.player.finishTrack();
+        REQUIRE_FALSE(f.player.currentIndex().has_value());
+        f.runScheduled();
+        REQUIRE(f.player.paths().size() == 3);
+        REQUIRE(f.uploads.discarded == std::vector<std::string>{upload_sha});
+    }
+    SECTION("back to current before the scheduler turn") {
+        HostFixture f;
+        f.start();
+        static_cast<void>(f.host->open({}));
+        auto dj = f.join("fp-dj", "Bia");
+        uploadUntilComplete(f, *dj);
+        const auto item = findItem(f.host->snapshot(), upload_sha);
+        REQUIRE(f.player.move(LocalQueueOccurrenceId{item->id}, 1));
+        REQUIRE(f.player.next());
+        REQUIRE(f.player.next());
+        REQUIRE(f.player.previous());
+        REQUIRE(f.host->snapshot().playback.current_item == item->id);
+        f.runScheduled();
+        REQUIRE(f.player.paths().size() == 4);
+        REQUIRE(f.uploads.discarded.empty());
+    }
+}
+
+// Fix round 2: another member declaring a hash that is on its way is refused; the owner's upload goes on.
+TEST_CASE("room host: another member declaring a file already on its way is refused",
+          "[core][listening-room][room-host][room-uploads]") {
+    HostFixture f;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj", "Bia");
+    auto listener = f.join("fp-listener", "Lia");
+    REQUIRE(f.host->setOverride("fp-listener", RoomPermission::UploadOwnTracks, true));
+    dj->intent(40, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    static_cast<void>(dj->link->sendControl(RoomFileOffer{upload_sha, 5000, 77}));
+    REQUIRE(f.uploads.accepted.size() == 1);
+
+    listener->intent(1, RoomIntent{.kind = RoomIntentKind::AddItems, .uploaded = declaredUpload()});
+    REQUIRE(listener->all<RoomIntentRejected>() ==
+            std::vector<RoomIntentRejected>{{1, IntentRejection::InvalidArgument}});
+    REQUIRE(listener->all<RoomFileRequest>().empty());
+    REQUIRE(f.uploads.abandoned.empty());
+    REQUIRE(f.uploads.discarded.empty());
+    // The DJ's upload goes on and joins the queue as the DJ's.
+    static_cast<void>(dj->link->sendMedia(chunk(77, 0, 5000)));
+    f.uploads.complete(upload_sha);
+    const auto item = findItem(f.host->snapshot(), upload_sha);
+    REQUIRE(item.has_value());
+    REQUIRE(item->owner_fingerprint == "fp-dj");
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+}
+
 } // namespace music_player::m0::test

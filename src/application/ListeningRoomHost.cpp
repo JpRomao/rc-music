@@ -1001,6 +1001,16 @@ bool ListeningRoomHost::rebuild() {
     for (std::size_t index = 0; index < items.size(); ++index)
         if (player.queue.current_occurrence_id == std::optional{items[index].occurrence_id})
             current_index = index;
+    // A guest item that was current and no longer is has played: it leaves on the next scheduler turn (not from
+    // inside the player's notification).
+    const auto now_current =
+        player.queue.current_occurrence_id ? std::optional{player.queue.current_occurrence_id->value} : std::nullopt;
+    if (const auto played = std::exchange(last_current_, now_current);
+        played && played != now_current && guest_items_.contains(*played))
+        schedule_(0, [alive = std::weak_ptr<Alive>{alive_}, generation = generation_, occurrence = *played] {
+            if (const auto self = alive.lock())
+                self->host->removePlayedGuestItem(generation, occurrence);
+        });
     // The room queue runs from the current item forward (the play order, see RoomHostPlayer): at most
     // maximum_room_queue_items items and only as many as keep the guests' state within
     // maximum_room_control_message_bytes by estimatedRoomStateBytes.
@@ -1295,6 +1305,15 @@ void ListeningRoomHost::onUploadWatch(const std::string& sha256, const std::uint
     refuseUpload(sha256, IntentRejection::UnknownItem);
 }
 
+void ListeningRoomHost::removePlayedGuestItem(const std::uint64_t generation, const std::uint64_t occurrence) {
+    if (generation != generation_ || !room_ || !guest_items_.contains(occurrence))
+        return;
+    const auto current = player_.state().queue.current_occurrence_id;
+    if (current && current->value == occurrence)
+        return;
+    static_cast<void>(player_.remove(LocalQueueOccurrenceId{occurrence}));
+}
+
 bool ListeningRoomHost::mayUpload(const std::string_view fingerprint) const {
     return roster_.effectivePermissions(fingerprint).test(static_cast<std::size_t>(RoomPermission::UploadOwnTracks));
 }
@@ -1572,6 +1591,7 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
     unreadable_.clear();
     held_.clear();
     kicked_away_.clear();
+    last_current_.reset();
     reanchor_ = false;
     current_ = RoomSnapshot{.version = current_.version + 1};
     sent_view_ = {};

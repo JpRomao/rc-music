@@ -203,6 +203,9 @@ struct ListeningRoomHostDependencies final {
 //     nothing stays unless a queued guest item still uses that file.
 //   - A roster change that takes UploadOwnTracks away from an owner refuses its uploads in flight
 //     (MissingPermission, files discarded); the probe's answer is checked against the permission again.
+//   - A guest item that has been current leaves the player's queue once another item (or none) is current:
+//     it played (spec: guest songs leave "quando tocam"). The removal runs on the next scheduler turn and is
+//     skipped when the item is current again by then. Previous never returns to it; repeat does not replay it.
 //   - A guest item that leaves the player's queue frees its file (uploads->discard) once no other guest item
 //     and no upload in flight uses that hash, so the upload cache holds only files of the queue.
 //   - When the owner's link goes (it left, was kicked or dropped), its uploads in flight stop and their files
@@ -349,6 +352,7 @@ class ListeningRoomHost final {
     void onUploadWatch(const std::string& sha256, std::uint64_t token, std::uint64_t seen_activity);
     [[nodiscard]] bool mayUpload(std::string_view fingerprint) const;
     void freeUploadFiles(const std::vector<std::string>& hashes);
+    void removePlayedGuestItem(std::uint64_t generation, std::uint64_t occurrence);
     void onUploadStatus(std::uint64_t token, const std::string& sha256, const RoomFileStatus& status);
     void onUploadOffer(Connection& connection, const RoomFileOffer& offer);
     void onUploadChunk(const RoomLink* link, RoomFileChunk chunk);
@@ -422,6 +426,8 @@ class ListeningRoomHost final {
     bool serve_scheduled_{false};
     // S12.1: guest uploads in flight, by hash; their cache transfer ids and callback tokens.
     std::map<std::string, Upload, std::less<>> uploading_;
+    // The occurrence current at the last rebuild: a guest item that stops being current has played.
+    std::optional<std::uint64_t> last_current_;
     std::uint32_t next_upload_transfer_id_{0};
     std::uint64_t next_upload_token_{0};
     // Admitted members whose link dropped, held for room_reconnect_window_ms (value: hold token).
