@@ -1970,7 +1970,10 @@ bool PlayerPresenter::restoreRoomSession(const SessionSnapshot& snapshot) {
     if (!current.has_value() && local_track_session_->hasTrack() && !local_track_session_->unload())
         return false;
     local_queue_ = std::move(candidate);
-    if (!local_queue_model_.replace(local_queue_))
+    // An empty session puts the queue away (a guest playing the room releases the player this way).
+    const bool projected = local_queue_.empty() ? local_queue_model_.rowCount() == 0 || local_queue_model_.clear()
+                                                : local_queue_model_.replace(local_queue_);
+    if (!projected)
         throw std::logic_error{"a restored room session could not be projected"};
     navigation_items_ = navigationItems(local_queue_);
     local_recovery_intent_.reset();

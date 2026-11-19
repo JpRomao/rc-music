@@ -586,6 +586,7 @@ class PlayerPresenterTests final : public QObject {
     void roomSessionGateFiltersTheSavedSessionAndHoldsItsPosition();
     void roomSessionGateLeavesTheRoomBeforeTheFinalExitSave();
     void restoredRoomSessionPutsBackTheQueuePaused();
+    void anEmptyRoomSessionPutsTheLocalQueueAway();
     void hostRoomSessionExcludesGuestItems();
     void guestRoomSessionKeepsThePreRoomSession();
     void roomPrivacyNoticeIsMarkedOnceAndPersisted();
@@ -9821,6 +9822,27 @@ void PlayerPresenterTests::restoredRoomSessionPutsBackTheQueuePaused() {
     // Restoring the session it already has changes nothing.
     QVERIFY(presenter.restoreRoomSession(saved));
     QCOMPARE(backend.loaded_paths.size(), loads + 1);
+}
+
+// S9.1: a guest playing the room releases the shared player this way; its saved session comes back on leave.
+void PlayerPresenterTests::anEmptyRoomSessionPutsTheLocalQueueAway() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    PresenterMetadataReader metadata;
+    const auto sources = roomSources(2);
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    const auto saved = presenter.liveSessionSnapshot();
+    const auto unloads = backend.unload_calls;
+
+    QVERIFY(presenter.restoreRoomSession(SessionSnapshot{}));
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 0);
+    QCOMPARE(backend.unload_calls, unloads + 1);
+    QCOMPARE(presenter.liveSessionSnapshot().queue, SessionSnapshot{}.queue);
+
+    QVERIFY(presenter.restoreRoomSession(saved));
+    QCOMPARE(presenter.playlistQueueSnapshot(), saved.queue);
 }
 
 void PlayerPresenterTests::hostRoomSessionExcludesGuestItems() {
