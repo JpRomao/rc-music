@@ -297,6 +297,28 @@ TestCase {
         compare(findChild(shell, "player-repeat").disabledReason, "");
     }
 
+    // S9.1: a guest's player belongs to the room; its own queue waits until it leaves.
+    function test_aGuestCannotOpenOrAddLocalFiles() {
+        joinAsGuest();
+        createShell();
+        shell.setQueueOpen(true);
+        tryVerify(() => findChild(testCase.shell, "queue-panel").visible);
+        const add = findChild(shell, "queue-add");
+        verify(add);
+        verify(!add.enabled);
+        const reason = "Durante a sala você ouve a fila do anfitrião. A sua fila volta quando você sair.";
+        compare(add.Accessible.description, reason);
+        verify(add.ToolTip.text.indexOf(reason) >= 0);
+        keySequence("Ctrl+O");
+        verify(!shell.audioSelectionPending);
+        verify(!localPresenter.selectingAudioFiles);
+
+        fakeRoom.role = 0;
+        fakeRoom.state = "idle";
+        verify(findChild(shell, "queue-add").enabled);
+        compare(findChild(shell, "queue-add").Accessible.description, "");
+    }
+
     function test_aPendingRequestOffersAcceptAndRejectByKeyboard() {
         fakeRoom.role = 1;
         fakeRoom.state = "open";

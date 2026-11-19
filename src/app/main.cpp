@@ -982,7 +982,7 @@ int main(int argc, char* argv[]) {
         // put away first and comes back from the saved session when it leaves.
         room_dependencies.guest_backend = &backend;
         room_dependencies.release_local_session = [&presenter] {
-            static_cast<void>(presenter.restoreRoomSession(music_player::m0::SessionSnapshot{}));
+            return presenter.restoreRoomSession(music_player::m0::SessionSnapshot{});
         };
         room_dependencies.room_position = [&room_lyrics_position, &lyrics_binding,
                                            &update_lyrics](const std::optional<std::int64_t> position_ms) {
@@ -1041,12 +1041,16 @@ int main(int argc, char* argv[]) {
 #endif
         // Autosave stores what the room allows (never guest items; a guest's own pre-room session);
         // leaving or closing runs in requestExit before the final save.
-        presenter.setRoomSessionGate({.filter =
-                                          [&room_binding](music_player::m0::SessionSnapshot live) {
-                                              return room_binding.sessionForAutosave(std::move(live));
-                                          },
-                                      .hold_position = [&room_binding] { return room_binding.holdsLocalSession(); },
-                                      .before_exit = [&room_binding] { room_binding.shutdown(); }});
+        presenter.setRoomSessionGate(
+            {.filter =
+                 [&room_binding](music_player::m0::SessionSnapshot live) {
+                     return room_binding.sessionForAutosave(std::move(live));
+                 },
+             .hold_position = [&room_binding] { return room_binding.holdsLocalSession(); },
+             .before_exit = [&room_binding] { room_binding.shutdown(); },
+             // S9.1: while a guest holds its pre-room session, nothing local enters
+             // the queue or loads over the room.
+             .blocks_local_sources = [&room_binding] { return room_binding.holdsLocalSession(); }});
         const auto unhook_room = qScopeGuard([&presenter] { presenter.setRoomSessionGate({}); });
         QVariantMap initial_properties{{QStringLiteral("uiContract"), QVariant::fromValue(&contract)},
                                        {QStringLiteral("presenter"), QVariant::fromValue(&presenter)},

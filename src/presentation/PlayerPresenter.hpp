@@ -85,6 +85,9 @@ struct PlayerPresenterRoomSessionGate final {
     std::function<SessionSnapshot(SessionSnapshot)> filter{};
     std::function<bool()> hold_position{};
     std::function<void()> before_exit{};
+    // S9.1: true while a guest follows a room on the shared player (until its pre-room session is back).
+    // Opening, adding, importing and appending sources are refused meanwhile.
+    std::function<bool()> blocks_local_sources{};
 };
 
 // One optional application-thread participant. begin is irreversible for the
@@ -620,6 +623,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool beginAudioFileSelection(bool append_only);
     void finishAudioFileSelection(std::uint64_t generation, AudioFilesSelectionResult result);
     void cancelAudioFileSelection() noexcept;
+    [[nodiscard]] bool localSourcesBlocked() const;
     [[nodiscard]] bool openSelectedAudio(const std::vector<std::filesystem::path>& selected_paths);
     [[nodiscard]] bool addSelectedAudio(const std::vector<std::filesystem::path>& selected_paths);
     void finishPublishedAudioAppend();

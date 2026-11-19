@@ -587,6 +587,7 @@ class PlayerPresenterTests final : public QObject {
     void roomSessionGateLeavesTheRoomBeforeTheFinalExitSave();
     void restoredRoomSessionPutsBackTheQueuePaused();
     void anEmptyRoomSessionPutsTheLocalQueueAway();
+    void aGuestFollowingTheRoomAddsNoLocalSources();
     void hostRoomSessionExcludesGuestItems();
     void guestRoomSessionKeepsThePreRoomSession();
     void roomPrivacyNoticeIsMarkedOnceAndPersisted();
@@ -9843,6 +9844,39 @@ void PlayerPresenterTests::anEmptyRoomSessionPutsTheLocalQueueAway() {
 
     QVERIFY(presenter.restoreRoomSession(saved));
     QCOMPARE(presenter.playlistQueueSnapshot(), saved.queue);
+}
+
+// S9.1: while a guest follows the room on the shared player, nothing new enters the local queue (it would
+// be replaced when the pre-room session comes back) and nothing local loads over the room.
+void PlayerPresenterTests::aGuestFollowingTheRoomAddsNoLocalSources() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    backend.accepted_load_status = PlaybackStatus::Ready;
+    PresenterMetadataReader metadata;
+    const auto sources = roomSources(2);
+    int picks = 0;
+    PlayerPresenter presenter(platform, backend, metadata, [&picks, sources] {
+        ++picks;
+        return sources;
+    });
+    bool following = true;
+    presenter.setRoomSessionGate({.blocks_local_sources = [&following] { return following; }});
+
+    QVERIFY(!presenter.openAudio());
+    QVERIFY(!presenter.addAudio());
+    QCOMPARE(picks, 0);
+    QVERIFY(!presenter.appendPlaylistSources({sources.front()}));
+    QVERIFY(!presenter.openSourcePaths({sources.front()}, 0));
+    bool committed = true;
+    QVERIFY(!presenter.appendPublishedAudio(sources.back(), committed));
+    QVERIFY(!committed);
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 0);
+    QVERIFY(backend.loaded_paths.empty());
+
+    following = false;
+    QVERIFY(presenter.openAudio());
+    QCOMPARE(picks, 1);
+    QCOMPARE(presenter.queueModelObject()->rowCount(), 2);
 }
 
 void PlayerPresenterTests::hostRoomSessionExcludesGuestItems() {

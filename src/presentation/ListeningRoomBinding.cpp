@@ -381,6 +381,9 @@ void ListeningRoomBinding::startGuest() {
         setError(tr("Crie seu perfil antes de usar a sala."));
         return;
     }
+    // The room waits for the local queue to let go of the player.
+    if (follower_)
+        follower_->setHeld(true);
     guest_ = std::make_unique<ListeningRoomGuest>(ListeningRoomGuestDependencies{
         .connector = *network_->guest_connector,
         .profile = *profile,
@@ -459,12 +462,9 @@ void ListeningRoomBinding::hostEndpointFailed(const RoomLinkFailure failure) {
 void ListeningRoomBinding::guestChanged() {
     // The guest captured its pre-room session: the local queue leaves the shared player before the room
     // plays on it. Once per room; a reconnect keeps the same saved session.
-    if (follower_ && !local_session_released_ && guest_ && guest_->holdsLocalSession()) {
-        local_session_released_ = true;
-        if (dependencies_.release_local_session)
-            dependencies_.release_local_session();
-        follow_timer_.start();
+    if (follower_ && !position_timer_.isActive() && !local_session_released_ && guest_ && guest_->holdsLocalSession()) {
         position_timer_.start();
+        takeOverPlayer();
     }
     refreshMembers();
     publish();
@@ -475,8 +475,24 @@ void ListeningRoomBinding::followTick() {
         follower_->tick();
 }
 
+// One owner of the player at a time: until the local queue lets go of it (it refuses while busy), the
+// follower is held and the binding asks again on every position tick.
+void ListeningRoomBinding::takeOverPlayer() {
+    if (!follower_ || !guest_ || local_session_released_)
+        return;
+    if (dependencies_.release_local_session && !dependencies_.release_local_session())
+        return;
+    local_session_released_ = true;
+    follower_->setHeld(false);
+    follow_timer_.start();
+}
+
 void ListeningRoomBinding::feedPosition() {
-    if (!follower_ || !guest_ || !local_session_released_ || !dependencies_.room_position)
+    if (!local_session_released_) {
+        takeOverPlayer();
+        return;
+    }
+    if (!follower_ || !guest_ || !dependencies_.room_position)
         return;
     feeding_position_ = true;
     dependencies_.room_position(std::max<std::int64_t>(dependencies_.guest_backend->snapshot().position_ms, 0));
@@ -506,6 +522,8 @@ void ListeningRoomBinding::stopFollowing() {
     follow_timer_.stop();
     position_timer_.stop();
     local_session_released_ = false;
+    if (follower_)
+        follower_->setHeld(true);
     if (std::exchange(feeding_position_, false) && dependencies_.room_position)
         dependencies_.room_position(std::nullopt);
 }

@@ -313,7 +313,8 @@ ApplicationWindow {
         ++audioSelectionFocusRevision;
     }
     function openAudio(opener) {
-        if (presenter.exiting || presenter.selectingAudioFiles || presenter.locatingOccurrenceId.length > 0)
+        // S9.1: a guest's player belongs to the room until it leaves.
+        if (roomGuest || presenter.exiting || presenter.selectingAudioFiles || presenter.locatingOccurrenceId.length > 0)
             return;
         prepareAudioSelection(opener);
         openAudioRequested();

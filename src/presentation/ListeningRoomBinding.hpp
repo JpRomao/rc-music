@@ -85,10 +85,12 @@ struct ListeningRoomBindingDependencies final {
     // follows the room's queue and plays nothing (tests and the E2E stay silent). It must outlive the
     // binding.
     PlaybackBackend* guest_backend{nullptr};
-    // Puts the local queue away once a guest holds its pre-room session, so the local transport never
-    // fights the room on the shared player (PlayerPresenter::restoreRoomSession with an empty session).
-    // The session comes back from capture_session's copy when the guest leaves. Only with guest_backend.
-    std::function<void()> release_local_session;
+    // Puts the local queue away once a guest holds its pre-room session, so only the room drives the
+    // shared player (PlayerPresenter::restoreRoomSession with an empty session). false: the local player
+    // is busy and keeps it for now; the room stays held and the binding asks again every
+    // room_position_feed_ms. The session comes back from capture_session's copy when the guest leaves.
+    // Only with guest_backend.
+    std::function<bool()> release_local_session;
     // While a guest plays the room: the player's position every room_position_feed_ms (the lyrics
     // panel follows it), then nullopt once when the guest stops. Only with guest_backend.
     std::function<void(std::optional<std::int64_t> position_ms)> room_position;
@@ -195,6 +197,7 @@ class ListeningRoomBinding final : public QObject {
     void giveBackLocalSession(const SessionSnapshot& saved);
     void retryGiveBack();
     void followTick();
+    void takeOverPlayer();
     void feedPosition();
     void stopFollowing();
     void setError(QString text);

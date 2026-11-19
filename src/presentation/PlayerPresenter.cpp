@@ -1814,7 +1814,7 @@ PlayerPresenter::WindowNotice PlayerPresenter::windowNotice() const noexcept { r
 bool PlayerPresenter::trayNoticeEnabled() const noexcept { return tray_notice_enabled_; }
 bool PlayerPresenter::usesFrozenFixture() const noexcept { return uses_frozen_fixture_; }
 bool PlayerPresenter::openAudio() {
-    if (download_append_in_progress_)
+    if (download_append_in_progress_ || localSourcesBlocked())
         return false;
     if (exiting_ || file_dialog_cancellation_active_ || selectingAudioFiles() || file_location_request_.has_value())
         return false;
@@ -1830,7 +1830,7 @@ bool PlayerPresenter::openAudio() {
 }
 
 bool PlayerPresenter::openSelectedAudio(const std::vector<std::filesystem::path>& selected_paths) {
-    if (download_append_in_progress_)
+    if (download_append_in_progress_ || localSourcesBlocked())
         return false;
     if (selected_paths.empty())
         return false;
@@ -1874,7 +1874,7 @@ bool PlayerPresenter::openSelectedAudio(const std::vector<std::filesystem::path>
     return true;
 }
 bool PlayerPresenter::addAudio() {
-    if (download_append_in_progress_)
+    if (download_append_in_progress_ || localSourcesBlocked())
         return false;
     if (uses_frozen_fixture_ || exiting_ || file_dialog_cancellation_active_ || selectingAudioFiles() ||
         file_location_request_.has_value())
@@ -1886,7 +1886,7 @@ bool PlayerPresenter::addAudio() {
 }
 
 bool PlayerPresenter::addSelectedAudio(const std::vector<std::filesystem::path>& selected_paths) {
-    if (download_append_in_progress_)
+    if (download_append_in_progress_ || localSourcesBlocked())
         return false;
     if (selected_paths.empty())
         return false;
@@ -1957,6 +1957,10 @@ void PlayerPresenter::refreshRoomSession() {
     static_cast<void>(session_autosave_->scheduleStructural(currentSessionSnapshot()));
     reconcileTimer();
 }
+bool PlayerPresenter::localSourcesBlocked() const {
+    return room_session_gate_.blocks_local_sources && room_session_gate_.blocks_local_sources();
+}
+
 bool PlayerPresenter::restoreRoomSession(const SessionSnapshot& snapshot) {
     if (QThread::currentThread() != thread() || uses_frozen_fixture_ || exiting_ || download_append_in_progress_ ||
         sourceImportActive() || !isValidSessionSnapshot(snapshot))
@@ -2068,7 +2072,7 @@ bool PlayerPresenter::appendLocalSourcesWithoutPlayback(std::vector<std::filesys
                                                         const std::string* download_job_id) {
     committed = false;
     if (QThread::currentThread() != thread() || uses_frozen_fixture_ || exiting_ || download_append_in_progress_ ||
-        file_dialog_cancellation_active_ || sourceImportActive() || selectingAudioFiles() ||
+        localSourcesBlocked() || file_dialog_cancellation_active_ || sourceImportActive() || selectingAudioFiles() ||
         file_location_request_.has_value() || paths.empty() ||
         std::any_of(paths.begin(), paths.end(), [](const auto& path) { return path.empty(); }))
         return false;
@@ -2169,7 +2173,7 @@ bool PlayerPresenter::beginSourceImport(std::vector<std::filesystem::path> roots
                                         const std::optional<std::size_t> insertion_index,
                                         const std::uint64_t boundary_issue_count,
                                         const bool allow_during_source_exit_drain) {
-    if (download_append_in_progress_)
+    if (download_append_in_progress_ || localSourcesBlocked())
         return false;
     if (uses_frozen_fixture_ || (exiting_ && !(allow_during_source_exit_drain && source_exit_drain_active_)) ||
         source_discovery_ == nullptr || sourceImportActive())

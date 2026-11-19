@@ -437,4 +437,36 @@ TEST_CASE("A scheduled start dropped by stop never plays", "[room][follower]") {
     CHECK(h.backend.plays.empty());
 }
 
+TEST_CASE("A held follower never touches the player and enters the room when released", "[room][follower]") {
+    Harness h;
+    h.follower.setHeld(true);
+    h.syncClock();
+    const auto playback = playing(1, h.hostNow() - 5'000, 10'000);
+    h.follower.apply(playback, song);
+    h.tickFor(3);
+    CHECK(h.backend.loads.empty());
+    CHECK(h.backend.seeks.empty());
+    CHECK(h.backend.plays.empty());
+
+    h.follower.setHeld(false);
+    REQUIRE(h.backend.loads == std::vector{song});
+    CHECK(h.backend.snapshot().status == PlaybackStatus::Playing);
+    CHECK(h.backend.snapshot().position_ms == h.expected(playback));
+}
+
+TEST_CASE("Holding a following player cancels its pending work and leaves the player alone", "[room][follower]") {
+    Harness h;
+    h.syncClock();
+    const auto start_host = h.hostNow() + room_play_lead_ms;
+    h.follower.apply(playing(1, start_host, 10'000), song);
+    REQUIRE(h.backend.loads == std::vector{song});
+
+    h.follower.setHeld(true);
+    h.advance(room_play_lead_ms);
+    h.tickFor(2);
+    CHECK(h.backend.plays.empty());
+    CHECK(h.backend.loads == std::vector{song});
+    CHECK(h.backend.unloads == 0);
+}
+
 } // namespace music_player::m0::test

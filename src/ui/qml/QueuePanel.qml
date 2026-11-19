@@ -299,7 +299,9 @@ FocusScope {
                 accessibleName: queueText.add
                 text: "+"
                 contract: root.contract
-                enabled: !root.presenter.exiting && !root.presenter.usesFrozenFixture && !root.presenter.selectingAudioFiles && root.presenter.locatingOccurrenceId.length === 0
+                // S9.1: a guest's player belongs to the room until it leaves.
+                shortcutHint: root.roomGuest ? queueText.guestLocalQueueHeld : ""
+                enabled: !root.roomGuest && !root.presenter.exiting && !root.presenter.usesFrozenFixture && !root.presenter.selectingAudioFiles && root.presenter.locatingOccurrenceId.length === 0
                 onClicked: root.addFiles()
             }
             QueueActionButton {

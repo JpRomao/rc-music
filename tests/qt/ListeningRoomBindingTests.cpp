@@ -125,7 +125,11 @@ struct Fixture final {
             .file_inbox = &inbox,
             .room_lyrics = [this](const QString& lrc) { room_lyrics.push_back(lrc); },
             .guest_backend = guest_backend,
-            .release_local_session = [this] { ++releases; },
+            .release_local_session =
+                [this] {
+                    ++releases;
+                    return release_accepts;
+                },
             .room_position = [this](const std::optional<std::int64_t> position) { room_positions.push_back(position); },
         });
     }
@@ -178,6 +182,8 @@ struct Fixture final {
     int network_loads{0};
     int captures{0};
     int releases{0};
+    // false: the local player keeps its queue for now (busy), so the room must wait for it.
+    bool release_accepts{true};
     std::vector<std::optional<std::int64_t>> room_positions;
     PlaybackBackend* guest_backend{nullptr};
     int session_changes{0};
@@ -186,6 +192,37 @@ struct Fixture final {
     bool notice_shown{false};
     bool active{true};
 };
+
+// The host's clock reads 150 s (the binding's reads 50 s); item 7 ("aaa…") plays from 1 s, started 2 s ago,
+// and its file arrives.
+[[nodiscard]] bool followPlayingRoom(const std::shared_ptr<testing::FakeRoomLink>& host_side,
+                                     const std::shared_ptr<testing::FakeRoomLink>& guest_side, Fixture& f) {
+    const RoomClockPing* ping = nullptr;
+    for (const auto& message : guest_side->sent_control)
+        if (const auto* const found = std::get_if<RoomClockPing>(&message))
+            ping = found;
+    if (ping == nullptr || !host_side->sendControl(RoomClockPong{ping->sent_local_ms, 150'000}))
+        return false;
+    RoomSnapshot room;
+    room.version = 1;
+    room.members.push_back(RoomMember{inviteHostHex(), "Joao", {}, MemberState::Admitted});
+    room.members.push_back(RoomMember{own_hex, "Ana", {}, MemberState::Admitted});
+    RoomItem item;
+    item.id = 7;
+    item.origin = RoomItemOrigin::HostTrack;
+    item.owner_fingerprint = inviteHostHex();
+    item.content_sha256 = std::string(64, 'a');
+    item.size_bytes = 1000;
+    item.summary = RoomTrackSummary{"Primeira", "Artista", "Album", 600'000};
+    item.added_by = "Joao";
+    room.queue.push_back(item);
+    room.playback = RoomPlayback{7, true, 148'000, 1'000};
+    if (!host_side->sendControl(RoomStateMessage{room, {}}) ||
+        !host_side->sendControl(RoomFileOffer{std::string(64, 'a'), 1000, 1}))
+        return false;
+    f.inbox.complete(std::string(64, 'a'));
+    return true;
+}
 
 } // namespace
 
@@ -438,6 +475,39 @@ class ListeningRoomBindingTests final : public QObject {
         binding->leave();
         QCOMPARE(f.restored.back(), pre_room);
         QVERIFY(!binding->holdsLocalSession());
+    }
+
+    // While the local player refuses to let go of its queue (busy), the room never touches the player;
+    // the binding asks again until it lets go, then the room plays in time.
+    void aRefusedReleaseHoldsTheRoomUntilTheLocalPlayerLetsGo() {
+        Fixture f;
+        SilentBackend backend;
+        f.guest_backend = &backend;
+        f.release_accepts = false;
+        auto binding = f.make();
+        QVERIFY(binding->join(Fixture::validLink()));
+        auto [host_side, guest_side] = testing::FakeRoomLink::pair(own_hex, inviteHostHex());
+        f.connector->complete(guest_side);
+        QVERIFY(host_side->sendControl(RoomJoinResult{JoinDecision::Admitted}));
+        QCOMPARE(f.releases, 1);
+        QVERIFY(binding->holdsLocalSession());
+        QVERIFY(followPlayingRoom(host_side, guest_side, f));
+        QTest::qWait(250);
+        QVERIFY(f.releases > 1);
+        QVERIFY(backend.loads.empty());
+        QVERIFY(backend.seeks.empty());
+        QCOMPARE(backend.snapshot().status, PlaybackStatus::Empty);
+        QVERIFY(f.room_positions.empty());
+
+        f.release_accepts = true;
+        QTRY_COMPARE(backend.loads.size(), std::size_t{1});
+        QCOMPARE(backend.seeks, std::vector<std::int64_t>{3'000});
+        QCOMPARE(backend.snapshot().status, PlaybackStatus::Playing);
+        const auto releases = f.releases;
+        QTest::qWait(250);
+        QCOMPARE(f.releases, releases);
+        binding->leave();
+        QCOMPARE(backend.unloads, 1);
     }
 
     // S9.1: with the app's player the guest puts its local queue away once, plays the room's file at

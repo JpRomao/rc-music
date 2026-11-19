@@ -65,7 +65,7 @@ void RoomPlaybackFollower::apply(const RoomPlayback& playback, std::optional<std
 }
 
 void RoomPlaybackFollower::tick() {
-    if (!playback_ || !playback_->playing || !file_ || start_pending_ || retry_pending_ || !ownsBackend())
+    if (held_ || !playback_ || !playback_->playing || !file_ || start_pending_ || retry_pending_ || !ownsBackend())
         return;
     const auto& snapshot = backend_.snapshot();
     const auto expected = expectedNowMs();
@@ -112,6 +112,21 @@ void RoomPlaybackFollower::addClockSample(const ClockSample& sample) {
         enter();
 }
 
+void RoomPlaybackFollower::setHeld(const bool held) {
+    if (held == held_)
+        return;
+    if (held) {
+        reset(); // before held_: a nudge it owns goes back to 1.0
+        held_ = true;
+        return;
+    }
+    held_ = false;
+    reset();
+    enter();
+}
+
+bool RoomPlaybackFollower::held() const noexcept { return held_; }
+
 void RoomPlaybackFollower::stop() {
     reset();
     unloadRoomFile();
@@ -129,7 +144,7 @@ void RoomPlaybackFollower::reset() {
 }
 
 void RoomPlaybackFollower::enter() {
-    if (!playback_ || !playback_->current_item || !file_)
+    if (held_ || !playback_ || !playback_->current_item || !file_)
         return;
     if (loaded_file_ != file_ || !ownsBackend()) {
         endNudge();

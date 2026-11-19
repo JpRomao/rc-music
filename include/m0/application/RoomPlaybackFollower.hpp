@@ -60,6 +60,11 @@ class RoomPlaybackFollower final {
     void apply(const RoomPlayback& playback, std::optional<std::filesystem::path> local_file);
     void tick();
     void addClockSample(const ClockSample& sample);
+    // Held: the player belongs to someone else (the local queue has not let go of it yet). The follower
+    // keeps the room's playback, file and clock but never touches the player; pending starts, retries and
+    // nudges are dropped (a nudge it owns goes back to 1.0). Released, it enters the room at once.
+    void setHeld(bool held);
+    [[nodiscard]] bool held() const noexcept;
     // Leaves the room: pending work is dropped, the room file is unloaded and the clock is forgotten.
     void stop();
 
@@ -98,6 +103,7 @@ class RoomPlaybackFollower final {
     int nudge_direction_{0};
     std::uint64_t nudge_epoch_{0};
     bool rate_supported_{true};
+    bool held_{false};
     std::shared_ptr<Alive> alive_;
 };
 
