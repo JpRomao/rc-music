@@ -101,4 +101,53 @@ TEST_CASE("invite links reject missing hash, missing dot and extra parts", "[cor
     REQUIRE_FALSE(parses(head + "#" + secret_text + "." + fingerprint_text + "#x"));
     REQUIRE_FALSE(parses(head + "#" + secret_text + "." + fingerprint_text + "/"));
 }
+
+// Origin confusion (review ledger 92): every one of these must fail rather than reach a different host or
+// a different secret.
+TEST_CASE("invite links reject userinfo, backslashes, percent-encoding, NUL and lookalike hosts",
+          "[core][listening-room][invite]") {
+    const std::string tail = good.substr(origin.size());
+    const std::string host = origin.substr(std::string{"https://"}.size());
+    // Userinfo: the real origin as a user name in front of another host, or another host after an "@".
+    REQUIRE_FALSE(parses(origin + "@evil.example" + tail));
+    REQUIRE_FALSE(parses("https://evil.example@" + host + tail));
+    REQUIRE_FALSE(parses(origin + ":@evil.example" + tail));
+    REQUIRE_FALSE(parses(origin + "/j/" + room_text + "@evil.example#" + secret_text + "." + fingerprint_text));
+    // Backslashes, which some URL parsers read as slashes.
+    REQUIRE_FALSE(parses("https:\\\\" + host + tail));
+    REQUIRE_FALSE(parses(origin + "\\j\\" + room_text + "#" + secret_text + "." + fingerprint_text));
+    REQUIRE_FALSE(parses(origin + "\\@evil.example" + tail));
+    // Percent-encoding anywhere: in the host, the path or the fragment.
+    REQUIRE_FALSE(parses("https://rc%2Dmusic-room.example.workers.dev" + tail));
+    REQUIRE_FALSE(parses(origin + "%2Fj%2F" + room_text + "#" + secret_text + "." + fingerprint_text));
+    REQUIRE_FALSE(parses(origin + "/j/" + room_text + "%23" + secret_text + "." + fingerprint_text));
+    REQUIRE_FALSE(parses(origin + "/j/" + room_text + "#%45" + secret_text.substr(1) + "." + fingerprint_text));
+    // NUL bytes, which C strings would cut.
+    const std::string nul(1, '\0');
+    REQUIRE_FALSE(parses(origin + nul + ".evil.example" + tail));
+    REQUIRE_FALSE(parses(origin + nul + tail));
+    REQUIRE_FALSE(parses(good + nul));
+    REQUIRE_FALSE(parses(origin + "/j/" + room_text + "#" + secret_text + nul + "." + fingerprint_text));
+    // Lookalike hosts: Cyrillic "o" (UTF-8 D0 BE), its punycode form, a trailing dot, a longer suffix.
+    REQUIRE_FALSE(parses("https://rc-music-r\xD0\xBE\xD0\xBEm.example.workers.dev" + tail));
+    REQUIRE_FALSE(parses("https://xn--rc-music-rm-4wg.example.workers.dev" + tail));
+    REQUIRE_FALSE(parses(origin + "." + tail));
+    REQUIRE_FALSE(parses("https://rc-music-room.example.workers.dev.evil.example" + tail));
+    REQUIRE_FALSE(parses("https://rc-music-room.example.workers.de" + tail));
+}
+
+TEST_CASE("invite links reject a non-canonical secret", "[core][listening-room][invite]") {
+    const auto with_secret = [&](const std::string& secret) {
+        return parses(origin + "/j/" + room_text + "#" + secret + "." + fingerprint_text);
+    };
+    REQUIRE(with_secret(secret_text));
+    // Same 16 bytes, but the last symbol carries non-zero trailing bits ('x', 'y', 'z' instead of 'w').
+    REQUIRE_FALSE(with_secret("EBESExQVFhcYGRobHB0eHx"));
+    REQUIRE_FALSE(with_secret("EBESExQVFhcYGRobHB0eHy"));
+    REQUIRE_FALSE(with_secret("EBESExQVFhcYGRobHB0eHz"));
+    // Padding, the standard (not url-safe) alphabet and blanks inside are not the same secret either.
+    REQUIRE_FALSE(with_secret(secret_text + "=="));
+    REQUIRE_FALSE(with_secret("EBESExQVFhcYGRobHB0eH/"));
+    REQUIRE_FALSE(with_secret("EBESExQVFhcY GRobHB0eHw"));
+}
 } // namespace music_player::m0::test
