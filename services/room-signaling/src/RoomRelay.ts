@@ -15,7 +15,8 @@
 // Enquanto houver algo no armazenamento, há sempre um alarme pendente. Com o host conectado, o
 // alarme só se rearma para daqui a 10 minutos. Assim, se o objeto reiniciar com o host conectado
 // (deploy, despejo, troca de máquina), os sockets caem sem eventos de saída, e o alarme seguinte
-// ainda apaga tudo: no pior caso, até 20 minutos depois da queda.
+// ainda apaga tudo: o alarme nunca fica mais de 10 minutos à frente, então no pior caso é 10 minutos
+// depois da queda.
 //
 // Usa a API de hibernação: o papel, o peer e um id de conexão ficam em `serializeAttachment`.
 
