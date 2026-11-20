@@ -43,6 +43,20 @@ GridLayout {
     }
     readonly property bool playbackEnabled: presenter.playbackState === PlayerPresenter.Playing || presenter.playbackState === PlayerPresenter.Paused || presenter.playbackState === PlayerPresenter.Ready
     enabled: roomGuest || playbackEnabled || presenter.canGoPrevious || presenter.canGoNext
+    // A guest still entering has no host or count yet. The host nickname is filled last: arg() never reads
+    // placeholders inside text it inserted, so a nickname cannot change the badge.
+    function roomBadgeText() {
+        if (!inRoom)
+            return "";
+        const count = room.memberCount;
+        if (room.role === 1)
+            return count === 1 ? roomLabels.badgeSelfOne : roomLabels.badgeSelf.arg(count);
+        if (room.state === "connecting" || room.state === "waiting")
+            return roomLabels.badgeJoining;
+        if (room.hostNickname.length === 0)
+            return count === 1 ? roomLabels.badgeUnnamedOne : roomLabels.badgeUnnamed.arg(count);
+        return count === 1 ? roomLabels.badgeOne.arg(room.hostNickname) : roomLabels.badge.arg(count).arg(room.hostNickname);
+    }
     function roomDisabledReason(allowed) {
         return roomGuest && !allowed ? queueLabels.hostNotAllowed : "";
     }
@@ -353,7 +367,7 @@ GridLayout {
             Rectangle {
                 id: roomBadge
                 objectName: "player-room-badge"
-                readonly property string text: !root.inRoom ? "" : (root.room.role === 1 ? roomLabels.badgeSelf.arg(root.room.memberCount) : roomLabels.badge.arg(root.room.hostNickname).arg(root.room.memberCount))
+                readonly property string text: root.roomBadgeText()
                 visible: root.inRoom
                 Layout.alignment: Qt.AlignVCenter
                 Layout.maximumWidth: 260

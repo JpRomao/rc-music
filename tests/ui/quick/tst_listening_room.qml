@@ -441,6 +441,47 @@ TestCase {
         tryVerify(() => !badge.visible);
     }
 
+    function addMember(nickname, isHost, isSelf) {
+        fakeRoom.members.append({
+            fingerprint: "fp-" + nickname,
+            nickname: nickname,
+            avatarSource: "qrc:/rc_music/avatars/avatar-03.svg",
+            isHost: isHost,
+            isSelf: isSelf,
+            hasSyncDrift: false,
+            syncDriftMs: 0
+        });
+    }
+
+    // A nickname is text, never a template; one person is "pessoa"; a guest still entering has no count.
+    function test_theTransportBadgeTextIsSafeCountedAndKnowsAGuestStillEntering() {
+        createShell();
+        const badge = findChild(shell, "player-room-badge");
+        fakeRoom.role = 2;
+        fakeRoom.state = "connecting";
+        tryVerify(() => badge.visible);
+        compare(badge.text, "Entrando na sala…");
+        fakeRoom.state = "waiting";
+        compare(badge.text, "Entrando na sala…");
+        fakeRoom.state = "joined";
+        fakeRoom.hostNickname = "%2 e %1";
+        addMember("%2 e %1", true, false);
+        addMember("Eu", false, true);
+        compare(badge.text, "Na sala de %2 e %1 · 2 pessoas");
+        fakeRoom.role = 1;
+        fakeRoom.state = "open";
+        fakeRoom.hostNickname = "";
+        fakeRoom.members.clear();
+        addMember("Joao", true, true);
+        compare(badge.text, "Sua sala · 1 pessoa");
+        addMember("Bia", false, false);
+        compare(badge.text, "Sua sala · 2 pessoas");
+        fakeRoom.role = 0;
+        fakeRoom.state = "idle";
+        fakeRoom.members.clear();
+        tryVerify(() => !badge.visible);
+    }
+
     // S9.2: the host's member list shows each person's sync difference, never the fingerprint.
     function test_theHostSeesTheSyncDifferenceOfEachPerson() {
         fakeRoom.role = 1;
