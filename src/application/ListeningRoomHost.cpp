@@ -703,18 +703,8 @@ std::optional<IntentRejection> ListeningRoomHost::apply(const RoomIntent& intent
         reanchor_ = true; // A seek is a discrete event even when it moves less than the tolerance.
         return accepted(player_.seek(intent.position_ms));
     case RoomIntentKind::Pause:
-        if (start_wait_ != 0) {
-            // The start the player waits for does not happen: the room pauses where it is.
-            start_wait_ = 0;
-            reanchor_ = true;
-            if (player_.state().status == PlaybackStatus::Playing)
-                static_cast<void>(player_.pause());
-            return std::nullopt;
-        }
         return player_.state().status == PlaybackStatus::Playing ? accepted(player_.pause()) : std::nullopt;
     case RoomIntentKind::Resume:
-        if (start_wait_ != 0)
-            return std::nullopt; // already starting
         return player_.state().status == PlaybackStatus::Playing ? std::nullopt : accepted(player_.play());
     case RoomIntentKind::RemoveItem:
         return player_.remove(LocalQueueOccurrenceId{intent.item_id})
@@ -1052,35 +1042,23 @@ bool ListeningRoomHost::rebuild() {
     if (current_index && !next.queue.empty() && next.queue.front().id == items[*current_index].occurrence_id.value) {
         auto& playback = next.playback;
         playback.current_item = items[*current_index].occurrence_id.value;
-        // While the host's player waits for a start instant it is silent only for that: the room plays.
-        const bool waiting = start_wait_ != 0;
-        playback.playing = waiting || player.status == PlaybackStatus::Playing;
+        playback.playing = player.status == PlaybackStatus::Playing;
         const auto position = std::max<std::int64_t>(player.position_ms, 0);
         const auto now = host_clock_ms_();
         const auto& previous = current_.playback;
         const auto expected = expectedPositionMs(previous, now);
         const auto drift = expected > position ? expected - position : position - expected;
-        const bool forced = std::exchange(reanchor_, false);
-        const bool same_item = previous.current_item == playback.current_item;
         // Item changes, play/pause and seeks always re-anchor; otherwise the anchor stays while the
         // player is within room_anchor_tolerance_ms of it, so position jitter neither bumps the version
-        // nor broadcasts. A start the player waits for keeps its anchor until the player starts.
-        if (waiting && same_item && !forced) {
-            playback.anchor_host_ms = previous.anchor_host_ms;
-            playback.anchor_position_ms = previous.anchor_position_ms;
-        } else if (!waiting && !forced && same_item && previous.playing == playback.playing &&
-                   drift <= room_anchor_tolerance_ms) {
+        // nor broadcasts.
+        const bool forced = std::exchange(reanchor_, false);
+        if (!forced && previous.current_item == playback.current_item && previous.playing == playback.playing &&
+            drift <= room_anchor_tolerance_ms) {
             playback.anchor_host_ms = previous.anchor_host_ms;
             playback.anchor_position_ms = previous.anchor_position_ms;
         } else {
-            start_wait_ = 0;
-            // A start (new item, resume or seek while playing) with guests in the room is room_play_lead_ms
-            // ahead, so every guest has the anchor before it; the host's player waits for it too.
-            const bool starts = playback.playing && (forced || !same_item || !previous.playing);
-            playback.anchor_host_ms = starts && anyAdmittedGuest() ? now + room_play_lead_ms : now;
+            playback.anchor_host_ms = now;
             playback.anchor_position_ms = position;
-            if (playback.anchor_host_ms != now)
-                waitForStart();
         }
     }
 
@@ -1110,37 +1088,6 @@ bool ListeningRoomHost::rebuild() {
     if (onChanged)
         onChanged(current_);
     return broadcast;
-}
-
-bool ListeningRoomHost::anyAdmittedGuest() const {
-    const auto members = room_->members();
-    return std::any_of(members.begin(), members.end(),
-                       [](const RoomMember& member) { return member.state == MemberState::Admitted; });
-}
-
-// The host's player goes silent on the next scheduler turn (not from inside the player's notification) and
-// plays at the start instant, room_play_lead_ms after the anchor was taken. A newer anchor or a Pause replaces
-// the wait (start_wait_ changes) and these tasks do nothing.
-void ListeningRoomHost::waitForStart() {
-    const auto token = start_wait_ = ++next_start_wait_;
-    const std::weak_ptr<Alive> alive = alive_;
-    schedule_(0, [alive, generation = generation_, token] {
-        const auto self = alive.lock();
-        if (!self || generation != self->host->generation_ || token != self->host->start_wait_)
-            return;
-        if (self->host->player_.state().status == PlaybackStatus::Playing)
-            static_cast<void>(self->host->player_.pause());
-    });
-    schedule_(room_play_lead_ms, [alive, generation = generation_, token] {
-        const auto self = alive.lock();
-        if (!self || generation != self->host->generation_ || token != self->host->start_wait_)
-            return;
-        auto& host = *self->host;
-        host.start_wait_ = 0;
-        if (host.player_.state().status != PlaybackStatus::Playing)
-            static_cast<void>(host.player_.play());
-        static_cast<void>(host.refresh()); // also when the player refused to play
-    });
 }
 
 void ListeningRoomHost::admitted(const std::shared_ptr<RoomLink>& link) {
@@ -1658,9 +1605,6 @@ void ListeningRoomHost::end(const RoomByeReason reason) {
         return;
     invite_.reset();
     room_.reset();
-    // A start the player was waiting for happens now: the host's music goes on without the room.
-    if (std::exchange(start_wait_, 0) != 0 && player_.state().status != PlaybackStatus::Playing)
-        static_cast<void>(player_.play());
     uses_persisted_invite_ = false;
     ++generation_;
     auto connections = std::move(connections_);

@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
-#include <iterator>
 #include <memory>
 #include <optional>
 #include <set>
@@ -114,20 +113,6 @@ struct HostFixture final {
         scheduled.clear();
         for (auto& [delay, task] : due)
             task();
-    }
-    // Runs the tasks scheduled so far whose delay is at most max_delay_ms, in order; the others stay.
-    void runScheduledWithin(const std::int64_t max_delay_ms) {
-        auto due = std::move(scheduled);
-        scheduled.clear();
-        std::vector<std::pair<std::int64_t, std::function<void()>>> later;
-        for (auto& [delay, task] : due) {
-            if (delay <= max_delay_ms)
-                task();
-            else
-                later.emplace_back(delay, std::move(task));
-        }
-        later.insert(later.end(), std::make_move_iterator(scheduled.begin()), std::make_move_iterator(scheduled.end()));
-        scheduled = std::move(later);
     }
     [[nodiscard]] bool isMember(const std::string& fingerprint) const {
         const auto members = host->snapshot().members;
@@ -683,110 +668,6 @@ TEST_CASE("room host: clock pings, lyrics of the current item and a full room", 
     auto late = f.join("fp-listener");
     REQUIRE(late->inbox == std::vector<RoomControlMessage>{RoomJoinResult{JoinDecision::RejectedFull}});
     REQUIRE(late->link->closed);
-}
-
-TEST_CASE("room host: with guests in the room a new track starts room_play_lead_ms ahead, the host's player too",
-          "[core][listening-room][room-host][room-lead]") {
-    HostFixture f;
-    f.start();
-    static_cast<void>(f.host->open({}));
-    auto dj = f.join("fp-dj");
-    f.now = 20'000;
-    REQUIRE(f.player.next());
-    const auto state = dj->lastState()->snapshot;
-    REQUIRE(state.playback.current_item == f.player.occurrenceAt(1));
-    REQUIRE(state.playback.playing);
-    REQUIRE(state.playback.anchor_host_ms == 20'000 + room_play_lead_ms);
-    REQUIRE(state.playback.anchor_position_ms == 0);
-
-    // Until that instant the host's own player stays silent; for the room it is still starting to play.
-    f.runScheduledWithin(0);
-    REQUIRE(f.player.state().status == PlaybackStatus::Paused);
-    REQUIRE(f.player.state().position_ms == 0);
-    REQUIRE(f.host->snapshot().playback == state.playback);
-    REQUIRE(dj->lastState()->snapshot.version == state.version);
-
-    f.now = 20'000 + room_play_lead_ms;
-    f.runScheduledWithin(room_play_lead_ms);
-    REQUIRE(f.player.state().status == PlaybackStatus::Playing);
-    REQUIRE(f.host->snapshot().playback == state.playback);
-    REQUIRE(dj->lastState()->snapshot.version == state.version);
-}
-
-TEST_CASE("room host: a Resume or a seek while playing starts room_play_lead_ms ahead",
-          "[core][listening-room][room-host][room-lead]") {
-    HostFixture f;
-    f.start();
-    static_cast<void>(f.host->open({}));
-    auto dj = f.join("fp-dj");
-    REQUIRE(f.player.pause());
-    f.now = 30'000;
-    dj->intent(1, RoomIntent{.kind = RoomIntentKind::Resume});
-    REQUIRE(f.host->snapshot().playback.playing);
-    REQUIRE(f.host->snapshot().playback.anchor_host_ms == 30'000 + room_play_lead_ms);
-    REQUIRE(f.host->snapshot().playback.anchor_position_ms == 84'000);
-    f.runScheduledWithin(0);
-    REQUIRE(f.player.state().status == PlaybackStatus::Paused);
-    f.now += room_play_lead_ms;
-    f.runScheduledWithin(room_play_lead_ms);
-    REQUIRE(f.player.state().status == PlaybackStatus::Playing);
-
-    f.now = 40'000;
-    dj->intent(2, RoomIntent{.kind = RoomIntentKind::Seek, .position_ms = 100'000});
-    REQUIRE(f.host->snapshot().playback.playing);
-    REQUIRE(f.host->snapshot().playback.anchor_host_ms == 40'000 + room_play_lead_ms);
-    REQUIRE(f.host->snapshot().playback.anchor_position_ms == 100'000);
-    f.runScheduledWithin(0);
-    REQUIRE(f.player.state().status == PlaybackStatus::Paused);
-    REQUIRE(dj->all<RoomIntentRejected>().empty());
-}
-
-TEST_CASE("room host: while a start waits, Pause cancels it, Resume does nothing and Next waits again",
-          "[core][listening-room][room-host][room-lead]") {
-    HostFixture f;
-    f.start();
-    static_cast<void>(f.host->open({}));
-    auto dj = f.join("fp-dj");
-    f.now = 20'000;
-    REQUIRE(f.player.next());
-    f.runScheduledWithin(0);
-
-    // Resume while the start waits: it is already starting.
-    const auto starting = f.host->snapshot();
-    dj->intent(1, RoomIntent{.kind = RoomIntentKind::Resume});
-    REQUIRE(f.host->snapshot() == starting);
-    REQUIRE(f.player.state().status == PlaybackStatus::Paused);
-
-    // Next while the start waits: the new track waits for its own instant (the player was silent only
-    // because of the wait, so the room keeps playing).
-    f.now = 20'100;
-    dj->intent(2, RoomIntent{.kind = RoomIntentKind::Next});
-    REQUIRE(f.host->snapshot().playback.current_item == f.player.occurrenceAt(2));
-    REQUIRE(f.host->snapshot().playback.playing);
-    REQUIRE(f.host->snapshot().playback.anchor_host_ms == 20'100 + room_play_lead_ms);
-
-    // Pause while it waits: the room pauses and the player never starts.
-    f.now = 20'200;
-    dj->intent(3, RoomIntent{.kind = RoomIntentKind::Pause});
-    REQUIRE_FALSE(f.host->snapshot().playback.playing);
-    REQUIRE(f.host->snapshot().playback.anchor_host_ms == 20'200);
-    f.now = 21'000;
-    f.runScheduledWithin(room_play_lead_ms);
-    REQUIRE(f.player.state().status != PlaybackStatus::Playing); // loaded, silent
-    REQUIRE_FALSE(f.host->snapshot().playback.playing);
-    REQUIRE(dj->all<RoomIntentRejected>().empty());
-}
-
-TEST_CASE("room host: alone in the room the host starts at once", "[core][listening-room][room-host][room-lead]") {
-    HostFixture f;
-    f.start();
-    static_cast<void>(f.host->open({}));
-    f.now = 20'000;
-    REQUIRE(f.player.next());
-    REQUIRE(f.host->snapshot().playback.playing);
-    REQUIRE(f.host->snapshot().playback.anchor_host_ms == 20'000);
-    f.runScheduledWithin(room_play_lead_ms);
-    REQUIRE(f.player.state().status == PlaybackStatus::Playing);
 }
 
 TEST_CASE("room host: playback jitter within the tolerance keeps the anchor and the version",

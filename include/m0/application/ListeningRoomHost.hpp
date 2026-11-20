@@ -142,14 +142,6 @@ struct ListeningRoomHostDependencies final {
 //     within room_anchor_tolerance_ms of expectedPositionMs(anchor, now), so position jitter neither
 //     bumps the version nor broadcasts. (A seek made in the host's own UI that moves less than the
 //     tolerance is indistinguishable from jitter and keeps the anchor.)
-//   - Start instant (spec "Sincronia"): while an admitted guest is in the room, a start (a new current item
-//     while playing, play after pause, a seek intent while playing) is anchored at host_clock_ms() +
-//     room_play_lead_ms, so every guest has it before it happens. The host's player waits for it too: it is
-//     paused on the next scheduler turn and played at that instant (schedule). Meanwhile the room keeps
-//     playing = true and the anchor, whatever the player says; another start replaces the wait, a Pause
-//     intent cancels it (the room pauses), a Resume intent does nothing, and closing the room plays at once.
-//     A pause made in the host's own UI during the wait is not seen (the player is already paused).
-//     Alone in the room, the host anchors at host_clock_ms() and plays at once.
 //   - When the current item changes, its lyrics (if any) go once to every admitted member as RoomLyrics,
 //     and to a member admitted mid-song. Lyrics above maximum_room_lyrics_bytes are never sent.
 //
@@ -371,8 +363,6 @@ class ListeningRoomHost final {
     [[nodiscard]] bool mayUpload(std::string_view fingerprint) const;
     void freeUploadFiles(const std::vector<std::string>& hashes);
     void removePlayedGuestItem(std::uint64_t generation, std::uint64_t occurrence);
-    [[nodiscard]] bool anyAdmittedGuest() const;
-    void waitForStart();
     void onUploadStatus(std::uint64_t token, const std::string& sha256, const RoomFileStatus& status);
     void onUploadResumeStatus(std::uint64_t token, const std::string& sha256, std::uint32_t receiving,
                               const RoomFileStatus& status);
@@ -461,9 +451,6 @@ class ListeningRoomHost final {
     // The last state guests received (admitted members only), to broadcast only what they would see.
     RoomSnapshot sent_view_;
     bool reanchor_{false};
-    // The start the host's player waits for (room_play_lead_ms ahead): its token, 0 when none.
-    std::uint64_t start_wait_{0};
-    std::uint64_t next_start_wait_{0};
     bool refreshing_{false};
     bool refresh_again_{false};
     std::shared_ptr<Alive> alive_;
