@@ -29,6 +29,10 @@ inline constexpr std::int32_t room_play_lead_ms = 300;
 inline constexpr std::uint32_t room_clock_samples = 8;
 inline constexpr std::int32_t room_clock_resample_ms = 5000;
 inline constexpr std::int32_t room_reconnect_window_ms = 30000;
+// A joined guest that hears nothing from the host (no message and no file chunk) for this long treats the
+// link as lost, as if the channel had dropped (Review Focus 5: a host that freezes or crashes without a Bye).
+// The guest pings every room_clock_resample_ms, so a live host answers well inside it.
+inline constexpr std::int32_t room_host_silence_ms = 10000;
 // A guest inside the reconnect window waits this long after a failed attempt, doubling up to the maximum.
 inline constexpr std::int32_t room_reconnect_retry_initial_ms = 1000;
 inline constexpr std::int32_t room_reconnect_retry_maximum_ms = 8000;

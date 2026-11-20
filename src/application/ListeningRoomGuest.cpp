@@ -306,8 +306,10 @@ void ListeningRoomGuest::onConnected(const std::uint64_t attempt, std::shared_pt
             self->guest->onControl(link_id, message);
     };
     link->onMedia = [alive, link_id](RoomFileChunk chunk) {
-        if (const auto self = alive.lock(); self && link_id == self->guest->link_id_)
+        if (const auto self = alive.lock(); self && link_id == self->guest->link_id_) {
+            self->guest->heard();
             self->guest->onChunk(std::move(chunk));
+        }
     };
     link->onClosed = [alive, link_id](const RoomLinkFailure failure) {
         if (const auto self = alive.lock())
@@ -332,6 +334,7 @@ void ListeningRoomGuest::onControl(const std::uint64_t link_id, const RoomContro
         return;
     // Keeps the link object alive while this call may close and release it.
     const auto keep = link_;
+    heard();
     if (const auto* result = std::get_if<RoomJoinResult>(&message)) {
         onJoinResult(result->decision);
     } else if (const auto* state = std::get_if<RoomStateMessage>(&message)) {
@@ -399,6 +402,7 @@ void ListeningRoomGuest::onJoinResult(const JoinDecision decision) {
         changed();
         updateFiles();
         ping(link_id_);
+        watchHost();
         return;
     case JoinDecision::Pending:
         if (state_ == GuestRoomState::WaitingApproval || state_ == GuestRoomState::Joined)
@@ -480,6 +484,40 @@ void ListeningRoomGuest::ping(const std::uint64_t link_id) {
     schedule_(room_clock_resample_ms, [alive, link_id] {
         if (const auto self = alive.lock())
             self->guest->ping(link_id);
+    });
+}
+
+void ListeningRoomGuest::heard() {
+    if (local_clock_ms_)
+        last_heard_ms_ = local_clock_ms_();
+}
+
+// While joined with a follower (the guest pings, so a live host always has something to say), a host that
+// sends nothing for room_host_silence_ms is a lost link: a frozen or crashed host never closes its channel.
+// Admission starts the watch; a later admission starts a new one and the older task does nothing.
+void ListeningRoomGuest::watchHost() {
+    if (follower_ == nullptr || state_ != GuestRoomState::Joined || !link_)
+        return;
+    last_heard_ms_ = local_clock_ms_();
+    checkHost(++watch_, room_host_silence_ms);
+}
+
+void ListeningRoomGuest::checkHost(const std::uint64_t watch, const std::int64_t delay_ms) {
+    const std::weak_ptr<Alive> alive = alive_;
+    schedule_(delay_ms, [alive, watch] {
+        const auto self = alive.lock();
+        if (!self)
+            return;
+        auto& guest = *self->guest;
+        if (watch != guest.watch_ || guest.state_ != GuestRoomState::Joined || !guest.link_)
+            return;
+        const auto silent_ms = guest.local_clock_ms_() - guest.last_heard_ms_;
+        if (silent_ms < room_host_silence_ms) {
+            guest.checkHost(watch, room_host_silence_ms - silent_ms);
+            return;
+        }
+        guest.detachLink();
+        guest.lost(RoomLinkFailure::Unreachable);
     });
 }
 

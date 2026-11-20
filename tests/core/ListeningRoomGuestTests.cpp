@@ -1201,7 +1201,11 @@ TEST_CASE("room guest: a drift beyond the report limit is clamped to it",
     g.f.joinAdmitted();
     g.answerPing();
     g.f.send(g.playingQueue(1));
-    g.f.timers.advance(room_drift_report_limit_ms + 5'000);
+    // The host keeps answering while the guest falls far behind it.
+    for (std::int64_t elapsed = 0; elapsed < room_drift_report_limit_ms + 5'000; elapsed += room_clock_resample_ms) {
+        g.f.timers.advance(room_clock_resample_ms - 10);
+        g.answerPing();
+    }
     g.follower.tick();
     REQUIRE(*g.follower.lastDriftMs() < -room_drift_report_limit_ms);
     g.f.timers.advance(room_clock_resample_ms);
@@ -1214,6 +1218,98 @@ TEST_CASE("room guest: without a follower it sends no clock pings", "[core][list
     f.joinAdmitted();
     f.timers.advance(room_clock_resample_ms * 2);
     REQUIRE(f.received<RoomClockPing>().empty());
+}
+
+TEST_CASE("room guest: a host silent for room_host_silence_ms is a lost link, and a host gone ends the room",
+          "[core][listening-room][room-guest][room-follow]") {
+    FollowingGuest g;
+    const auto before = g.f.local;
+    g.f.joinAdmitted();
+    g.f.local = SessionSnapshot{};
+    g.f.connector.requested.reset();
+
+    // The host app froze or died: pings keep going out, and nothing comes back.
+    g.f.timers.advance(room_host_silence_ms - 1);
+    REQUIRE(g.f.guest->state() == GuestRoomState::Joined);
+    REQUIRE(g.f.host_closed.empty());
+    REQUIRE(g.f.received<RoomClockPing>().size() > 1);
+
+    g.f.timers.advance(1);
+    REQUIRE(g.f.host_closed == std::vector{RoomLinkFailure::Closed}); // the guest closed the silent link
+    REQUIRE(g.f.guest->state() == GuestRoomState::Reconnecting);
+    REQUIRE(g.f.connector.requested == invite());
+
+    // A crashed host is no longer in the relay: the room ends at once, the local queue comes back and the
+    // cache is emptied.
+    g.f.connector.fail(RoomLinkFailure::HostOffline);
+    REQUIRE(g.f.guest->state() == GuestRoomState::Ended);
+    REQUIRE(g.f.guest->endReason() == GuestRoomEnd{GuestEndReason::Closed, RoomLinkFailure::HostOffline});
+    REQUIRE(g.f.local == before);
+    REQUIRE(g.f.inbox.purges == 1);
+}
+
+TEST_CASE("room guest: a frozen host still in the relay ends the room when the reconnect window runs out",
+          "[core][listening-room][room-guest][room-follow]") {
+    FollowingGuest g;
+    const auto before = g.f.local;
+    g.f.joinAdmitted();
+    g.f.local = SessionSnapshot{};
+    g.f.timers.advance(room_host_silence_ms);
+    REQUIRE(g.f.guest->state() == GuestRoomState::Reconnecting);
+
+    // Its relay socket is still open, but no attempt gets an answer.
+    g.f.timers.advance(room_reconnect_window_ms - 1);
+    REQUIRE(g.f.guest->state() == GuestRoomState::Reconnecting);
+    g.f.timers.advance(1);
+    REQUIRE(g.f.guest->state() == GuestRoomState::Ended);
+    REQUIRE(g.f.guest->endReason() == GuestRoomEnd{GuestEndReason::LinkLost, RoomLinkFailure::Unreachable});
+    REQUIRE(g.f.local == before);
+}
+
+TEST_CASE("room guest: any message or chunk from the host keeps the link alive, late pongs included",
+          "[core][listening-room][room-guest][room-follow]") {
+    FollowingGuest g;
+    g.f.joinAdmitted();
+    // A host busy streaming files: its pongs wait behind the media, but chunks keep arriving.
+    for (std::uint32_t round = 0; round < 12; ++round) {
+        g.f.timers.advance(room_host_silence_ms - 1);
+        switch (round % 3) {
+        case 0:
+            REQUIRE(g.f.host_side->sendMedia(RoomFileChunk{900 + round, 0, {1}}));
+            break;
+        case 1:
+            g.f.send(state(round));
+            break;
+        default:
+            g.f.send(RoomClockPong{g.f.received<RoomClockPing>().front().sent_local_ms, 100'000});
+            break;
+        }
+    }
+    REQUIRE(g.f.guest->state() == GuestRoomState::Joined);
+    REQUIRE(g.f.host_closed.empty());
+
+    // Silence counts from the last thing heard.
+    g.f.timers.advance(room_host_silence_ms - 1);
+    REQUIRE(g.f.guest->state() == GuestRoomState::Joined);
+    g.f.timers.advance(1);
+    REQUIRE(g.f.guest->state() == GuestRoomState::Reconnecting);
+}
+
+TEST_CASE("room guest: a host that answers after a reconnect is watched again from the new admission",
+          "[core][listening-room][room-guest][room-follow]") {
+    FollowingGuest g;
+    g.f.joinAdmitted();
+    g.f.timers.advance(room_host_silence_ms);
+    REQUIRE(g.f.guest->state() == GuestRoomState::Reconnecting);
+
+    g.f.timers.advance(2'000);
+    g.f.connectLink();
+    g.f.send(RoomJoinResult{JoinDecision::Admitted});
+    REQUIRE(g.f.guest->state() == GuestRoomState::Joined);
+    g.f.timers.advance(room_host_silence_ms - 1); // the old window and the old watch do nothing
+    REQUIRE(g.f.guest->state() == GuestRoomState::Joined);
+    g.f.timers.advance(1);
+    REQUIRE(g.f.guest->state() == GuestRoomState::Reconnecting);
 }
 
 TEST_CASE("room guest: the current item's local file follows the host's time",

@@ -119,6 +119,13 @@ struct ListeningRoomGuestDependencies final {
 // seen). From Connecting or WaitingApproval a drop or a connect failure ends at once (LinkLost, that
 // failure).
 //
+// Host silence (Review Focus 5): a host that freezes or crashes may never close its channel. While Joined
+// with a follower (the guest pings, so a live host always answers), the guest closes a link that brought
+// nothing from the host (no control message and no file chunk) for room_host_silence_ms and handles it as
+// a dropped link with Unreachable: a crashed host then ends the room through HostOffline, a frozen one when
+// the reconnect window runs out. Any message or chunk counts, so a host whose pongs wait behind file
+// streaming is not taken for gone. Each admission starts the count again.
+//
 // Ending: JoinResult RejectedFull/RejectedBlocked/RejectedClosed and RoomBye end the room with the
 // reason in endReason(). onEnded gets: Bye{Closed} and Bye{Revoked} -> Closed, Bye{VersionMismatch} ->
 // VersionMismatch, Bye{Kicked}, Bye{Full} and every rejected JoinResult -> Refused, a lost link -> its
@@ -256,6 +263,9 @@ class ListeningRoomGuest final {
     void stopUploads(bool report);
     void follow();
     void ping(std::uint64_t link_id);
+    void heard();
+    void watchHost();
+    void checkHost(std::uint64_t watch, std::int64_t delay_ms);
     void changed() const;
 
     RoomGuestConnector& connector_;
@@ -281,6 +291,10 @@ class ListeningRoomGuest final {
     std::uint64_t episode_{0};
     std::int64_t retry_delay_ms_{room_reconnect_retry_initial_ms};
     RoomLinkFailure last_failure_{RoomLinkFailure::Closed};
+    // Host liveness: local time of the last message or chunk from the host, and the current watch (bumped
+    // by every admission, so the task of an older one does nothing).
+    std::int64_t last_heard_ms_{0};
+    std::uint64_t watch_{0};
     // The next state is taken whatever its version (first state of a newly admitted link).
     bool fresh_link_{false};
     RoomSnapshot snapshot_;
