@@ -2476,8 +2476,8 @@
     },
     {
       "id": "FR-057",
-      "plan": "Backlog",
-      "status": "planejado",
+      "plan": "M6.9",
+      "status": "em andamento",
       "verification": "future",
       "tests": [],
       "evidence": [
@@ -2485,13 +2485,13 @@
         { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
       ],
       "remaining": [
-        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Perfil: domínio, store com backup, diálogo da primeira abertura, avatares e identidade com DPAPI (fatia S2)."
+        "Código da fatia S2 existe; o teste local S13.1 não cita perfil e avatar. Falta o teste entre redes diferentes (S13.2), com um segundo computador."
       ]
     },
     {
       "id": "FR-058",
-      "plan": "Backlog",
-      "status": "planejado",
+      "plan": "M6.9",
+      "status": "em andamento",
       "verification": "future",
       "tests": [],
       "evidence": [
@@ -2499,13 +2499,13 @@
         { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
       ],
       "remaining": [
-        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Convite, abertura, encerramento, revogação, lotação, convite persistente e reconexão, com o servidor de apresentação (fatias S5 a S7)."
+        "Código das fatias S5 a S7 existe e o teste local S13.1 passou em criar, entrar e fechar. Falta a conexão entre redes diferentes (S13.2), sem TURN, e o tempo para entrar."
       ]
     },
     {
       "id": "FR-059",
-      "plan": "Backlog",
-      "status": "planejado",
+      "plan": "M6.9",
+      "status": "em andamento",
       "verification": "future",
       "tests": [],
       "evidence": [
@@ -2513,13 +2513,13 @@
         { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
       ],
       "remaining": [
-        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Aprovação dos novos, lista de aceitos, expulsar e bloquear (fatias S7 e S10)."
+        "Código das fatias S7 e S10 existe e a aprovação passou no teste local S13.1. Falta o teste com pessoas reais entre redes diferentes (S13.2)."
       ]
     },
     {
       "id": "FR-060",
-      "plan": "Backlog",
-      "status": "planejado",
+      "plan": "M6.9",
+      "status": "em andamento",
       "verification": "future",
       "tests": [],
       "evidence": [
@@ -2527,13 +2527,13 @@
         { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
       ],
       "remaining": [
-        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Protótipo de sincronia (S1, ponto de decisão) e sincronia real com medição abaixo de 100 ms (S9); a precisão do QMediaPlayer ainda não foi medida."
+        "Código das fatias S1 e S9 existe; o teste local S13.1 mediu 9,3 ms no mesmo computador. Falta medir entre computadores e redes diferentes (S13.2)."
       ]
     },
     {
       "id": "FR-061",
-      "plan": "Backlog",
-      "status": "planejado",
+      "plan": "M6.9",
+      "status": "em andamento",
       "verification": "future",
       "tests": [],
       "evidence": [
@@ -2541,13 +2541,13 @@
         { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
       ],
       "remaining": [
-        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Domínio de permissões e cargos, persistência em room-roles.json e interface (fatias S3 e S10)."
+        "Código das fatias S3 e S10 existe; o teste local S13.1 revogou só Adicionar da sala e Enviar músicas próprias. Falta o teste entre redes diferentes (S13.2)."
       ]
     },
     {
       "id": "FR-062",
-      "plan": "Backlog",
-      "status": "planejado",
+      "plan": "M6.9",
+      "status": "em andamento",
       "verification": "future",
       "tests": [],
       "evidence": [
@@ -2555,13 +2555,13 @@
         { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
       ],
       "remaining": [
-        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Campo visibility nas playlists, visão do convidado e atualização ao vivo (fatia S11)."
+        "Código da fatia S11 existe e passou no teste local S13.1. Falta o teste entre redes diferentes (S13.2)."
       ]
     },
     {
       "id": "FR-063",
-      "plan": "Backlog",
-      "status": "planejado",
+      "plan": "M6.9",
+      "status": "em andamento",
       "verification": "future",
       "tests": [],
       "evidence": [
@@ -2569,7 +2569,7 @@
         { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
       ],
       "remaining": [
-        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Envio, validação no host e distribuição das músicas de convidados (fatia S12)."
+        "Código das fatias S8 e S12 existe e passou no teste local S13.1. Falta o teste entre redes diferentes (S13.2)."
       ]
     },
     {
@@ -3553,8 +3553,8 @@
     },
     {
       "id": "NFR-LIMIT-005",
-      "plan": "Backlog",
-      "status": "planejado",
+      "plan": "M6.9",
+      "status": "em andamento",
       "verification": "future",
       "tests": [],
       "evidence": [
@@ -3562,7 +3562,7 @@
         { "path": "docs/architecture/decisions/0022-listening-room.md", "marker": "## Decisão" }
       ],
       "remaining": [
-        "Decisão e requisito aceitos em 2026-11-17 (ADR-0022); nenhuma implementação existe. Constantes de limites no domínio, codecs com recusa de mensagens acima do limite, testes de fronteira e limites do Worker (fatias S3 a S8)."
+        "Constantes e testes de fronteira das fatias S3 a S8 existem. Falta confirmar os limites do Worker publicado e os tempos entre redes diferentes (S13.2)."
       ]
     },
     {

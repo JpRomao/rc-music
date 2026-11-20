@@ -663,6 +663,7 @@ O pedido explícito de playlists em 2026-11-04 antecipa M6.6 como próxima prior
 | M6.6 | Playlists locais nomeadas — criar, renomear, excluir, salvar fila, organizar, persistir e recuperar falha ao sair no Windows; aceitação nativa/pacote pendente e M3U8 posterior | FR-056 | `CHK-TDD`, `CHK-FAST`, `CHK-UI`, `CHK-SEC`, `CHK-E2E`, `CHK-DOC`, `CHK-CLOSE`; persistência/restart, Unicode, duplicatas, falha de escrita e fila preservada |
 | M6.7 | Biblioteca por pastas/busca | novo requisito/ADR | `CHK-PREFLIGHT`, `CHK-DOC`, `CHK-PERF`, `CHK-CLOSE`; medir antes de considerar SQLite |
 | M6.8 | Mini-player/notificações | novo requisito | `CHK-TDD`, `CHK-UI`, `CHK-A11Y`, `CHK-WIN`, `CHK-LINUX`, `CHK-CLOSE`; lifecycle e preferência |
+| M6.9 | Sala de escuta (Ouvir junto) — fatias S1 a S12 e teste local S13.1 implementados conforme o [plano](superpowers/plans/2026-11-17-listening-room.md); teste entre redes diferentes (S13.2) e instalador pendentes | FR-057–063, NFR-LIMIT-005 | `CHK-TDD`, `CHK-UI`, `CHK-SEC`, `CHK-PERF`, `CHK-E2E`, `CHK-DOC`, `CHK-CLOSE`; sincronia medida, limites de fronteira, privacidade e avisos de licença |
 
 Em M6.1, **Preferências → Reprodução → Saída de áudio** permite seguir o padrão do sistema ou fixar uma saída para a sessão. A troca explícita de rota recupera a ocorrência pausada e restaura a posição quando possível. Uma saída selecionada e desconectada mantém sua identidade. Reconecte-a e use **Tentar novamente**, ou escolha outra. [Uso e recuperação](user-guide.md#reprodução-e-teclado)
 
@@ -769,13 +770,13 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 | `FR-054` | M3.9 | letras locais/online acima do progresso, confirmação dos metadados, sincronização e falhas isoladas |
 | `FR-055` | R1.11 | fora de escopo por retirada integral do Lidarr do app; decisão documental no ADR-0018, sem apagar histórico ou promover checks antigos |
 | `FR-056` | M6.6 | playlists nomeadas persistentes, CRUD/ordem/duplicatas, ingresso explícito na fila e proteção contra perda de dados |
-| `FR-057` | Backlog | sala de escuta (ADR-0022), fatia S2: perfil, avatares e identidade; sem etapa do plano de marcos |
-| `FR-058` | Backlog | sala de escuta (ADR-0022), fatias S5–S7: convite, abertura, revogação e reconexão; sem etapa do plano de marcos |
-| `FR-059` | Backlog | sala de escuta (ADR-0022), fatias S7 e S10: aprovação dos novos, expulsar e bloquear; sem etapa do plano de marcos |
-| `FR-060` | Backlog | sala de escuta (ADR-0022), fatias S1 e S9: protótipo e sincronia real; sem etapa do plano de marcos |
-| `FR-061` | Backlog | sala de escuta (ADR-0022), fatias S3 e S10: permissões, cargos e ajustes; sem etapa do plano de marcos |
-| `FR-062` | Backlog | sala de escuta (ADR-0022), fatia S11: visibilidade das playlists do host; sem etapa do plano de marcos |
-| `FR-063` | Backlog | sala de escuta (ADR-0022), fatias S8 e S12: transferência e músicas de convidados; sem etapa do plano de marcos |
+| `FR-057` | M6.9 | sala de escuta (ADR-0022, [plano](superpowers/plans/2026-11-17-listening-room.md)), fatia S2: perfil, avatares e identidade; aceitação entre redes (S13.2) pendente |
+| `FR-058` | M6.9 | sala de escuta (ADR-0022, [plano](superpowers/plans/2026-11-17-listening-room.md)), fatias S5–S7: convite, abertura, revogação e reconexão; aceitação entre redes (S13.2) pendente |
+| `FR-059` | M6.9 | sala de escuta (ADR-0022, [plano](superpowers/plans/2026-11-17-listening-room.md)), fatias S7 e S10: aprovação dos novos, expulsar e bloquear; aceitação entre redes (S13.2) pendente |
+| `FR-060` | M6.9 | sala de escuta (ADR-0022, [plano](superpowers/plans/2026-11-17-listening-room.md)), fatias S1 e S9: protótipo e sincronia real; aceitação entre redes (S13.2) pendente |
+| `FR-061` | M6.9 | sala de escuta (ADR-0022, [plano](superpowers/plans/2026-11-17-listening-room.md)), fatias S3 e S10: permissões, cargos e ajustes; aceitação entre redes (S13.2) pendente |
+| `FR-062` | M6.9 | sala de escuta (ADR-0022, [plano](superpowers/plans/2026-11-17-listening-room.md)), fatia S11: visibilidade das playlists do host; aceitação entre redes (S13.2) pendente |
+| `FR-063` | M6.9 | sala de escuta (ADR-0022, [plano](superpowers/plans/2026-11-17-listening-room.md)), fatias S8 e S12: transferência e músicas de convidados; aceitação entre redes (S13.2) pendente |
 | `UX-001` | M0.2–M0.4, M1.10, M2.7, M3.8 | estado vazio e jornada de uma interação |
 | `UX-002` | M0.2–M0.4, M1.10, M2.7, M3.8 | controles principais sempre visíveis |
 | `UX-003` | M0.2–M0.4, M1.10, M2.7, M3.4, M3.8 | informação essencial e detalhes sob demanda |
@@ -809,7 +810,7 @@ Esta é a matriz humana inicial exigida por `CHK-TRACE`. “Destino” indica on
 | `NFR-LIMIT-002` | M0.5–M0.8, M2.6 | metadata abaixo/no/acima e diagnóstico |
 | `NFR-LIMIT-003` | M0.5–M0.8, M2.6 | timeout/cancelamento e nenhum acúmulo de jobs |
 | `NFR-LIMIT-004` | M1.8, M4.3 | boundary com 0/1/1.000/1.001 paths e bytes abaixo/no/acima de 1 MiB |
-| `NFR-LIMIT-005` | Backlog | sala de escuta (ADR-0022), fatias S3–S8: limites de protocolo, arquivos, cache, tempo e Worker, com testes de fronteira |
+| `NFR-LIMIT-005` | M6.9 | sala de escuta (ADR-0022, [plano](superpowers/plans/2026-11-17-listening-room.md)), fatias S3–S8: limites de protocolo, arquivos, cache, tempo e Worker, com testes de fronteira; aceitação entre redes (S13.2) pendente |
 | `NFR-PRIV-001` | M0.9, M4.8 | smoke offline, deny/captura de egress e inspeção de dependências |
 | `NFR-PRIV-002` | M1.9, M4.1, M4.8 | persistência somente local e inspeção do pacote |
 | `NFR-PRIV-003` | M1.9, M4.8, M5.7 | conteúdo/path/URL redigidos e rotação/retenção abaixo/no/acima |

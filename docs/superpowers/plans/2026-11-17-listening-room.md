@@ -1121,7 +1121,10 @@
 - [ ] **Step 1:** Quando houver o instalador ou outro computador do mantenedor, repetir o roteiro entre redes diferentes (por exemplo, um dos lados no 4G). Registrar:
   - se a conexão direta funcionou;
   - o tempo para entrar;
-  - a diferença medida pela S9.2.
+  - a diferença medida pela S9.2;
+  - quanto as mensagens de controle (âncora, pong, `Bye`) esperam atrás dos arquivos em transferência: o host deixa até 1 MiB de mídia na fila de cada convidado (`room_media_buffer_high_water_bytes`). Se a espera passar de algumas centenas de ms, baixar esse limite (por exemplo para 256 KiB) antes de dar a sala por pronta (revisão final);
+  - o atraso do início do convidado na troca de música, com a âncora `room_play_lead_ms` à frente;
+  - o processo do host encerrado à força: o convidado percebe em até `room_host_silence_ms` (10 s).
 - [ ] **Step 2:** Atualizar:
   - `docs/user-guide.md`: Ouvir junto completo, com o aviso de IP e o de direitos autorais;
   - `docs/project-status.md`;
