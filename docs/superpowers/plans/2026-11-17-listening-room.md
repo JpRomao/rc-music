@@ -753,6 +753,7 @@
     - `Next` de um DJ avança o player e a versão;
     - `Next` de um Ouvinte → `IntentRejected{MissingPermission}`, sem mudança.
   - **Ações do próprio host:** pausar no app muda o estado e transmite o snapshot com a âncora `(host_clock, position)`.
+  - **Instante de início:** com convidado na sala, um início (item novo tocando, retomar, seek tocando) fica com a âncora `(host_clock + room_play_lead_ms, position)` e o player do host espera esse instante, como pede o spec (seção 7). A revisão final alinhou este passo ao spec.
   - **Encerrar:** `close()` manda `Bye` e mantém o convite persistido.
   - **Itens de convidados:** o `SessionSnapshot` salvo durante a sala não contém `GuestTrack`.
   - **Abrir sala explícito:** um host construído com convite persistido não chama `RoomHostEndpoint::open` até `open()` ser chamado.
