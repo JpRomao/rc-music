@@ -31,7 +31,7 @@ if ($network.Count -ne 1 -or $network[0].sha256 -cne $networkPin.sha256 -or
     $manifest.qt_network_runtime.qualified_build_receipt_sha256 -cne $networkPin.qualified_build_receipt_sha256) {
     throw 'The runtime manifest does not bind the qualified Qt6Network.dll and desktop Schannel TLS plugin'
 }
-foreach ($relative in @('notices/ffmpeg/NOTICE.txt', 'notices/ffmpeg/FFmpeg-COPYING.LGPLv2.1.txt',
+$notices = @('notices/ffmpeg/NOTICE.txt', 'notices/ffmpeg/FFmpeg-COPYING.LGPLv2.1.txt',
         'notices/ffmpeg/FFmpeg-LICENSE.txt', 'notices/ffmpeg/FFmpeg-CREDITS.txt',
         'notices/ffmpeg/FFmpeg-IJG.txt', 'notices/ffmpeg/Boost-LICENSE.txt', 'notices/ffmpeg/zlib-LICENSE.txt',
         'notices/qt-multimedia/NOTICE.txt', 'notices/qt-multimedia/Signalsmith-Stretch-LICENSE.txt',
@@ -54,7 +54,16 @@ foreach ($relative in @('notices/ffmpeg/NOTICE.txt', 'notices/ffmpeg/FFmpeg-COPY
         'notices/qt-declarative-svg/QtDeclarative-masm-LICENSE.txt',
         'notices/qt-declarative-svg/QtDeclarative-yoga-LICENSE.txt',
         'notices/qt-declarative-svg/QtDeclarative-material-LICENSE.ANGULARJS.txt',
-        'notices/qt-declarative-svg/QtSvg-LICENSE.XSVG.txt')) {
+        'notices/qt-declarative-svg/QtSvg-LICENSE.XSVG.txt')
+# ADR-0022: datachannel.dll ships with the notices of libdatachannel and of what it links statically.
+if ($listeningRoom) {
+    $notices += @('notices/libdatachannel/NOTICE.txt', 'notices/libdatachannel/libdatachannel-LICENSE.txt',
+        'notices/libdatachannel/libjuice-LICENSE.txt', 'notices/libdatachannel/usrsctp-LICENSE.txt',
+        'notices/libdatachannel/plog-LICENSE.txt', 'notices/libdatachannel/MbedTLS-LICENSE.txt')
+} elseif (@($manifest.files | Where-Object { $_.relative_path.StartsWith('notices/libdatachannel/') }).Count -ne 0) {
+    throw 'A runtime without the listening room carries libdatachannel notices'
+}
+foreach ($relative in $notices) {
     $entry = @($manifest.files | Where-Object relative_path -CEQ $relative)
     $recipe = @($manifest.recipe_files | Where-Object path -CEQ ('packaging/windows/' + $relative))
     if ($entry.Count -ne 1 -or $recipe.Count -ne 1 -or $entry[0].sha256 -cne $recipe[0].sha256) {

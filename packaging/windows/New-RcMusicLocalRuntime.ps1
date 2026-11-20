@@ -65,10 +65,16 @@ if ($nativeEnabled) {
     }
 }
 
+# ADR-0022: a build with the listening room ships datachannel.dll, and its notices go with it.
+$listeningRoomNotices = @('notices/libdatachannel/NOTICE.txt', 'notices/libdatachannel/libdatachannel-LICENSE.txt',
+    'notices/libdatachannel/libjuice-LICENSE.txt', 'notices/libdatachannel/usrsctp-LICENSE.txt',
+    'notices/libdatachannel/plog-LICENSE.txt', 'notices/libdatachannel/MbedTLS-LICENSE.txt')
+$listeningRoomEnabled = Select-String -LiteralPath (Join-Path $BuildDirectory 'CMakeCache.txt') `
+    -Pattern '^RC_MUSIC_LISTENING_ROOM:BOOL=ON$' -Quiet
 # Record the actual implementation and data files, never just a legacy wrapper.
 function Get-RuntimeRecipeFiles {
     param([ValidateSet('Lite', 'CompleteExperimental')][string] $Edition = 'Lite',
-        [switch] $DownloadComponent, [switch] $NativeHostComponent)
+        [switch] $DownloadComponent, [switch] $NativeHostComponent, [switch] $ListeningRoom)
     $names = @('New-RcMusicLocalRuntime.ps1', 'RcMusicRuntimePlan.psm1', 'PeDependencyReport.psm1',
         'qt.conf', 'LOCAL-DEVELOPMENT.txt', 'RcMusicFfmpegRuntime.psm1', 'ffmpeg-runtime.v1.json',
         'RcMusicQtNetworkRuntime.psm1', 'qt-network-runtime.v1.json',
@@ -96,6 +102,8 @@ function Get-RuntimeRecipeFiles {
         'notices/qt-declarative-svg/QtDeclarative-yoga-LICENSE.txt',
         'notices/qt-declarative-svg/QtDeclarative-material-LICENSE.ANGULARJS.txt',
         'notices/qt-declarative-svg/QtSvg-LICENSE.XSVG.txt')
+    # ADR-0022: datachannel.dll carries libdatachannel, libjuice, usrsctp, plog and Mbed TLS.
+    if ($ListeningRoom) { $names += $listeningRoomNotices }
     if ($Edition -ieq 'CompleteExperimental') { $names += 'WEBVIEW2-DEVELOPMENT.txt' }
     if ($DownloadComponent) { $names += 'RcMusicDownloadComponent.psm1', 'RcMusicDownloadComponentPe.psm1' }
     if ($NativeHostComponent) { $names += 'RcMusicNativeHostComponent.psm1', 'RcMusicYoutubeNativeManifest.psm1' }
@@ -104,7 +112,7 @@ function Get-RuntimeRecipeFiles {
             sha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant() }
     }
 }
-$recipeFiles = @(Get-RuntimeRecipeFiles -Edition $Edition -DownloadComponent:$componentEnabled -NativeHostComponent:$nativeEnabled)
+$recipeFiles = @(Get-RuntimeRecipeFiles -Edition $Edition -DownloadComponent:$componentEnabled -NativeHostComponent:$nativeEnabled -ListeningRoom:$listeningRoomEnabled)
 $recipeBefore = ConvertTo-Json -InputObject $recipeFiles -Compress
 $runtimeNotices = @($recipeFiles | Where-Object {
     $_.path.StartsWith('packaging/windows/notices/', [StringComparison]::Ordinal)
@@ -182,6 +190,7 @@ $datachannel = if ($cache.ContainsKey('LibDataChannel_DIR') -and $cache.LibDataC
     $cache.LibDataChannel_DIR -notmatch '-NOTFOUND$') {
     [IO.Path]::GetFullPath((Join-Path $cache.LibDataChannel_DIR '../../..'))
 } else { $null }
+if ($listeningRoomEnabled -and -not $datachannel) { throw 'The listening room build has no libdatachannel prefix' }
 $payload = Join-Path $OutputDirectory 'app'
 $ffmpeg = Get-RcMusicFfmpegRuntime -ManifestPath (Join-Path $PSScriptRoot 'ffmpeg-runtime.v1.json') `
     -DllDirectory (Join-Path $multimedia 'bin') `
@@ -373,7 +382,7 @@ Assert-DownloadPackageUnchanged
 Assert-NativeComponentUnchanged
 $afterCopy = Get-RcMusicSourceSnapshot -RepositoryRoot $repository -EntryPoint $configuration.entrypoint
 if ($sourceSnapshot.commit -cne $afterCopy.commit) { throw 'Source commit changed while collecting the runtime' }
-if ((ConvertTo-Json -InputObject @(Get-RuntimeRecipeFiles -Edition $Edition -DownloadComponent:$componentEnabled -NativeHostComponent:$nativeEnabled) -Compress) -cne $recipeBefore) {
+if ((ConvertTo-Json -InputObject @(Get-RuntimeRecipeFiles -Edition $Edition -DownloadComponent:$componentEnabled -NativeHostComponent:$nativeEnabled -ListeningRoom:$listeningRoomEnabled) -Compress) -cne $recipeBefore) {
     throw 'Runtime recipe changed while collecting the runtime'
 }
 $recipeStatus = Invoke-RuntimeTool 'git' @('status', '--porcelain', '--', 'packaging/windows')

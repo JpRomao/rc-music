@@ -1,0 +1,36 @@
+RC Music Windows x64 libdatachannel notices
+
+RC Music uses the libdatachannel 0.24.6 shared library datachannel.dll for
+the peer-to-peer data channels of the listening room ("Ouvir junto"). It is
+present only in runtimes built with the listening room. libjuice, usrsctp,
+plog and Mbed TLS are linked statically inside datachannel.dll.
+
+- libdatachannel 0.24.6 (MPL-2.0), copyright Paul-Louis Ageneau and the
+  other authors named in its source file headers: libdatachannel-LICENSE.txt
+  Source: https://github.com/paullouisageneau/libdatachannel
+  tag v0.24.6, commit 6b1e2e620f1e37f0eafeee702eaea0043cb305fd
+- libjuice (MPL-2.0), copyright Paul-Louis Ageneau: libjuice-LICENSE.txt
+  Source: https://github.com/paullouisageneau/libjuice
+  commit b89c792e3612faf2f12cf35bcc56857313a06be3 (submodule deps/libjuice)
+- usrsctp (BSD-3-Clause), copyright 2015 Randall Stewart and Michael Tuexen:
+  usrsctp-LICENSE.txt
+  Source: https://github.com/paullouisageneau/usrsctp
+  commit fec583d54493f879d2ae44a743423bf8a04371ab (submodule deps/usrsctp)
+- plog (MIT), copyright 2022 Sergey Podobry: plog-LICENSE.txt
+  Source: https://github.com/SergiusTheBest/plog
+  commit 94899e0b926ac1b0f4750bfbd495167b4a6ae9ef (submodule deps/plog)
+- Mbed TLS 3.6.8, used under Apache-2.0 from its dual license
+  Apache-2.0 OR GPL-2.0-or-later: MbedTLS-LICENSE.txt
+  Source: https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.8/mbedtls-3.6.8.tar.bz2
+  SHA-256 bc54b818e87f49c0b3281dd85d24adaede0e63b4e822e3fbd49c005a38b9595b
+
+The MPL-2.0 source files of libdatachannel and libjuice are used unmodified;
+their source code is available at the addresses above. Mbed TLS is built from
+the unmodified release with a separate configuration file
+(MBEDTLS_USER_CONFIG_FILE) that turns MBEDTLS_SSL_DTLS_SRTP on and
+MBEDTLS_SSL_PROTO_TLS1_3 off. The Windows x64 build uses MSVC 14.44, Release,
+USE_MBEDTLS=ON, NO_MEDIA=ON, NO_EXAMPLES=ON and NO_TESTS=ON; the json and
+libsrtp submodules are not used.
+
+Built RC Music datachannel.dll
+SHA-256 140092a10e04ef7c4341163b01b43427ab97c39f92263b9e256e84b9c375f9f9

@@ -91,9 +91,9 @@ A conferência foi feita nas fontes da v0.24.6. Fora dos testes, a única chamad
 
 Se o projeto voltar a precisar de TLS 1.3 ou de PSA, este ponto deve ser revisto antes.
 
-As licenças e os avisos de libdatachannel e libjuice (MPL-2.0), usrsctp (BSD-3-Clause), plog (MIT) e Mbed TLS (Apache-2.0) precisam acompanhar o instalador. Essa entrega fica para a fatia S13.
+As licenças e os avisos de libdatachannel e libjuice (MPL-2.0), usrsctp (BSD-3-Clause), plog (MIT) e Mbed TLS (Apache-2.0) ficam em `packaging/windows/notices/libdatachannel/`: um `NOTICE.txt` com versões, commits, origens do código-fonte e o hash da `datachannel.dll`, e os cinco textos de licença copiados sem mudança das fontes locais. Os arquivos MPL-2.0 são usados sem modificação. `New-RcMusicLocalRuntime.ps1` inclui esses avisos em todo runtime com `RC_MUSIC_LISTENING_ROOM=ON`, `LocalRuntime.Tests.ps1` confere que estão no manifesto, e o plano do instalador recusa um runtime com `datachannel.dll` sem eles. A entrega veio na correção da revisão final, porque nenhuma tarefa da S13 a previa.
 
-O Worker usa pacotes npm próprios, também sujeitos à mesma autorização e ao registro da licença. Os termos do plano gratuito do Cloudflare Workers são condição de operação, não dependência do app.
+O Worker usa só pacotes npm de desenvolvimento (`devDependencies`), que não acompanham o app nem o Worker publicado: o `wrangler deploy` empacota só `src/`, que não importa nada além de `cloudflare:workers`. São eles: `typescript` 5.9.3 (Apache-2.0), `vitest` 4.1.12 (MIT), `wrangler` 4.124.0 (MIT OR Apache-2.0) e `@cloudflare/vitest-pool-workers` 0.23.0 (MIT). O `worker-configuration.d.ts` gerado mantém o próprio cabeçalho Apache-2.0. Os termos do plano gratuito do Cloudflare Workers são condição de operação, não dependência do app.
 
 ## Consequências observadas
 

@@ -146,6 +146,12 @@ function New-RcMusicInstallerPlan {
     if ($canonicalEdition -ceq 'CompleteExperimental') {
         $requiredFiles += @('notices/WebView2-SDK-LICENSE.txt', 'notices/WebView2-SDK-NOTICE.txt', 'WEBVIEW2-DEVELOPMENT.txt')
     }
+    # ADR-0022: datachannel.dll never ships without the notices of what it contains.
+    if ($verified.files.relative_path -ccontains 'datachannel.dll') {
+        $requiredFiles += @('notices/libdatachannel/NOTICE.txt', 'notices/libdatachannel/libdatachannel-LICENSE.txt',
+            'notices/libdatachannel/libjuice-LICENSE.txt', 'notices/libdatachannel/usrsctp-LICENSE.txt',
+            'notices/libdatachannel/plog-LICENSE.txt', 'notices/libdatachannel/MbedTLS-LICENSE.txt')
+    }
     foreach ($required in $requiredFiles) {
         if ($verified.files.relative_path -cnotcontains $required) { throw "Missing required runtime file: $required" }
     }
