@@ -158,7 +158,17 @@ Pedido do mantenedor em 2026-11-04: playlists foram antecipadas como prioridade 
 
 ### 2.10 Sala de escuta
 
-Decidida no [ADR-0022](../architecture/decisions/0022-listening-room.md) a partir do [desenho de 2026-11-17](../superpowers/specs/2026-11-17-listening-room-design.md). Um host abre uma sala e compartilha um link; os convidados ouvem as mesmas músicas ao mesmo tempo, cada um com o próprio volume. Os critérios abaixo são de aceitação futura: nenhuma fatia além da documentação está implementada. Os limites estão em NFR-LIMIT-005.
+Decidida no [ADR-0022](../architecture/decisions/0022-listening-room.md) a partir do [desenho de 2026-11-17](../superpowers/specs/2026-11-17-listening-room-design.md). Um host abre uma sala e compartilha um link; os convidados ouvem as mesmas músicas ao mesmo tempo, cada um com o próprio volume. O código das fatias S1 a S12 existe. A coluna de evidência abaixo vem do teste real S13.1 (dois apps no mesmo computador, servidor local; [relato](../listening-room-sync-spike.md#teste-real)). Nenhum requisito está aceito: falta o teste entre redes diferentes (S13.2), com servidor publicado e um segundo computador. Os limites estão em NFR-LIMIT-005.
+
+Evidência até agora e o que falta:
+
+- **FR-057:** perfil e avatar existem no código; o relato do teste local não os cita. Falta aceite nativo em outro computador.
+- **FR-058:** criar, aviso de IP, entrar e fechar a sala passaram no teste local; revogar o convite não está no relato. Falta a conexão entre redes diferentes (sem TURN) e o tempo para entrar.
+- **FR-059:** aprovação de uma pessoa nova passou no teste local. Falta o teste com pessoas reais.
+- **FR-060:** diferença de 9,3 ms (máximo 9,8 ms) com dois apps no mesmo computador, abaixo de 100 ms. A meta entre computadores e redes diferentes não foi medida e continua pendente.
+- **FR-061:** revogar permissões fez os botões sumirem na hora no convidado. Falta aceite nativo em outro computador.
+- **FR-062:** o convidado viu só a playlist visível e adicionou dela. Falta aceite nativo em outro computador.
+- **FR-063:** a música enviada tocou nos dois e saiu da fila e do disco do host ao fechar a sala; o cache do convidado também foi apagado. Falta aceite nativo em outro computador.
 
 | ID | Prioridade | Origem | Requisito e critério principal |
 |---|---:|---|---|

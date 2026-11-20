@@ -4,7 +4,7 @@
 
 **Data:** 2026-11-17
 
-**Decisão de escopo:** o mantenedor aprovou o [desenho da sala de escuta](../../superpowers/specs/2026-11-17-listening-room-design.md) em 2026-11-17 ("Aprovar"). O [plano de execução](../../superpowers/plans/2026-11-17-listening-room.md) organiza a entrega em fatias. Esta decisão abre uma exceção limitada ao local-first e não implementa nada: nenhuma fatia além da S0 (documentação) está concluída.
+**Decisão de escopo:** o mantenedor aprovou o [desenho da sala de escuta](../../superpowers/specs/2026-11-17-listening-room-design.md) em 2026-11-17 ("Aprovar"). O [plano de execução](../../superpowers/plans/2026-11-17-listening-room.md) organiza a entrega em fatias. Esta decisão abre uma exceção limitada ao local-first. A implementação das fatias S1 a S12 existe no código; o teste entre redes diferentes (S13.2) ainda não foi feito.
 
 **Relaciona-se a:** [ADR-0003](0003-local-first-and-remote-sources.md) (local-first e fontes remotas), [ADR-0005](0005-windows-product-stack.md) (stack do produto) e [ADR-0015](0015-named-playlists.md) (playlists, que ganham visibilidade para a sala).
 
@@ -94,6 +94,15 @@ Se o projeto voltar a precisar de TLS 1.3 ou de PSA, este ponto deve ser revisto
 As licenças e os avisos de libdatachannel e libjuice (MPL-2.0), usrsctp (BSD-3-Clause), plog (MIT) e Mbed TLS (Apache-2.0) precisam acompanhar o instalador. Essa entrega fica para a fatia S13.
 
 O Worker usa pacotes npm próprios, também sujeitos à mesma autorização e ao registro da licença. Os termos do plano gratuito do Cloudflare Workers são condição de operação, não dependência do app.
+
+## Consequências observadas
+
+Evidência da S13.1 (2026-11-19), com dois apps isolados no mesmo computador e um servidor de apresentação local (`wrangler dev --local`). O relato completo está em [Teste real](../../listening-room-sync-spike.md#teste-real).
+
+- **Sincronia:** a diferença entre os dois apps ficou em 9,3 ms de forma estável, com máximo de 9,8 ms, e se manteve após um salto. Isso vale só para o mesmo computador: a medição entre computadores depende da S13.2. O caminho com `QMediaPlayer` bastou nesse cenário, e o critério de revisão sobre o caminho próprio de saída não foi acionado.
+- **Falhas achadas e corrigidas:** a barra do convidado ficava vazia (`a680257`); pedaços que chegavam antes da oferta passavam de 2 MiB e eram descartados, e o pedido de reenvio ganhou limite de tentativas (`0039112`, `1401c37`, `75b0f81`); o cache do convidado não era apagado ao fim da sala com a própria música tocando (`231f372`).
+- **Cache temporário:** confirmado que o `room-cache/` do convidado e o `room-uploads/` do host somem ao fechar a sala, e que sobras de uma queda são apagadas na abertura seguinte.
+- **Ainda sem evidência:** conexão direta entre redes diferentes (sem TURN), tempo para entrar, servidor publicado no Cloudflare e teste com amigos. O instalador segue bloqueado: faltam os avisos de licença de libdatachannel e Mbed TLS e o redesenho não terminou.
 
 ## Critérios de revisão
 
