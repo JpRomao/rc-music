@@ -165,7 +165,7 @@ Evidência até agora e o que falta:
 - **FR-057:** perfil e avatar existem no código; o relato do teste local não os cita. Falta o teste entre redes diferentes (S13.2), com um segundo computador.
 - **FR-058:** criar, aviso de IP, entrar e fechar a sala passaram no teste local; revogar o convite não está no relato. Falta a conexão entre redes diferentes (sem TURN) e o tempo para entrar.
 - **FR-059:** aprovação de uma pessoa nova passou no teste local. Falta o teste com pessoas reais.
-- **FR-060:** diferença de 9,3 ms (máximo 9,8 ms) com dois apps no mesmo computador, abaixo de 100 ms. A meta entre computadores e redes diferentes não foi medida e continua pendente.
+- **FR-060:** diferença de 9,3 ms (máximo 9,8 ms) com dois apps no mesmo computador, abaixo de 100 ms, medida quando o host ainda começava no instante atual. O início cerca de 300 ms à frente (`3b47558`) passou nos testes automatizados, mas ainda não foi ouvido no app. A meta entre computadores e redes diferentes não foi medida e continua pendente.
 - **FR-061:** revogar **Adicionar da sala** e **Enviar músicas próprias** fez esses botões sumirem na hora no convidado; as outras permissões não foram revogadas no teste local. Falta o teste entre redes diferentes (S13.2), com um segundo computador.
 - **FR-062:** o convidado viu só a playlist visível e adicionou dela. Falta o teste entre redes diferentes (S13.2), com um segundo computador.
 - **FR-063:** a música enviada tocou nos dois e saiu da fila e do disco do host ao fechar a sala; o cache do convidado também foi apagado. Falta o teste entre redes diferentes (S13.2), com um segundo computador.

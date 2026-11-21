@@ -285,7 +285,7 @@ S1 vem logo depois da documentação porque pode mudar o desenho da sincronia. S
 ## Riscos
 
 - **Precisão do `QMediaPlayer`:** pode impedir os 100 ms. A fatia S1 decide antes do resto.
-- **Conexão direta falhar:** acontece com CGNAT simétrico, redes móveis e corporativas. Sem TURN, a sala mostra "Não foi possível conectar diretamente ao host". O TURN da Cloudflare tem 1.000 GB gratuitos por mês e pode entrar depois, com credenciais temporárias emitidas pelo Worker. Fica registrado como evolução, não nesta frente.
+- **Conexão direta falhar:** acontece com CGNAT simétrico, redes móveis e corporativas. Sem TURN, a sala mostra "Não foi possível conectar ao anfitrião. Verifique a conexão e tente de novo.". O TURN da Cloudflare tem 1.000 GB gratuitos por mês e pode entrar depois, com credenciais temporárias emitidas pelo Worker. Fica registrado como evolução, não nesta frente.
 - **Envio do host:** com 10 pessoas e músicas grandes, a internet de envio do host pode atrasar a primeira música. A antecipação reduz, mas não elimina.
 - **Direitos autorais:** o host envia cópias temporárias das próprias músicas a amigos. O app apaga as cópias e não as importa, mas a responsabilidade pelo conteúdo compartilhado é de quem hospeda. O guia do usuário vai dizer isso.
 - **Distribuição para os amigos:** os amigos só conseguem instalar o RC Music depois que existir o instalador, que o mantenedor pediu só quando o redesenho terminar. Até lá, os testes usam dois apps neste computador e, se houver, outro computador do mantenedor. O teste com amigos (S13) depende do instalador.
