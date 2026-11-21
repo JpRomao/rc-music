@@ -23,6 +23,7 @@
 #include <QColor>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QImage>
 #include <QMetaMethod>
 #include <QMetaProperty>
@@ -592,6 +593,9 @@ class PlayerPresenterTests final : public QObject {
     void hostRoomSessionExcludesGuestItems();
     void roomHostLeadsEachStartOnceOverQueuedConfirmations();
     void roomHostHoldsALoadingTrackUntilTheAnchor();
+    void roomHostHoldsAResumeFromItsOwnControlsUntilTheAnchor();
+    void roomHostLeadsTheSuccessorOfACurrentItemRemovedDuringTheWait();
+    void pausingAReleasedRoomStartShowsPausedAtOnce();
     void guestRoomSessionKeepsThePreRoomSession();
     void roomPrivacyNoticeIsMarkedOnceAndPersisted();
     void roomOutputOffsetIsBoundedAndPersisted();
@@ -9549,6 +9553,72 @@ namespace {
     }
     return sources;
 }
+
+// A listening room hosted over a real presenter, with fp-dj (a DJ) admitted: states holds the playback of every
+// state fp-dj receives. The room's timers are real (QTimer); the host clock is the given one.
+class PresenterRoom final {
+  public:
+    PresenterRoom(PlayerPresenter& presenter, std::function<std::int64_t()> clock) : player_{presenter} {
+        roster_.stored.listeners.push_back(KnownListener{"fp-dj", "Dj", 2, {}, false});
+        roster_.status = RoomRosterLoadStatus::Loaded;
+        host = std::make_unique<ListeningRoomHost>(ListeningRoomHostDependencies{
+            .roster_store = roster_,
+            .player = player_,
+            .endpoint = endpoint_,
+            .catalog = catalog_,
+            .host_clock_ms = std::move(clock),
+            .random_bytes =
+                [this](std::span<std::uint8_t> bytes) {
+                    for (auto& byte : bytes)
+                        byte = next_random_++;
+                },
+            .host_fingerprint = {0xab},
+            .host_profile = ListenerProfile{"Joao", AvatarChoice{}},
+            .schedule =
+                [this](const std::int64_t delay_ms, std::function<void()> task) {
+                    QTimer::singleShot(std::chrono::milliseconds{delay_ms}, &context_, std::move(task));
+                },
+        });
+        if (!host->open({}).has_value())
+            return;
+        auto [host_side, guest_side] = testing::FakeRoomLink::pair("ab" + std::string(62, '0'), "fp-dj");
+        guest_ = guest_side;
+        guest_->onControl = [this](RoomControlMessage message) {
+            if (const auto* state = std::get_if<RoomStateMessage>(&message))
+                states.push_back(state->snapshot.playback);
+        };
+        endpoint_.admit(host_side);
+        joined = guest_->sendControl(RoomHello{room_protocol_version, "Dj", AvatarChoice{}}) && !states.empty();
+    }
+    PresenterRoom(const PresenterRoom&) = delete;
+    PresenterRoom& operator=(const PresenterRoom&) = delete;
+
+    // fp-dj asks for something.
+    bool intent(RoomIntent intent) {
+        return guest_->sendControl(RoomIntentMessage{++next_request_, std::move(intent)});
+    }
+
+  private:
+    PresenterRoomHostPlayer player_;
+    testing::InMemoryRoomRosterStore roster_;
+    testing::FakeRoomHostEndpoint endpoint_;
+    testing::FakeRoomTrackCatalog catalog_;
+    QObject context_;
+    std::uint8_t next_random_{1};
+    std::shared_ptr<testing::FakeRoomLink> guest_;
+    std::uint64_t next_request_{0};
+
+  public:
+    std::unique_ptr<ListeningRoomHost> host;
+    std::vector<RoomPlayback> states;
+    bool joined{false};
+};
+
+// Delivers the presenter's queued backend events without letting room_play_lead_ms pass.
+void deliverQueued() {
+    for (int turn = 0; turn < 5; ++turn)
+        QCoreApplication::processEvents();
+}
 } // namespace
 
 void PlayerPresenterTests::roomPlayOrderAdvancesInQueueOrderWhileShuffled() {
@@ -10083,11 +10153,6 @@ void PlayerPresenterTests::roomHostLeadsEachStartOnceOverQueuedConfirmations() {
     QVERIFY(!states.empty());
     QVERIFY(states.back().playing);
     const auto items = presenter.playlistQueueSnapshot().items;
-    // Delivers the queued backend confirmations without letting room_play_lead_ms pass.
-    const auto deliverQueued = [] {
-        for (int turn = 0; turn < 5; ++turn)
-            QCoreApplication::processEvents();
-    };
     // Some playback: the clock and the player move together.
     const auto play = [&](const int steps) {
         for (int step = 0; step < steps; ++step) {
@@ -10101,6 +10166,8 @@ void PlayerPresenterTests::roomHostLeadsEachStartOnceOverQueuedConfirmations() {
         const auto before = states.size();
         const auto started_at = now;
         QVERIFY(start());
+        // Held before control goes back to the event loop: not one turn of sound before the anchor.
+        QVERIFY(backend.snapshot().status != PlaybackStatus::Playing);
         deliverQueued();
         QCOMPARE(states.size(), before + 1);
         const auto led = states.back();
@@ -10157,113 +10224,131 @@ void PlayerPresenterTests::roomHostLeadsEachStartOnceOverQueuedConfirmations() {
     host.reset();
 }
 
-// As in the app, a track loads asynchronously and autoplays once Ready: a room start holds that autoplay (the
-// track stays Ready, the controls show playing) and plays it at the anchor, or once Ready when the load is slower
-// than the lead. A pause during the wait leaves it Ready.
-void PlayerPresenterTests::roomHostHoldsALoadingTrackUntilTheAnchor() {
-    AvailableTrayPlatform platform;
-    PresenterPlaybackBackend backend;
-    PresenterMetadataReader metadata;
-    const auto sources = roomSources(4);
-    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
-    const auto publish = [&backend](const PlaybackStatus status) {
+namespace {
+// A presenter on PresenterPlaybackBackend (events published by hand), playing the first of count room sources.
+struct LoadingPresenter final {
+    explicit LoadingPresenter(const int count)
+        : sources{roomSources(count)}, presenter{platform, backend, metadata, [this] { return sources; }} {}
+    // The engine reports status at position_ms (of 200 s) for the loaded track.
+    void publish(const PlaybackStatus status, const std::int64_t position_ms = 0) {
         backend.publish({.status = status,
-                         .position_ms = 0,
+                         .position_ms = position_ms,
                          .duration_ms = 200'000,
                          .seekable = true,
                          .generation = backend.snapshot().generation});
-    };
-    QVERIFY(presenter.openAudio());
-    publish(PlaybackStatus::Ready);
-    QTRY_COMPARE(backend.play_calls, 1);
-    publish(PlaybackStatus::Playing);
-    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
-    presenter.setRoomPlayOrder(true);
+    }
+    [[nodiscard]] bool startPlaying() {
+        if (!presenter.openAudio())
+            return false;
+        publish(PlaybackStatus::Ready);
+        for (int turn = 0; turn < 50 && backend.play_calls == 0; ++turn)
+            QTest::qWait(10);
+        publish(PlaybackStatus::Playing);
+        deliverQueued();
+        return backend.play_calls == 1 && presenter.playbackState() == PlayerPresenter::PlaybackState::Playing;
+    }
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    std::vector<std::filesystem::path> sources;
+    PlayerPresenter presenter;
+};
 
-    PresenterRoomHostPlayer player{presenter};
-    testing::InMemoryRoomRosterStore roster;
-    roster.stored.listeners.push_back(KnownListener{"fp-dj", "Dj", 2, {}, false});
-    roster.status = RoomRosterLoadStatus::Loaded;
-    testing::FakeRoomHostEndpoint endpoint;
-    testing::FakeRoomTrackCatalog catalog;
-    QObject context;
-    std::int64_t now = 10'000;
-    std::uint8_t next_random = 1;
-    auto host = std::make_unique<ListeningRoomHost>(ListeningRoomHostDependencies{
-        .roster_store = roster,
-        .player = player,
-        .endpoint = endpoint,
-        .catalog = catalog,
-        .host_clock_ms = [&now] { return now; },
-        .random_bytes =
-            [&next_random](std::span<std::uint8_t> bytes) {
-                for (auto& byte : bytes)
-                    byte = next_random++;
-            },
-        .host_fingerprint = {0xab},
-        .host_profile = ListenerProfile{"Joao", AvatarChoice{}},
-        .schedule =
-            [&context](const std::int64_t delay_ms, std::function<void()> task) {
-                QTimer::singleShot(std::chrono::milliseconds{delay_ms}, &context, std::move(task));
-            },
-    });
-    QVERIFY(host->open({}).has_value());
-    auto [host_side, guest_side] = testing::FakeRoomLink::pair("ab" + std::string(62, '0'), "fp-dj");
-    std::vector<RoomPlayback> states;
-    guest_side->onControl = [&states](RoomControlMessage message) {
-        if (const auto* state = std::get_if<RoomStateMessage>(&message))
-            states.push_back(state->snapshot.playback);
-    };
-    endpoint.admit(host_side);
-    QVERIFY(guest_side->sendControl(RoomHello{room_protocol_version, "Dj", AvatarChoice{}}));
-    QVERIFY(!states.empty());
+// A host clock that is real time, so a late start is really late.
+[[nodiscard]] std::function<std::int64_t()> realHostClock() {
+    auto elapsed = std::make_shared<QElapsedTimer>();
+    elapsed->start();
+    return [elapsed] { return std::int64_t{10'000} + elapsed->elapsed(); };
+}
+} // namespace
+
+// As in the app, a track loads asynchronously and autoplays once Ready, and the host clock runs. A room start holds
+// that autoplay (the track stays Ready, the controls show playing) and plays it at the anchor. A load slower than
+// the lead keeps the anchor until the track plays (its position stands still meanwhile), then re-anchors once,
+// where it really started. A pause during the wait leaves the track Ready.
+void PlayerPresenterTests::roomHostHoldsALoadingTrackUntilTheAnchor() {
+    LoadingPresenter local{4};
+    QVERIFY(local.startPlaying());
+    auto& presenter = local.presenter;
+    auto& backend = local.backend;
+    presenter.setRoomPlayOrder(true);
+    const auto clock = realHostClock();
+    PresenterRoom room{presenter, clock};
+    QVERIFY(room.joined);
+    auto& states = room.states;
     QVERIFY(states.back().playing);
     const auto items = presenter.playlistQueueSnapshot().items;
-    const auto deliverQueued = [] {
-        for (int turn = 0; turn < 5; ++turn)
-            QCoreApplication::processEvents();
+    // The engine plays on from anchor: positions that follow the host clock, published every 100 ms.
+    const auto playOn = [&](const RoomPlayback& anchor, const int steps) {
+        for (int step = 0; step < steps; ++step) {
+            QTest::qWait(100);
+            local.publish(PlaybackStatus::Playing,
+                          anchor.anchor_position_ms + std::max<std::int64_t>(0, clock() - anchor.anchor_host_ms));
+        }
+        deliverQueued();
     };
 
-    // The next track loads in time: Ready does not start it; the anchor does.
+    // On time: the next track is Ready before the anchor and starts at it.
     auto before = states.size();
     auto plays = backend.play_calls;
+    auto started_at = clock();
     QVERIFY(presenter.nextTrack());
     deliverQueued();
     QCOMPARE(states.size(), before + 1);
-    QVERIFY(states.back().playing);
-    QCOMPARE(states.back().current_item, std::optional{items[1].occurrence_id.value});
-    QCOMPARE(states.back().anchor_host_ms, now + room_play_lead_ms);
-    QCOMPARE(states.back().anchor_position_ms, 0);
+    auto led = states.back();
+    QVERIFY(led.playing);
+    QCOMPARE(led.current_item, std::optional{items[1].occurrence_id.value});
+    QVERIFY(led.anchor_host_ms >= started_at + room_play_lead_ms);
+    QVERIFY(led.anchor_host_ms <= clock() + room_play_lead_ms);
+    QCOMPARE(led.anchor_position_ms, 0);
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
-    publish(PlaybackStatus::Ready);
+    local.publish(PlaybackStatus::Ready);
     deliverQueued();
     QCOMPARE(backend.play_calls, plays);
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
     QTRY_COMPARE(backend.play_calls, plays + 1);
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
-    publish(PlaybackStatus::Playing);
-    QTest::qWait(100);
+    local.publish(PlaybackStatus::Playing, std::max<std::int64_t>(0, clock() - led.anchor_host_ms));
+    playOn(led, 3);
     QCOMPARE(states.size(), before + 1);
+    QCOMPARE(states.back(), led);
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
 
-    // The next one loads slower than the lead: it plays once Ready, still one state.
+    // Slower than the lead: well past the anchor it is still loading. A notification meanwhile (its duration) keeps
+    // the anchor; when it plays, the room re-anchors once, now, at the position it starts from.
     before = states.size();
     plays = backend.play_calls;
     QVERIFY(presenter.nextTrack());
     deliverQueued();
     QCOMPARE(states.size(), before + 1);
-    QCOMPARE(states.back().current_item, std::optional{items[2].occurrence_id.value});
-    QTest::qWait(room_play_lead_ms + 100);
+    led = states.back();
+    QCOMPARE(led.current_item, std::optional{items[2].occurrence_id.value});
+    QCOMPARE(led.anchor_position_ms, 0);
+    QTest::qWait(room_play_lead_ms + room_anchor_tolerance_ms + 100);
     QCOMPARE(backend.play_calls, plays);
-    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
-    publish(PlaybackStatus::Ready);
-    QTRY_COMPARE(backend.play_calls, plays + 1);
-    publish(PlaybackStatus::Playing);
-    QTest::qWait(100);
+    backend.publish(
+        {.status = PlaybackStatus::Loading, .duration_ms = 200'000, .generation = backend.snapshot().generation});
+    deliverQueued();
     QCOMPARE(states.size(), before + 1);
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    local.publish(PlaybackStatus::Ready);
+    QTRY_COMPARE(backend.play_calls, plays + 1);
+    QCOMPARE(states.size(), before + 1);
+    const auto played_at = clock();
+    local.publish(PlaybackStatus::Playing);
+    deliverQueued();
+    QCOMPARE(states.size(), before + 2);
+    const auto late = states.back();
+    QVERIFY(late.playing);
+    QCOMPARE(late.current_item, led.current_item);
+    QCOMPARE(late.anchor_position_ms, 0);
+    QVERIFY(late.anchor_host_ms >= played_at);
+    QVERIFY(late.anchor_host_ms <= clock());
+    playOn(late, 3);
+    QCOMPARE(states.size(), before + 2);
+    QCOMPARE(states.back(), late);
 
-    // A pause during the wait: one paused state and the track stays Ready past the anchor.
+    // A pause during the wait: one paused state, and the track stays Ready past the anchor.
     before = states.size();
     plays = backend.play_calls;
     QVERIFY(presenter.nextTrack());
@@ -10274,12 +10359,176 @@ void PlayerPresenterTests::roomHostHoldsALoadingTrackUntilTheAnchor() {
     QCOMPARE(states.size(), before + 2);
     QVERIFY(!states.back().playing);
     QCOMPARE(states.back().current_item, std::optional{items[3].occurrence_id.value});
-    publish(PlaybackStatus::Ready);
+    local.publish(PlaybackStatus::Ready);
     QTest::qWait(room_play_lead_ms + 100);
     QCOMPARE(backend.play_calls, plays);
     QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Ready);
     QCOMPARE(states.size(), before + 2);
-    host.reset();
+}
+
+// A resume from the host's own controls (play button, tray, media keys, a double click on the paused current item):
+// the engine is not told to play before the anchor, not even for one turn of the event loop.
+void PlayerPresenterTests::roomHostHoldsAResumeFromItsOwnControlsUntilTheAnchor() {
+    LoadingPresenter local{3};
+    QVERIFY(local.startPlaying());
+    auto& presenter = local.presenter;
+    auto& backend = local.backend;
+    presenter.setRoomPlayOrder(true);
+    const auto clock = realHostClock();
+    PresenterRoom room{presenter, clock};
+    QVERIFY(room.joined);
+    auto& states = room.states;
+    const auto items = presenter.playlistQueueSnapshot().items;
+    const auto current = LocalQueueListModel::occurrenceId(items[0].occurrence_id);
+    std::int64_t position = 40'000;
+
+    const std::vector<std::function<bool()>> resumes{
+        [&] { return presenter.play(); },
+        [&] { return presenter.togglePlayback(); },
+        [&] { return presenter.playQueueOccurrence(current); },
+    };
+    for (const auto& resume : resumes) {
+        // Paused at position.
+        QVERIFY(presenter.pause());
+        local.publish(PlaybackStatus::Paused, position);
+        deliverQueued();
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+        QVERIFY(!states.back().playing);
+
+        const auto before = states.size();
+        const auto plays = backend.play_calls;
+        const auto started_at = clock();
+        QVERIFY(resume());
+        QCOMPARE(backend.play_calls, plays);
+        deliverQueued();
+        QCOMPARE(backend.play_calls, plays);
+        QCOMPARE(states.size(), before + 1);
+        const auto led = states.back();
+        QVERIFY(led.playing);
+        QCOMPARE(led.current_item, std::optional{items[0].occurrence_id.value});
+        QVERIFY(led.anchor_host_ms >= started_at + room_play_lead_ms);
+        QVERIFY(led.anchor_host_ms <= clock() + room_play_lead_ms);
+        QCOMPARE(led.anchor_position_ms, position);
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+        QTRY_COMPARE(backend.play_calls, plays + 1);
+        local.publish(PlaybackStatus::Playing, position + std::max<std::int64_t>(0, clock() - led.anchor_host_ms));
+        QTest::qWait(100);
+        local.publish(PlaybackStatus::Playing, position + std::max<std::int64_t>(0, clock() - led.anchor_host_ms));
+        deliverQueued();
+        QCOMPARE(states.size(), before + 1);
+        QCOMPARE(states.back(), led);
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+        position += 10'000;
+    }
+}
+
+// Removing the current item while its start waits for the anchor, from the host's queue or by a guest: the next
+// item starts in its place, led again, instead of stopping the room.
+void PlayerPresenterTests::roomHostLeadsTheSuccessorOfACurrentItemRemovedDuringTheWait() {
+    LoadingPresenter local{5};
+    QVERIFY(local.startPlaying());
+    auto& presenter = local.presenter;
+    auto& backend = local.backend;
+    presenter.setRoomPlayOrder(true);
+    const auto clock = realHostClock();
+    PresenterRoom room{presenter, clock};
+    QVERIFY(room.joined);
+    auto& states = room.states;
+    const auto items = presenter.playlistQueueSnapshot().items;
+
+    const auto requireSuccessorLed = [&](const std::function<bool(LocalQueueOccurrenceId)>& remove,
+                                         const std::size_t removed, const std::size_t successor) {
+        const auto before = states.size();
+        const auto plays = backend.play_calls;
+        QVERIFY(presenter.nextTrack());
+        deliverQueued();
+        QCOMPARE(states.size(), before + 1);
+        QCOMPARE(states.back().current_item, std::optional{items[removed].occurrence_id.value});
+        const auto removed_at = clock();
+        QVERIFY(remove(items[removed].occurrence_id));
+        deliverQueued();
+        QCOMPARE(states.size(), before + 2);
+        const auto led = states.back();
+        QVERIFY(led.playing);
+        QCOMPARE(led.current_item, std::optional{items[successor].occurrence_id.value});
+        QVERIFY(led.anchor_host_ms >= removed_at + room_play_lead_ms);
+        QVERIFY(led.anchor_host_ms <= clock() + room_play_lead_ms);
+        QCOMPARE(led.anchor_position_ms, 0);
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+        local.publish(PlaybackStatus::Ready);
+        deliverQueued();
+        QCOMPARE(backend.play_calls, plays);
+        QTRY_COMPARE(backend.play_calls, plays + 1);
+        local.publish(PlaybackStatus::Playing, std::max<std::int64_t>(0, clock() - led.anchor_host_ms));
+        deliverQueued();
+        QCOMPARE(states.size(), before + 2);
+        QCOMPARE(states.back(), led);
+    };
+    requireSuccessorLed(
+        [&](const LocalQueueOccurrenceId id) {
+            return presenter.removeQueueOccurrence(LocalQueueListModel::occurrenceId(id));
+        },
+        1, 2);
+    if (QTest::currentTestFailed())
+        return;
+    requireSuccessorLed(
+        [&](const LocalQueueOccurrenceId id) {
+            return room.intent(RoomIntent{.kind = RoomIntentKind::RemoveItem, .item_id = id.value});
+        },
+        3, 4);
+}
+
+// The room released its start and the engine has not confirmed it yet: a pause (button, toggle) shows paused at
+// once, to the controls, tray, media keys and the room, instead of waiting for the engine. A start released while
+// its track still loads does not start when it is Ready.
+void PlayerPresenterTests::pausingAReleasedRoomStartShowsPausedAtOnce() {
+    LoadingPresenter local{3};
+    QVERIFY(local.startPlaying());
+    auto& presenter = local.presenter;
+    auto& backend = local.backend;
+
+    for (const bool toggle : {false, true}) {
+        QVERIFY(presenter.holdRoomStart());
+        local.publish(PlaybackStatus::Paused, 5'000);
+        deliverQueued();
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+        const auto plays = backend.play_calls;
+        QVERIFY(presenter.releaseRoomStart());
+        QCOMPARE(backend.play_calls, plays + 1);
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+        QSignalSpy changes(&presenter, &PlayerPresenter::playbackChanged);
+        QVERIFY(toggle ? presenter.togglePlayback() : presenter.pause());
+        QVERIFY(!changes.isEmpty());
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+        QVERIFY(presenter.roomHostState().status != PlaybackStatus::Playing);
+        // The engine confirms the play, then the pause that followed it.
+        local.publish(PlaybackStatus::Playing, 5'000);
+        deliverQueued();
+        local.publish(PlaybackStatus::Paused, 5'000);
+        deliverQueued();
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Paused);
+        // Playing again for the next round.
+        QVERIFY(presenter.play());
+        local.publish(PlaybackStatus::Playing, 5'000);
+        deliverQueued();
+        QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    }
+
+    // The next track loads to play; the room holds it and releases it before it is Ready; then the pause.
+    QVERIFY(presenter.nextTrack());
+    QVERIFY(presenter.holdRoomStart());
+    QVERIFY(presenter.releaseRoomStart());
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    const auto plays = backend.play_calls;
+    QSignalSpy changes(&presenter, &PlayerPresenter::playbackChanged);
+    QVERIFY(presenter.pause());
+    QVERIFY(!changes.isEmpty());
+    QVERIFY(presenter.playbackState() != PlayerPresenter::PlaybackState::Playing);
+    QVERIFY(presenter.roomHostState().status != PlaybackStatus::Playing);
+    local.publish(PlaybackStatus::Ready);
+    deliverQueued();
+    QCOMPARE(backend.play_calls, plays);
+    QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Ready);
 }
 
 void PlayerPresenterTests::guestRoomSessionKeepsThePreRoomSession() {

@@ -1078,10 +1078,11 @@ bool ListeningRoomHost::rebuild() {
         const auto drift = expected > position ? expected - position : position - expected;
         const bool alone = !anyAdmittedGuest();
         // Item changes, play/pause and seeks always re-anchor, and so does a wait left without guests;
-        // otherwise the anchor stays while the player is within room_anchor_tolerance_ms of it, so
-        // position jitter neither bumps the version nor broadcasts.
+        // otherwise the anchor stays while the player is within room_anchor_tolerance_ms of it, or has not
+        // started yet (its position stands still until it does), so position jitter neither bumps the
+        // version nor broadcasts. A start that began late re-anchors once, when it plays.
         if (!seeked && !(alone && start_wait_ != 0) && same_item && previous.playing == playback.playing &&
-            drift <= room_anchor_tolerance_ms) {
+            (player.starting || drift <= room_anchor_tolerance_ms)) {
             playback.anchor_host_ms = previous.anchor_host_ms;
             playback.anchor_position_ms = previous.anchor_position_ms;
         } else {

@@ -476,7 +476,9 @@ class PlayerPresenter final : public QObject {
     // RoomHostPlayer::holdStart/releaseStart. A held start keeps the current track silent (paused, or a
     // pending autoplay kept at Ready) while playbackState() still shows Playing, so the play button, tray
     // and system media controls do not flicker. pause()/togglePlayback() end it paused, play() keeps it,
-    // another track, an error or an unload drop it.
+    // another track, an error or an unload drop it. While a room is open (setRoomPlayOrder), a resume from
+    // the host's own controls is held before the backend hears it and offered to the room through
+    // playbackChanged; holdRoomStart from that notification keeps it, otherwise it plays at once.
     [[nodiscard]] bool holdRoomStart();
     [[nodiscard]] bool releaseRoomStart();
     // The one-time IP privacy notice of the listening room (FR-058), kept with the preferences.
@@ -600,6 +602,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool roomStartHeld() const;
     [[nodiscard]] PlaybackStatus roomHostStatus() const;
     bool endRoomStartHold();
+    bool offerRoomStart();
     void completeExit();
     void cancelPendingExit();
     void completeDefaultAppsSettingsLaunch(DefaultAppsSettingsLaunchResult result, std::uint64_t generation);
@@ -783,11 +786,13 @@ class PlayerPresenter final : public QObject {
     // (the follower's generations, which the local track session ignores).
     std::optional<RoomTrackSummary> room_track_{};
     PlaybackSnapshot room_playback_{};
-    // A room start held for the room's anchor (holdRoomStart): its track's playback generation, and
-    // whether it was released and still waits for the backend to confirm Playing.
+    // A room start held for the room's anchor (holdRoomStart): its track's playback generation, whether
+    // it was released and still waits for the backend to confirm Playing, and whether the presenter held
+    // it itself (offerRoomStart) and the room has not taken it yet.
     struct RoomStartHold final {
         std::uint64_t generation{};
         bool released{false};
+        bool offered{false};
     };
     std::optional<RoomStartHold> room_start_hold_{};
     std::uint64_t committed_seeks_{0};

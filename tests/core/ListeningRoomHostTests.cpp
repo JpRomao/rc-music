@@ -19,6 +19,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -823,6 +824,9 @@ TEST_CASE("room host: with a guest every start begins room_play_lead_ms ahead, o
     const auto states = statesOf(*dj);
     f.now = 20'000;
     start();
+    // Not even one turn of sound before the anchor: the start is held before the engine hears it, or in the
+    // same call that told the engine.
+    REQUIRE(f.player.audible() != PlaybackStatus::Playing);
     f.settle();
 
     // One new state, anchored at the start position room_play_lead_ms from now.
@@ -916,6 +920,46 @@ TEST_CASE("room host: another start during the wait moves the anchor and only th
     REQUIRE(f.player.audible() == PlaybackStatus::Playing);
     REQUIRE(statesOf(*dj) == states + 2);
     REQUIRE(f.host->snapshot().playback == led);
+}
+
+TEST_CASE("room host: a start the player confirms late keeps its anchor until it plays, then re-anchors once",
+          "[core][listening-room][room-host][room-lead]") {
+    HostFixture f;
+    auto dj = openLeadRoom(f);
+    REQUIRE(f.player.pause());
+    f.settle();
+    const auto states = statesOf(*dj);
+    f.now = 20'000;
+    dj->intent(1, RoomIntent{.kind = RoomIntentKind::Resume});
+    f.settle();
+    REQUIRE(statesOf(*dj) == states + 1);
+    const auto led = dj->lastState()->snapshot.playback;
+    REQUIRE(led.playing);
+    REQUIRE(led.anchor_host_ms == 20'000 + room_play_lead_ms);
+    // From here the engine's confirmations come late (a track still loading, a slow output device).
+    const auto on_time = f.player.post;
+    std::vector<std::function<void()>> late;
+    f.player.post = [&late](std::function<void()> task) { late.push_back(std::move(task)); };
+    f.advance(room_play_lead_ms + 400);
+    REQUIRE_FALSE(late.empty());
+    // Notifications while it has not started (a duration, metadata) keep the anchor: its position stands still.
+    f.player.onChanged();
+    REQUIRE(statesOf(*dj) == states + 1);
+    REQUIRE(f.host->snapshot().playback == led);
+    // It plays at last, 400 ms late: one re-anchor, now, at the position it starts from.
+    f.player.post = on_time;
+    for (auto& task : std::exchange(late, {}))
+        task();
+    f.settle();
+    REQUIRE(statesOf(*dj) == states + 2);
+    const auto started = dj->lastState()->snapshot.playback;
+    REQUIRE(started.playing);
+    REQUIRE(started.current_item == led.current_item);
+    REQUIRE(started.anchor_host_ms == 20'700);
+    REQUIRE(started.anchor_position_ms == led.anchor_position_ms);
+    playFor(f, 10);
+    REQUIRE(statesOf(*dj) == states + 2);
+    REQUIRE(f.host->snapshot().playback == started);
 }
 
 TEST_CASE("room host: with no admitted guest a start plays at once", "[core][listening-room][room-host][room-lead]") {

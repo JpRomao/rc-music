@@ -2054,8 +2054,13 @@ std::optional<LocalQueueOccurrenceId> PlayerPresenter::appendRoomSource(const st
 }
 RoomHostPlayerState PlayerPresenter::roomHostState() const {
     const auto& confirmed = controller_.confirmedSnapshot();
-    return {playlistQueueSnapshot(), roomHostStatus(),
-            controller_.seekPending() ? controller_.displayedPositionMs() : confirmed.position_ms, committed_seeks_};
+    const auto status = roomHostStatus();
+    // Playing for the room while the backend is not playing yet: held, or a play or a load on its way.
+    const bool starting =
+        status == PlaybackStatus::Playing && (roomStartHeld() || confirmed.status != PlaybackStatus::Playing);
+    return {playlistQueueSnapshot(), status,
+            controller_.seekPending() ? controller_.displayedPositionMs() : confirmed.position_ms, committed_seeks_,
+            starting};
 }
 PlaybackStatus PlayerPresenter::roomHostStatus() const {
     if (roomStartActive() || (local_track_session_->startPending() &&
@@ -2072,8 +2077,10 @@ bool PlayerPresenter::holdRoomStart() {
     if (exiting_ || download_append_in_progress_ || uses_frozen_fixture_ || showsRoomPlayback() ||
         !local_track_session_->hasTrack())
         return false;
-    if (roomStartHeld())
+    if (roomStartHeld()) {
+        room_start_hold_->offered = false; // the room takes the start offered to it (offerRoomStart)
         return true;
+    }
     const auto shown = playbackState();
     const auto generation = local_track_session_->playbackGeneration();
     // A track still loading to autoplay stays Ready instead; a playing one pauses.
@@ -2598,7 +2605,8 @@ bool PlayerPresenter::removeQueueOccurrence(const QString& occurrence_id) {
 
         if (next_index.has_value()) {
             auto start_intent = local_track_session_->startIntent();
-            switch (controller_.effectivePlaybackStatus()) {
+            // A room start waiting for its anchor counts as playing: the successor starts in its place.
+            switch (roomStartActive() ? PlaybackStatus::Playing : controller_.effectivePlaybackStatus()) {
             case PlaybackStatus::Playing:
                 start_intent = LocalTrackStartIntent::Autoplay;
                 break;
@@ -3532,6 +3540,8 @@ bool PlayerPresenter::play() {
         return false;
     if (roomStartActive())
         return true; // the room starts it at its anchor
+    if (offerRoomStart())
+        return true;
     const PlaybackSnapshot before = controller_.confirmedSnapshot();
     if (uses_frozen_fixture_ && before.duration_ms > 0 && before.position_ms >= before.duration_ms)
         return false;
@@ -3554,17 +3564,22 @@ bool PlayerPresenter::pause() {
         return false;
     if (exiting_)
         return false;
+    const auto shown = playbackState();
     if (endRoomStartHold())
         return true;
     const PlaybackSnapshot before = controller_.confirmedSnapshot();
-    if (!controller_.pause())
+    if (!controller_.pause()) {
+        if (playbackState() != shown)
+            emit playbackChanged();
         return false;
+    }
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         controller_.applyBackendSnapshot(backend_.snapshot());
 #endif
     cancelRestoredPositionForExplicitTransport();
-    const bool changed = before != controller_.confirmedSnapshot();
+    // Also when only what the controls show changed: a released room start the backend has not confirmed.
+    const bool changed = before != controller_.confirmedSnapshot() || playbackState() != shown;
     if (changed) {
         reconcileTimer();
         emit playbackChanged();
@@ -3576,6 +3591,7 @@ bool PlayerPresenter::togglePlayback() {
         return false;
     if (exiting_)
         return false;
+    const auto shown = playbackState();
     // Shown as playing: the toggle pauses it.
     if (endRoomStartHold())
         return true;
@@ -3583,30 +3599,59 @@ bool PlayerPresenter::togglePlayback() {
     if (uses_frozen_fixture_ && before.status != PlaybackStatus::Playing && before.duration_ms > 0 &&
         before.position_ms >= before.duration_ms)
         return false;
-    if (!controller_.togglePlayback())
+    if (offerRoomStart())
+        return true;
+    if (!controller_.togglePlayback()) {
+        if (playbackState() != shown)
+            emit playbackChanged();
         return false;
+    }
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
         controller_.applyBackendSnapshot(backend_.snapshot());
 #endif
     cancelRestoredPositionForExplicitTransport();
-    const bool changed = before != controller_.confirmedSnapshot();
+    // Also when only what the controls show changed: a released room start the backend has not confirmed.
+    const bool changed = before != controller_.confirmedSnapshot() || playbackState() != shown;
     if (changed) {
         reconcileTimer();
         emit playbackChanged();
     }
     return uses_frozen_fixture_ ? changed : true;
 }
-// A pause while a room start waits for its anchor: the start is dropped and the track stays where the
-// hold left it (paused or Ready). A released start not yet confirmed is paused the usual way.
+// A pause during a room start. A held start, or a released one whose track is still loading, is dropped
+// where it is (paused, or kept at Ready): true, the pause is done. A released start the backend was told
+// to play is paused the usual way: false, and its record is gone, so the controls follow the backend.
 bool PlayerPresenter::endRoomStartHold() {
-    const bool held = roomStartHeld();
+    const bool active = roomStartActive();
+    const bool released = active && room_start_hold_->released;
     room_start_hold_.reset();
-    if (!held)
+    if (!active || (released && !local_track_session_->demotePendingAutoplayToStayReady()))
         return false;
     cancelRestoredPositionForExplicitTransport();
     emit playbackChanged();
     return true;
+}
+// While a room is open, a resume (from Ready or Paused) is held before the backend hears it and offered to
+// the room: playbackChanged announces it, and the room takes it from that notification (holdRoomStart)
+// when it leads the start. True then; otherwise the hold is dropped and the caller plays at once.
+bool PlayerPresenter::offerRoomStart() {
+    if (!room_play_order_ || uses_frozen_fixture_ || showsRoomPlayback() || !local_track_session_->hasTrack())
+        return false;
+    const auto status = controller_.effectivePlaybackStatus();
+    if (status != PlaybackStatus::Ready && status != PlaybackStatus::Paused)
+        return false;
+    cancelRestoredPositionForExplicitTransport();
+    room_start_hold_ = RoomStartHold{.generation = local_track_session_->playbackGeneration(), .offered = true};
+    const QPointer<PlayerPresenter> guard{this};
+    emit playbackChanged();
+    if (!guard)
+        return true;
+    if (roomStartHeld() && !room_start_hold_->offered)
+        return true;
+    if (room_start_hold_.has_value() && room_start_hold_->offered)
+        room_start_hold_.reset();
+    return false;
 }
 bool PlayerPresenter::skipBackward() { return skipByPreference(false); }
 bool PlayerPresenter::skipForward() { return skipByPreference(true); }

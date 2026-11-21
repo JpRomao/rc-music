@@ -32,12 +32,15 @@ namespace music_player::m0 {
 // command it accepted counts at once (play reads Playing, a seek its target), and so does a held start
 // (holdStart). The engine may confirm later (in the app, on a later event-loop turn); the room must never
 // mistake that wait for a change. seeks counts the seeks the player accepted, whoever asked: a seek is a
-// start even when it lands near the old position.
+// start even when it lands near the old position. starting: status is Playing but the engine has not
+// started yet (a held start, a play it has not confirmed, a track still loading to play), so position_ms
+// stands still until it does.
 struct RoomHostPlayerState final {
     LocalFileQueueSnapshot queue{};
     PlaybackStatus status{PlaybackStatus::Empty};
     std::int64_t position_ms{};
     std::uint64_t seeks{};
+    bool starting{};
     bool operator==(const RoomHostPlayerState&) const = default;
 };
 
@@ -62,7 +65,9 @@ class RoomHostPlayer {
     // (pausing it, or keeping a track that is still loading from starting) while state() and the host's
     // own controls go on showing Playing. releaseStart plays it; it returns false when nothing is held or
     // the player refuses to play, and state() then says so. The host's own pause, another track or an
-    // error ends a hold, and play() during one changes nothing.
+    // error ends a hold, and play() during one changes nothing. A player may hold a resume of its own
+    // controls before its engine hears it and notify (onChanged, state() Playing and starting): a
+    // holdStart from that notification keeps the hold; without one the player plays at once.
     virtual bool holdStart() = 0;
     virtual bool releaseStart() = 0;
 

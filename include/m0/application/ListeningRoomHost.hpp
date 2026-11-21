@@ -142,7 +142,9 @@ struct ListeningRoomHostDependencies final {
 //     still on its way is never broadcast as a change. Item changes, play/pause and seeks (any accepted
 //     seek, from a guest or the host's own UI) always re-anchor; otherwise the anchor stays while the
 //     player is within room_anchor_tolerance_ms of expectedPositionMs(anchor, now) (before a future
-//     anchor: of its position), so position jitter neither bumps the version nor broadcasts.
+//     anchor: of its position), or has not started yet (RoomHostPlayerState::starting: its position
+//     stands still meanwhile), so position jitter and a slow start neither bump the version nor
+//     broadcast. A start that began later than the tolerance re-anchors once, when it plays.
 //   - Starts lead: with at least one admitted member, a start (playing again, another item while
 //     playing, a seek while playing) is anchored room_play_lead_ms ahead, at the start position, and
 //     RoomHostPlayer::holdStart keeps the host's player silent (its controls still showing playing)

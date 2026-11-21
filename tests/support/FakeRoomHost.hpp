@@ -38,8 +38,9 @@ class SilentPlatformIntegration final : public PlatformIntegration {
 // Starts Playing at the first item (the DeterministicPlaybackBackend default: 84 s of 248 s). Its backend
 // confirms each command at once, or, once `post` is set, on a later turn through it, as the presenter's
 // queued connection delivers backend events in the app. Like PlayerPresenter, state() reports where the
-// player is heading (an accepted command, a held start) and a track loaded to play starts on its Ready
-// confirmation, so a hold can still stop it.
+// player is heading (an accepted command, a held start), a track loaded to play starts on its Ready
+// confirmation, so a hold can still stop it, and a resume is offered to the room (held, then notified)
+// before the backend hears it.
 class FakeRoomHostPlayer final : public RoomHostPlayer {
   public:
     explicit FakeRoomHostPlayer(std::vector<std::filesystem::path> sources, const bool select_first = true)
@@ -65,7 +66,9 @@ class FakeRoomHostPlayer final : public RoomHostPlayer {
         const auto status = held() || autoplay_ ? PlaybackStatus::Playing : controller_.effectivePlaybackStatus();
         const auto position =
             controller_.seekPending() ? controller_.displayedPositionMs() : controller_.confirmedSnapshot().position_ms;
-        return {queue_.snapshot(), status, position, seeks_};
+        const bool starting = status == PlaybackStatus::Playing &&
+                              (held() || controller_.confirmedSnapshot().status != PlaybackStatus::Playing);
+        return {queue_.snapshot(), status, position, seeks_, starting};
     }
     bool next() override {
         const auto current = queue_.currentIndex();
@@ -100,7 +103,23 @@ class FakeRoomHostPlayer final : public RoomHostPlayer {
         changed();
         return true;
     }
-    bool play() override { return held() || controller_.play(); }
+    bool play() override {
+        if (held())
+            return true;
+        // Offered to the room before the backend hears it: a holdStart from this notification keeps it.
+        const auto status = controller_.effectivePlaybackStatus();
+        if (onChanged && batch_depth_ == 0 && queue_.currentOccurrenceId() &&
+            (status == PlaybackStatus::Ready || status == PlaybackStatus::Paused)) {
+            hold_ = backend_.snapshot().generation;
+            offered_ = true;
+            changed();
+            if (held() && !offered_)
+                return true;
+            hold_.reset();
+            offered_ = false;
+        }
+        return controller_.play();
+    }
     std::optional<LocalQueueOccurrenceId> enqueue(const std::filesystem::path& source) override {
         if (!queue_.append({source}))
             return std::nullopt;
@@ -123,8 +142,10 @@ class FakeRoomHostPlayer final : public RoomHostPlayer {
     bool holdStart() override {
         if (!queue_.currentOccurrenceId())
             return false;
-        if (held())
+        if (held()) {
+            offered_ = false;
             return true;
+        }
         if (autoplay_)
             autoplay_ = false; // still waiting for Ready: it stays there
         else if (controller_.effectivePlaybackStatus() != PlaybackStatus::Playing || !controller_.pause())
@@ -258,9 +279,11 @@ class FakeRoomHostPlayer final : public RoomHostPlayer {
     SilentPlatformIntegration platform_{};
     PlayerController controller_;
     LocalFileQueue queue_{};
-    // The generation whose start is held (holdStart), and a loaded track waiting for Ready to play.
+    // The generation whose start is held (holdStart), and a loaded track waiting for Ready to play. offered_:
+    // a resume held by play() itself that the room has not taken yet.
     std::optional<std::uint64_t> hold_;
     bool autoplay_{false};
+    bool offered_{false};
     std::uint64_t seeks_{0};
     int batch_depth_{0};
     bool batch_changed_{false};
