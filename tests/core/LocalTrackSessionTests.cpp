@@ -160,6 +160,39 @@ TEST_CASE("a local track can stay ready without autoplaying", "[m0][qt][core][lo
     CHECK(playback.pause_calls == 0);
 }
 
+TEST_CASE("a pending autoplay can be held at Ready and promoted again before it",
+          "[m0][qt][core][local-track][playback]") {
+    RecordingPlaybackBackend playback;
+    ScriptedMetadataReader metadata;
+    LocalTrackSession session{playback, metadata};
+    const PlaybackEvent ready{PlaybackEventType::SnapshotChanged, {PlaybackStatus::Ready, 0, 2'000, true, 1}};
+
+    SECTION("held: Ready does not start it") {
+        REQUIRE(session.open(L"C:\\Music\\held.wav"));
+        CHECK(session.startPending());
+        REQUIRE(session.demotePendingAutoplayToStayReady());
+        CHECK(session.startIntent() == LocalTrackStartIntent::StayReady);
+        CHECK_FALSE(session.demotePendingAutoplayToStayReady());
+        CHECK(session.applyPlaybackEvent(ready) == LocalTrackPlaybackEventResult::Applied);
+        CHECK(playback.play_calls == 0);
+        CHECK_FALSE(session.startPending());
+        CHECK_FALSE(session.promotePendingStartToAutoplay());
+    }
+    SECTION("promoted again before Ready: it starts then") {
+        REQUIRE(session.open(L"C:\\Music\\held.wav"));
+        REQUIRE(session.demotePendingAutoplayToStayReady());
+        REQUIRE(session.promotePendingStartToAutoplay());
+        CHECK(session.applyPlaybackEvent(ready) == LocalTrackPlaybackEventResult::Applied);
+        CHECK(playback.play_calls == 1);
+        CHECK_FALSE(session.startPending());
+    }
+    SECTION("only an Autoplay start is held") {
+        REQUIRE(session.open(L"C:\\Music\\restored.wav", LocalTrackStartIntent::RestorePaused));
+        CHECK_FALSE(session.demotePendingAutoplayToStayReady());
+        CHECK(session.startIntent() == LocalTrackStartIntent::RestorePaused);
+    }
+}
+
 TEST_CASE("a restored local track becomes paused without autoplay and preserves its confirmed position",
           "[m0][qt][core][local-track][playback][FR-043][regression]") {
     RecordingPlaybackBackend playback;

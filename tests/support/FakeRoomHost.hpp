@@ -35,14 +35,21 @@ class SilentPlatformIntegration final : public PlatformIntegration {
     void requestExit() override {}
 };
 
-// Starts Playing at the first item (the DeterministicPlaybackBackend default: 84 s of 248 s).
+// Starts Playing at the first item (the DeterministicPlaybackBackend default: 84 s of 248 s). Its backend
+// confirms each command at once, or, once `post` is set, on a later turn through it, as the presenter's
+// queued connection delivers backend events in the app. Like PlayerPresenter, state() reports where the
+// player is heading (an accepted command, a held start) and a track loaded to play starts on its Ready
+// confirmation, so a hold can still stop it.
 class FakeRoomHostPlayer final : public RoomHostPlayer {
   public:
     explicit FakeRoomHostPlayer(std::vector<std::filesystem::path> sources, const bool select_first = true)
         : controller_(backend_, platform_, backend_.snapshot()) {
         backend_.setEventCallback([this](const PlaybackEvent& event) {
-            controller_.applyBackendSnapshot(event.snapshot);
-            changed();
+            if (post) {
+                post([this, snapshot = event.snapshot] { confirm(snapshot); });
+                return;
+            }
+            confirm(event.snapshot);
         });
         static_cast<void>(queue_.replace(std::move(sources)));
         if (!select_first)
@@ -52,18 +59,13 @@ class FakeRoomHostPlayer final : public RoomHostPlayer {
     }
 
     // The host picks an item and plays it (a double click in its queue), also when nothing was current.
-    bool playAt(const std::size_t index) {
-        Batch batch{*this};
-        if (!selectAndLoad(index))
-            return false;
-        static_cast<void>(controller_.play());
-        changed();
-        return true;
-    }
+    bool playAt(const std::size_t index) { return selectAndLoad(index, true); }
 
     [[nodiscard]] RoomHostPlayerState state() const override {
-        const auto& playback = controller_.confirmedSnapshot();
-        return {queue_.snapshot(), playback.status, playback.position_ms};
+        const auto status = held() || autoplay_ ? PlaybackStatus::Playing : controller_.effectivePlaybackStatus();
+        const auto position =
+            controller_.seekPending() ? controller_.displayedPositionMs() : controller_.confirmedSnapshot().position_ms;
+        return {queue_.snapshot(), status, position, seeks_};
     }
     bool next() override {
         const auto current = queue_.currentIndex();
@@ -86,11 +88,19 @@ class FakeRoomHostPlayer final : public RoomHostPlayer {
         controller_.beginSeekPreview(position_ms);
         if (!controller_.commitSeekPreview())
             return false;
+        ++seeks_;
         static_cast<void>(backend_.tick());
+        changed();
         return true;
     }
-    bool pause() override { return controller_.pause(); }
-    bool play() override { return controller_.play(); }
+    bool pause() override {
+        if (!held())
+            return controller_.pause();
+        hold_.reset();
+        changed();
+        return true;
+    }
+    bool play() override { return held() || controller_.play(); }
     std::optional<LocalQueueOccurrenceId> enqueue(const std::filesystem::path& source) override {
         if (!queue_.append({source}))
             return std::nullopt;
@@ -109,6 +119,31 @@ class FakeRoomHostPlayer final : public RoomHostPlayer {
             return false;
         changed();
         return true;
+    }
+    bool holdStart() override {
+        if (!queue_.currentOccurrenceId())
+            return false;
+        if (held())
+            return true;
+        if (autoplay_)
+            autoplay_ = false; // still waiting for Ready: it stays there
+        else if (controller_.effectivePlaybackStatus() != PlaybackStatus::Playing || !controller_.pause())
+            return false;
+        // Silent now, even while the controller's pause waits for an earlier command's confirmation.
+        if (backend_.snapshot().status == PlaybackStatus::Playing)
+            static_cast<void>(backend_.pause());
+        hold_ = backend_.snapshot().generation;
+        changed();
+        return true;
+    }
+    bool releaseStart() override {
+        if (!held())
+            return false;
+        hold_.reset();
+        if (!refuse_start && controller_.play())
+            return true;
+        changed();
+        return false;
     }
 
     // Host-only controls, used by the host's own UI and never by guests.
@@ -129,6 +164,8 @@ class FakeRoomHostPlayer final : public RoomHostPlayer {
         if (next())
             return;
         Batch batch{*this};
+        hold_.reset();
+        autoplay_ = false;
         if (queue_end == QueueEndBehavior::StopClearSelection) {
             static_cast<void>(queue_.clearSelection());
             static_cast<void>(backend_.unload());
@@ -154,9 +191,16 @@ class FakeRoomHostPlayer final : public RoomHostPlayer {
     [[nodiscard]] std::uint64_t occurrenceAt(const std::size_t index) const {
         return queue_.items()[index].occurrence_id.value;
     }
+    // What the backend does right now, confirmed or not: Playing is what the host hears.
+    [[nodiscard]] PlaybackStatus audible() const { return backend_.snapshot().status; }
+    [[nodiscard]] std::int64_t audiblePosition() const { return backend_.snapshot().position_ms; }
 
     bool repeat{false};
     QueueEndBehavior queue_end{QueueEndBehavior::StopKeepSelection};
+    // Hands a backend confirmation to a later turn (see the class comment).
+    std::function<void(std::function<void()>)> post;
+    // The player refuses to start a held start when released (a backend that lost its output, say).
+    bool refuse_start{false};
 
   private:
     // Groups the notifications of one compound command into a single onChanged.
@@ -173,17 +217,34 @@ class FakeRoomHostPlayer final : public RoomHostPlayer {
         FakeRoomHostPlayer& owner;
     };
 
-    bool selectAndLoad(const std::size_t index) {
+    // Loads the item; it plays when asked or when the player was playing (or about to).
+    bool selectAndLoad(const std::size_t index, const bool play = false) {
         Batch batch{*this};
-        const bool was_playing = controller_.confirmedSnapshot().status == PlaybackStatus::Playing;
-        if (!queue_.select(index) ||
-            backend_.load(queue_.items()[index].source_path) != PlaybackCommandResult::Accepted)
+        const bool starts = play || state().status == PlaybackStatus::Playing;
+        if (!queue_.select(index))
             return false;
-        if (was_playing)
-            static_cast<void>(controller_.play());
+        hold_.reset();
+        // Set before the load: a synchronous Ready confirmation starts it at once.
+        autoplay_ = starts;
+        if (backend_.load(queue_.items()[index].source_path) != PlaybackCommandResult::Accepted) {
+            autoplay_ = false;
+            return false;
+        }
+        // Like PlayerPresenter after a load: the new track's state does not wait for its queued event.
+        controller_.applyBackendSnapshot(backend_.snapshot());
         changed();
         return true;
     }
+    void confirm(const PlaybackSnapshot& snapshot) {
+        controller_.applyBackendSnapshot(snapshot);
+        if (autoplay_ && snapshot.status == PlaybackStatus::Ready &&
+            snapshot.generation == backend_.snapshot().generation) {
+            autoplay_ = false;
+            static_cast<void>(controller_.play());
+        }
+        changed();
+    }
+    [[nodiscard]] bool held() const { return hold_ == std::optional{backend_.snapshot().generation}; }
     void changed() {
         if (batch_depth_ > 0) {
             batch_changed_ = true;
@@ -197,6 +258,10 @@ class FakeRoomHostPlayer final : public RoomHostPlayer {
     SilentPlatformIntegration platform_{};
     PlayerController controller_;
     LocalFileQueue queue_{};
+    // The generation whose start is held (holdStart), and a loaded track waiting for Ready to play.
+    std::optional<std::uint64_t> hold_;
+    bool autoplay_{false};
+    std::uint64_t seeks_{0};
     int batch_depth_{0};
     bool batch_changed_{false};
 };

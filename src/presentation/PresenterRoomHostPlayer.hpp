@@ -9,7 +9,9 @@ namespace music_player::m0 {
 class PlayerPresenter;
 
 // RoomHostPlayer over the real player (ADR-0022, S7.3): every command delegates to PlayerPresenter,
-// so the host's own UI and the room drive the same queue. onChanged follows the presenter's
+// so the host's own UI and the room drive the same queue. state() is PlayerPresenter::roomHostState(),
+// not the confirmed playback: the backend's events reach the presenter queued, so right after a command
+// the confirmed state is stale. onChanged follows the presenter's
 // stateChanged and playbackChanged signals. The composition turns PlayerPresenter::setRoomPlayOrder on
 // while a room is open, so the queue order stays the play order. Construct, use and destroy on the
 // presenter's thread; it must not outlive the presenter.
@@ -29,6 +31,8 @@ class PresenterRoomHostPlayer final : public RoomHostPlayer {
     std::optional<LocalQueueOccurrenceId> enqueue(const std::filesystem::path& source) override;
     bool remove(LocalQueueOccurrenceId occurrence) override;
     bool move(LocalQueueOccurrenceId occurrence, std::size_t destination_index) override;
+    bool holdStart() override;
+    bool releaseStart() override;
 
   private:
     void changed() const;

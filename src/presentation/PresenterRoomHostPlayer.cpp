@@ -19,10 +19,7 @@ PresenterRoomHostPlayer::~PresenterRoomHostPlayer() {
     QObject::disconnect(playback_connection_);
 }
 
-RoomHostPlayerState PresenterRoomHostPlayer::state() const {
-    const auto& playback = presenter_.confirmedPlayback();
-    return {presenter_.playlistQueueSnapshot(), playback.status, playback.position_ms};
-}
+RoomHostPlayerState PresenterRoomHostPlayer::state() const { return presenter_.roomHostState(); }
 
 bool PresenterRoomHostPlayer::next() { return presenter_.nextTrack(); }
 
@@ -35,6 +32,10 @@ bool PresenterRoomHostPlayer::seek(const std::int64_t position_ms) {
 bool PresenterRoomHostPlayer::pause() { return presenter_.pause(); }
 
 bool PresenterRoomHostPlayer::play() { return presenter_.play(); }
+
+bool PresenterRoomHostPlayer::holdStart() { return presenter_.holdRoomStart(); }
+
+bool PresenterRoomHostPlayer::releaseStart() { return presenter_.releaseRoomStart(); }
 
 std::optional<LocalQueueOccurrenceId> PresenterRoomHostPlayer::enqueue(const std::filesystem::path& source) {
     return presenter_.appendRoomSource(source);

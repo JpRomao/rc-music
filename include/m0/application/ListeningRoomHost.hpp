@@ -137,11 +137,21 @@ struct ListeningRoomHostDependencies final {
 //     at most maximum_room_queue_items items and only as many as keep estimatedRoomStateBytes of the
 //     guests' state within maximum_room_control_message_bytes, so every state the host sends is
 //     encodable. A message a link still refuses is skipped: that member keeps its older version.
-//   - Playback: current_item, playing and the anchor (host_clock_ms(), position). Item changes,
-//     play/pause and seek intents always re-anchor; otherwise the anchor stays while the player is
-//     within room_anchor_tolerance_ms of expectedPositionMs(anchor, now), so position jitter neither
-//     bumps the version nor broadcasts. (A seek made in the host's own UI that moves less than the
-//     tolerance is indistinguishable from jitter and keeps the anchor.)
+//   - Playback: current_item, playing and the anchor (host_clock_ms(), position), from
+//     RoomHostPlayer::state(), which already counts what the player was told to do, so a confirmation
+//     still on its way is never broadcast as a change. Item changes, play/pause and seeks (any accepted
+//     seek, from a guest or the host's own UI) always re-anchor; otherwise the anchor stays while the
+//     player is within room_anchor_tolerance_ms of expectedPositionMs(anchor, now) (before a future
+//     anchor: of its position), so position jitter neither bumps the version nor broadcasts.
+//   - Starts lead: with at least one admitted member, a start (playing again, another item while
+//     playing, a seek while playing) is anchored room_play_lead_ms ahead, at the start position, and
+//     RoomHostPlayer::holdStart keeps the host's player silent (its controls still showing playing)
+//     until releaseStart at that instant, so guests begin with the host. Exceptions start at once,
+//     anchored now: no admitted member; an item first described while already current (the host was
+//     playing it); a player that refuses the hold; and a re-anchor for drift, which is no start. Another
+//     start during the wait takes a new anchor; a pause ends the wait paused; closing the room, or the
+//     last admitted member leaving, releases the player at once; a player that refuses to start at the
+//     anchor reads as paused.
 //   - When the current item changes, its lyrics (if any) go once to every admitted member as RoomLyrics,
 //     and to a member admitted mid-song. Lyrics above maximum_room_lyrics_bytes are never sent.
 //
@@ -325,6 +335,8 @@ class ListeningRoomHost final {
     [[nodiscard]] std::optional<RoomItem> roomItem(const LocalFileQueueSnapshotItem& entry) const;
     bool refresh();
     bool rebuild();
+    [[nodiscard]] bool anyAdmittedGuest() const;
+    void waitForStart();
     void admitted(const std::shared_ptr<RoomLink>& link);
     void sendState(const Connection& connection) const;
     void sendLyrics(Connection& connection) const;
@@ -450,7 +462,11 @@ class ListeningRoomHost final {
     std::map<std::string, std::int64_t, std::less<>> drifts_;
     // The last state guests received (admitted members only), to broadcast only what they would see.
     RoomSnapshot sent_view_;
-    bool reanchor_{false};
+    // RoomHostPlayerState::seeks at the last rebuild: a change is a seek.
+    std::uint64_t seen_seeks_{0};
+    // The held start waiting for its anchor (0: none); a new wait or a re-anchor replaces it.
+    std::uint64_t start_wait_{0};
+    std::uint64_t next_start_wait_{0};
     bool refreshing_{false};
     bool refresh_again_{false};
     std::shared_ptr<Alive> alive_;

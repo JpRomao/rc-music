@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <set>
@@ -83,14 +84,23 @@ struct HostFixture final {
                 },
             .host_fingerprint = host_fingerprint,
             .host_profile = ListenerProfile{"Joao", AvatarChoice{}},
-            .schedule = [this](std::int64_t delay_ms,
-                               std::function<void()> task) { scheduled.push_back({delay_ms, std::move(task)}); },
+            .schedule =
+                [this](std::int64_t delay_ms, std::function<void()> task) {
+                    if (timed)
+                        timers.push_back({now + delay_ms, timer_order++, std::move(task)});
+                    else
+                        scheduled.push_back({delay_ms, std::move(task)});
+                },
             .files = &outbox,
             .uploads = &uploads,
             .upload_probe = &probe,
         });
         host->onJoinRequest = [this](const RoomMember& member) { join_requests.push_back(member); };
         host->onDriftsChanged = [this] { ++drift_changes; };
+        if (timed)
+            player.post = [this](std::function<void()> task) {
+                timers.push_back({now, timer_order++, std::move(task)});
+            };
     }
     std::unique_ptr<Guest> connect(const std::string& fingerprint) {
         auto guest = std::make_unique<Guest>();
@@ -107,6 +117,24 @@ struct HostFixture final {
         guest->hello(std::move(nickname));
         return guest;
     }
+    // Timed mode: runs the tasks due within ms from now in time order, the clock moving to each, and leaves
+    // the clock at now + ms. advance(0) delivers what is due at once (the player's confirmations).
+    void advance(const std::int64_t ms) {
+        const auto until = now + ms;
+        for (;;) {
+            const auto next = std::min_element(timers.begin(), timers.end(), [](const Timer& a, const Timer& b) {
+                return a.due != b.due ? a.due < b.due : a.order < b.order;
+            });
+            if (next == timers.end() || next->due > until)
+                break;
+            now = std::max(now, next->due);
+            auto task = std::move(next->task);
+            timers.erase(next);
+            task();
+        }
+        now = until;
+    }
+    void settle() { advance(0); }
     // Runs every task scheduled so far (as if their delays elapsed), in order.
     void runScheduled() {
         auto due = std::move(scheduled);
@@ -132,6 +160,16 @@ struct HostFixture final {
     std::vector<RoomMember> join_requests;
     int drift_changes{0};
     std::vector<std::pair<std::int64_t, std::function<void()>>> scheduled;
+    // Timed mode, set before start(): scheduled tasks wait for their time in `timers` (see advance()) and the
+    // player confirms its commands on a later turn, like the presenter in the app.
+    struct Timer final {
+        std::int64_t due{};
+        std::uint64_t order{};
+        std::function<void()> task;
+    };
+    bool timed{false};
+    std::vector<Timer> timers;
+    std::uint64_t timer_order{0};
     std::unique_ptr<ListeningRoomHost> host;
 };
 
@@ -701,6 +739,264 @@ TEST_CASE("room host: drift beyond the tolerance re-anchors once", "[core][liste
     REQUIRE(after.playback.anchor_position_ms == 84'400);
     REQUIRE(after.playback.anchor_host_ms == 10'520);
     REQUIRE(dj->lastState()->snapshot == after);
+}
+
+// Starts lead (spec: "T fica cerca de 300 ms no futuro"). These tests run timed: the player confirms its commands
+// on a later turn, as the presenter does in the app, where the first attempt (66db347) looped.
+namespace {
+
+// An open room in timed mode with fp-dj admitted; the player plays item 0 at 84 s.
+std::unique_ptr<Guest> openLeadRoom(HostFixture& f) {
+    f.timed = true;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto dj = f.join("fp-dj");
+    f.settle();
+    REQUIRE(f.host->snapshot().playback.playing);
+    return dj;
+}
+
+std::size_t statesOf(const Guest& guest) { return guest.all<RoomStateMessage>().size(); }
+
+// Steps of normal playback: the clock and the player move together.
+void playFor(HostFixture& f, const int steps) {
+    for (int step = 0; step < steps; ++step) {
+        f.advance(200);
+        f.player.tick();
+        f.settle();
+    }
+}
+
+} // namespace
+
+TEST_CASE("room host: with a guest every start begins room_play_lead_ms ahead, once, and the host waits for it",
+          "[core][listening-room][room-host][room-lead]") {
+    HostFixture f;
+    auto dj = openLeadRoom(f);
+    std::function<void()> start;
+    std::size_t index = 0;
+    std::int64_t position = 84'000;
+    SECTION("the host resumes") {
+        REQUIRE(f.player.pause());
+        f.settle();
+        start = [&] { REQUIRE(f.player.play()); };
+    }
+    SECTION("a guest resumes") {
+        REQUIRE(f.player.pause());
+        f.settle();
+        start = [&] { dj->intent(1, RoomIntent{.kind = RoomIntentKind::Resume}); };
+    }
+    SECTION("a guest skips to the next item") {
+        start = [&] { dj->intent(1, RoomIntent{.kind = RoomIntentKind::Next}); };
+        index = 1;
+        position = 0;
+    }
+    SECTION("a guest goes back to the previous item") {
+        f.player.repeat = true;
+        start = [&] { dj->intent(1, RoomIntent{.kind = RoomIntentKind::Previous}); };
+        index = 2;
+        position = 0;
+    }
+    SECTION("the host skips to the next item") {
+        start = [&] { REQUIRE(f.player.next()); };
+        index = 1;
+        position = 0;
+    }
+    SECTION("the track ends and the next one plays") {
+        start = [&] { f.player.finishTrack(); };
+        index = 1;
+        position = 0;
+    }
+    SECTION("the host plays another item of its queue") {
+        start = [&] { REQUIRE(f.player.playAt(2)); };
+        index = 2;
+        position = 0;
+    }
+    SECTION("a guest seeks") {
+        start = [&] { dj->intent(1, RoomIntent{.kind = RoomIntentKind::Seek, .position_ms = 100'000}); };
+        position = 100'000;
+    }
+    SECTION("the host seeks") {
+        start = [&] { REQUIRE(f.player.seek(100'000)); };
+        position = 100'000;
+    }
+    const auto states = statesOf(*dj);
+    f.now = 20'000;
+    start();
+    f.settle();
+
+    // One new state, anchored at the start position room_play_lead_ms from now.
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+    REQUIRE(statesOf(*dj) == states + 1);
+    const auto led = dj->lastState()->snapshot.playback;
+    REQUIRE(led.playing);
+    REQUIRE(led.current_item == f.player.occurrenceAt(index));
+    REQUIRE(led.anchor_host_ms == 20'000 + room_play_lead_ms);
+    REQUIRE(led.anchor_position_ms == position);
+    // Meanwhile the host's controls show playing and its player is silent.
+    REQUIRE(f.player.state().status == PlaybackStatus::Playing);
+    REQUIRE(f.player.audible() != PlaybackStatus::Playing);
+    f.advance(room_play_lead_ms - 1);
+    REQUIRE(f.player.audible() != PlaybackStatus::Playing);
+    REQUIRE(statesOf(*dj) == states + 1);
+    // At the anchor it plays from the start position.
+    f.advance(1);
+    REQUIRE(f.player.audible() == PlaybackStatus::Playing);
+    REQUIRE(f.player.audiblePosition() == position);
+    // Seconds of playback later nothing else went out: no pause, no second start.
+    playFor(f, 15);
+    REQUIRE(f.player.audible() == PlaybackStatus::Playing);
+    REQUIRE(statesOf(*dj) == states + 1);
+    REQUIRE(f.host->snapshot().playback == led);
+}
+
+TEST_CASE("room host: a pause during the wait wins: the room ends paused and nothing starts at the anchor",
+          "[core][listening-room][room-host][room-lead]") {
+    HostFixture f;
+    auto dj = openLeadRoom(f);
+    const auto states = statesOf(*dj);
+    f.now = 20'000;
+    dj->intent(1, RoomIntent{.kind = RoomIntentKind::Next});
+    f.settle();
+    REQUIRE(dj->lastState()->snapshot.playback.anchor_host_ms == 20'000 + room_play_lead_ms);
+    f.advance(100);
+    SECTION("from the host's own controls") { REQUIRE(f.player.pause()); }
+    SECTION("from a guest") { dj->intent(2, RoomIntent{.kind = RoomIntentKind::Pause}); }
+    f.settle();
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+    REQUIRE(statesOf(*dj) == states + 2);
+    const auto paused = dj->lastState()->snapshot.playback;
+    REQUIRE_FALSE(paused.playing);
+    REQUIRE(paused.current_item == f.player.occurrenceAt(1));
+    REQUIRE(paused.anchor_position_ms == 0);
+    REQUIRE(f.player.state().status != PlaybackStatus::Playing);
+
+    f.advance(room_play_lead_ms);
+    playFor(f, 10);
+    REQUIRE(f.player.audible() != PlaybackStatus::Playing);
+    REQUIRE(f.player.state().status != PlaybackStatus::Playing);
+    REQUIRE(statesOf(*dj) == states + 2);
+    REQUIRE(f.host->snapshot().playback == paused);
+}
+
+TEST_CASE("room host: another start during the wait moves the anchor and only that one plays",
+          "[core][listening-room][room-host][room-lead]") {
+    HostFixture f;
+    auto dj = openLeadRoom(f);
+    const auto states = statesOf(*dj);
+    f.now = 20'000;
+    dj->intent(1, RoomIntent{.kind = RoomIntentKind::Next});
+    f.settle();
+    f.advance(100);
+    std::size_t index = 1;
+    std::int64_t position = 0;
+    SECTION("the next item") {
+        dj->intent(2, RoomIntent{.kind = RoomIntentKind::Next});
+        index = 2;
+    }
+    SECTION("a seek") {
+        REQUIRE(f.player.seek(30'000));
+        position = 30'000;
+    }
+    f.settle();
+    REQUIRE(dj->all<RoomIntentRejected>().empty());
+    REQUIRE(statesOf(*dj) == states + 2);
+    const auto led = dj->lastState()->snapshot.playback;
+    REQUIRE(led.playing);
+    REQUIRE(led.current_item == f.player.occurrenceAt(index));
+    REQUIRE(led.anchor_host_ms == 20'100 + room_play_lead_ms);
+    REQUIRE(led.anchor_position_ms == position);
+    // The first anchor passes in silence.
+    f.advance(room_play_lead_ms - 1);
+    REQUIRE(f.player.audible() != PlaybackStatus::Playing);
+    f.advance(1);
+    REQUIRE(f.player.audible() == PlaybackStatus::Playing);
+    REQUIRE(f.player.audiblePosition() == position);
+    playFor(f, 15);
+    REQUIRE(f.player.audible() == PlaybackStatus::Playing);
+    REQUIRE(statesOf(*dj) == states + 2);
+    REQUIRE(f.host->snapshot().playback == led);
+}
+
+TEST_CASE("room host: with no admitted guest a start plays at once", "[core][listening-room][room-host][room-lead]") {
+    HostFixture f;
+    f.timed = true;
+    f.start();
+    static_cast<void>(f.host->open({}));
+    auto waiting = f.join("fp-new"); // asks to join: pending, not admitted
+    f.settle();
+    REQUIRE(f.isMember("fp-new"));
+    SECTION("the next item") {
+        f.now = 20'000;
+        REQUIRE(f.player.next());
+    }
+    SECTION("a resume") {
+        REQUIRE(f.player.pause());
+        f.settle();
+        f.now = 20'000;
+        REQUIRE(f.player.play());
+    }
+    f.settle();
+    REQUIRE(f.player.audible() == PlaybackStatus::Playing);
+    REQUIRE(f.host->snapshot().playback.playing);
+    REQUIRE(f.host->snapshot().playback.anchor_host_ms == 20'000);
+    playFor(f, 5);
+    REQUIRE(f.player.audible() == PlaybackStatus::Playing);
+    REQUIRE(f.host->snapshot().playback.anchor_host_ms == 20'000);
+}
+
+TEST_CASE("room host: closing the room or the last guest leaving during the wait starts the host at once",
+          "[core][listening-room][room-host][room-lead]") {
+    HostFixture f;
+    auto dj = openLeadRoom(f);
+    f.now = 20'000;
+    dj->intent(1, RoomIntent{.kind = RoomIntentKind::Next});
+    f.settle();
+    f.advance(100);
+    REQUIRE(f.player.audible() != PlaybackStatus::Playing);
+    bool still_open = true;
+    SECTION("the host closes the room") {
+        f.host->close();
+        still_open = false;
+    }
+    SECTION("the guest leaves") { static_cast<void>(dj->link->sendControl(RoomBye{RoomByeReason::Closed})); }
+    SECTION("the host kicks the guest") { REQUIRE(f.host->kick("fp-dj", false)); }
+    f.settle();
+    REQUIRE(f.player.audible() == PlaybackStatus::Playing);
+    REQUIRE(f.player.audiblePosition() == 0);
+    if (still_open) {
+        const auto playback = f.host->snapshot().playback;
+        REQUIRE(playback.playing);
+        REQUIRE(playback.current_item == f.player.occurrenceAt(1));
+        REQUIRE(playback.anchor_host_ms == 20'100);
+        REQUIRE(playback.anchor_position_ms == 0);
+    }
+    // It keeps playing past the old anchor.
+    playFor(f, 5);
+    REQUIRE(f.player.audible() == PlaybackStatus::Playing);
+    REQUIRE(f.player.state().status == PlaybackStatus::Playing);
+}
+
+TEST_CASE("room host: a player that refuses the start at the anchor leaves the room paused",
+          "[core][listening-room][room-host][room-lead]") {
+    HostFixture f;
+    auto dj = openLeadRoom(f);
+    const auto states = statesOf(*dj);
+    f.now = 20'000;
+    dj->intent(1, RoomIntent{.kind = RoomIntentKind::Next});
+    f.settle();
+    f.player.refuse_start = true;
+    f.advance(room_play_lead_ms);
+    f.settle();
+    REQUIRE(f.player.audible() != PlaybackStatus::Playing);
+    REQUIRE(f.player.state().status != PlaybackStatus::Playing);
+    const auto playback = f.host->snapshot().playback;
+    REQUIRE_FALSE(playback.playing);
+    REQUIRE(playback.current_item == f.player.occurrenceAt(1));
+    REQUIRE(dj->lastState()->snapshot.playback == playback);
+    REQUIRE(statesOf(*dj) == states + 2);
+    playFor(f, 5);
+    REQUIRE(statesOf(*dj) == states + 2);
 }
 
 TEST_CASE("room host: summaries are capped and the state window starts at the current item",

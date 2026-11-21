@@ -81,6 +81,14 @@ bool LocalTrackSession::promotePendingStartToAutoplay() noexcept {
     return true;
 }
 
+bool LocalTrackSession::demotePendingAutoplayToStayReady() noexcept {
+    if (!has_track_ || !start_pending_ || start_intent_ != LocalTrackStartIntent::Autoplay) {
+        return false;
+    }
+    start_intent_ = LocalTrackStartIntent::StayReady;
+    return true;
+}
+
 LocalTrackPlaybackEventResult LocalTrackSession::applyPlaybackEvent(const PlaybackEvent& event) {
     if (!has_track_ || event.snapshot.generation != playback_generation_ || source_volume_removed_) {
         return LocalTrackPlaybackEventResult::Ignored;
@@ -188,6 +196,8 @@ MetadataGeneration LocalTrackSession::metadataGeneration() const noexcept { retu
 std::uint64_t LocalTrackSession::playbackGeneration() const noexcept { return playback_generation_; }
 
 LocalTrackStartIntent LocalTrackSession::startIntent() const noexcept { return start_intent_; }
+
+bool LocalTrackSession::startPending() const noexcept { return has_track_ && start_pending_; }
 
 const std::optional<TrackMetadata>& LocalTrackSession::trackMetadata() const noexcept { return track_metadata_; }
 

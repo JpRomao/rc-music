@@ -859,6 +859,9 @@ PlayerPresenter::PlaybackState PlayerPresenter::playbackState() const {
     if (showsRoomPlayback())
         return room_playback_.status == PlaybackStatus::Empty ? PlaybackState::Loading
                                                               : mapPlaybackState(room_playback_.status);
+    // A listening-room start waiting for its anchor (holdRoomStart) shows what the room plays.
+    if (roomStartActive())
+        return PlaybackState::Playing;
     return mapPlaybackState(controller_.confirmedSnapshot().status);
 }
 bool PlayerPresenter::queueLoaded() const noexcept {
@@ -2049,7 +2052,55 @@ std::optional<LocalQueueOccurrenceId> PlayerPresenter::appendRoomSource(const st
         return std::nullopt;
     return local_queue_.items().back().occurrence_id;
 }
-const PlaybackSnapshot& PlayerPresenter::confirmedPlayback() const noexcept { return controller_.confirmedSnapshot(); }
+RoomHostPlayerState PlayerPresenter::roomHostState() const {
+    const auto& confirmed = controller_.confirmedSnapshot();
+    return {playlistQueueSnapshot(), roomHostStatus(),
+            controller_.seekPending() ? controller_.displayedPositionMs() : confirmed.position_ms, committed_seeks_};
+}
+PlaybackStatus PlayerPresenter::roomHostStatus() const {
+    if (roomStartActive() || (local_track_session_->startPending() &&
+                              local_track_session_->startIntent() == LocalTrackStartIntent::Autoplay))
+        return PlaybackStatus::Playing;
+    return controller_.effectivePlaybackStatus();
+}
+bool PlayerPresenter::roomStartActive() const {
+    return room_start_hold_.has_value() && local_track_session_->hasTrack() &&
+           room_start_hold_->generation == local_track_session_->playbackGeneration();
+}
+bool PlayerPresenter::roomStartHeld() const { return roomStartActive() && !room_start_hold_->released; }
+bool PlayerPresenter::holdRoomStart() {
+    if (exiting_ || download_append_in_progress_ || uses_frozen_fixture_ || showsRoomPlayback() ||
+        !local_track_session_->hasTrack())
+        return false;
+    if (roomStartHeld())
+        return true;
+    const auto shown = playbackState();
+    const auto generation = local_track_session_->playbackGeneration();
+    // A track still loading to autoplay stays Ready instead; a playing one pauses.
+    if (!local_track_session_->demotePendingAutoplayToStayReady() &&
+        (controller_.effectivePlaybackStatus() != PlaybackStatus::Playing || !controller_.pause()))
+        return false;
+    // Silent now, even when the controller's pause waits for an earlier command's confirmation or the
+    // track's own autoplay already reached the backend.
+    if (backend_.snapshot().status == PlaybackStatus::Playing && backend_.snapshot().generation == generation)
+        static_cast<void>(backend_.pause());
+    room_start_hold_ = RoomStartHold{.generation = generation};
+    if (playbackState() != shown)
+        emit playbackChanged();
+    return true;
+}
+bool PlayerPresenter::releaseRoomStart() {
+    if (!roomStartHeld())
+        return false;
+    // It keeps showing Playing until the backend confirms it (handlePlaybackEvent), so nothing flickers.
+    room_start_hold_->released = true;
+    if (!exiting_ && !download_append_in_progress_ &&
+        (local_track_session_->promotePendingStartToAutoplay() || controller_.play()))
+        return true;
+    room_start_hold_.reset();
+    emit playbackChanged();
+    return false;
+}
 bool PlayerPresenter::roomPrivacyNoticeShown() const noexcept { return preferences().room_privacy_notice_shown; }
 bool PlayerPresenter::markRoomPrivacyNoticeShown() {
     if (exiting_ || !controller_.setRoomPrivacyNoticeShown(true))
@@ -2298,6 +2349,8 @@ bool PlayerPresenter::playQueueOccurrence(const QString& occurrence_id) {
         return false;
 
     const auto current = local_queue_.currentIndex();
+    if (current == target && roomStartActive())
+        return true; // already starting, at the room's anchor
     if (current == target) {
         switch (controller_.effectivePlaybackStatus()) {
         case PlaybackStatus::Loading: {
@@ -2676,6 +2729,12 @@ void PlayerPresenter::handlePlaybackEvent(PlaybackEvent event) {
                              occurrence_retry_->generation == event.snapshot.generation &&
                              local_queue_.currentOccurrenceId() == std::optional{occurrence_retry_->occurrence_id};
     controller_.applyBackendSnapshot(event.snapshot);
+    if (room_start_hold_.has_value()) {
+        const auto status = controller_.confirmedSnapshot().status;
+        if ((room_start_hold_->released && status == PlaybackStatus::Playing) || status == PlaybackStatus::Error ||
+            status == PlaybackStatus::Empty)
+            room_start_hold_.reset();
+    }
     reconcileRestoredPosition();
     bool state_projection_changed = volume_removed;
     bool source_import_changed = false;
@@ -3471,6 +3530,8 @@ bool PlayerPresenter::play() {
         return false;
     if (exiting_)
         return false;
+    if (roomStartActive())
+        return true; // the room starts it at its anchor
     const PlaybackSnapshot before = controller_.confirmedSnapshot();
     if (uses_frozen_fixture_ && before.duration_ms > 0 && before.position_ms >= before.duration_ms)
         return false;
@@ -3493,6 +3554,8 @@ bool PlayerPresenter::pause() {
         return false;
     if (exiting_)
         return false;
+    if (endRoomStartHold())
+        return true;
     const PlaybackSnapshot before = controller_.confirmedSnapshot();
     if (!controller_.pause())
         return false;
@@ -3513,6 +3576,9 @@ bool PlayerPresenter::togglePlayback() {
         return false;
     if (exiting_)
         return false;
+    // Shown as playing: the toggle pauses it.
+    if (endRoomStartHold())
+        return true;
     const PlaybackSnapshot before = controller_.confirmedSnapshot();
     if (uses_frozen_fixture_ && before.status != PlaybackStatus::Playing && before.duration_ms > 0 &&
         before.position_ms >= before.duration_ms)
@@ -3530,6 +3596,17 @@ bool PlayerPresenter::togglePlayback() {
         emit playbackChanged();
     }
     return uses_frozen_fixture_ ? changed : true;
+}
+// A pause while a room start waits for its anchor: the start is dropped and the track stays where the
+// hold left it (paused or Ready). A released start not yet confirmed is paused the usual way.
+bool PlayerPresenter::endRoomStartHold() {
+    const bool held = roomStartHeld();
+    room_start_hold_.reset();
+    if (!held)
+        return false;
+    cancelRestoredPositionForExplicitTransport();
+    emit playbackChanged();
+    return true;
 }
 bool PlayerPresenter::skipBackward() { return skipByPreference(false); }
 bool PlayerPresenter::skipForward() { return skipByPreference(true); }
@@ -3694,8 +3771,9 @@ bool PlayerPresenter::navigate(const QueueDirection direction) {
     const auto start_intent =
         recovering_terminal_source
             ? local_recovery_intent_.value_or(local_track_session_->startIntent())
-            : (controller_.effectivePlaybackStatus() == PlaybackStatus::Playing ? LocalTrackStartIntent::Autoplay
-                                                                                : LocalTrackStartIntent::StayReady);
+            : (roomStartActive() || controller_.effectivePlaybackStatus() == PlaybackStatus::Playing
+                   ? LocalTrackStartIntent::Autoplay
+                   : LocalTrackStartIntent::StayReady);
     if (direction == QueueDirection::Next) {
         const auto advance = advanceLocalOccurrence(start_intent, false);
         if (advance != LocalAdvanceResult::Accepted)
@@ -3757,8 +3835,10 @@ bool PlayerPresenter::commitSeekPreview() {
     return finishSeekCommand(controller_.commitSeekPreview(), generation);
 }
 bool PlayerPresenter::finishSeekCommand(const bool accepted, const std::uint64_t generation) {
-    if (accepted)
+    if (accepted) {
         cancelRestoredPositionForExplicitTransport();
+        ++committed_seeks_;
+    }
     reconcileTimer();
     const QPointer<PlayerPresenter> guard{this};
     emit playbackChanged();

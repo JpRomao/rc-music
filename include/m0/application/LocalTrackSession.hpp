@@ -43,6 +43,8 @@ class LocalTrackSession final {
                    LocalTrackStartIntent start_intent = LocalTrackStartIntent::Autoplay);
     [[nodiscard]] bool unload();
     [[nodiscard]] bool promotePendingStartToAutoplay() noexcept;
+    // A pending Autoplay start stays Ready instead (a held listening-room start); false when none.
+    [[nodiscard]] bool demotePendingAutoplayToStayReady() noexcept;
     [[nodiscard]] LocalTrackPlaybackEventResult applyPlaybackEvent(const PlaybackEvent& event);
     [[nodiscard]] bool pollMetadata();
     [[nodiscard]] bool cancelMetadata();
@@ -57,6 +59,8 @@ class LocalTrackSession final {
     [[nodiscard]] MetadataGeneration metadataGeneration() const noexcept;
     [[nodiscard]] std::uint64_t playbackGeneration() const noexcept;
     [[nodiscard]] LocalTrackStartIntent startIntent() const noexcept;
+    // The track waits for Ready to apply startIntent().
+    [[nodiscard]] bool startPending() const noexcept;
     [[nodiscard]] const std::optional<TrackMetadata>& trackMetadata() const noexcept;
 
   private:

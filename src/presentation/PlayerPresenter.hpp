@@ -16,6 +16,7 @@
 #include "m0/ports/AudioFileLocator.hpp"
 #include "m0/ports/AudioFilesPicker.hpp"
 #include "m0/ports/LocalSourceDiscovery.hpp"
+#include "m0/ports/RoomHostPlayer.hpp"
 #include "m0/ports/SystemPowerEvents.hpp"
 #include "m0/presentation/LocalQueueListModel.hpp"
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
@@ -468,7 +469,16 @@ class PlayerPresenter final : public QObject {
     void showRoomPlayback(std::optional<RoomTrackSummary> track);
     // Appends one file without playback, library admission or download receipt; its new occurrence.
     [[nodiscard]] std::optional<LocalQueueOccurrenceId> appendRoomSource(const std::filesystem::path& source);
-    [[nodiscard]] const PlaybackSnapshot& confirmedPlayback() const noexcept;
+    // RoomHostPlayer::state(): the queue and where playback is heading. An accepted transport command or
+    // seek counts before the backend confirms it (its events arrive queued), a track loaded to autoplay
+    // counts as playing, and so does a held room start.
+    [[nodiscard]] RoomHostPlayerState roomHostState() const;
+    // RoomHostPlayer::holdStart/releaseStart. A held start keeps the current track silent (paused, or a
+    // pending autoplay kept at Ready) while playbackState() still shows Playing, so the play button, tray
+    // and system media controls do not flicker. pause()/togglePlayback() end it paused, play() keeps it,
+    // another track, an error or an unload drop it.
+    [[nodiscard]] bool holdRoomStart();
+    [[nodiscard]] bool releaseRoomStart();
     // The one-time IP privacy notice of the listening room (FR-058), kept with the preferences.
     [[nodiscard]] bool roomPrivacyNoticeShown() const noexcept;
     bool markRoomPrivacyNoticeShown();
@@ -585,6 +595,11 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool roomHoldsPosition() const;
     // S13.1: the room's item is shown while the local session has no track (the guest's queue is away).
     [[nodiscard]] bool showsRoomPlayback() const noexcept;
+    // A room start of the current track that is held, or released and not yet confirmed Playing.
+    [[nodiscard]] bool roomStartActive() const;
+    [[nodiscard]] bool roomStartHeld() const;
+    [[nodiscard]] PlaybackStatus roomHostStatus() const;
+    bool endRoomStartHold();
     void completeExit();
     void cancelPendingExit();
     void completeDefaultAppsSettingsLaunch(DefaultAppsSettingsLaunchResult result, std::uint64_t generation);
@@ -768,6 +783,14 @@ class PlayerPresenter final : public QObject {
     // (the follower's generations, which the local track session ignores).
     std::optional<RoomTrackSummary> room_track_{};
     PlaybackSnapshot room_playback_{};
+    // A room start held for the room's anchor (holdRoomStart): its track's playback generation, and
+    // whether it was released and still waits for the backend to confirm Playing.
+    struct RoomStartHold final {
+        std::uint64_t generation{};
+        bool released{false};
+    };
+    std::optional<RoomStartHold> room_start_hold_{};
+    std::uint64_t committed_seeks_{0};
     std::optional<std::uint64_t> restored_eof_generation_{};
     bool preferences_future_version_pending_{false};
     bool session_future_version_pending_{false};
