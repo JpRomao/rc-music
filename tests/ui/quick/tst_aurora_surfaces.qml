@@ -221,4 +221,30 @@ TestCase {
         compare(spy.count, 1);
         verify(!child(e, "queue-empty-secondary").visible);
     }
+    function test_emptyStateHighContrast() {
+        const e = open(emptyHost, {
+            iconName: "queue",
+            title: "A fila está vazia"
+        });
+        sameColor(child(e, "empty-icon-circle").color, contract.selectionColor, "círculo normal");
+        sameColor(child(e, "empty-icon").color, contract.accentColor, "ícone normal");
+        driver.setHighContrast(true, true);
+        const circle = child(e, "empty-icon-circle");
+        sameColor(circle.color, contract.canvasColor, "círculo");
+        compare(circle.border.width, 2);
+        sameColor(circle.border.color, contract.textPrimaryColor, "contorno");
+        sameColor(child(e, "empty-icon").color, contract.textPrimaryColor, "ícone");
+    }
+    function test_noticeAccessibleName() {
+        const n = open(noticeHost, {
+            title: "Configurações recuperadas",
+            text: "Algumas opções voltaram ao padrão."
+        });
+        compare(n.Accessible.name, "Configurações recuperadas. Algumas opções voltaram ao padrão.");
+        n.text = "";
+        compare(n.Accessible.name, "Configurações recuperadas");
+        n.title = "";
+        n.text = "Algumas opções voltaram ao padrão.";
+        compare(n.Accessible.name, "Algumas opções voltaram ao padrão.");
+    }
 }

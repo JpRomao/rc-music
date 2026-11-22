@@ -24,7 +24,9 @@ ColumnLayout {
         implicitWidth: 64
         implicitHeight: 64
         radius: 32
-        color: root.contract.selectionColor
+        color: root.contract.highContrast ? root.contract.canvasColor : root.contract.selectionColor
+        border.width: root.contract.highContrast ? 2 : 0
+        border.color: root.contract.textPrimaryColor
         Layout.alignment: Qt.AlignHCenter
         Layout.bottomMargin: 8
 
@@ -33,7 +35,7 @@ ColumnLayout {
             anchors.centerIn: parent
             iconName: root.iconName
             size: 28
-            color: root.contract.accentColor
+            color: root.contract.highContrast ? root.contract.textPrimaryColor : root.contract.accentColor
         }
     }
     Text {
