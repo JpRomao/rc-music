@@ -101,6 +101,12 @@ Dialog {
         }
     }
 
+    // The first control worth focusing: the close button, so Escape and Tab start from the drawer's top.
+    function focusInside() {
+        if (closeControl)
+            closeControl.forceActiveFocus(Qt.TabFocusReason);
+    }
+
     onOpened: {
         trackChanged = false;
         resumeFollowing();
@@ -438,13 +444,13 @@ Dialog {
                         font.family: root.editorial ? root.contract.headingFontFamily : defaultFont.font.family
                         font.pixelSize: root.editorial && verse.playing ? root.textSize + 4 : root.textSize
                         font.weight: verse.playing ? (root.editorial ? Font.DemiBold : Font.Bold) : Font.Normal
-                        color: root.editorial ? (verse.playing ? root.contract.accentColor : (verse.past ? root.contract.textSecondaryColor : root.contract.textPrimaryColor)) : root.contract.textPrimaryColor
+                        color: root.editorial ? (verse.playing ? (root.contract.highContrast ? root.contract.textPrimaryColor : root.contract.accentColor) : (verse.past ? root.contract.textSecondaryColor : root.contract.textPrimaryColor)) : root.contract.textPrimaryColor
                         Accessible.ignored: true
                     }
                     background: Rectangle {
                         color: !root.editorial && (verse.playing || verse.hovered) ? root.contract.surfaceRaisedColor : "transparent"
                         radius: root.contract.radiusSmall
-                        border.width: verse.cursorFocused ? 3 : (!root.editorial && verse.playing ? 2 : 0)
+                        border.width: verse.cursorFocused ? 3 : ((!root.editorial || root.contract.highContrast) && verse.playing ? 2 : 0)
                         border.color: verse.cursorFocused ? root.contract.focusColor : root.contract.accentColor
                     }
                 }

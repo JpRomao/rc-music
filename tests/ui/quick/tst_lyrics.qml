@@ -685,6 +685,14 @@ TestCase {
         // The keyboard cursor keeps its 3 px ring.
         list.forceActiveFocus(Qt.TabFocusReason);
         tryCompare(list.itemAtIndex(1).background.border, "width", 3);
+        // High contrast keeps today's system colors: text color with a 2 px accent border on the current verse.
+        findChild(shell, "lyrics-drawer-close").forceActiveFocus(Qt.TabFocusReason);
+        driver.setHighContrast(true, false);
+        const hcContract = shell.uiContract;
+        tryVerify(() => Qt.colorEqual(list.itemAtIndex(1).contentItem.color, hcContract.textPrimaryColor));
+        compare(list.itemAtIndex(1).background.border.width, 2);
+        verify(Qt.colorEqual(list.itemAtIndex(1).background.border.color, hcContract.accentColor));
+        compare(list.itemAtIndex(0).background.border.width, 0);
     }
     function test_emptyLyricsDrawer() {
         lyrics.hasSyncedLyrics = false;
@@ -756,8 +764,18 @@ TestCase {
         lyrics.statusText = "";
         tryVerify(() => !status.visible);
     }
+    function tabUntil(name, modifiers) {
+        for (let step = 0; step < 40; ++step) {
+            keyClick(Qt.Key_Tab, modifiers);
+            if (shell.activeFocusItem && shell.activeFocusItem.objectName === name)
+                return;
+        }
+        fail("Tab never reached " + name);
+    }
     // The drawer is not modal and does not trap Tab: the last control hands the focus to the player, the first
-    // one to the verse line, and the drawer stays open.
+    // one to the verse line, and the drawer stays open. Measured in Qt 6.11: Tab from outside does not enter the
+    // drawer (popup items are tab fences), so the keyboard way back is the player's lyrics button or the verse
+    // line. Everything here is keyboard only.
     function test_lyricsDrawerLetsTabLeave() {
         lyrics.readerVerses = [
             {
@@ -768,18 +786,34 @@ TestCase {
         lyrics.activeReaderVerse = 0;
         enableRomaji("jp-9");
         const reader = openDrawer();
+        const player = findChild(shell, "player-lyrics");
+        // The opening put the focus inside; Shift+Tab from the first control leaves for the verse line.
         const close = findChild(shell, "lyrics-drawer-close");
         close.forceActiveFocus(Qt.TabFocusReason);
         tryCompare(close, "activeFocus", true);
-        // Shift+Tab from the first control leaves for the verse line.
         keyClick(Qt.Key_Tab, Qt.ShiftModifier);
         const line = findChild(shell, "lyrics-line-open");
         tryCompare(line, "activeFocus", true);
         verify(!isInside(shell.activeFocusItem, reader.contentItem));
         verify(reader.opened, "the drawer stays open");
-        // Tab through the whole drawer: the last control leaves for the first control of the player.
-        close.forceActiveFocus(Qt.TabFocusReason);
+        // Tab from outside does not enter the drawer.
+        keyClick(Qt.Key_Tab);
+        verify(!isInside(shell.activeFocusItem, reader.contentItem), "Tab from the line stays outside: " + shell.activeFocusItem.objectName);
+        const first = findChild(shell, "transport-bar").firstControl;
+        compare(shell.activeFocusItem, first);
+        keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        compare(shell.activeFocusItem, line);
+        // The way back is the verse line (Enter) or the player's lyrics button (Enter): focus moves in, nothing closes.
+        keyClick(Qt.Key_Return);
         tryCompare(close, "activeFocus", true);
+        verify(reader.opened);
+        keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        tryCompare(line, "activeFocus", true);
+        tabUntil("player-lyrics", Qt.NoModifier);
+        keyClick(Qt.Key_Return);
+        tryCompare(close, "activeFocus", true);
+        verify(reader.opened);
+        // Tab through the whole drawer: the last control leaves for the first control of the player.
         let left = null;
         const walked = [];
         for (let step = 0; step < 20 && !left; ++step) {
@@ -793,13 +827,35 @@ TestCase {
         }
         verify(left, "Tab leaves the drawer: " + walked.join(","));
         verify(walked.indexOf("lyrics-drawer-larger") >= 0, walked.join(","));
-        verify(left.visible && left.enabled);
-        compare(left.objectName, findChild(shell, "transport-bar").firstControl.objectName);
+        compare(left, first);
         verify(reader.opened, "the drawer stays open");
-        // The drawer is still reachable and closes with Escape, back to its opener.
-        close.forceActiveFocus(Qt.TabFocusReason);
+        // Back inside by keyboard, Escape closes it and the focus goes to the opener kept from the first opening:
+        // the player's button.
+        tabUntil("player-lyrics", Qt.NoModifier);
+        keyClick(Qt.Key_Return);
+        tryCompare(close, "activeFocus", true);
         keyClick(Qt.Key_Escape);
         tryCompare(reader, "visible", false);
+        tryCompare(player, "activeFocus", true);
+    }
+    function test_lyricsDrawerShiftTabWithoutVerseLineLandsOnThePlayerButton() {
+        // Without synchronized lyrics there is no verse line: the way out backwards is the player's button.
+        lyrics.hasSyncedLyrics = false;
+        lyrics.plainText = "Some lyrics";
+        const reader = openDrawer();
+        const close = findChild(shell, "lyrics-drawer-close");
+        close.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(close, "activeFocus", true);
+        verify(!findChild(shell, "lyrics-line").visible);
+        keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        const player = findChild(shell, "player-lyrics");
+        tryCompare(player, "activeFocus", true);
+        verify(reader.opened);
+        keyClick(Qt.Key_Return);
+        tryCompare(close, "activeFocus", true);
+        keyClick(Qt.Key_Escape);
+        tryCompare(reader, "visible", false);
+        tryCompare(player, "activeFocus", true);
     }
     function test_drawerReturnsFocusToItsRealOpener() {
         const player = findChild(shell, "player-lyrics");

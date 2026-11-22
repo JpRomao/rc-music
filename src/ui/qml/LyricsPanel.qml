@@ -80,8 +80,14 @@ Item {
     // without lyrics, on its empty state.
     readonly property bool readerAvailable: enabled && (editorial ? (lyrics !== null && visible) : (synchronizedLyrics || plainLyrics))
     function showReader(opener) {
-        if (!readerAvailable || reader.visible)
+        if (!readerAvailable)
             return;
+        if (reader.visible) {
+            // Already open and the focus is elsewhere: take the focus back into the drawer, keep its opener.
+            if (editorial)
+                reader.focusInside();
+            return;
+        }
         readerOpener = opener ?? null;
         if (editorial)
             queueCloseRequested();
