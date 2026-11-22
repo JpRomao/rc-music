@@ -59,6 +59,10 @@ TestCase {
             visible: true
             color: testCase.contract.canvasColor
             property alias gallery: gallery
+            property alias focusFrame: focusFrame
+            property alias focusPrimary: focusPrimary
+            property alias focusSnapshot: focusSnapshot
+            property alias focusField: focused
 
             Flow {
                 id: gallery
@@ -87,6 +91,27 @@ TestCase {
                             controlId: "g-quiet"
                             kind: AuroraButton.Quiet
                             text: "Discreto"
+                        }
+                        // Só um controle por janela tem o foco: o Principal focado entra
+                        // na imagem por uma cópia tirada enquanto ele tinha o foco.
+                        Item {
+                            id: focusFrame
+                            implicitWidth: focusPrimary.implicitWidth + 16
+                            implicitHeight: focusPrimary.implicitHeight + 16
+                            AuroraButton {
+                                id: focusPrimary
+                                contract: testCase.contract
+                                controlId: "g-primary-focus"
+                                kind: AuroraButton.Primary
+                                text: "Focado"
+                                x: 8
+                                y: 8
+                            }
+                            Image {
+                                id: focusSnapshot
+                                anchors.fill: parent
+                                z: 1
+                            }
                         }
                     }
                     RowLayout {
@@ -351,6 +376,17 @@ TestCase {
         const gallery = win.gallery;
         verify(gallery.height > 0);
         verify(gallery.childrenRect.height > 0);
+        // Principal focado: copia o anel enquanto ele tem o foco e devolve o foco ao campo.
+        win.focusPrimary.forceActiveFocus(Qt.TabFocusReason);
+        verify(findChild(win.focusPrimary, "focus-ring").visible);
+        waitForRendering(win.contentItem);
+        let snapshot = null;
+        verify(win.focusFrame.grabToImage(result => snapshot = result));
+        tryVerify(() => snapshot !== null);
+        win.focusSnapshot.source = snapshot.url;
+        tryVerify(() => win.focusSnapshot.status === Image.Ready);
+        win.focusField.input.forceActiveFocus(Qt.TabFocusReason);
+        verify(findChild(win.focusField, "focus-ring").visible);
         const path = driver.artifactPath("aurora-pecas-" + data.tag + ".png");
         if (path.length > 0) {
             const image = grabImage(win.contentItem);
