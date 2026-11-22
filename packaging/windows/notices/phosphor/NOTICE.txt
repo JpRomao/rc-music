@@ -1,0 +1,8 @@
+RC Music Windows x64 Phosphor Icons notices
+
+RC Music includes icons from Phosphor Icons, offered under the MIT License.
+The SVG files are compiled into the application resource :/rc_music/icons.
+See Phosphor-LICENSE.txt.
+
+Source: https://github.com/phosphor-icons/core
+Commit 2b75f3ad12b420c9504ef05df8d2564a28f8500e

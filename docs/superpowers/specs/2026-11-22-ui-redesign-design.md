@@ -68,7 +68,7 @@ O app hoje funciona, mas cada tela foi crescendo com o próprio jeito de fazer a
 ## Restrições
 
 - Stack aceita no ADR-0005: C++20, Qt 6.11 Quick/QML com estilo Basic forçado (`main.cpp`), Qt Multimedia/FFmpeg e TagLib. Nenhuma dependência de código nova.
-- **Ícones Phosphor** (`@phosphor-icons/core`, licença MIT) entram como assets SVG, só os que forem usados. A licença vai para `docs/delivery/licenses/`, junto das outras.
+- **Ícones Phosphor** (`@phosphor-icons/core`, licença MIT) entram como assets SVG, só os que forem usados. Origem: `phosphor-icons/core`, commit fixo `2b75f3ad12b420c9504ef05df8d2564a28f8500e`. A licença e o aviso vão para `packaging/windows/notices/phosphor/`, junto dos avisos que acompanham o runtime.
 - Tokens vêm do `ShellUiContract` (paleta, escala tipográfica, alvos 40/44, breakpoints 900/1200, movimento 160/120 ms ou 0 com movimento reduzido). O alto contraste continua mapeado para as cores do sistema e tem precedência sobre o tema.
 - Literais de UI só nos `*Text.qml`. O contrato de UI recusa literais fora deles, inclusive em comentários. Strings do C++ continuam nos lugares de hoje (`LifecycleText.hpp`, `ShellUiContract.cpp` e os bindings).
 - Testes Quick rodam com `QT_FATAL_WARNINGS`. Os comandos estão em [development-commands.md](../../development-commands.md).
@@ -457,7 +457,7 @@ O glossário, as inconsistências e as trocas aprovadas, catálogo por catálogo
 
 ## Ordem das fatias
 
-1. Peças, ícones Phosphor e licença, com testes e capturas. A licença Phosphor vai para `docs/delivery/licenses/`.
+1. Peças, ícones Phosphor e licença, com testes e capturas. A licença e o aviso do Phosphor vão para `packaging/windows/notices/phosphor/` (origem: `phosphor-icons/core`, commit `2b75f3ad12b420c9504ef05df8d2564a28f8500e`).
 2. Casca: lateral (sem Fila, com Navegar e perfil), topo e player C.
 3. Linha do verso e gavetas da Fila e da Letra.
 4. Início.
