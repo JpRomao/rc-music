@@ -493,6 +493,26 @@ TestCase {
         const layer = findChild(shell, "state-layer");
         verify(point(layer).y + layer.height <= point(line).y + 1);
     }
+    // Synchronized lyrics without a current track: the panel is hidden, so no verse line is there to supply the
+    // 12 px below the page, and the page keeps its own 30 px margin above the player.
+    function test_pageKeepsItsBottomMarginWithoutAShownVerseLine() {
+        mountShellBackends();
+        shell.lyrics = fakeLyrics;
+        verify(waitForPolish(shell));
+        const panel = findChild(shell, "lyrics-panel");
+        verify(panel.lineVisible, "the lyrics say a line would be shown");
+        verify(!panel.visible, "but there is no current track, so the panel is hidden");
+        const layer = findChild(shell, "state-layer");
+        const footer = findChild(shell, "player-footer");
+        compare(Math.round(footer.y - (point(layer).y + layer.height)), 30);
+        // With a track the line is shown and the page gives its margin to the line.
+        loadQueue();
+        tryVerify(() => panel.visible);
+        verify(waitForPolish(shell));
+        const line = findChild(shell, "lyrics-line");
+        tryVerify(() => line.visible);
+        compare(Math.round(footer.y - (point(line).y + line.height)), 12);
+    }
     function test_emptyHomeDoesNotInventACollection() {
         const list = findChild(shell, "home-queue-list");
         verify(list);

@@ -57,6 +57,23 @@ TestCase {
         readonly property int defaultListeners: 5
     }
 
+    // Just enough of a lyrics binding for the shell to offer the lyrics drawer.
+    QtObject {
+        id: fakeLyrics
+        property string title: "Cantiga"
+        property string artist: "Artista"
+        property string album: "Disco"
+        property int durationMs: 180000
+        property string statusText: ""
+        property string currentLine: "Primeiro verso"
+        property string nextLine: "Segundo verso"
+        property string plainText: ""
+        property bool hasSyncedLyrics: true
+        property bool busy: false
+        property bool canSearch: true
+        property bool lyricsCopyProtected: false
+    }
+
     Component {
         id: roomShellComponent
         Main {
@@ -821,6 +838,41 @@ TestCase {
             verify(!button.enabled, name);
         }
         verify(!findChild(drawer, "queue-clear").enabled, "a guest does not clear the room queue");
+    }
+
+    function test_openingOneDrawerClosesTheOther() {
+        loadSyntheticQueue();
+        shell.lyrics = fakeLyrics;
+        const lyricsButton = findChild(shell, "player-lyrics");
+        tryVerify(() => lyricsButton.enabled);
+        const reader = findChild(shell, "lyrics-reader");
+        const queue = findChild(shell, "queue-panel");
+        mouseClick(lyricsButton);
+        tryCompare(reader, "opened", true);
+        verify(!queue.visible);
+        // Ctrl+L swaps the lyrics drawer for the queue, even with the focus inside the lyrics.
+        verify(reader.activeFocus);
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        tryCompare(reader, "visible", false);
+        tryCompare(shell, "queueOpen", true);
+        tryVerify(() => queue.visible);
+        // Esc closes the queue and hands the focus back to whoever opened it: the lyrics button.
+        keyClick(Qt.Key_Escape);
+        tryCompare(shell, "queueOpen", false);
+        tryVerify(() => !queue.visible);
+        tryCompare(lyricsButton, "activeFocus", true);
+        // The lyrics button with the queue open closes the queue and opens the lyrics, with the focus inside them.
+        shell.setQueueOpen(true);
+        tryVerify(() => queue.visible && queue.activeFocus);
+        mouseClick(lyricsButton);
+        tryCompare(reader, "opened", true);
+        tryCompare(shell, "queueOpen", false);
+        tryVerify(() => !queue.visible);
+        tryCompare(reader, "activeFocus", true);
+        // Esc closes the lyrics and returns the focus to the lyrics button.
+        keyClick(Qt.Key_Escape);
+        tryCompare(reader, "visible", false);
+        tryCompare(lyricsButton, "activeFocus", true);
     }
 
     function test_lyricsButtonIsDisabledWithAReasonWithoutLyrics() {

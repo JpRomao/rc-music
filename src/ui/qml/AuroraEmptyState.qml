@@ -14,6 +14,7 @@ ColumnLayout {
     property string primaryActionText
     property string secondaryActionText
     property alias primaryButton: primary
+    property alias secondaryButton: secondary
 
     signal primaryTriggered
     signal secondaryTriggered

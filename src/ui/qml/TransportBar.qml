@@ -13,6 +13,7 @@ GridLayout {
     property alias primaryControl: playPause
     property alias queueControl: queueAction
     // The player's first control in the Tab order, where a page hands the focus on; null when none is.
+    readonly property Item lyricsControl: lyricsAction
     readonly property Item firstControl: [progress, shuffleAction, previousTrack, skipBackward, playPause, skipForward, nextTrack, repeatAction, lyricsAction, queueAction, muteAction, volume].find(item => item.visible && item.enabled) ?? null
     readonly property bool editorial: !presenter.usesFrozenFixture
     // Set by the window: the same compact rule as the side navigation.

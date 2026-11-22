@@ -58,7 +58,7 @@ ApplicationWindow {
     // The Aurora drawer stays open when its queue empties; it is only never opened empty.
     readonly property bool queuePageActive: queueOpen && (presenter.queueLoaded || roomGuest || inlinePages)
     // Aurora has no sidebar queue item: the shortcut depends on the queue itself, the fixture on the button.
-    readonly property bool queueShortcutEnabled: windowShortcutsEnabled && (inlinePages ? ((presenter.queueLoaded || roomGuest || queueOpen) && !presenter.exiting) : queueButton.enabled) && !preferencesPanel.visible
+    readonly property bool queueShortcutEnabled: (inlinePages ? windowContextFree : windowShortcutsEnabled) && (inlinePages ? ((presenter.queueLoaded || roomGuest || queueOpen) && !presenter.exiting) : queueButton.enabled) && !preferencesPanel.visible
     // The item focused when the Aurora drawer opened; the fixture keeps returning to the sidebar button.
     property Item queueReturnFocusItem: null
     // Who opened Settings from outside the Settings button; null means the button.
@@ -93,7 +93,10 @@ ApplicationWindow {
     }
     readonly property bool downloadFinalSaveDecisionRequired: downloads !== null && (downloads.canRetryFinalSave || downloads.canCloseAfterFinalSaveFailure)
     readonly property bool profileSetupRequired: profile !== null && profile.needsSetup === true && startupReady && !presenter.exiting
-    readonly property bool windowShortcutsEnabled: !profileSetupDialog.visible && (!playlistsPanel.visible || (inlinePages && !isInside(activeFocusItem, playlistsPanel.contentItem))) && (!libraryPanel.visible || !isInside(activeFocusItem, libraryPanel.contentItem)) && (!searchPanel.visible || !isInside(activeFocusItem, searchPanel.contentItem)) && (!roomPanel.visible || !isInside(activeFocusItem, roomPanel.contentItem)) && !libraryPanel.blockingUiOpen && !roomPanel.blockingUiOpen && !lyricsPanel.queryOpen && (!downloadsPanel.visible || (inlinePages && !isInside(activeFocusItem, downloadsPanel.contentItem))) && !playlistsPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    // Everything that silences the window shortcuts, except the lyrics reader holding the focus: the Aurora
+    // drawer still lets Ctrl+L swap it for the queue.
+    readonly property bool windowShortcutsEnabled: windowContextFree && !lyricsPanel.readerFocused
+    readonly property bool windowContextFree: !profileSetupDialog.visible && (!playlistsPanel.visible || (inlinePages && !isInside(activeFocusItem, playlistsPanel.contentItem))) && (!libraryPanel.visible || !isInside(activeFocusItem, libraryPanel.contentItem)) && (!searchPanel.visible || !isInside(activeFocusItem, searchPanel.contentItem)) && (!roomPanel.visible || !isInside(activeFocusItem, roomPanel.contentItem)) && !libraryPanel.blockingUiOpen && !roomPanel.blockingUiOpen && !lyricsPanel.dialogOpen && (!downloadsPanel.visible || (inlinePages && !isInside(activeFocusItem, downloadsPanel.contentItem))) && !playlistsPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && transport.enabled
     readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
     readonly property bool primaryKeysEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && !focusOwnsTextInput()
@@ -306,6 +309,9 @@ ApplicationWindow {
     function setQueueOpen(open) {
         if (open && !presenter.queueLoaded && !roomGuest)
             return;
+        // The Aurora drawers are exclusive; the lyrics drawer hands the focus back before the queue takes it.
+        if (window.inlinePages && open)
+            lyricsPanel.closeReader();
         if (window.inlinePages && open) {
             libraryPanel.close();
             searchPanel.close();
@@ -326,6 +332,10 @@ ApplicationWindow {
             else
                 window.restoreQueueFocus(opener);
         });
+    }
+    // The lyrics drawer takes the place of the queue drawer and the focus with it.
+    function closeQueueForLyrics() {
+        queueOpen = false;
     }
     // F1 and F2 act on the player's own modes in the Aurora, with the queue open or not.
     function toggleShuffle() {
@@ -701,7 +711,7 @@ ApplicationWindow {
         anchors.bottom: playerFooter.top
         anchors.margins: window.inlinePages ? 30 : window.uiContract.spacingUnit * 6
         // The verse line carries its own 12 px below it.
-        anchors.bottomMargin: window.inlinePages ? (lyricsPanel.lineVisible ? 0 : 30) : window.uiContract.spacingUnit * 6
+        anchors.bottomMargin: window.inlinePages ? (lyricsPanel.visible && lyricsPanel.lineVisible ? 0 : 30) : window.uiContract.spacingUnit * 6
         anchors.leftMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 23 : 38) : window.uiContract.spacingUnit * 6
         anchors.rightMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 23 : 38) : window.uiContract.spacingUnit * 6
         Item {
@@ -882,7 +892,10 @@ ApplicationWindow {
             readerCanSeek: window.presenter.seekable && !transport.roomGuest
             readerBottomInset: playerFooter.height
             readerTextSize: window.presenter.lyricsTextSize
+            drawerWidth: window.drawerWidth
+            readerFallback: transport.lyricsControl
             enabled: !window.presenter.exiting
+            onQueueCloseRequested: window.closeQueueForLyrics()
             onReaderSeekRequested: timeMs => transport.commitImmediateSeek(timeMs)
             onReaderTextSizeRequested: size => window.presenter.setLyricsTextSize(size)
             onQueuedVariantFormClosed: Qt.callLater(function () {
@@ -924,7 +937,7 @@ ApplicationWindow {
             lyricsAvailable: lyricsPanel.readerAvailable
             room: window.room
             onQueueRequested: window.setQueueOpen(true)
-            onLyricsRequested: lyricsPanel.showReader()
+            onLyricsRequested: lyricsPanel.showReader(transport.lyricsControl)
         }
         // Fixture only: the persistent title above the transport. Aurora keeps the identity in the
         // transport bar; a Loader keeps the object names unique between the two.

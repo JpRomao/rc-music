@@ -407,7 +407,20 @@ TestCase {
     function openPanel() {
         const lyricsPanel = findChild(shell, "lyrics-panel");
         verify(lyricsPanel.variantsAvailable, "Versions must be available for a variants backend");
-        lyricsPanel.openVersions();
+        // The real entry point: the player's lyrics button opens the drawer, whose toolbar opens the versions.
+        const reader = findChild(shell, "lyrics-reader");
+        if (!reader.visible) {
+            const player = findChild(shell, "player-lyrics");
+            tryVerify(() => player.enabled);
+            mouseClick(player);
+            tryCompare(reader, "opened", true);
+        }
+        const versions = findChild(shell, "lyrics-drawer-versions");
+        tryVerify(() => versions.visible && versions.enabled);
+        // The toolbar lays out on the next frame: the romaji button must have left the first button's place.
+        const more = findChild(shell, "lyrics-drawer-more");
+        tryVerify(() => !more.visible || more.mapToItem(reader.contentItem, 0, 0).x > versions.mapToItem(reader.contentItem, 0, 0).x);
+        mouseClick(versions);
         const panel = findChild(shell, "lyrics-variants-panel");
         verify(panel);
         tryCompare(panel, "visible", true);
@@ -521,6 +534,52 @@ TestCase {
         findChild(shell, "lyrics-variants-panel").close();
         tryVerify(() => findChild(shell, "lyrics-line-open").visible);
         tryCompare(findChild(shell, "lyrics-line-open"), "activeFocus", true);
+    }
+    function test_compactVerseLineKeepsTheNoticeAndItsReviewButton() {
+        shell.width = 720;
+        shell.height = 520;
+        tryCompare(shell.contentItem, "width", 720);
+        backend.variantsHasPendingChange = true;
+        backend.variantsBusy = false;
+        backend.variantsStatusText = "Salvando versão da letra…";
+        const line = findChild(shell, "lyrics-line");
+        const status = findChild(shell, "lyrics-line-status");
+        const review = findChild(shell, "lyrics-line-review");
+        tryVerify(() => status.visible && review.visible);
+        verify(waitForPolish(shell));
+        compare(line.height, 40);
+        compare(status.text, "Salvando versão da letra…");
+        compare(review.text, "Revisar alterações");
+        compare(review.Accessible.name, "Revisar alterações não salvas da letra");
+        const open = findChild(shell, "lyrics-line-open");
+        verify(!open || !open.visible, "the notice has precedence over the verse");
+        verify(!findChild(shell, "lyrics-line-current").visible);
+        const corner = review.mapToItem(line, review.width, review.height);
+        verify(corner.x <= line.width && corner.y <= line.height, "the review button stays inside the compact line");
+        const statusEdge = status.mapToItem(line, status.width, 0);
+        verify(statusEdge.x <= review.mapToItem(line, 0, 0).x + 1, "the status does not run under the button");
+        mouseClick(review);
+        tryCompare(findChild(shell, "lyrics-variants-panel"), "visible", true);
+    }
+    function test_queuedFeedbackNoticeShowsWithoutAPendingChange() {
+        shell.width = 1280;
+        shell.height = 800;
+        tryCompare(shell.contentItem, "width", 1280);
+        const panel = findChild(shell, "lyrics-panel");
+        verify(!panel.variantsPending);
+        backend.queuedVariantStatusText = "Versão da letra salva.";
+        panel.queuedSaveFeedback = true;
+        const status = findChild(shell, "lyrics-line-status");
+        tryVerify(() => status.visible);
+        compare(status.text, "Versão da letra salva.");
+        verify(!findChild(shell, "lyrics-line-review").visible, "nothing to review without a pending change");
+        const open = findChild(shell, "lyrics-line-open");
+        verify(!open || !open.visible, "the notice has precedence over the verse");
+        compare(findChild(shell, "lyrics-line").height, 48);
+        compare(panel.lineEntryItem, null);
+        panel.queuedSaveFeedback = false;
+        tryVerify(() => findChild(shell, "lyrics-line-open").visible);
+        verify(!status.visible);
     }
     function test_openingDoesNotSaveSearchOrChangePlaybackAndUsesPlainText() {
         const state = presenter.playbackState;
@@ -1157,7 +1216,8 @@ TestCase {
         compare(presenter.playbackState, PlayerPresenter.Playing);
         keyClick(Qt.Key_Escape);
         tryCompare(findChild(shell, "lyrics-variants-panel"), "visible", false);
-        tryCompare(findChild(shell, "lyrics-line-open"), "activeFocus", true);
+        // The versions were launched from the drawer's toolbar: the focus goes back there.
+        tryCompare(findChild(shell, "lyrics-drawer-versions"), "activeFocus", true);
     }
     function test_keyboardCanChooseASavedVersionWithoutTransportShortcuts() {
         const lastId = "9007199254740993";

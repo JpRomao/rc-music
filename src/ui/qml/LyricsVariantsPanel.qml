@@ -31,6 +31,7 @@ Dialog {
     property string romajiRequestRevision: ""
     property var romajiRequestOwner: null
     property bool startRomajiOnOpen: false
+    property bool startAddOnOpen: false
     property var queuedRomaji: ({})
     property string queuedToken: ""
     property string queuedTitle: ""
@@ -100,7 +101,9 @@ Dialog {
     signal recordingSearchRequested(string token, string title, string artist, string album, double durationMs, string displayTitle)
     onOpened: {
         const startRomaji = startRomajiOnOpen;
+        const startAdd = startAddOnOpen;
         startRomajiOnOpen = false;
+        startAddOnOpen = false;
         variantList.restoreCursor(selectedId);
         if (canSelect)
             variantList.forceActiveFocus(Qt.TabFocusReason);
@@ -108,9 +111,12 @@ Dialog {
             closeButton.forceActiveFocus(Qt.TabFocusReason);
         if (startRomaji)
             requestRomaji();
+        if (startAdd)
+            openForm("add");
     }
     onClosed: {
         startRomajiOnOpen = false;
+        startAddOnOpen = false;
         if (formDialog && formMode !== "queued")
             formDialog.close();
         if (confirmation)
@@ -204,6 +210,16 @@ Dialog {
             return;
         }
         startRomajiOnOpen = true;
+        open();
+    }
+    function openForAdd() {
+        if (!enabled || !supported || managingQueue)
+            return;
+        if (opened) {
+            openForm("add");
+            return;
+        }
+        startAddOnOpen = true;
         open();
     }
     function variantRows() {

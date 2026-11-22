@@ -17,6 +17,9 @@ Item {
     property bool readerCanSeek: false
     property real readerBottomInset: 100
     property int readerTextSize: 18
+    property int drawerWidth: 400
+    // The player's lyrics button: where the focus goes when the opener is gone.
+    property Item readerFallback: null
     readonly property bool variantsAvailable: lyrics !== null && typeof lyrics.variants !== "undefined"
     property bool queuedSaveFeedback: false
     readonly property bool variantsPending: variantsAvailable && lyrics.variantsHasPendingChange === true
@@ -24,7 +27,10 @@ Item {
     readonly property string queuedFeedbackText: queuedSaveFeedback && variantsAvailable && typeof lyrics.queuedVariantStatusText === "string" ? lyrics.queuedVariantStatusText : ""
     readonly property bool queueVariantActionSupported: variantsAvailable && typeof lyrics.queueVariantAvailable === "boolean"
     readonly property bool queueVariantActionAvailable: queueVariantActionSupported && enabled && lyrics.queueVariantAvailable
-    readonly property bool queryOpen: queryDialog.visible || variantsPanel.visible || variantsPanel.childDialogOpen || reader.visible && reader.activeFocus
+    readonly property bool dialogOpen: queryDialog.visible || variantsPanel.visible || variantsPanel.childDialogOpen
+    // The focused reader blocks the window shortcuts; the Aurora drawer lets the queue shortcut through.
+    readonly property bool readerFocused: reader.visible && reader.activeFocus
+    readonly property bool queryOpen: dialogOpen || readerFocused
     readonly property bool synchronizedLyrics: lyrics !== null && lyrics.hasSyncedLyrics
     readonly property bool plainLyrics: lyrics !== null && !lyrics.hasSyncedLyrics && lyrics.plainText.length > 0
     readonly property bool searchAvailable: enabled && lyrics !== null && !lyrics.busy && lyrics.canSearch
@@ -37,26 +43,50 @@ Item {
     readonly property bool lineNotice: editorial && (variantsPending || queuedFeedbackText.length > 0)
     readonly property bool lineVisible: editorial && (lineNotice || synchronizedLyrics)
     readonly property Item lineEntryItem: lineVisible ? verseLine.entryItem : null
-    readonly property string statusLabel: {
+    readonly property string drawerStatus: {
         if (queuedFeedbackText.length > 0)
             return queuedFeedbackText;
         if (variantsPending && lyrics.variantsStatusText.length > 0)
             return lyrics.variantsStatusText;
-        return lyrics && lyrics.statusText.length > 0 ? lyrics.statusText : lyricsText.title;
+        return lyrics && lyrics.statusText.length > 0 ? lyrics.statusText : "";
+    }
+    readonly property string statusLabel: drawerStatus.length > 0 ? drawerStatus : lyricsText.title
+    readonly property string selectedVersionName: {
+        if (!variantsAvailable || !lyrics.selectedVariantId)
+            return "";
+        const found = lyrics.variants.find(variant => variant.id === lyrics.selectedVariantId);
+        return found ? (found.name ?? "") : "";
+    }
+    readonly property string drawerSubtitle: {
+        const artist = lyrics ? (lyrics.artist ?? "") : "";
+        return selectedVersionName.length > 0 ? lyricsText.versionAndArtist.arg(selectedVersionName).arg(artist) : artist;
     }
     implicitHeight: editorial ? (lineVisible ? verseLine.height + 18 : 0) : (protectedLyrics ? 96 + contract.controlTargetMinimum + contract.spacingUnit : 96)
     Layout.minimumHeight: implicitHeight
     Layout.maximumHeight: implicitHeight
     signal queuedVariantFormClosed
+    // The Aurora drawers are exclusive: opening the reader asks the window to close the queue.
+    signal queueCloseRequested
     signal readerSeekRequested(int timeMs)
     signal readerTextSizeRequested(int size)
     property bool versionsOpenedForRomaji: false
     property Item readerOpener: null
-    // The persistent player opens the same reader as the panel's own action.
-    readonly property bool readerAvailable: enabled && (synchronizedLyrics || plainLyrics)
-    function showReader() {
-        if (readerAvailable)
-            reader.open();
+    // Who launched the open dialog from inside the Aurora drawer; the focus goes back to it.
+    property Item dialogOpener: null
+    readonly property bool readerOpen: reader.visible
+    // The persistent player opens the same reader as the panel's own action. The Aurora drawer opens even
+    // without lyrics, on its empty state.
+    readonly property bool readerAvailable: enabled && (editorial ? (lyrics !== null && visible) : (synchronizedLyrics || plainLyrics))
+    function showReader(opener) {
+        if (!readerAvailable || reader.visible)
+            return;
+        readerOpener = opener ?? null;
+        if (editorial)
+            queueCloseRequested();
+        reader.open();
+    }
+    function closeReader() {
+        reader.close();
     }
 
     // The strip buttons and the Aurora verse line share these entry points.
@@ -78,11 +108,31 @@ Item {
     }
 
     function openRomaji() {
-        if (!romajiAvailable || !enabled || queryOpen)
+        if (!romajiAvailable || !enabled || (editorial ? dialogOpen : queryOpen))
             return;
         versionsOpenedForRomaji = true;
         queuedSaveFeedback = false;
         variantsPanel.openForRomaji();
+    }
+
+    function openAddVersion() {
+        if (!variantsAvailable || !enabled || !visible || lyrics.variantsCanEdit !== true)
+            return;
+        queuedSaveFeedback = false;
+        queryDialog.close();
+        variantsPanel.openForAdd();
+    }
+
+    function isFocusable(item) {
+        return item !== null && item !== undefined && item.visible && item.enabled;
+    }
+
+    // Aurora: a dialog opened from the drawer hands the focus back to the control that launched it.
+    function restoreDrawerFocus() {
+        const target = [dialogOpener, reader.versionsControl, reader.searchControl, reader.closeControl].find(isFocusable);
+        dialogOpener = null;
+        if (target)
+            target.forceActiveFocus(Qt.TabFocusReason);
     }
 
     // Aurora: the dialogs hand the focus back to the verse line.
@@ -109,6 +159,8 @@ Item {
     onTrackIdentityChanged: {
         if (!variantsPending)
             queuedSaveFeedback = false;
+        if (reader && reader.visible)
+            reader.trackChanged = true;
         if (queryDialog && !queryDialog.queuedTarget)
             queryDialog.close();
         if (variantsPanel && !variantsPanel.managingQueue)
@@ -155,10 +207,7 @@ Item {
         statusText: root.statusLabel
         reviewAvailable: root.reviewSaveAvailable
         visible: root.lineVisible
-        onOpenRequested: opener => {
-            root.readerOpener = opener;
-            reader.open();
-        }
+        onOpenRequested: opener => root.showReader(opener)
         onReviewRequested: root.openVersions()
     }
 
@@ -361,15 +410,46 @@ Item {
         trackIdentity: root.trackIdentity
         textSize: root.readerTextSize
         transportInset: Math.ceil(root.readerBottomInset)
+        editorial: root.editorial
+        drawerWidth: root.drawerWidth
+        eyebrow: root.synchronizedLyrics ? lyricsText.synchronizedEyebrow : lyricsText.lyricsEyebrow
+        title: root.lyrics ? (root.lyrics.title ?? "") : ""
+        subtitle: root.drawerSubtitle
+        statusText: root.drawerStatus
+        versionsAvailable: root.variantsAvailable
+        reviewAvailable: root.reviewSaveAvailable
+        searchAvailable: root.searchAvailable
+        romajiAvailable: root.romajiAvailable
+        romajiDescription: root.romajiAvailable ? (root.lyrics.romajiStatusText ?? "") : ""
+        addVersionAvailable: root.variantsAvailable && root.lyrics.variantsCanEdit === true
+        onVersionsRequested: opener => {
+            root.dialogOpener = opener;
+            root.openVersions();
+        }
+        onSearchRequested: opener => {
+            root.dialogOpener = opener;
+            root.openSearch();
+        }
+        onRomajiRequested: opener => {
+            root.dialogOpener = opener;
+            root.openRomaji();
+        }
+        onAddVersionRequested: opener => {
+            root.dialogOpener = opener;
+            root.openAddVersion();
+        }
         onSeekRequested: timeMs => root.readerSeekRequested(timeMs)
         onAttributionRequested: root.openLyricFind()
         onTextSizeRequested: size => root.readerTextSizeRequested(size)
         onClosed: {
             const opener = root.readerOpener;
             root.readerOpener = null;
+            root.dialogOpener = null;
             if (root.editorial) {
-                if (opener && opener.visible && opener.enabled)
-                    opener.forceActiveFocus(Qt.TabFocusReason);
+                // A new track takes the drawer's opener with it: the player's button is the stable way back.
+                const target = [reader.trackChanged ? null : opener, root.readerFallback].find(root.isFocusable);
+                if (target)
+                    target.forceActiveFocus(Qt.TabFocusReason);
                 else
                     root.restoreLineFocus();
             } else if (openReader.enabled)
@@ -397,7 +477,9 @@ Item {
                 queryDialog.close();
             if (!root.variantsPending)
                 root.queuedSaveFeedback = false;
-            if (root.visible && root.enabled && versionsButton.visible) {
+            if (root.editorial && reader.visible) {
+                root.restoreDrawerFocus();
+            } else if (root.visible && root.enabled && versionsButton.visible) {
                 const opener = returnToRomaji && romajiButton.visible ? romajiButton : versionsButton;
                 opener.forceActiveFocus(Qt.TabFocusReason);
             } else if (root.variantsAvailable) {
@@ -477,6 +559,8 @@ Item {
             resetChoice();
             if (returnToManager)
                 variantsPanel.focusRecordingSearch();
+            else if (root.editorial && reader.visible)
+                root.restoreDrawerFocus();
             else if (!root.editorial && root.visible && searchButton.enabled)
                 searchButton.forceActiveFocus(Qt.TabFocusReason);
             else
