@@ -330,6 +330,16 @@ TestCase {
         shell.height = 520;
         verify(waitForPolish(shell));
         verify(shuffle.width >= 40 && repeat.width >= 40);
+        const bar = findChild(shell, "transport-bar");
+        const previous = findChild(shell, "previous");
+        const next = findChild(shell, "next");
+        const inBar = item => {
+            const origin = item.mapToItem(bar, 0, 0);
+            return origin.x >= 0 && origin.x + item.width <= bar.width && origin.y >= 0 && origin.y + item.height <= bar.height;
+        };
+        verify(inBar(shuffle) && inBar(repeat), "shuffle and repeat stay inside the player at 720x520");
+        verify(shuffle.mapToItem(previous, shuffle.width, 0).x <= 0, "shuffle does not overlap previous");
+        verify(repeat.mapToItem(next, repeat.width, 0).x <= 0 || next.mapToItem(repeat, next.width, 0).x <= 0, "repeat does not overlap next");
     }
     function test_f1F2WorkWithTheQueueClosed() {
         openQueue();
@@ -354,20 +364,28 @@ TestCase {
     }
     function test_queueDrawerHasNoShuffleOrRepeat() {
         openQueue();
-        const list = focusControl("queue-list");
+        focusControl("queue-add");
         verify(findChild(shell, "queue-panel").visible);
         const shuffle = findChild(shell, "queue-shuffle");
         const repeat = findChild(shell, "queue-repeat");
         verify(!shuffle || !shuffle.visible, "queue-shuffle is gone from the drawer");
         verify(!repeat || !repeat.visible, "queue-repeat is gone from the drawer");
-        const panel = findChild(shell, "queue-panel");
-        for (let step = 0; step < 12; ++step) {
+        // Tab walks the whole drawer (actions, then the rows) and leaves it for the sidebar.
+        const walked = [];
+        let left = false;
+        for (let step = 0; step < 40 && !left; ++step) {
             keyClick(Qt.Key_Tab);
             const item = shell.activeFocusItem;
+            verify(item, "focus is never lost while tabbing the drawer");
             verify(item !== shuffle && item !== repeat, "Tab never stops on a removed mode button");
-            if (item && item.objectName === "queue-list" && step > 0)
-                break;
+            if (item.objectName.startsWith("queue-"))
+                walked.push(item.objectName);
+            else if (walked.length > 0)
+                left = true;
         }
+        verify(left, "Tab left the drawer, so the whole cycle was walked");
+        verify(walked.indexOf("queue-clear") >= 0, walked.join(","));
+        verify(walked.some(name => name.startsWith("queue-row-")), "the rows were reached: " + walked.join(","));
     }
     function queueOrder(list) {
         list.forceLayout();

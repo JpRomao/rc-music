@@ -9,6 +9,7 @@ TestCase {
     name: "ListeningRoomPage"
     when: windowShown
     readonly property PlayerPresenter localPresenter: testLocalPlayerPresenter // qmllint disable unqualified
+    readonly property var driver: testScenarioDriver // qmllint disable unqualified
     property var shell
 
     QtObject {
@@ -144,6 +145,7 @@ TestCase {
             shell.destroy();
         shell = null;
         wait(0);
+        driver.resetLocalScenario();
     }
     function createShell() {
         shell = createTemporaryObject(shellComponent, null);
@@ -318,8 +320,11 @@ TestCase {
 
     // S8.2: on a guest, shuffle and repeat belong to the host.
     function test_aGuestCannotChangeShuffleOrRepeat() {
-        joinAsGuest();
         createShell();
+        driver.enqueueLocalSelection(["C:/Music/A.mp3", "C:/Music/B.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryVerify(() => localPresenter.queueLoaded);
+        joinAsGuest();
         shell.setQueueOpen(true);
         tryVerify(() => findChild(testCase.shell, "queue-panel").visible);
         for (const name of ["player-shuffle", "player-repeat"]) {
@@ -340,8 +345,8 @@ TestCase {
         // Back outside the room, they work again.
         fakeRoom.role = 0;
         fakeRoom.state = "idle";
-        // The player stays disabled as a whole while there is no queue; the modes themselves are open again.
-        verify(findChild(shell, "transport-bar").queueModesAvailable);
+        tryVerify(() => findChild(shell, "player-shuffle").enabled);
+        verify(findChild(shell, "player-repeat").enabled);
         compare(findChild(shell, "player-shuffle").disabledReason, "");
         compare(findChild(shell, "player-repeat").disabledReason, "");
     }
