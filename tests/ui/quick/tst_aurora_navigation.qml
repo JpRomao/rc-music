@@ -493,6 +493,9 @@ TestCase {
         const theme = themeButton();
         const canvas = findChild(shell, "workspace-header").color;
         verifyContrast(theme.foregroundColor, theme.fillColor, 3, "theme icon on its tonal fill");
+        mouseMove(theme);
+        tryVerify(() => theme.hovered);
+        verifyContrast(theme.foregroundColor, theme.fillColor, 3, "theme icon on its tonal fill with hover");
         theme.forceActiveFocus(Qt.TabFocusReason);
         verify(theme.activeFocus);
         verifyContrast(findChild(theme, "focus-ring").border.color, canvas, 3, "theme focus ring on the canvas");

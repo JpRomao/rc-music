@@ -536,7 +536,6 @@ ApplicationWindow {
         height: implicitHeight
         visible: window.inlinePages
         contract: window.uiContract
-        compact: window.width <= window.uiContract.compactWidth
         themeButtonActive: window.inlinePages
         darkTheme: window.uiContract.darkTheme
         exiting: window.presenter.exiting

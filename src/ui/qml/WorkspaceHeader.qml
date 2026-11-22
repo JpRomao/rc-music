@@ -7,7 +7,6 @@ Rectangle {
     objectName: "workspace-header"
     required property ShellUiContract contract
     property string pageTitle: ""
-    property bool compact: false
     // Só o Aurora tem o botão aqui; o fixture congelado o mantém na lateral.
     property bool themeButtonActive: true
     property bool darkTheme: false
@@ -18,20 +17,6 @@ Rectangle {
     color: contract.canvasColor
     NavigationText {
         id: labels
-    }
-    Component {
-        id: themeButtonComponent
-        // qmllint disable unqualified
-        AuroraIconButton {
-            contract: root.contract
-            controlId: "theme-toggle"
-            tonal: true
-            iconName: root.darkTheme ? "sun" : "moon"
-            text: root.darkTheme ? labels.themeLight : labels.themeDark
-            enabled: !root.exiting
-            onClicked: root.themeRequested()
-        }
-        // qmllint enable unqualified
     }
     RowLayout {
         anchors.fill: parent
@@ -74,6 +59,19 @@ Rectangle {
             active: root.themeButtonActive
             Layout.alignment: Qt.AlignVCenter
             sourceComponent: themeButtonComponent
+
+            Component {
+                id: themeButtonComponent
+                AuroraIconButton {
+                    contract: root.contract // qmllint disable unqualified
+                    controlId: "theme-toggle"
+                    tonal: true
+                    iconName: root.darkTheme ? "sun" : "moon" // qmllint disable unqualified
+                    text: root.darkTheme ? labels.themeLight : labels.themeDark // qmllint disable unqualified
+                    enabled: !root.exiting // qmllint disable unqualified
+                    onClicked: root.themeRequested() // qmllint disable unqualified
+                }
+            }
         }
     }
     Rectangle {

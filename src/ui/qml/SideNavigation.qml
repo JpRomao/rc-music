@@ -53,22 +53,6 @@ Rectangle {
     NavigationText {
         id: labels
     }
-    Component {
-        id: themeButtonComponent
-        // qmllint disable unqualified
-        AccessibleTransportButton {
-            objectName: "theme-toggle"
-            KeyNavigation.tab: null
-            KeyNavigation.backtab: null
-            contract: root.contract
-            text: root.contract.darkTheme ? root.contract.themeLight : root.contract.themeDark
-            iconWithText: true
-            accessibleName: root.contract.darkTheme ? labels.themeLight : labels.themeDark
-            enabled: !root.exiting
-            onClicked: root.themeRequested()
-        }
-        // qmllint enable unqualified
-    }
     DownloadText {
         id: downloadLabels
     }
@@ -338,6 +322,21 @@ Rectangle {
                 active: !root.editorial
                 Layout.fillWidth: true
                 sourceComponent: themeButtonComponent
+
+                Component {
+                    id: themeButtonComponent
+                    AccessibleTransportButton {
+                        objectName: "theme-toggle"
+                        KeyNavigation.tab: null
+                        KeyNavigation.backtab: null
+                        contract: root.contract // qmllint disable unqualified
+                        text: root.contract.darkTheme ? root.contract.themeLight : root.contract.themeDark // qmllint disable unqualified
+                        iconWithText: true
+                        accessibleName: root.contract.darkTheme ? labels.themeLight : labels.themeDark // qmllint disable unqualified
+                        enabled: !root.exiting // qmllint disable unqualified
+                        onClicked: root.themeRequested() // qmllint disable unqualified
+                    }
+                }
             }
             NavigationButton {
                 id: preferencesAction
