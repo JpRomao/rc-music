@@ -797,8 +797,13 @@ TestCase {
         const footer = findChild(shell, "player-footer");
         verify(footer);
         tryVerify(() => Math.abs(footer.y + footer.height - shell.height) < 0.5);
-        for (const name of ["now", "player-queue", "preferences", "play-pause", "volume"])
+        for (const name of ["now", "player-queue", "preferences", "play-pause", "mute"])
             verifyInside(findChild(shell, name));
+        // The compact window drops the volume bar and keeps the mute button.
+        if (data.width > 900)
+            verifyInside(findChild(shell, "volume"));
+        else
+            verify(!findChild(shell, "volume").visible, "the compact player hides the volume bar");
         // The progress is the 24 px exception: the player's full-width top edge.
         const progress = findChild(shell, "progress");
         verify(progress && progress.visible);

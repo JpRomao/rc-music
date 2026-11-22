@@ -179,8 +179,13 @@ TestCase {
         assertControlInside(identity);
         verify(footer.height <= (data.width >= 1200 ? 130 : 184), "The footer must not remain a full-width enlarged compact player");
         compare(footer.y + footer.height, shell.height);
-        for (const name of ["now", "player-queue", "preferences", "theme-toggle", "play-pause", "volume", "player-shuffle", "player-repeat"])
+        for (const name of ["now", "player-queue", "preferences", "theme-toggle", "play-pause", "mute", "player-shuffle", "player-repeat"])
             assertControlInside(findChild(shell, name));
+        // The compact window drops the volume bar and keeps the mute button.
+        if (data.width > 900)
+            assertControlInside(findChild(shell, "volume"));
+        else
+            verify(!findChild(shell, "volume").visible, "the compact player hides the volume bar");
         // The progress is the 24 px exception: the player's full-width top edge.
         const progress = findChild(shell, "progress");
         verify(progress && progress.visible);
