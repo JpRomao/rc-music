@@ -169,11 +169,25 @@ TestCase {
         compare(header.height, 60);
         verify(point(home).y >= header.height);
         verify(point(home).y + home.height <= footer.y + 1);
-        verify(findChild(shell, "player-identity"));
+        // Player C: the track identity sits inside the player, beside the controls.
+        const identity = findChild(shell, "player-identity");
+        verify(identity && identity.visible);
+        let identityOwner = identity.parent;
+        while (identityOwner && identityOwner.objectName !== "transport-bar")
+            identityOwner = identityOwner.parent;
+        verify(identityOwner, "the identity belongs to the transport bar");
+        assertControlInside(identity);
         verify(footer.height <= (data.width >= 1200 ? 130 : 184), "The footer must not remain a full-width enlarged compact player");
         compare(footer.y + footer.height, shell.height);
-        for (const name of ["now", "player-queue", "preferences", "theme-toggle", "play-pause", "volume", "progress", "player-shuffle", "player-repeat"])
+        for (const name of ["now", "player-queue", "preferences", "theme-toggle", "play-pause", "volume", "player-shuffle", "player-repeat"])
             assertControlInside(findChild(shell, name));
+        // The progress is the 24 px exception: the player's full-width top edge.
+        const progress = findChild(shell, "progress");
+        verify(progress && progress.visible);
+        compare(progress.height, 24);
+        compare(point(progress).x, point(footer).x);
+        compare(point(progress).y, point(footer).y);
+        compare(progress.width, footer.width);
         if (data.width === 720) {
             compare(findChild(shell, "side-navigation").width, 68);
             verify(home.contentHeight > home.height, "The small workspace must scroll instead of squeezing controls");

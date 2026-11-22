@@ -65,20 +65,18 @@ TestCase {
         createActiveShell();
 
         const progress = findChild(shell, "progress");
-        const skipBackward = findChild(shell, "skip-backward");
-        const skipForward = findChild(shell, "skip-forward");
+        const progressToolTipArea = findChild(shell, "progress-tooltip-area");
+        verify(progressToolTipArea);
+        // Player C: the ±5 s buttons leave the player; ←/→ and the progress bar keep the jump.
+        verify(!findChild(shell, "skip-backward").visible);
+        verify(!findChild(shell, "skip-forward").visible);
         compare(progress.Accessible.description, "Abra uma faixa para alterar a posição.");
-        compare(skipBackward.Accessible.description, "Abra uma faixa para alterar a posição.");
-        compare(skipForward.Accessible.description, "Abra uma faixa para alterar a posição.");
-        compare(skipBackward.toolTipText, "Voltar 5 segundos — Abra uma faixa para alterar a posição.");
-        compare(skipForward.toolTipText, "Avançar 5 segundos — Abra uma faixa para alterar a posição.");
+        compare(progressToolTipArea.toolTipText, "Posição da faixa — Abra uma faixa para alterar a posição.");
 
         openLocalQueue(["C:/Música/Primeira faixa.mp3", "C:/Música/Segunda faixa.mp3"]);
 
         const expected = {
-            "skip-backward": "←",
             "play-pause": "Espaço",
-            "skip-forward": "→",
             "next": "Shift+→ (ou Ctrl+→)",
             "mute": "M"
         };
@@ -89,11 +87,27 @@ TestCase {
             compare(button.toolTipText, button.Accessible.name + " (" + expected[objectName] + ")");
         }
         compare(progress.Accessible.description, "←/→: saltos configurados; ↑/↓: volume; Page Up/Page Down: 10 segundos; Home/End: início/fim.");
+        compare(progressToolTipArea.toolTipText, "Posição da faixa (←/→: saltos configurados; ↑/↓: volume; Page Up/Page Down: 10 segundos; Home/End: início/fim.)");
+
+        // ← and → still move the position by the configured jumps.
+        driver.publishLocalPosition(20000);
+        tryCompare(presenter, "positionMs", 20000);
+        findChild(shell, "play-pause").forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Right);
+        const forwardTarget = 20000 + presenter.skipForwardSeconds * 1000;
+        compare(driver.localSeekTarget(), forwardTarget);
+        driver.publishLocalPosition(forwardTarget);
+        tryCompare(presenter, "positionMs", forwardTarget);
+        tryCompare(presenter, "seekPending", false);
+        keyClick(Qt.Key_Left);
+        const backwardTarget = forwardTarget - presenter.skipBackwardSeconds * 1000;
+        compare(driver.localSeekTarget(), backwardTarget);
+        driver.publishLocalPosition(backwardTarget);
+        tryCompare(presenter, "positionMs", backwardTarget);
+        tryCompare(presenter, "seekPending", false);
 
         driver.publishLocalUnseekablePlaying();
         tryCompare(presenter, "seekable", false);
-        const progressToolTipArea = findChild(shell, "progress-tooltip-area");
-        verify(progressToolTipArea);
         verify(!progress.enabled);
         compare(progress.Accessible.description, "Esta fonte não permite avançar ou voltar.");
         compare(progressToolTipArea.toolTipText, "Posição da faixa — Esta fonte não permite avançar ou voltar.");
@@ -116,9 +130,8 @@ TestCase {
 
         driver.publishLocalError();
         tryCompare(presenter, "playbackState", PlayerPresenter.Error);
-        compare(progress.Accessible.description, "A posição não pode ser alterada no estado atual.");
-        compare(skipBackward.Accessible.description, "A posição não pode ser alterada no estado atual.");
-        compare(skipForward.Accessible.description, "A posição não pode ser alterada no estado atual.");
+        compare(progress.Accessible.description, "Não é possível mudar a posição agora.");
+        compare(progressToolTipArea.toolTipText, "Posição da faixa — Não é possível mudar a posição agora.");
     }
 
     function test_openNavigateAndClearQueueWithoutLeavingKeyboardOrDialog() {

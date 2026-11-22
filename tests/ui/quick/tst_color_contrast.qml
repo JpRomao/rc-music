@@ -144,13 +144,20 @@ TestCase {
             const slider = findChild(shell, name);
             verify(slider && slider.visible && slider.enabled, name);
             verify(!slider.visualFocus, name + " must start without its focus outline");
-            verifyContrast(slider.background.color, shell.color, 3, name + " unfilled track");
-            verifyContrast(slider.handle.border.color, shell.color, 3, name + " handle outline");
-            verifyContrast(slider.handle.border.color, slider.handle.color, 3, name + " handle interior");
+            if (slider.edge) {
+                // Player C: the edge track is a divider line; the filled part and the marker carry the position.
+                verify(Qt.colorEqual(slider.background.color, contract.dividerColor), name + " edge track");
+                verifyContrast(slider.handle.color, shell.color, 3, name + " marker");
+                verify(Qt.colorEqual(findChild(slider, "slider-marker-ring").color, contract.surfaceColor), name + " marker ring");
+            } else {
+                verifyContrast(slider.background.color, shell.color, 3, name + " unfilled track");
+                verifyContrast(slider.handle.border.color, shell.color, 3, name + " handle outline");
+                verifyContrast(slider.handle.border.color, slider.handle.color, 3, name + " handle interior");
+            }
             verifyContrast(slider.fillColor, shell.color, 3, name + " filled track");
             slider.forceActiveFocus(Qt.TabFocusReason);
             verify(slider.visualFocus && slider.focusIndicatorVisible);
-            verifyContrast(slider.handle.border.color, shell.color, 3, name + " focused handle");
+            verifyContrast(slider.edge ? slider.handle.color : slider.handle.border.color, shell.color, 3, name + " focused handle");
             const focus = findChild(slider, "slider-focus-indicator");
             verify(focus && focus.visible && focus.border.width >= 1);
             verifyContrast(focus.border.color, shell.color, 3, name + " outer focus indicator");

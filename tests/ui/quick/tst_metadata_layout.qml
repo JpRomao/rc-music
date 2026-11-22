@@ -21,7 +21,7 @@ TestCase {
 
     function geometry(shell) {
         const rectangles = {};
-        for (const name of ["playing-state", "cover-track", "embedded-artwork", "current-title", "current-artist", "current-album", "open-another-audio", "track-details-playing", "transport-bar", "progress", "play-pause", "previous", "next"]) {
+        for (const name of ["playing-state", "cover-track", "embedded-artwork", "current-title", "current-artist", "current-album", "open-another-audio", "track-details-playing", "transport-bar", "progress", "play-pause", "previous", "next", "player-identity", "player-artwork", "player-track-title", "player-time"]) {
             const item = findChild(shell, name);
             verify(item, name);
             const position = item.mapToItem(shell.contentItem, 0, 0);

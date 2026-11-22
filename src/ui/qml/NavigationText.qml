@@ -7,7 +7,7 @@ QtObject {
     readonly property string queueShelf: qsTr("Na sua fila")
     readonly property string queueCount: qsTr("Fila atual: %1")
     readonly property string seeQueue: qsTr("Ver fila")
-    readonly property string localAudio: qsTr("Áudio local")
+    readonly property string localAudio: qsTr("Artista desconhecido")
     readonly property string playTrack: qsTr("Reproduzir %1")
     readonly property string loadingTrack: qsTr("PREPARANDO A FAIXA")
     readonly property string nowPlaying: qsTr("AGORA TOCANDO")

@@ -739,27 +739,28 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: window.inlinePages ? Math.max(transport.implicitHeight, playerIdentity.implicitHeight) + 24 : transport.implicitHeight + footerTitle.implicitHeight + window.uiContract.spacingUnit * 8
+        // Aurora (player C): the transport bar is the whole player, its progress the top edge.
+        height: window.inlinePages ? transport.implicitHeight : transport.implicitHeight + frozenIdentity.implicitHeight + window.uiContract.spacingUnit * 8
         color: window.uiContract.surfaceColor
         Rectangle {
+            visible: !window.inlinePages
             width: parent.width
             height: 1
-            color: window.inlinePages ? window.uiContract.dividerColor : window.uiContract.borderColor
-            opacity: window.uiContract.highContrast || window.inlinePages ? 1 : 0.4
+            color: window.uiContract.borderColor
+            opacity: window.uiContract.highContrast ? 1 : 0.4
         }
         TransportBar {
             id: transport
             objectName: "transport-bar"
             pageReturnFocusItem: window.pageReturnFocusItem
-            anchors.left: window.inlinePages ? playerIdentity.right : parent.left
+            anchors.left: parent.left
             anchors.right: parent.right
+            anchors.top: window.inlinePages ? parent.top : undefined
             anchors.bottom: window.inlinePages ? undefined : parent.bottom
-            anchors.verticalCenter: window.inlinePages ? parent.verticalCenter : undefined
-            anchors.margins: window.uiContract.spacingUnit * 3
-            anchors.leftMargin: window.inlinePages ? 24 : window.uiContract.spacingUnit * 3
-            anchors.rightMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 18 : 28) : window.uiContract.spacingUnit * 3
+            anchors.margins: window.inlinePages ? 0 : window.uiContract.spacingUnit * 3
             contract: window.uiContract
             presenter: window.presenter
+            compact: window.width <= window.uiContract.compactWidth
             enabled: !window.presenter.exiting && (playbackEnabled || window.presenter.canGoPrevious || window.presenter.canGoNext || queueAvailable || lyricsAvailable)
             queueCount: queuePreview.count
             queueAvailable: (window.presenter.queueLoaded && queuePreview.count > 0 || window.roomGuest) && !window.presenter.exiting
@@ -768,54 +769,33 @@ ApplicationWindow {
             onQueueRequested: window.setQueueOpen(true)
             onLyricsRequested: lyricsPanel.showReader()
         }
-        Item {
-            id: playerIdentity
-            objectName: "player-identity"
+        // Fixture only: the persistent title above the transport. Aurora keeps the identity in the
+        // transport bar; a Loader keeps the object names unique between the two.
+        Loader {
+            id: frozenIdentity
+            active: !window.inlinePages
+            visible: active
             anchors.left: parent.left
-            anchors.leftMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 18 : 28) : window.uiContract.spacingUnit * 3
-            anchors.top: window.inlinePages ? undefined : parent.top
+            anchors.leftMargin: window.uiContract.spacingUnit * 3
+            anchors.top: parent.top
             anchors.topMargin: window.uiContract.spacingUnit * 3
-            anchors.verticalCenter: window.inlinePages ? parent.verticalCenter : undefined
-            width: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 160 : 220) : parent.width - window.uiContract.spacingUnit * 6
-            implicitHeight: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 44 : 56) : footerTitle.implicitHeight
-            TrackArtwork {
-                id: footerArtwork
-                objectName: "player-artwork"
-                visible: window.inlinePages
-                width: parent.height
-                height: width
-                contract: window.uiContract
-                source: window.presenter.currentArtworkSource
-            }
-            Text {
-                id: footerTitle
-                objectName: "player-track-title"
-                font: window.font
-                anchors.left: window.inlinePages ? footerArtwork.right : parent.left
-                anchors.leftMargin: window.inlinePages ? 12 : 0
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.topMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 4 : 10) : 0
-                text: window.presenter.hasCurrentTrack ? window.presenter.currentTitle + (!window.inlinePages && window.presenter.currentArtist.length > 0 ? " · " + window.presenter.currentArtist : "") : window.uiContract.emptyTitle
-                textFormat: Text.PlainText
-                elide: Text.ElideRight
-                color: window.uiContract.textPrimaryColor
-                Accessible.name: text
-            }
-            Text {
-                objectName: "player-track-artist"
-                anchors.left: footerTitle.left
-                anchors.right: parent.right
-                anchors.top: footerTitle.bottom
-                anchors.topMargin: 4
-                visible: window.inlinePages
-                text: window.presenter.currentArtist.length > 0 ? window.presenter.currentArtist : navigationText.localAudio
-                font.family: window.uiContract.bodyFontFamily
-                font.pixelSize: window.uiContract.typeCaption
-                textFormat: Text.PlainText
-                elide: Text.ElideRight
-                color: window.uiContract.textSecondaryColor
-                Accessible.name: text
+            width: parent.width - window.uiContract.spacingUnit * 6
+            sourceComponent: Item {
+                objectName: "player-identity"
+                implicitHeight: footerTitle.implicitHeight
+                Text {
+                    id: footerTitle
+                    objectName: "player-track-title"
+                    font: window.font
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    text: window.presenter.hasCurrentTrack ? window.presenter.currentTitle + (window.presenter.currentArtist.length > 0 ? " · " + window.presenter.currentArtist : "") : window.uiContract.emptyTitle
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
+                    color: window.uiContract.textPrimaryColor
+                    Accessible.name: text
+                }
             }
         }
     }

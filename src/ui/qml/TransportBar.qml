@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -12,10 +14,11 @@ GridLayout {
     property alias queueControl: queueAction
     property Item pageReturnFocusItem: null
     readonly property bool editorial: !presenter.usesFrozenFixture
-    readonly property bool spread: editorial && width >= 680
+    // Set by the window: the same compact rule as the side navigation.
+    property bool compact: false
+    // Labels beside the right-side icons only when the player spans a wide window.
+    readonly property bool spread: editorial && width >= contract.wideWidth
     readonly property bool queueModesAvailable: editorial && !roomGuest && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
-    // Narrow rails drop the ±5 s buttons; ←/→ and the progress bar keep that function.
-    readonly property bool roomy: !editorial || width >= 580
     property int queueCount: 0
     property bool queueAvailable: false
     property bool lyricsAvailable: false
@@ -30,14 +33,18 @@ GridLayout {
     readonly property bool showsPlaying: roomGuest ? room.roomPlaying : presenter.playbackState === PlayerPresenter.Playing
     signal queueRequested
     signal lyricsRequested
-    columns: editorial ? 2 : 1
-    columnSpacing: editorial ? 24 : 0
-    rowSpacing: editorial ? 4 : 5
+    // Player C: the progress spans the top edge (row 0); identity, controls and side actions share row 1.
+    columns: editorial ? 3 : 1
+    columnSpacing: editorial ? 10 : 0
+    rowSpacing: editorial ? 0 : 5
     QueueText {
         id: queueLabels
     }
     TransportText {
         id: labels
+    }
+    NavigationText {
+        id: navigationLabels
     }
     RoomText {
         id: roomLabels
@@ -66,6 +73,23 @@ GridLayout {
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
         return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+    }
+    // Aurora: "1:19", no leading zero on the minutes, and "1:02:03" past one hour.
+    function formattedCompactTime(milliseconds) {
+        const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = String(totalSeconds % 60).padStart(2, "0");
+        if (hours === 0)
+            return minutes + ":" + seconds;
+        return hours + ":" + String(minutes % 60).padStart(2, "0") + ":" + seconds;
+    }
+    // Each value replaces its own placeholder once, so a "%1" inside an artist or album stays text.
+    function artistLine() {
+        const artist = presenter.currentArtist.length > 0 ? presenter.currentArtist : navigationLabels.localAudio;
+        if (presenter.currentAlbum.length === 0)
+            return artist;
+        return labels.artistAlbum.replace("%2", () => presenter.currentAlbum).replace("%1", () => artist);
     }
     // A guest never seeks the shared player locally: only the room moves the music.
     function commitImmediateSeek(target) {
@@ -103,8 +127,9 @@ GridLayout {
     Item {
         id: progressArea
         objectName: "progress-tooltip-area"
-        Layout.row: root.editorial ? 1 : 0
+        Layout.row: 0
         Layout.column: 0
+        Layout.columnSpan: root.editorial ? 3 : 1
         Layout.fillWidth: true
         implicitWidth: progress.implicitWidth
         implicitHeight: progress.implicitHeight
@@ -122,9 +147,9 @@ GridLayout {
             id: progress
             objectName: "progress"
             anchors.fill: parent
-            anchors.leftMargin: root.editorial ? 52 : 0
-            anchors.rightMargin: root.editorial ? 52 : 0
             contract: root.contract
+            edge: root.editorial
+            handleSize: root.editorial ? 14 : 28
             property bool dragStarted: false
             property bool synchronizingValue: false
             property bool initialized: false
@@ -201,10 +226,11 @@ GridLayout {
             }
         }
     }
+    // Fixture only: Aurora shows the time beside the track identity.
     Item {
-        parent: root.editorial ? progressArea : root
-        implicitWidth: root.editorial ? progressArea.width : timeLabels.implicitWidth
-        implicitHeight: root.editorial ? progressArea.height : timeLabels.implicitHeight
+        visible: !root.editorial
+        implicitWidth: timeLabels.implicitWidth
+        implicitHeight: timeLabels.implicitHeight
         Layout.row: 1
         Layout.column: 0
         Layout.fillWidth: true
@@ -228,15 +254,95 @@ GridLayout {
             }
         }
     }
+    // Aurora only. A Loader, so the fixture's own title in the window keeps these object names unique.
+    Loader {
+        active: root.editorial
+        visible: root.editorial
+        Layout.row: 1
+        Layout.column: 0
+        Layout.preferredWidth: root.compact ? 200 : 260
+        Layout.leftMargin: 20
+        Layout.bottomMargin: 14
+        Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+        sourceComponent: Item {
+            objectName: "player-identity"
+            implicitHeight: Math.max(artwork.height, details.implicitHeight)
+            TrackArtwork {
+                id: artwork
+                objectName: "player-artwork"
+                anchors.verticalCenter: parent.verticalCenter
+                width: root.compact ? 48 : 64
+                height: width
+                radius: root.contract.radiusControl
+                contract: root.contract
+                source: root.presenter.currentArtworkSource
+            }
+            Column {
+                id: details
+                anchors.left: artwork.right
+                anchors.leftMargin: 14
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                Text {
+                    objectName: "player-track-title"
+                    width: parent.width
+                    text: root.presenter.hasCurrentTrack ? root.presenter.currentTitle : root.contract.emptyTitle
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
+                    font.family: root.contract.headingFontFamily
+                    font.pixelSize: root.contract.typeTitle
+                    color: root.contract.textPrimaryColor
+                    Accessible.name: text
+                }
+                Text {
+                    objectName: "player-track-artist"
+                    width: parent.width
+                    text: root.artistLine()
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
+                    font.family: root.contract.bodyFontFamily
+                    font.pixelSize: root.contract.typeCaption
+                    color: root.contract.textSecondaryColor
+                    Accessible.name: text
+                }
+                Text {
+                    objectName: "player-time"
+                    topPadding: 2
+                    text: labels.elapsedOfDuration.arg(root.formattedCompactTime(root.presenter.positionMs)).arg(root.formattedCompactTime(root.presenter.durationMs))
+                    textFormat: Text.PlainText
+                    font.family: root.contract.bodyFontFamily
+                    font.pixelSize: root.contract.typeCaption
+                    color: root.contract.textSecondaryColor
+                    Accessible.name: text
+                }
+            }
+        }
+    }
     RowLayout {
         id: controlsRow
-        Layout.row: root.editorial ? 0 : 2
-        Layout.column: 0
-        Layout.alignment: Qt.AlignHCenter
+        Layout.row: root.editorial ? 1 : 2
+        Layout.column: root.editorial ? 1 : 0
+        Layout.fillWidth: root.editorial
+        Layout.bottomMargin: root.editorial ? 14 : 0
+        Layout.alignment: root.editorial ? Qt.AlignVCenter : Qt.AlignHCenter
+        spacing: root.editorial ? 6 : 5
+        // Aurora centers the controls between the identity and the side actions.
+        Item {
+            visible: root.editorial
+            Layout.fillWidth: true
+        }
         AccessibleTransportButton {
             objectName: "player-shuffle"
             flat: root.editorial
             visible: root.editorial
+            // A 40 px target that draws a 36 px button.
+            Layout.preferredWidth: 40
+            Layout.preferredHeight: 40
+            topInset: 2
+            bottomInset: 2
+            leftInset: 2
+            rightInset: 2
+            iconSize: 18
             enabled: root.queueModesAvailable
             checkable: true
             checked: root.presenter.shuffleQueueEnabled
@@ -256,6 +362,9 @@ GridLayout {
             id: previousTrack
             flat: root.editorial
             objectName: "previous"
+            Layout.preferredWidth: root.editorial ? 40 : -1
+            Layout.preferredHeight: root.editorial ? 40 : -1
+            iconSize: 22
             font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
             enabled: root.roomGuest ? root.roomSkip : root.presenter.canGoPrevious
             contract: root.contract
@@ -270,7 +379,8 @@ GridLayout {
             id: skipBackward
             flat: root.editorial
             objectName: "skip-backward"
-            visible: root.roomy
+            // Player C drops the ±5 s buttons; ←/→ and the progress bar keep the jump.
+            visible: !root.editorial
             enabled: root.roomGuest ? root.roomSkip && root.room.roomHasCurrent : root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
             contract: root.contract
             text: root.contract.skipBackwardShort.replace("{seconds}", root.presenter.skipBackwardSeconds)
@@ -283,6 +393,9 @@ GridLayout {
             id: playPause
             objectName: "play-pause"
             primary: root.editorial
+            Layout.preferredWidth: root.editorial ? 52 : -1
+            Layout.preferredHeight: root.editorial ? 52 : -1
+            iconSize: 22
             KeyNavigation.backtab: null
             Keys.onBacktabPressed: event => {
                 const target = root.pageReturnFocusItem;
@@ -307,7 +420,7 @@ GridLayout {
             id: skipForward
             flat: root.editorial
             objectName: "skip-forward"
-            visible: root.roomy
+            visible: !root.editorial
             enabled: root.roomGuest ? root.roomSkip && root.room.roomHasCurrent : root.playbackEnabled && root.presenter.seekable && !root.presenter.seekPreviewActive && !root.presenter.seekPending
             contract: root.contract
             text: root.contract.skipForwardShort.replace("{seconds}", root.presenter.skipForwardSeconds)
@@ -320,6 +433,9 @@ GridLayout {
             id: nextTrack
             flat: root.editorial
             objectName: "next"
+            Layout.preferredWidth: root.editorial ? 40 : -1
+            Layout.preferredHeight: root.editorial ? 40 : -1
+            iconSize: 22
             font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
             enabled: root.roomGuest ? root.roomSkip : root.presenter.canGoNext
             contract: root.contract
@@ -334,6 +450,14 @@ GridLayout {
             objectName: "player-repeat"
             flat: root.editorial
             visible: root.editorial
+            // A 40 px target that draws a 36 px button.
+            Layout.preferredWidth: 40
+            Layout.preferredHeight: 40
+            topInset: 2
+            bottomInset: 2
+            leftInset: 2
+            rightInset: 2
+            iconSize: 18
             enabled: root.queueModesAvailable
             checkable: true
             checked: root.presenter.repeatQueueEnabled
@@ -349,16 +473,24 @@ GridLayout {
                     root.presenter.toggleRepeatQueue();
             }
         }
+        Item {
+            visible: root.editorial
+            Layout.fillWidth: true
+        }
     }
     GridLayout {
         id: rightCluster
         objectName: "player-side-actions"
         visible: root.editorial
-        Layout.row: 0
-        Layout.column: 1
-        Layout.rowSpan: 2
+        Layout.row: 1
+        Layout.column: 2
+        // Mirrors the identity's 260 px so the controls stay centered; natural width on a compact window.
+        Layout.minimumWidth: root.compact ? 0 : 260
+        Layout.rightMargin: 20
+        Layout.bottomMargin: 14
         Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-        columns: root.spread ? 1 : 2
+        // One row, so the player keeps a single content line below the progress edge.
+        columns: 2
         rowSpacing: 4
         columnSpacing: 4
         RowLayout {

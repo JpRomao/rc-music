@@ -12,7 +12,7 @@ QtObject {
     readonly property string seekShortcutHint: qsTr("←/→: saltos configurados; ↑/↓: volume; Page Up/Page Down: 10 segundos; Home/End: início/fim.")
     readonly property string seekRequiresTrack: qsTr("Abra uma faixa para alterar a posição.")
     readonly property string seekLoading: qsTr("Aguarde a faixa ficar pronta para alterar a posição.")
-    readonly property string seekInactive: qsTr("A posição não pode ser alterada no estado atual.")
+    readonly property string seekInactive: qsTr("Não é possível mudar a posição agora.")
     readonly property string seekUnsupported: qsTr("Esta fonte não permite avançar ou voltar.")
     readonly property string seekPreviewActive: qsTr("Conclua o ajuste da posição antes de usar o salto.")
     readonly property string seekPending: qsTr("Aguarde a atualização da posição antes de usar o salto.")
@@ -20,6 +20,8 @@ QtObject {
     readonly property string lyricsUnavailable: qsTr("Esta faixa ainda não tem letra para ler.")
     readonly property string queueWithCount: qsTr("Abrir a fila (%1)")
     readonly property string volumePercent: qsTr("%1%")
+    readonly property string elapsedOfDuration: qsTr("%1 / %2")
+    readonly property string artistAlbum: qsTr("%1 · %2")
 
     function seconds(count) {
         return qsTr("%n segundo", "Duração configurável do salto", count);

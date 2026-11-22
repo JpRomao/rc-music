@@ -19,6 +19,14 @@ TestCase {
         }
     }
 
+    TransportText {
+        id: transportText
+    }
+
+    NavigationText {
+        id: navigationText
+    }
+
     function init() {
         driver.resetLocalScenario();
         driver.setHighContrast(false, false);
@@ -76,6 +84,177 @@ TestCase {
 
     function overlaps(first, second) {
         return first.x < second.x + second.width - 0.5 && second.x < first.x + first.width - 0.5 && first.y < second.y + second.height - 0.5 && second.y < first.y + first.height - 0.5;
+    }
+
+    function luminance(color) {
+        function linear(value) {
+            return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+        }
+        return 0.2126 * linear(color.r) + 0.7152 * linear(color.g) + 0.0722 * linear(color.b);
+    }
+
+    function verifyContrast(foreground, background, minimum, context) {
+        const first = luminance(foreground);
+        const second = luminance(background);
+        const ratio = (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+        verify(ratio >= minimum, context + ": " + ratio + " < " + minimum);
+    }
+
+    function windowSizes() {
+        return [
+            {
+                tag: "wide",
+                width: 1440,
+                height: 900,
+                artwork: 64
+            },
+            {
+                tag: "minimum",
+                width: 720,
+                height: 520,
+                artwork: 48
+            }
+        ];
+    }
+
+    function test_progressRunsAlongTheTopEdge_data() {
+        return windowSizes();
+    }
+
+    // Player C: the progress bar is the player's top edge and replaces the divider line.
+    function test_progressRunsAlongTheTopEdge(data) {
+        loadSyntheticQueue();
+        resize(data.width, data.height);
+        const footer = findChild(shell, "player-footer");
+        const progress = findChild(shell, "progress");
+        verify(progress.edge, "the progress runs along the player's edge");
+        compare(progress.width, footer.width);
+        const bar = rect(progress);
+        const edge = rect(footer);
+        compare(bar.x, edge.x);
+        verify(Math.abs(bar.y - edge.y) <= 1, "progress top " + bar.y + " vs footer top " + edge.y);
+        compare(progress.height, 24);
+        compare(progress.background.height, 4);
+        compare(progress.background.y, 0);
+        verify(Qt.colorEqual(progress.background.color, productContract.dividerColor));
+        compare(progress.handle.width, 14);
+        compare(progress.handle.height, 14);
+        verify(Qt.colorEqual(progress.handle.color, productContract.accentColor));
+        verifyContrast(progress.handle.color, footer.color, 3, "progress marker on the player");
+        compare(progress.handle.y + progress.handle.height / 2, progress.background.y + progress.background.height / 2);
+        for (const child of footer.children)
+            verify(!(child.visible && child.height <= 1), "the player no longer draws a divider line");
+    }
+
+    function test_centerControlsFollowPlayerC_data() {
+        return windowSizes();
+    }
+
+    function test_centerControlsFollowPlayerC(data) {
+        loadSyntheticQueue();
+        resize(data.width, data.height);
+        const play = findChild(shell, "play-pause");
+        compare(play.width, 52);
+        compare(play.height, 52);
+        compare(play.background.radius, 26);
+        compare(findChild(play, "button-icon").width, 22);
+        for (const name of ["player-shuffle", "player-repeat"]) {
+            const mode = findChild(shell, name);
+            compare(mode.width, 40, name);
+            compare(mode.height, 40, name);
+            compare(mode.background.width, 36, name + " draws a smaller background");
+            compare(mode.background.height, 36, name);
+            compare(findChild(mode, "button-icon").width, 18, name);
+        }
+        for (const name of ["previous", "next"]) {
+            const step = findChild(shell, name);
+            compare(step.width, 40, name);
+            compare(step.height, 40, name);
+            compare(findChild(step, "button-icon").width, 22, name);
+        }
+        // The ±5 s leave the player: ←/→ and the progress bar keep that function.
+        verify(!findChild(shell, "skip-backward").visible);
+        verify(!findChild(shell, "skip-forward").visible);
+        play.forceActiveFocus(Qt.TabFocusReason);
+        const seeks = driver.localSeekCount();
+        const start = presenter.positionMs;
+        keyClick(Qt.Key_Right);
+        compare(driver.localSeekCount(), seeks + 1);
+        compare(driver.localSeekTarget(), start + presenter.skipForwardSeconds * 1000);
+        driver.publishLocalPosition(driver.localSeekTarget());
+        tryCompare(presenter, "seekPending", false);
+        compare(presenter.positionMs, start + presenter.skipForwardSeconds * 1000);
+        keyClick(Qt.Key_Left);
+        compare(driver.localSeekCount(), seeks + 2);
+        compare(driver.localSeekTarget(), start + (presenter.skipForwardSeconds - presenter.skipBackwardSeconds) * 1000);
+        driver.publishLocalPosition(driver.localSeekTarget());
+        tryCompare(presenter, "seekPending", false);
+        const progress = findChild(shell, "progress");
+        // A quarter in, clear of the focused play button's tooltip.
+        mouseClick(progress, progress.width / 4, progress.height / 2);
+        tryVerify(() => driver.localSeekCount() === seeks + 3);
+        verify(Math.abs(driver.localSeekTarget() - presenter.durationMs / 4) <= 1000, "a click on the bar seeks to " + driver.localSeekTarget());
+    }
+
+    function test_identityShowsCoverTitleArtistAlbumAndTime_data() {
+        return windowSizes();
+    }
+
+    function test_identityShowsCoverTitleArtistAlbumAndTime(data) {
+        loadSyntheticQueue();
+        resize(data.width, data.height);
+        const transport = findChild(shell, "transport-bar");
+        const identity = findChild(shell, "player-identity");
+        verify(identity && identity.visible);
+        let ancestor = identity.parent;
+        while (ancestor && ancestor !== transport)
+            ancestor = ancestor.parent;
+        verify(ancestor === transport, "the identity lives in the player");
+        const artwork = findChild(shell, "player-artwork");
+        compare(artwork.width, data.artwork);
+        compare(artwork.height, data.artwork);
+        const title = findChild(shell, "player-track-title");
+        compare(title.font.family, productContract.headingFontFamily);
+        compare(title.font.pixelSize, productContract.typeTitle);
+        const artist = findChild(shell, "player-track-artist");
+        const time = findChild(shell, "player-time");
+        // An untagged file has no artist yet.
+        compare(artist.text, navigationText.localAudio);
+        compare(artist.text, "Artista desconhecido");
+        compare(time.text, "0:41 / 3:00");
+        compare(time.text, transportText.elapsedOfDuration.arg(transport.formattedCompactTime(presenter.positionMs)).arg(transport.formattedCompactTime(presenter.durationMs)));
+        driver.publishCompleteLocalMetadata();
+        tryCompare(title, "text", "Título controlado");
+        compare(artist.text, transportText.artistAlbum.arg(presenter.currentArtist).arg(presenter.currentAlbum));
+        compare(artist.text, "Artista · Álbum");
+        // Without an album the line keeps only the artist.
+        verify(driver.followRoom("Primeira", "Só a artista", "", 600000));
+        tryCompare(title, "text", "Primeira");
+        compare(artist.text, "Só a artista");
+        compare(transport.formattedCompactTime(59000), "0:59");
+        compare(transport.formattedCompactTime(600000), "10:00");
+        compare(transport.formattedCompactTime(3723000), "1:02:03");
+    }
+
+    function test_identityElidesLongMetadataAtMinimumWindow() {
+        resize(720, 520);
+        let longTitle = "";
+        let longArtist = "";
+        while (longTitle.length < 200) {
+            longTitle += "Um título que não acaba nunca ";
+            longArtist += "Uma artista de nome comprido ";
+        }
+        longTitle = longTitle.slice(0, 200);
+        longArtist = longArtist.slice(0, 200);
+        verify(driver.followRoom(longTitle, longArtist, "", 600000));
+        const title = findChild(shell, "player-track-title");
+        tryCompare(title, "text", longTitle);
+        verify(waitForPolish(shell));
+        verify(title.truncated);
+        verify(findChild(shell, "player-track-artist").truncated);
+        const identity = rect(findChild(shell, "player-identity"));
+        const shuffle = rect(findChild(shell, "player-shuffle"));
+        verify(!overlaps(identity, shuffle), "identity ends at " + (identity.x + identity.width) + ", shuffle starts at " + shuffle.x);
     }
 
     function test_secondaryTransportControlsAreFlatAndPlayIsRound_data() {
@@ -246,26 +425,22 @@ TestCase {
             {
                 tag: "minimum",
                 width: 720,
-                height: 520,
-                skips: false
+                height: 520
             },
             {
                 tag: "default",
                 width: 960,
-                height: 640,
-                skips: true
+                height: 640
             },
             {
                 tag: "medium",
                 width: 1024,
-                height: 768,
-                skips: true
+                height: 768
             },
             {
                 tag: "wide",
                 width: 1440,
-                height: 900,
-                skips: true
+                height: 900
             }
         ];
     }
@@ -276,12 +451,10 @@ TestCase {
         const footer = findChild(shell, "player-footer");
         verify(footer.height <= 120, "footer is " + footer.height + " px at " + data.tag);
         compare(footer.y + footer.height, shell.height);
-        // ±5 s stay on the keyboard (←/→) and the progress bar when the rail is narrow.
-        compare(findChild(shell, "skip-backward").visible, data.skips);
-        compare(findChild(shell, "skip-forward").visible, data.skips);
+        // ±5 s stay on the keyboard (←/→) and the progress bar at every size.
+        verify(!findChild(shell, "skip-backward").visible);
+        verify(!findChild(shell, "skip-forward").visible);
         const names = ["player-identity", "player-shuffle", "previous", "play-pause", "next", "player-repeat", "player-lyrics", "player-queue", "mute", "volume", "progress"];
-        if (data.skips)
-            names.push("skip-backward", "skip-forward");
         const rects = {};
         for (const name of names) {
             const item = findChild(shell, name);
@@ -300,11 +473,10 @@ TestCase {
     }
 
     // S13.1: a guest following a room sees the room's item and its time in the player, not "Abra um áudio para
-    // começar" and 00:00; leaving goes back to its own (here empty) player.
+    // começar" and 0:00; leaving goes back to its own (here empty) player.
     function test_aGuestFollowingARoomShowsTheRoomTrackAndItsTime() {
         const title = findChild(shell, "player-track-title");
-        const elapsed = findChild(shell, "elapsed-time");
-        const duration = findChild(shell, "duration-time");
+        const time = findChild(shell, "player-time");
         compare(title.text, productContract.emptyTitle);
         verify(driver.followRoom("Primeira", "Artista", "Album", 600000));
         tryVerify(() => title.text.startsWith("Primeira"), 5000, title.text);
@@ -313,10 +485,9 @@ TestCase {
 
         driver.publishRoomPlayback(true, 1000, 600000);
         tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
-        tryCompare(duration, "text", "10:00");
-        compare(elapsed.text, "00:01");
+        tryCompare(time, "text", "0:01 / 10:00");
         driver.publishRoomPlayback(true, 62000, 600000);
-        tryCompare(elapsed, "text", "01:02");
+        tryCompare(time, "text", "1:02 / 10:00");
         driver.publishRoomPlayback(false, 62500, 600000);
         tryCompare(presenter, "playbackState", PlayerPresenter.Paused);
         // Nothing of the room entered the guest's own queue.

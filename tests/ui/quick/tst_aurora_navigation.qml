@@ -345,8 +345,10 @@ TestCase {
         };
         for (const name in transportIcons)
             verifyButtonIcon(findChild(shell, name), transportIcons[name]);
-        compare(findChild(shell, "elapsed-time").font.family, "Segoe UI");
-        compare(findChild(shell, "player-track-title").font.family, "Segoe UI");
+        compare(findChild(shell, "player-time").font.family, "Segoe UI");
+        compare(findChild(shell, "player-track-artist").font.family, "Segoe UI");
+        // Player C sets the persistent title in the serif heading face.
+        compare(findChild(shell, "player-track-title").font.family, "Georgia");
         for (const dark of [true, false]) {
             presenter.setThemePreference(dark ? PlayerPresenter.DarkTheme : PlayerPresenter.LightTheme);
             tryCompare(productContract, "darkTheme", dark);
@@ -475,7 +477,8 @@ TestCase {
         verifyContrast(findChild(shell, "navigation-caption").color, navigation.color, 4.5, "navigation caption");
         verifyContrast(findChild(shell, "navigation-brand").color, navigation.color, 4.5, "navigation brand");
         verifyContrast(findChild(shell, "player-track-title").color, footer.color, 4.5, "persistent track title");
-        verifyContrast(findChild(shell, "elapsed-time").color, footer.color, 4.5, "elapsed time");
+        verifyContrast(findChild(shell, "player-time").color, footer.color, 4.5, "elapsed and total time");
+        verifyContrast(findChild(shell, "player-track-artist").color, footer.color, 4.5, "artist and album");
         for (const name of ["now", "preferences"]) {
             const button = findChild(shell, name);
             verifyContrast(button.contentItem.color, button.background.color, 4.5, name + " text normal/selected");
@@ -526,9 +529,16 @@ TestCase {
         for (const name of ["progress", "volume"]) {
             const slider = findChild(shell, name);
             verify(slider.enabled);
-            verifyContrast(slider.background.color, footer.color, 3, name + " track on actual footer");
-            verifyContrast(slider.handle.border.color, footer.color, 3, name + " handle outline");
-            verifyContrast(slider.handle.border.color, slider.handle.color, 3, name + " handle interior");
+            if (slider.edge) {
+                // Player C: the edge track is a divider line; the filled part and the marker carry the position.
+                verify(Qt.colorEqual(slider.background.color, productContract.dividerColor), name + " edge track");
+                verifyContrast(slider.handle.color, footer.color, 3, name + " marker on actual footer");
+                verify(Qt.colorEqual(findChild(slider, "slider-marker-ring").color, footer.color), name + " marker ring");
+            } else {
+                verifyContrast(slider.background.color, footer.color, 3, name + " track on actual footer");
+                verifyContrast(slider.handle.border.color, footer.color, 3, name + " handle outline");
+                verifyContrast(slider.handle.border.color, slider.handle.color, 3, name + " handle interior");
+            }
             verifyContrast(slider.fillColor, footer.color, 3, name + " fill");
             slider.forceActiveFocus(Qt.TabFocusReason);
             verify(slider.visualFocus);
@@ -702,8 +712,16 @@ TestCase {
         const footer = findChild(shell, "player-footer");
         verify(footer);
         tryVerify(() => Math.abs(footer.y + footer.height - shell.height) < 0.5);
-        for (const name of ["now", "player-queue", "preferences", "play-pause", "volume", "progress"])
+        for (const name of ["now", "player-queue", "preferences", "play-pause", "volume"])
             verifyInside(findChild(shell, name));
+        // The progress is the 24 px exception: the player's full-width top edge.
+        const progress = findChild(shell, "progress");
+        verify(progress && progress.visible);
+        compare(progress.height, 24);
+        compare(progress.width, shell.width);
+        const edge = progress.mapToItem(shell.contentItem, 0, 0);
+        compare(edge.x, 0);
+        compare(edge.y, footer.mapToItem(shell.contentItem, 0, 0).y);
         verifyInside(themeButton());
         findChild(shell, "player-queue").Accessible.pressAction();
         const queue = findChild(shell, "queue-panel");

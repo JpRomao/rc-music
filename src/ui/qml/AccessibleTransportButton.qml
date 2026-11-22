@@ -11,6 +11,7 @@ Button {
     property string disabledReason: ""
     property bool primary: false
     property string iconName: ""
+    property int iconSize: 20
     property bool iconWithText: false
     readonly property string accessibleDescription: !enabled && disabledReason.length > 0 ? disabledReason : shortcutHint
     readonly property string toolTipText: !enabled && disabledReason.length > 0 ? accessibleName + " — " + disabledReason : accessibleName + (shortcutHint.length > 0 ? " (" + shortcutHint + ")" : "")
@@ -83,6 +84,7 @@ Button {
         ShellIcon {
             id: buttonIcon
             iconName: control.iconName
+            size: control.iconSize
             color: buttonLabel.color
             // Centers the icon alone, or the icon + text pair as one group.
             x: control.iconWithText ? (buttonLabel.width + buttonLabel.leftPadding - buttonLabel.contentWidth) / 2 - buttonLabel.iconGap - width : (buttonLabel.width - width) / 2
