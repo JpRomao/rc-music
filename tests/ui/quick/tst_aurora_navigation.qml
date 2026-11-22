@@ -227,6 +227,7 @@ TestCase {
         let reached = false;
         for (let step = 0; step < 20 && !reached; ++step) {
             keyClick(Qt.Key_Tab);
+            verify(shell.activeFocusItem !== item, "Tab never stops on the hidden sidebar queue item");
             reached = shell.activeFocusItem && (shell.activeFocusItem === transport || (transport.contains(transport.mapFromItem(shell.activeFocusItem, 0, 0)) && shell.activeFocusItem.objectName !== ""));
         }
         verify(reached, "Tab reaches the transport bar");
