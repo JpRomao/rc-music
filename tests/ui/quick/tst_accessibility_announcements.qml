@@ -102,7 +102,7 @@ TestCase {
         tryVerify(function () {
             return testCase.driver.accessibleAnnouncementCount() === 1;
         });
-        verify(driver.lastAccessibleAnnouncement().includes("Carregando áudio"));
+        verify(driver.lastAccessibleAnnouncement().includes("Carregando a faixa."));
         verify(!driver.lastAccessibleAnnouncement().includes("C:/"));
 
         driver.clearAccessibleAnnouncements();
@@ -246,8 +246,8 @@ TestCase {
         tryVerify(function () {
             return testCase.driver.accessibleAnnouncementCount() === 2;
         });
-        verify(driver.lastAccessibleAnnouncement().includes("faixas foram puladas"));
-        verify(driver.lastAccessibleAnnouncement().includes("detalhes na fila"));
+        verify(driver.lastAccessibleAnnouncement().includes("Uma ou mais faixas foram puladas porque não estão disponíveis."));
+        verify(driver.lastAccessibleAnnouncement().includes("Veja os detalhes na fila."));
         wait(250);
         compare(driver.accessibleAnnouncementCount(), 2);
     }

@@ -19,12 +19,63 @@ TestCase {
         }
     }
 
+    // A guest in a listening room, without network: only what the shell reads while in a room.
+    QtObject {
+        id: fakeRoom
+        property bool available: true
+        property int role: 0
+        property string state: "idle"
+        property bool busy: false
+        property string inviteLink: ""
+        property ListModel members: ListModel {}
+        property ListModel pendingRequests: ListModel {}
+        property ListModel queue: ListModel {}
+        property ListModel roles: ListModel {}
+        property ListModel knownPeople: ListModel {}
+        property int initialRoleId: 1
+        readonly property int permissionCount: 7
+        property int permissions: 0
+        property bool canSkip: false
+        property bool canPause: false
+        property bool canEditQueue: false
+        property ListModel catalog: ListModel {}
+        property bool canAddFromRoom: false
+        property bool canAddPlaylist: false
+        property bool canUploadOwnTracks: false
+        property bool uploading: false
+        property bool roomPlaying: false
+        property bool roomHasCurrent: false
+        property bool rosterUnsaved: false
+        readonly property int memberCount: members.count
+        property string hostNickname: ""
+        property int maxListeners: 5
+        property bool untilRevoked: false
+        property string errorText: ""
+        property bool privacyNoticeRequired: false
+        readonly property int minimumListeners: 1
+        readonly property int maximumListeners: 10
+        readonly property int defaultListeners: 5
+    }
+
+    Component {
+        id: roomShellComponent
+        Main {
+            uiContract: testCase.productContract
+            presenter: testCase.presenter
+            room: fakeRoom
+        }
+    }
+
     TransportText {
         id: transportText
     }
 
     NavigationText {
         id: navigationText
+    }
+
+    QueueText {
+        id: queueText
     }
 
     function init() {
@@ -43,6 +94,10 @@ TestCase {
         if (shell)
             shell.destroy();
         shell = null;
+        fakeRoom.role = 0;
+        fakeRoom.state = "idle";
+        fakeRoom.hostNickname = "";
+        fakeRoom.members.clear();
         driver.resetLocalScenario();
         driver.setHighContrast(false, false);
         driver.setSystemAppearance(false, false);
@@ -472,6 +527,160 @@ TestCase {
         tryCompare(percent, "text", "80%");
     }
 
+    // Player C: Lyrics and Queue are icons only, with their names in the tooltip and to assistive technology.
+    function test_rightClusterIsIconOnly() {
+        loadSyntheticQueue();
+        resize(1440, 900);
+        const lyrics = findChild(shell, "player-lyrics");
+        verify(lyrics && lyrics.visible);
+        compare(lyrics.contentItem.text, "");
+        compare(lyrics.iconName, "lyrics");
+        compare(lyrics.accessibleName, transportText.lyricsAction);
+        compare(lyrics.accessibleName, "Letra");
+        verify(!lyrics.enabled, "the synthetic queue has no lyrics");
+        compare(lyrics.disabledReason, transportText.lyricsUnavailable);
+        compare(lyrics.disabledReason, "Esta faixa ainda não tem letra.");
+        compare(lyrics.toolTipText, "Letra — Esta faixa ainda não tem letra.");
+        const queue = findChild(shell, "player-queue");
+        compare(queue.contentItem.text, "");
+        compare(queue.iconName, "queue");
+        const count = findChild(queue, "player-queue-count");
+        verify(count && count.visible);
+        compare(count.text, "2");
+        compare(count.height, 16);
+        verify(count.width >= 16, "count is " + count.width + " px wide");
+        compare(count.radius, 8);
+        verify(Qt.colorEqual(count.color, productContract.selectionColor));
+        const digits = findChild(count, "player-queue-count-text");
+        compare(digits.text, "2");
+        compare(digits.font.pixelSize, 10);
+        compare(digits.font.weight, Font.DemiBold);
+        verify(Qt.colorEqual(digits.color, productContract.textPrimaryColor));
+        verifyContrast(digits.color, count.color, 4.5, "queue count on its badge");
+        // On the icon's top-right corner: 4 px from the top, 2 px from the right.
+        compare(count.y, 4);
+        compare(count.x + count.width, queue.width - 2);
+        // High contrast: an outline instead of the fill.
+        driver.setHighContrast(true, true);
+        tryVerify(() => productContract.highContrast);
+        verify(Qt.colorEqual(count.color, productContract.canvasColor));
+        compare(count.border.width, 2);
+        verify(Qt.colorEqual(count.border.color, productContract.textPrimaryColor));
+        verify(Qt.colorEqual(digits.color, productContract.textPrimaryColor));
+        verifyContrast(digits.color, count.color, 4.5, "queue count in high contrast");
+    }
+
+    function test_volumeBarHidesOnCompactWindow() {
+        loadSyntheticQueue();
+        resize(1440, 900);
+        const volume = findChild(shell, "volume");
+        const percent = findChild(shell, "player-volume-percent");
+        const mute = findChild(shell, "mute");
+        verify(volume.visible);
+        compare(volume.width, 90);
+        compare(volume.handle.width, 16);
+        verify(percent.visible);
+        compare(percent.width, 34);
+        compare(percent.horizontalAlignment, Text.AlignRight);
+        compare(percent.text, "52%");
+        resize(720, 520);
+        verify(!volume.visible, "the volume bar leaves a compact window");
+        verify(!percent.visible, "the percentage leaves a compact window");
+        verify(mute.visible && mute.enabled, "mute stays");
+        verify(mute.width >= productContract.controlTargetMinimum);
+        const muted = presenter.muted;
+        findChild(shell, "play-pause").forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_M);
+        tryCompare(presenter, "muted", !muted);
+        keyClick(Qt.Key_M);
+        tryCompare(presenter, "muted", muted);
+    }
+
+    function test_playStaysCenteredBetweenEqualSides_data() {
+        return [
+            {
+                tag: "wide",
+                width: 1440,
+                height: 900
+            },
+            {
+                tag: "medium",
+                width: 1024,
+                height: 768
+            }
+        ];
+    }
+
+    // Both sides measure 260 px, so the play button sits on the player's center.
+    function test_playStaysCenteredBetweenEqualSides(data) {
+        loadSyntheticQueue();
+        resize(data.width, data.height);
+        compare(findChild(shell, "player-identity").width, 260);
+        compare(findChild(shell, "player-side-actions").width, 260);
+        const footer = rect(findChild(shell, "player-footer"));
+        const play = rect(findChild(shell, "play-pause"));
+        const offset = play.x + play.width / 2 - (footer.x + footer.width / 2);
+        verify(Math.abs(offset) <= 2, "play is " + offset + " px off the player's center at " + data.tag);
+    }
+
+    function test_roomBadgeFitsTheRightClusterAtMinimumWindow() {
+        shell.destroy();
+        shell = createTemporaryObject(roomShellComponent, null);
+        verify(shell);
+        shell.requestActivate();
+        tryVerify(() => testCase.shell.active);
+        const footer = findChild(shell, "player-footer");
+        resize(1440, 900);
+        const wideHeight = footer.height;
+        resize(720, 520);
+        let nickname = "";
+        while (nickname.length < 40)
+            nickname += "Anfitriã ";
+        nickname = nickname.slice(0, 40);
+        fakeRoom.role = 2;
+        fakeRoom.state = "joined";
+        fakeRoom.hostNickname = nickname;
+        fakeRoom.members.append({
+            fingerprint: "fp-host",
+            nickname: nickname,
+            avatarSource: "qrc:/rc_music/avatars/avatar-03.svg",
+            isHost: true,
+            isSelf: false,
+            hasSyncDrift: false,
+            syncDriftMs: 0
+        });
+        fakeRoom.members.append({
+            fingerprint: "fp-eu",
+            nickname: "Eu",
+            avatarSource: "qrc:/rc_music/avatars/avatar-04.svg",
+            isHost: false,
+            isSelf: true,
+            hasSyncDrift: false,
+            syncDriftMs: 0
+        });
+        const badge = findChild(shell, "player-room-badge");
+        tryVerify(() => badge.visible);
+        verify(badge.text.indexOf(nickname) >= 0, badge.text);
+        verify(waitForPolish(shell));
+        verify(badge.width <= 200, "badge is " + badge.width + " px wide");
+        const side = rect(findChild(shell, "player-side-actions"));
+        const area = rect(badge);
+        verify(area.x >= side.x - 0.5 && area.x + area.width <= side.x + side.width + 0.5, "badge fits the side horizontally");
+        verify(area.y >= side.y - 0.5 && area.y + area.height <= side.y + side.height + 0.5, "badge fits the side vertically");
+        verify(area.x + area.width <= shell.width + 0.5);
+        const lyrics = rect(findChild(shell, "player-lyrics"));
+        verify(area.y + area.height <= lyrics.y + 0.5, "badge sits above the icons");
+        for (const name of ["player-lyrics", "player-queue", "mute", "player-identity", "player-repeat"])
+            verify(!overlaps(area, rect(findChild(shell, name))), "badge overlaps " + name);
+        // A compact window is shorter than badge + icons (60 px): there the player may grow 4 to 8 px while
+        // in a room, up to the 120 px limit. A wider window has room for both and keeps its height.
+        verify(footer.height <= 120, "footer is " + footer.height + " px in a room");
+        compare(findChild(shell, "player-shuffle").disabledReason, queueText.hostControls);
+        compare(findChild(shell, "player-shuffle").disabledReason, "O host controla");
+        resize(1440, 900);
+        compare(footer.height, wideHeight, "the badge does not grow a wide player");
+    }
+
     function test_footerStaysCompactWithoutOverlaps_data() {
         return [
             {
@@ -506,7 +715,10 @@ TestCase {
         // ±5 s stay on the keyboard (←/→) and the progress bar at every size.
         verify(!findChild(shell, "skip-backward").visible);
         verify(!findChild(shell, "skip-forward").visible);
-        const names = ["player-identity", "player-shuffle", "previous", "play-pause", "next", "player-repeat", "player-lyrics", "player-queue", "mute", "volume", "progress"];
+        const names = ["player-identity", "player-shuffle", "previous", "play-pause", "next", "player-repeat", "player-lyrics", "player-queue", "mute", "progress"];
+        // A compact window keeps only the mute button (test_volumeBarHidesOnCompactWindow).
+        if (data.width > productContract.compactWidth)
+            names.push("volume", "player-volume-percent");
         const rects = {};
         for (const name of names) {
             const item = findChild(shell, name);
@@ -514,7 +726,7 @@ TestCase {
             const area = rect(item);
             verify(area.x >= 0 && area.x + area.width <= shell.width + 0.5, name + " fits horizontally");
             verify(area.y >= footer.y - 0.5 && area.y + area.height <= shell.height + 0.5, name + " stays inside the footer");
-            if (name !== "player-identity" && name !== "volume" && name !== "progress")
+            if (name !== "player-identity" && name !== "volume" && name !== "player-volume-percent" && name !== "progress")
                 verify(item.width >= productContract.controlTargetMinimum, name + " keeps a usable target");
             rects[name] = area;
         }

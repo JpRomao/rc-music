@@ -158,7 +158,8 @@ TestCase {
         lyrics.hasSyncedLyrics = false;
         lyrics.plainText = "";
         tryVerify(() => !button.enabled);
-        verify(button.disabledReason.length > 0);
+        compare(button.disabledReason, "Esta faixa ainda não tem letra.");
+        compare(button.accessibleName, "Letra");
         lyrics.plainText = "Verse";
         tryVerify(() => button.enabled);
     }

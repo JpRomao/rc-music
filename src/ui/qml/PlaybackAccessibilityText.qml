@@ -1,9 +1,9 @@
 import QtQml
 
 QtObject {
-    readonly property string loadingAudio: qsTr("Carregando áudio.")
+    readonly property string loadingAudio: qsTr("Carregando a faixa.")
     readonly property string seekRejected: qsTr("Não foi possível alterar a posição. A reprodução voltou para a posição anterior.")
-    readonly property string skippedDuringImport: qsTr("Uma ou mais faixas foram puladas por estarem indisponíveis. Consulte os detalhes na fila.")
+    readonly property string skippedDuringImport: qsTr("Uma ou mais faixas foram puladas porque não estão disponíveis. Veja os detalhes na fila.")
 
     function trackLoaded(title) {
         return qsTr("Faixa carregada: %1.").arg(title);

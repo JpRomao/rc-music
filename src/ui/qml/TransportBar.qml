@@ -16,8 +16,6 @@ GridLayout {
     readonly property bool editorial: !presenter.usesFrozenFixture
     // Set by the window: the same compact rule as the side navigation.
     property bool compact: false
-    // Labels beside the right-side icons only when the player spans a wide window.
-    readonly property bool spread: editorial && width >= contract.wideWidth
     readonly property bool queueModesAvailable: editorial && !roomGuest && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     property int queueCount: 0
     property bool queueAvailable: false
@@ -483,69 +481,69 @@ GridLayout {
             Layout.fillWidth: true
         }
     }
-    GridLayout {
+    // Player C: the room badge above icon-only Lyrics, Queue and volume.
+    ColumnLayout {
         id: rightCluster
         objectName: "player-side-actions"
         visible: root.editorial
         Layout.row: 1
         Layout.column: 2
         // Mirrors the identity's 260 px so the controls stay centered; natural width on a compact window.
-        Layout.minimumWidth: root.compact ? 0 : 260
+        Layout.preferredWidth: root.compact ? -1 : 260
         Layout.rightMargin: 20
         Layout.bottomMargin: 14
         Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-        // One row, so the player keeps a single content line below the progress edge.
-        columns: 2
-        rowSpacing: 4
-        columnSpacing: 4
-        RowLayout {
-            Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-            spacing: 4
-            // A status chip, not a control: the side navigation opens the room page.
-            Rectangle {
-                id: roomBadge
-                objectName: "player-room-badge"
-                readonly property string text: root.roomBadgeText()
-                visible: root.inRoom
-                Layout.alignment: Qt.AlignVCenter
-                Layout.maximumWidth: 260
-                implicitWidth: badgeRow.implicitWidth + 20
-                implicitHeight: 28
-                radius: height / 2
-                color: root.contract.selectionColor
-                border.width: root.contract.highContrast ? 1 : 0
-                border.color: root.contract.borderColor
-                Accessible.role: Accessible.StaticText
-                Accessible.name: text
-                RowLayout {
-                    id: badgeRow
-                    anchors.fill: parent
-                    anchors.leftMargin: 10
-                    anchors.rightMargin: 10
-                    spacing: 6
-                    ShellIcon {
-                        iconName: "people"
-                        size: 16
-                        color: root.contract.textPrimaryColor
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: roomBadge.text
-                        textFormat: Text.PlainText
-                        elide: Text.ElideRight
-                        font.family: root.contract.bodyFontFamily
-                        font.pixelSize: root.contract.typeCaption
-                        color: root.contract.textPrimaryColor
-                        Accessible.ignored: true
-                    }
+        spacing: 0
+        // A status chip, not a control: the side navigation opens the room page.
+        Rectangle {
+            id: roomBadge
+            objectName: "player-room-badge"
+            readonly property string text: root.roomBadgeText()
+            visible: root.inRoom
+            Layout.alignment: Qt.AlignRight
+            Layout.maximumWidth: 200
+            implicitWidth: badgeRow.implicitWidth + 16
+            implicitHeight: 20
+            radius: height / 2
+            color: root.contract.selectionColor
+            border.width: root.contract.highContrast ? 1 : 0
+            border.color: root.contract.borderColor
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+            RowLayout {
+                id: badgeRow
+                anchors.fill: parent
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                spacing: 4
+                ShellIcon {
+                    iconName: "people"
+                    size: 14
+                    color: root.contract.textPrimaryColor
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: roomBadge.text
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
+                    font.family: root.contract.bodyFontFamily
+                    font.pixelSize: root.contract.typeCaption
+                    color: root.contract.textPrimaryColor
+                    Accessible.ignored: true
                 }
             }
+        }
+        RowLayout {
+            id: sideIcons
+            Layout.alignment: Qt.AlignRight
+            spacing: 4
             AccessibleTransportButton {
                 objectName: "player-lyrics"
                 flat: true
+                Layout.preferredWidth: 40
+                Layout.preferredHeight: 40
                 contract: root.contract
                 iconName: "lyrics"
-                iconWithText: root.spread
                 text: labels.lyricsAction
                 enabled: root.lyricsAvailable
                 disabledReason: labels.lyricsUnavailable
@@ -558,44 +556,58 @@ GridLayout {
                 id: queueAction
                 objectName: "player-queue"
                 flat: true
+                Layout.preferredWidth: 40
+                Layout.preferredHeight: 40
                 contract: root.contract
                 iconName: "queue"
-                iconWithText: root.spread
                 text: root.contract.queueTitle
                 accessibleName: labels.queueWithCount.arg(root.queueCount)
                 enabled: root.queueAvailable
-                rightPadding: root.spread ? queueCountLabel.implicitWidth + 18 : 6
-                implicitWidth: Math.max(root.contract.controlTargetPreferred, contentItem.implicitWidth + 16 + (root.spread ? queueCountLabel.implicitWidth + 6 : 0))
                 onClicked: {
                     if (enabled)
                         root.queueRequested();
                 }
-                Text {
-                    id: queueCountLabel
+                // A small badge on the icon's top-right corner; high contrast outlines it instead.
+                Rectangle {
                     objectName: "player-queue-count"
-                    // Beside the label when wide; a small badge on the icon when narrow.
-                    anchors.right: parent.right
-                    anchors.rightMargin: root.spread ? 12 : 4
-                    anchors.top: root.spread ? undefined : parent.top
+                    readonly property string text: String(root.queueCount)
+                    anchors.top: parent.top
                     anchors.topMargin: 4
-                    anchors.verticalCenter: root.spread ? parent.verticalCenter : undefined
-                    text: String(root.queueCount)
-                    textFormat: Text.PlainText
-                    font.family: root.contract.bodyFontFamily
-                    font.pixelSize: root.spread ? root.contract.typeCaption : root.contract.typeEyebrow
-                    color: root.contract.textSecondaryColor
+                    anchors.right: parent.right
+                    anchors.rightMargin: 2
+                    width: Math.max(16, queueCountText.implicitWidth + 6)
+                    height: 16
+                    radius: 8
+                    color: root.contract.highContrast ? root.contract.canvasColor : root.contract.selectionColor
+                    border.width: root.contract.highContrast ? 2 : 0
+                    border.color: root.contract.textPrimaryColor
                     Accessible.ignored: true
+                    Text {
+                        id: queueCountText
+                        objectName: "player-queue-count-text"
+                        anchors.centerIn: parent
+                        text: parent.text
+                        textFormat: Text.PlainText
+                        font.family: root.contract.bodyFontFamily
+                        font.pixelSize: root.contract.typeEyebrow
+                        font.weight: Font.DemiBold
+                        color: root.contract.textPrimaryColor
+                        Accessible.ignored: true
+                    }
                 }
             }
         }
     }
     RowLayout {
         id: volumeControls
-        parent: root.editorial ? rightCluster : controlsRow
-        Layout.alignment: root.editorial ? Qt.AlignRight | Qt.AlignVCenter : Qt.AlignHCenter | Qt.AlignVCenter
+        parent: root.editorial ? sideIcons : controlsRow
+        Layout.alignment: root.editorial ? Qt.AlignVCenter : Qt.AlignHCenter | Qt.AlignVCenter
+        spacing: root.editorial ? 4 : 5
         AccessibleTransportButton {
             objectName: "mute"
             flat: root.editorial
+            Layout.preferredWidth: root.editorial ? 40 : -1
+            Layout.preferredHeight: root.editorial ? 40 : -1
             enabled: root.playbackEnabled
             contract: root.contract
             // The icon shows the sound state (muted or at 0% → crossed speaker);
@@ -610,8 +622,11 @@ GridLayout {
         TransportSlider {
             id: volume
             objectName: "volume"
+            // A compact Aurora window keeps only the mute button.
+            visible: !root.editorial || !root.compact
             enabled: root.playbackEnabled
             contract: root.contract
+            handleSize: root.editorial ? 16 : 28
             hoverEnabled: true
             ToolTip.text: Math.round(root.presenter.volume * 100) + "%"
             ToolTip.visible: enabled && (hovered || pressed)
@@ -637,7 +652,7 @@ GridLayout {
                 }
             }
             stepSize: 1
-            implicitWidth: root.editorial && !root.spread ? 64 : 120
+            implicitWidth: root.editorial ? 90 : 120
             activeFocusOnTab: true
             Accessible.role: Accessible.Slider
             Accessible.id: "volume"
@@ -662,8 +677,8 @@ GridLayout {
         }
         Text {
             objectName: "player-volume-percent"
-            visible: root.editorial && root.spread
-            Layout.preferredWidth: 36
+            visible: root.editorial && !root.compact
+            Layout.preferredWidth: 34
             horizontalAlignment: Text.AlignRight
             text: labels.volumePercent.arg(Math.round(root.presenter.volume * 100))
             textFormat: Text.PlainText
