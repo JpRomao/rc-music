@@ -264,6 +264,23 @@ TestCase {
         verify(!shell.queueOpen);
     }
 
+    function test_queueOpenerIsForgottenWhenTheDrawerClosesAnotherWay() {
+        loadSyntheticQueue();
+        const queue = findChild(shell, "queue-panel");
+        const opener = findChild(shell, "mute");
+        opener.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        tryVerify(() => queue.visible);
+        // The sidebar closes the drawer without going through it.
+        findChild(shell, "now").Accessible.pressAction();
+        tryVerify(() => !queue.visible);
+        tryVerify(() => findChild(shell, "now").activeFocus);
+        // A later focus restore (after a source import) must not jump back to that old opener.
+        shell.restoreFocusAfterSourceImport();
+        tryVerify(() => findChild(shell, "player-queue").activeFocus);
+        verify(!opener.activeFocus);
+    }
+
     function test_queueFocusFallsBackToThePlayerQueueThenPlayPause() {
         loadSyntheticQueue();
         const queue = findChild(shell, "queue-panel");

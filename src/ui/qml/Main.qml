@@ -116,6 +116,11 @@ ApplicationWindow {
         syncProfileSetup();
     }
     onProfileSetupRequiredChanged: syncProfileSetup()
+    // Only the drawer's own close returns the focus to its opener: any other way out forgets it.
+    onQueueOpenChanged: {
+        if (!queueOpen)
+            queueReturnFocusItem = null;
+    }
 
     function syncProfileSetup() {
         if (profileSetupRequired && !profileSetupDialog.visible)
@@ -295,6 +300,7 @@ ApplicationWindow {
             downloadsPanel.close();
             preferencesPanel.close();
         }
+        const opener = queueReturnFocusItem;
         if (window.inlinePages && open && !queueOpen)
             queueReturnFocusItem = window.activeFocusItem;
         queueOpen = open;
@@ -304,7 +310,7 @@ ApplicationWindow {
             if (window.queueOpen)
                 queuePanel.focusCurrent();
             else
-                window.restoreQueueFocus();
+                window.restoreQueueFocus(opener);
         });
     }
     function toggleQueue() {
@@ -453,7 +459,7 @@ ApplicationWindow {
         if (window.queueOpen && queuePanel.visible)
             queuePanel.focusCurrent();
         else
-            window.restoreQueueFocus();
+            window.restoreQueueFocus(null);
     }
     function toggleTheme() {
         presenter.setThemePreference(uiContract.darkTheme ? PlayerPresenter.LightTheme : PlayerPresenter.DarkTheme);
@@ -462,10 +468,9 @@ ApplicationWindow {
         return item !== null && item !== undefined && item.visible && item.enabled;
     }
     // Aurora: whoever opened the drawer, then the player's queue button, then play/pause.
-    function restoreQueueFocus() {
+    function restoreQueueFocus(opener) {
         if (window.inlinePages) {
-            const target = [queueReturnFocusItem, transport.queueControl, transport.primaryControl].find(isFocusable);
-            queueReturnFocusItem = null;
+            const target = [opener, transport.queueControl, transport.primaryControl].find(isFocusable);
             if (target) {
                 target.forceActiveFocus(Qt.TabFocusReason);
                 return;
