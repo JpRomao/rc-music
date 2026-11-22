@@ -342,13 +342,13 @@ GridLayout {
             objectName: "player-shuffle"
             flat: root.editorial
             visible: root.editorial
-            // A 40 px target that draws a 36 px button.
-            Layout.preferredWidth: 40
-            Layout.preferredHeight: 40
-            topInset: 2
-            bottomInset: 2
-            leftInset: 2
-            rightInset: 2
+            // A minimum-size target that draws a 36 px button.
+            Layout.preferredWidth: root.contract.controlTargetMinimum
+            Layout.preferredHeight: root.contract.controlTargetMinimum
+            topInset: (root.contract.controlTargetMinimum - 36) / 2
+            bottomInset: (root.contract.controlTargetMinimum - 36) / 2
+            leftInset: (root.contract.controlTargetMinimum - 36) / 2
+            rightInset: (root.contract.controlTargetMinimum - 36) / 2
             iconSize: 18
             enabled: root.queueModesAvailable
             checkable: true
@@ -369,8 +369,8 @@ GridLayout {
             id: previousTrack
             flat: root.editorial
             objectName: "previous"
-            Layout.preferredWidth: root.editorial ? 40 : -1
-            Layout.preferredHeight: root.editorial ? 40 : -1
+            Layout.preferredWidth: root.editorial ? root.contract.controlTargetMinimum : -1
+            Layout.preferredHeight: root.editorial ? root.contract.controlTargetMinimum : -1
             iconSize: 22
             font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
             enabled: root.roomGuest ? root.roomSkip : root.presenter.canGoPrevious
@@ -430,8 +430,8 @@ GridLayout {
             id: nextTrack
             flat: root.editorial
             objectName: "next"
-            Layout.preferredWidth: root.editorial ? 40 : -1
-            Layout.preferredHeight: root.editorial ? 40 : -1
+            Layout.preferredWidth: root.editorial ? root.contract.controlTargetMinimum : -1
+            Layout.preferredHeight: root.editorial ? root.contract.controlTargetMinimum : -1
             iconSize: 22
             font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
             enabled: root.roomGuest ? root.roomSkip : root.presenter.canGoNext
@@ -448,13 +448,13 @@ GridLayout {
             objectName: "player-repeat"
             flat: root.editorial
             visible: root.editorial
-            // A 40 px target that draws a 36 px button.
-            Layout.preferredWidth: 40
-            Layout.preferredHeight: 40
-            topInset: 2
-            bottomInset: 2
-            leftInset: 2
-            rightInset: 2
+            // A minimum-size target that draws a 36 px button.
+            Layout.preferredWidth: root.contract.controlTargetMinimum
+            Layout.preferredHeight: root.contract.controlTargetMinimum
+            topInset: (root.contract.controlTargetMinimum - 36) / 2
+            bottomInset: (root.contract.controlTargetMinimum - 36) / 2
+            leftInset: (root.contract.controlTargetMinimum - 36) / 2
+            rightInset: (root.contract.controlTargetMinimum - 36) / 2
             iconSize: 18
             enabled: root.queueModesAvailable
             checkable: true
@@ -536,8 +536,8 @@ GridLayout {
                 id: lyricsAction
                 objectName: "player-lyrics"
                 flat: true
-                Layout.preferredWidth: 40
-                Layout.preferredHeight: 40
+                Layout.preferredWidth: root.contract.controlTargetMinimum
+                Layout.preferredHeight: root.contract.controlTargetMinimum
                 contract: root.contract
                 iconName: "lyrics"
                 text: labels.lyricsAction
@@ -552,8 +552,8 @@ GridLayout {
                 id: queueAction
                 objectName: "player-queue"
                 flat: true
-                Layout.preferredWidth: 40
-                Layout.preferredHeight: 40
+                Layout.preferredWidth: root.contract.controlTargetMinimum
+                Layout.preferredHeight: root.contract.controlTargetMinimum
                 contract: root.contract
                 iconName: "queue"
                 text: root.contract.queueTitle
@@ -607,8 +607,8 @@ GridLayout {
             id: muteAction
             objectName: "mute"
             flat: root.editorial
-            Layout.preferredWidth: root.editorial ? 40 : -1
-            Layout.preferredHeight: root.editorial ? 40 : -1
+            Layout.preferredWidth: root.editorial ? root.contract.controlTargetMinimum : -1
+            Layout.preferredHeight: root.editorial ? root.contract.controlTargetMinimum : -1
             enabled: root.playbackEnabled
             contract: root.contract
             // The icon shows the sound state (muted or at 0% → crossed speaker);
