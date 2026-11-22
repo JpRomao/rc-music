@@ -100,6 +100,7 @@ Na ordem em que foram tomadas:
 13. **Revisão de textos**: “Se puder melhorar os diálogos e escritas do app, faça”.
 14. **Marcas de estado**: entre manter só o preenchimento dos mockups e acrescentar uma marca pequena em Destaque nos estados ligado, escolhido e nos campos, escolheu **“Com marca”** (tela `marcas-de-estado.html`).
 15. **Tocar agora uma playlist com Aleatório ligado**: escolheu **“1ª, depois sorteio”**. Toca a primeira da playlist, e as próximas saem do sorteio de sempre, entre tudo o que vem depois na fila.
+16. **Documento e tom dos textos**: **“Aprovado”** (2026-11-22), depois de ver as trocas de maior impacto e a decisão de manter “novamente”.
 
 Estas são decisões minhas, sem objeção do mantenedor, e valem até ele dizer o contrário:
 - a Fila sai da lateral;
@@ -430,7 +431,7 @@ A revisão cobre os catálogos `*Text.qml` (cerca de 680 frases) e os textos do 
 - placeholders e plurais preservados;
 - nenhum texto prometendo o que o app não faz.
 
-O glossário, as inconsistências e as trocas propostas, catálogo por catálogo, entram num anexo deste documento (`2026-11-22-ui-redesign-copy.md`, nesta pasta) quando a revisão terminar. **As trocas só entram depois de o mantenedor aprovar o tom pelas de maior impacto.** Cada fatia de tela aplica as trocas da sua área e ajusta os testes que fixam aquelas frases. A troca de texto nunca relaxa o que o teste verifica.
+O glossário, as inconsistências e as trocas aprovadas, catálogo por catálogo, estão no anexo [2026-11-22-ui-redesign-copy.md](2026-11-22-ui-redesign-copy.md) (decisão 16). Cada troca traz o teste que hoje fixa a frase. Cada fatia de tela aplica as trocas da sua área e ajusta os testes que fixam aquelas frases. A troca de texto nunca relaxa o que o teste verifica.
 
 ## Acessibilidade
 
