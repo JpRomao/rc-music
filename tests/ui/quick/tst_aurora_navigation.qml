@@ -268,10 +268,21 @@ TestCase {
         tryVerify(() => playPause.activeFocus);
     }
 
+    function themeButton() {
+        const header = findChild(shell, "workspace-header");
+        verify(header);
+        const button = findChild(header, "theme-toggle");
+        verify(button, "the theme button lives in the header");
+        compare(findChild(shell, "side-navigation").themeButton, null);
+        return button;
+    }
+
     function test_quickThemeUsesThePreferenceAndPreservesPlayback() {
         loadSyntheticQueue();
-        const button = findChild(shell, "theme-toggle");
-        verify(button);
+        const button = themeButton();
+        compare(button.tonal, true);
+        compare(button.iconName, "moon");
+        compare(button.Accessible.name, "Ativar tema escuro");
         const commands = audioCommands();
         const occurrence = presenter.currentOccurrenceId;
         button.forceActiveFocus(Qt.TabFocusReason);
@@ -279,6 +290,9 @@ TestCase {
         tryCompare(productContract, "darkTheme", true);
         compare(presenter.themePreference, PlayerPresenter.DarkTheme);
         compare(String(shell.color).toUpperCase(), "#1B1917");
+        compare(button.iconName, "sun");
+        compare(button.Accessible.name, "Ativar tema claro");
+        // Space stays reserved for play/pause by the window shortcut, as for every shell button.
         button.Accessible.pressAction();
         tryCompare(productContract, "darkTheme", false);
         compare(presenter.themePreference, PlayerPresenter.LightTheme);
@@ -287,6 +301,22 @@ TestCase {
         compare(presenter.positionMs, 41000);
         compare(presenter.volume, 0.52);
         compare(audioCommands(), commands);
+    }
+
+    function test_themeToggleKeepsFocusAndPlayback() {
+        loadSyntheticQueue();
+        const button = themeButton();
+        const commands = audioCommands();
+        const positionBefore = presenter.positionMs;
+        button.forceActiveFocus(Qt.TabFocusReason);
+        for (const dark of [true, false]) {
+            keyClick(Qt.Key_Return);
+            tryCompare(productContract, "darkTheme", dark);
+            verify(button.activeFocus, "the button keeps the focus after the swap");
+            compare(presenter.playbackState, PlayerPresenter.Playing);
+            verify(presenter.positionMs >= positionBefore);
+            compare(audioCommands(), commands);
+        }
     }
 
     function test_nativeFrameUsesAuroraColorsAndPersistentTrackIdentity() {
@@ -446,7 +476,7 @@ TestCase {
         verifyContrast(findChild(shell, "navigation-brand").color, navigation.color, 4.5, "navigation brand");
         verifyContrast(findChild(shell, "player-track-title").color, footer.color, 4.5, "persistent track title");
         verifyContrast(findChild(shell, "elapsed-time").color, footer.color, 4.5, "elapsed time");
-        for (const name of ["now", "theme-toggle", "preferences"]) {
+        for (const name of ["now", "preferences"]) {
             const button = findChild(shell, name);
             verifyContrast(button.contentItem.color, button.background.color, 4.5, name + " text normal/selected");
             mouseMove(button);
@@ -460,6 +490,12 @@ TestCase {
             verifyContrast(button.background.border.color, button.background.color, 3, name + " inner focus/selection");
             verifyContrast(button.background.border.color, navigation.color, 3, name + " outer focus/selection");
         }
+        const theme = themeButton();
+        const canvas = findChild(shell, "workspace-header").color;
+        verifyContrast(theme.foregroundColor, theme.fillColor, 3, "theme icon on its tonal fill");
+        theme.forceActiveFocus(Qt.TabFocusReason);
+        verify(theme.activeFocus);
+        verifyContrast(findChild(theme, "focus-ring").border.color, canvas, 3, "theme focus ring on the canvas");
         for (const name of ["previous", "play-pause", "next", "mute"])
             verifyContrast(findChild(shell, name).contentItem.color, findChild(shell, name).background.color, 4.5, name + " rendered foreground");
         mountNavigationBackends();
@@ -535,7 +571,7 @@ TestCase {
         const selectedIcon = findChild(findChild(shell, "now"), "button-icon");
         verify(Qt.colorEqual(selectedIcon.color, productContract.accentColor), "selected icon uses the accent");
         // Theme toggle offers the opposite theme: sun to go light, moon to go dark.
-        verifyButtonIcon(findChild(shell, "theme-toggle"), data.dark ? "sun" : "moon");
+        compare(themeButton().iconName, data.dark ? "sun" : "moon");
         const mark = findChild(shell, "navigation-brand-mark");
         verify(mark && mark.visible);
         compare(mark.children.length, 3);
@@ -663,8 +699,9 @@ TestCase {
         const footer = findChild(shell, "player-footer");
         verify(footer);
         tryVerify(() => Math.abs(footer.y + footer.height - shell.height) < 0.5);
-        for (const name of ["now", "player-queue", "preferences", "theme-toggle", "play-pause", "volume", "progress"])
+        for (const name of ["now", "player-queue", "preferences", "play-pause", "volume", "progress"])
             verifyInside(findChild(shell, name));
+        verifyInside(themeButton());
         findChild(shell, "player-queue").Accessible.pressAction();
         const queue = findChild(shell, "queue-panel");
         tryVerify(() => queue.visible);

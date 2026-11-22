@@ -166,7 +166,7 @@ TestCase {
         const footer = findChild(shell, "player-footer");
         const home = findChild(shell, "state-layer");
         verify(header && header.visible);
-        verify(header.height >= 64);
+        compare(header.height, 60);
         verify(point(home).y >= header.height);
         verify(point(home).y + home.height <= footer.y + 1);
         verify(findChild(shell, "player-identity"));

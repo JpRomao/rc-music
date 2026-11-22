@@ -47,6 +47,7 @@ ApplicationWindow {
     signal openAudioRequested
     property bool queueOpen: false
     readonly property bool inlinePages: !presenter.usesFrozenFixture
+    readonly property Item themeButton: inlinePages ? workspaceHeader.themeButton : sideNavigation.themeButton
     readonly property string currentPage: preferencesPanel.visible ? "preferences" : (libraryPanel.visible ? "library" : (searchPanel.visible ? "search" : (roomPanel.visible ? "room" : (playlistsPanel.visible ? "playlists" : (downloadsPanel.visible ? "downloads" : (queuePageActive ? "queue" : "home"))))))
     readonly property Item pageReturnFocusItem: inlinePages ? (currentPage === "preferences" ? preferencesPanel.lastFocusItem : (currentPage === "library" ? libraryPanel.lastFocusItem : (currentPage === "search" ? searchPanel.lastFocusItem : (currentPage === "room" ? roomPanel.lastFocusItem : (currentPage === "playlists" ? playlistsPanel.lastFocusItem : (currentPage === "downloads" ? downloadsPanel.lastFocusItem : null)))))) : null
     // A guest's queue is the room queue, there even when no local queue is loaded.
@@ -453,6 +454,9 @@ ApplicationWindow {
         else
             window.restoreQueueFocus();
     }
+    function toggleTheme() {
+        presenter.setThemePreference(uiContract.darkTheme ? PlayerPresenter.LightTheme : PlayerPresenter.DarkTheme);
+    }
     function isFocusable(item) {
         return item !== null && item !== undefined && item.visible && item.enabled;
     }
@@ -480,7 +484,6 @@ ApplicationWindow {
         width: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 68 : (window.width <= window.uiContract.wideWidth ? 196 : 224)) : (compact ? 144 : 224)
         compact: window.inlinePages ? window.width <= window.uiContract.compactWidth : window.width < 1000
         editorial: window.inlinePages
-        themeHost: window.inlinePages ? workspaceHeader.themeHost : null
         contract: window.uiContract
         queueAvailable: window.presenter.queueLoaded || window.roomGuest
         queueActive: window.queuePageActive
@@ -518,7 +521,7 @@ ApplicationWindow {
         onSearchRequested: window.openSearch()
         onRoomRequested: window.openRoomPage()
         onDownloadsRequested: window.openDownloads()
-        onThemeRequested: window.presenter.setThemePreference(window.uiContract.darkTheme ? PlayerPresenter.LightTheme : PlayerPresenter.DarkTheme)
+        onThemeRequested: window.toggleTheme()
         onBrowserRequested: {
             window.embeddedBrowser.open();
             if (window.embeddedBrowser !== null && window.embeddedBrowser.errorText.length > 0)
@@ -534,6 +537,10 @@ ApplicationWindow {
         visible: window.inlinePages
         contract: window.uiContract
         compact: window.width <= window.uiContract.compactWidth
+        themeButtonActive: window.inlinePages
+        darkTheme: window.uiContract.darkTheme
+        exiting: window.presenter.exiting
+        onThemeRequested: window.toggleTheme()
         pageTitle: window.currentPage === "home" ? navigationText.home : (window.currentPage === "queue" ? window.uiContract.queueTitle : (window.currentPage === "library" ? navigationText.library : window.currentPage === "search" ? navigationText.search : window.currentPage === "room" ? navigationText.listenTogether : window.currentPage === "playlists" ? navigationText.playlists : (window.currentPage === "downloads" ? navigationText.activity : navigationText.settings)))
     }
     ColumnLayout {

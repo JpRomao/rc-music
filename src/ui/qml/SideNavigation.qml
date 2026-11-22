@@ -9,7 +9,6 @@ Rectangle {
     required property ShellUiContract contract
     property bool compact: false
     property bool editorial: false
-    property Item themeHost: null
     property bool queueAvailable: false
     property bool queueActive: false
     property string activePage: ""
@@ -36,7 +35,7 @@ Rectangle {
     property alias roomButton: roomAction
     property alias downloadsButton: downloadsAction
     property alias browserButton: browserAction
-    property alias themeButton: themeAction
+    readonly property Item themeButton: themeLoader.item as Item
     property alias profileChip: profileAction
     signal nowRequested
     signal queueRequested
@@ -53,6 +52,22 @@ Rectangle {
     color: contract.navigationColor
     NavigationText {
         id: labels
+    }
+    Component {
+        id: themeButtonComponent
+        // qmllint disable unqualified
+        AccessibleTransportButton {
+            objectName: "theme-toggle"
+            KeyNavigation.tab: null
+            KeyNavigation.backtab: null
+            contract: root.contract
+            text: root.contract.darkTheme ? root.contract.themeLight : root.contract.themeDark
+            iconWithText: true
+            accessibleName: root.contract.darkTheme ? labels.themeLight : labels.themeDark
+            enabled: !root.exiting
+            onClicked: root.themeRequested()
+        }
+        // qmllint enable unqualified
     }
     DownloadText {
         id: downloadLabels
@@ -317,25 +332,12 @@ Rectangle {
             Item {
                 Layout.fillHeight: true
             }
-            Item {
-                parent: root.themeHost !== null ? root.themeHost : navigationLayout
-                implicitWidth: root.themeHost !== null ? root.themeHost.width : themeAction.implicitWidth
-                implicitHeight: root.themeHost !== null ? root.themeHost.height : themeAction.implicitHeight
+            // O fixture congelado mantém o botão de tema aqui; o Aurora o tem no topo.
+            Loader {
+                id: themeLoader
+                active: !root.editorial
                 Layout.fillWidth: true
-                AccessibleTransportButton {
-                    id: themeAction
-                    objectName: "theme-toggle"
-                    anchors.fill: parent
-                    KeyNavigation.tab: null
-                    KeyNavigation.backtab: null
-                    contract: root.contract
-                    text: root.contract.darkTheme ? root.contract.themeLight : root.contract.themeDark
-                    iconName: root.editorial ? (root.contract.darkTheme ? "sun" : "moon") : ""
-                    iconWithText: true
-                    accessibleName: root.contract.darkTheme ? labels.themeLight : labels.themeDark
-                    enabled: !root.exiting
-                    onClicked: root.themeRequested()
-                }
+                sourceComponent: themeButtonComponent
             }
             NavigationButton {
                 id: preferencesAction
