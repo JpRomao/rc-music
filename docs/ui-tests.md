@@ -114,18 +114,18 @@ O novo teste [rc_music.ui.build-boundary](../tests/cmake/UiBuildBoundaryTests.cm
 
 ## Peças Aurora
 
-Os arquivos `tests/ui/quick/tst_aurora_*.qml` cobrem as peças do redesenho em `src/ui/qml/Aurora*.qml`. Cada um hospeda a peça numa `Window` própria e roda com `QT_FATAL_WARNINGS=1`; nenhum toca som.
+Oito arquivos de `tests/ui/quick` cobrem as peças `src/ui/qml/Aurora*.qml`: `tst_aurora_buttons`, `tst_aurora_fields`, `tst_aurora_choices`, `tst_aurora_badges`, `tst_aurora_menus`, `tst_aurora_dialogs`, `tst_aurora_surfaces` e `tst_aurora_pieces_visual`. Os demais `tst_aurora_*` (`composition`, `navigation`, `pages`, `player` e `shell`) cobrem as telas Aurora anteriores e não são testes de peça. Os testes de peça rodam com `QT_FATAL_WARNINGS=1` e nenhum toca som.
 
-- `tst_aurora_buttons`: botões (cinco tipos, compacto, rótulo longo cortado com nome acessível inteiro) e botão de ícone ligado/desligado.
-- `tst_aurora_fields`: campo de texto (foco, erro, linha de estado) e caixa de seleção.
-- `tst_aurora_choices`: segmentado, interruptor, stepper e caixinha, incluindo movimento reduzido.
-- `tst_aurora_badges`: selos de cinco tons, avatar com anel de escolhido e alto contraste.
-- `tst_aurora_menus`: menu com itens, separador, Esc devolvendo o foco e troca de tema com o menu aberto.
-- `tst_aurora_dialogs`: diálogo e diálogo de confirmação, foco, janela mínima e movimento reduzido.
-- `tst_aurora_surfaces`: avisos, mensagem de retorno, estado vazio, cabeçalho de gaveta e cartão flutuante.
-- `tst_aurora_pieces_visual`: contraste dos 18 pares de cores que as peças usam, nos temas claro e escuro, e galeria com todas as peças em claro, escuro e alto contraste dentro de `ColumnLayout`/`RowLayout` sem tamanhos explícitos, para que um aviso de layout falhe o teste. Com `RC_MUSIC_UI_ARTIFACT_DIR` definido, grava `aurora-pecas-claro.png`, `aurora-pecas-escuro.png` e `aurora-pecas-alto-contraste.png` para o aceite visual; as imagens não são versionadas.
+- `tst_aurora_buttons`: cores por tipo de botão, alvo de 40 px, ativação por teclado, anel de foco só com foco, estado desabilitado (inclusive em alto contraste), contorno tonal em alto contraste, rótulo longo cortado mantendo o nome acessível, troca de tema, ícone no botão; botão de ícone com nome, marca de ligado, alto contraste, dica e teclas em botão marcável.
+- `tst_aurora_fields`: campo com linha em vez de borda, erro abaixo do campo colorindo a linha, espaço do ícone inicial, contorno em alto contraste; caixa de seleção abrindo e escolhendo por teclado e marcando a opção atual.
+- `tst_aurora_choices`: segmentado (uma parada de tabulação, setas, marca da opção, estado externo por binding, desabilitado em alto contraste), interruptor (estados, movimento conforme o contrato, desabilitado ligado em alto contraste), stepper (passos, edição, indicadores) e caixinha (estados, desabilitada marcada em alto contraste).
+- `tst_aurora_badges`: tons do selo, selo em alto contraste, avatar redondo e anel de escolhido.
+- `tst_aurora_menus`: superfície do menu, itens de 40 px navegáveis, item de perigo em `errorColor`, texto de atalho legível, sem sombra em alto contraste e Esc devolvendo o foco a quem abriu.
+- `tst_aurora_dialogs`: véu sobre a janela inteira, Esc fechando e devolvendo o foco, botão de fechar nomeado, confirmação (abre em cancelar), fonte do título, troca de tema com o diálogo aberto, movimento conforme o contrato, janela mínima, rolagem só quando o conteúdo é alto e superfície em alto contraste.
+- `tst_aurora_surfaces`: cabeçalho de gaveta, tons do aviso, alto contraste, ações e nome acessível do aviso, sombra do cartão flutuante conforme o contraste, mensagem de retorno oculta quando vazia e estado vazio (ações e alto contraste).
+- `tst_aurora_pieces_visual`: contraste dos 18 pares de cores usados pelas peças nos temas claro e escuro (mínimos 4,5:1 ou 3:1 conforme o par) e galeria com as peças em claro, escuro e alto contraste dentro de `ColumnLayout`/`RowLayout`. A galeria prova que tudo renderiza sem aviso de layout ou de binding nos três temas; não afirma cada peça individualmente. Com `RC_MUSIC_UI_ARTIFACT_DIR` definido, grava `aurora-pecas-claro.png`, `aurora-pecas-escuro.png` e `aurora-pecas-alto-contraste.png` para o aceite visual; as imagens não são versionadas.
 
-Contagens do marco (`develop.ps1 validate` e execução direta do Quick): `tst_aurora_pieces_visual` 7/7; Quick inteiro 695 passaram e 6 falharam, todas linhas de `AuroraComposition::test_headerHeroAndFooterUseSeparateResponsiveRegions`, que exige `RC_MUSIC_UI_ARTIFACT_DIR` e já falhava antes desta fatia. No CTest, `rc_music.ui.quick` estoura o prazo de 90 s (a suíte leva cerca de 150 s ou mais nesta máquina) e `rc_music.ui.presenter` falhou uma vez em `roomHostLeadsEachStartOnceOverQueuedConfirmations` sob carga, passando 336/336 quando rodado isolado.
+Resultado do marco do fim das peças (`develop.ps1 validate`): as etapas de formato, documentos, build e lint passaram, e o CTest teve 667 de 669 aprovados. As duas falhas: `rc_music.ui.quick` estoura o prazo de 90 s (a suíte leva cerca de 150 s ou mais nesta máquina), o que já ocorria antes da fatia; e `rc_music.ui.presenter` (`roomHostLeadsEachStartOnceOverQueuedConfirmations`) falhou uma vez sob carga e passa sozinho (336/336 no binário inteiro). O Quick rodado direto, sem o limite do CTest, deu 695 aprovados e 6 falhas, todas linhas já falhando de `AuroraComposition::test_headerHeroAndFooterUseSeparateResponsiveRegions`, que exige `RC_MUSIC_UI_ARTIFACT_DIR`. `LocalRuntime.Tests.ps1` ficou pendente: precisa de um runtime montado. `tst_aurora_pieces_visual` passou 7/7.
 
 ## Limites
 
