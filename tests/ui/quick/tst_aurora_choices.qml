@@ -292,6 +292,35 @@ TestCase {
         c.Accessible.pressAction();
         compare(c.checked, false);
     }
+    function test_enterAndReturnToggle_data() {
+        const rows = [];
+        for (const kind of ["interruptor", "caixinha"])
+            for (const key of [["Enter", Qt.Key_Enter], ["Return", Qt.Key_Return]])
+                rows.push({
+                    tag: kind + "-" + key[0],
+                    kind: kind,
+                    key: key[1]
+                });
+        return rows;
+    }
+    function test_enterAndReturnToggle(data) {
+        const c = data.kind === "interruptor" ? hostSwitch({
+            label: "Opção"
+        }) : hostCheck({
+            text: "Opção"
+        });
+        const toggled = createTemporaryObject(spyComponent, testCase, {
+            target: c,
+            signalName: "toggled"
+        });
+        c.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(data.key);
+        compare(c.checked, true);
+        compare(toggled.count, 1);
+        keyClick(data.key);
+        compare(c.checked, false);
+        compare(toggled.count, 2);
+    }
     function test_switchMotionFollowsContract() {
         driver.setSystemAppearance(false, true);
         const s = hostSwitch({

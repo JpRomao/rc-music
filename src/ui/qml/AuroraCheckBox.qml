@@ -42,6 +42,15 @@ CheckBox {
     font.family: contract.bodyFontFamily
     font.pixelSize: contract.typeBody
 
+    // Enter e Return alternam, como no interruptor.
+    Keys.onReturnPressed: event => {
+        activate();
+        event.accepted = true;
+    }
+    Keys.onEnterPressed: event => {
+        activate();
+        event.accepted = true;
+    }
     function activate() {
         toggle();
         toggled();
