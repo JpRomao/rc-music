@@ -290,6 +290,17 @@ TestCase {
         tryVerify(() => !findChild(shell, "queue-panel").visible);
     }
 
+    function test_guestSeesTheRoomListInsteadOfTheEmptyState() {
+        joinAsGuest();
+        createShell();
+        verify(!localPresenter.queueLoaded);
+        shell.setQueueOpen(true);
+        const panel = findChild(shell, "queue-panel");
+        tryVerify(() => panel.visible);
+        verify(visibleChild("room-queue-list"));
+        verify(!findChild(panel, "queue-empty") || !findChild(panel, "queue-empty").visible);
+    }
+
     // S8.2: the guest's queue shows the room's items, "Carregando…" until a file arrives, and who added each.
     function test_aGuestQueueShowsLoadingItemsWithTheirAuthor() {
         joinAsGuest();

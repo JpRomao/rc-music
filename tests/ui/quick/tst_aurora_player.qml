@@ -555,10 +555,103 @@ TestCase {
             verify(!mode || !mode.visible, name + " lives in the player, not in the Aurora drawer");
         }
         const list = findChild(drawer, "queue-list");
+        tryVerify(() => list.itemAtIndex(0) !== null);
         const first = list.itemAtIndex(0);
-        compare(findChild(first, "queue-row-number").text, "1");
+        // The playing track swaps its number for the waveform icon; the rows have no divider.
+        verify(!findChild(first, "queue-row-number").visible);
+        verify(findChild(first, "queue-row-now-icon").visible);
         verify(Qt.colorEqual(findChild(first, "queue-row-title").color, productContract.accentColor), "the playing track is highlighted");
-        verify(findChild(first, "queue-row-divider").visible);
+        verify(!findChild(first, "queue-row-divider"), "the rows have no divider");
+        const second = list.itemAtIndex(1);
+        compare(findChild(second, "queue-row-number").text, "2");
+        verify(findChild(second, "queue-row-number").visible);
+    }
+
+    function openDrawerWithThreeTracks() {
+        driver.enqueueLocalSelection(["C:/Música/Primeira.mp3", "C:/Música/Segunda.mp3", "C:/Música/Terceira.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        verify(presenter.nextTrack());
+        tryCompare(presenter, "currentQueueIndex", 1);
+        shell.setQueueOpen(true);
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        const list = findChild(drawer, "queue-list");
+        tryCompare(list, "count", 3);
+        tryVerify(() => list.itemAtIndex(2) !== null);
+        return drawer;
+    }
+
+    function test_queueRowsMatchTheDrawerDesign() {
+        const drawer = openDrawerWithThreeTracks();
+        const list = findChild(drawer, "queue-list");
+        for (let index = 0; index < 3; ++index) {
+            const row = list.itemAtIndex(index);
+            const current = index === 1;
+            compare(row.height, 56);
+            const artwork = findChild(row, "queue-row-artwork");
+            verify(artwork && artwork.visible);
+            compare(artwork.width, 40);
+            compare(artwork.height, 40);
+            const icon = findChild(row, "queue-row-now-icon");
+            const number = findChild(row, "queue-row-number");
+            verify(!findChild(row, "queue-row-divider"), "the rows have no divider");
+            compare(!!icon && icon.visible, current);
+            compare(number.visible, !current);
+            const title = findChild(row, "queue-row-title");
+            if (current) {
+                compare(icon.iconName, "waveform");
+                verify(Qt.colorEqual(icon.color, productContract.accentColor));
+                verify(Qt.colorEqual(title.color, productContract.accentColor));
+            } else {
+                verify(!Qt.colorEqual(title.color, productContract.accentColor));
+            }
+            const expected = drawer.rowAccessibleName(row.title, row.fileName, row.artist, row.durationMs, row.available, row.errorCode, index + 1, 3, false, false, false);
+            compare(row.Accessible.name, expected);
+        }
+    }
+
+    function test_unavailableRowShowsStatusInWarning() {
+        driver.enqueueLocalSelection(["C:/Música/Arquivo movido.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalSourceUnavailable();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Error);
+        shell.setQueueOpen(true);
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        const list = findChild(drawer, "queue-list");
+        tryVerify(() => list.itemAtIndex(0) !== null);
+        const row = list.itemAtIndex(0);
+        const status = findChild(row, "queue-row-status");
+        verify(status.visible);
+        compare(status.text, "Arquivo não disponível.");
+        verify(Qt.colorEqual(status.color, productContract.warningColor));
+        const artist = findChild(row, "queue-row-artist");
+        verify(artist && !artist.visible, "the status takes the place of the artist");
+    }
+
+    // The drawer only opens over a loaded queue today, so the empty state is reached by clearing the queue
+    // under the open drawer and keeping the drawer on screen.
+    function test_emptyQueueShowsTheEmptyState() {
+        const drawer = openDrawerWithThreeTracks();
+        verify(presenter.clearQueue());
+        tryVerify(() => !testCase.presenter.queueLoaded);
+        drawer.visible = true;
+        tryVerify(() => drawer.emptyShown);
+        const empty = findChild(drawer, "queue-empty");
+        verify(empty && empty.visible);
+        compare(findChild(empty, "empty-title").text, "A fila está vazia.");
+        const primary = findChild(empty, "queue-empty-primary");
+        verify(primary && primary.visible);
+        compare(primary.text, "Abrir áudio");
+        verify(!findChild(drawer, "queue-list").visible);
+        driver.enqueueLocalSelection(["C:/Música/Nova.mp3"]);
+        mouseClick(primary);
+        tryVerify(() => testCase.presenter.queueLoaded);
+        compare(presenter.queueModel.rowCount(), 1);
     }
 
     // Opens a queue with one file per duration and plays each track once so the queue learns its duration.

@@ -62,7 +62,10 @@ FocusScope {
         const total = presenter.queueTotalDurationMs;
         return typeof total === "number" ? queueText.countAndDuration.arg(count).arg(durationText(total)) : count;
     }
+    // Aurora: an empty local queue offers to open audio instead of an empty list.
+    readonly property bool emptyShown: overlayMode && !roomGuest && queueList.count === 0
     signal closeRequested
+    signal openAudioRequested
     signal playRequested(string occurrenceId)
     signal addLyricVariantRequested(string occurrenceId, string displayTitle)
 
@@ -559,11 +562,23 @@ FocusScope {
             }
         }
 
+        AuroraEmptyState {
+            visible: root.emptyShown
+            contract: root.contract
+            controlId: "queue-empty"
+            iconName: "queue"
+            title: queueText.emptyTitle
+            primaryActionText: root.contract.openAudioText
+            onPrimaryTriggered: root.openAudioRequested()
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+        }
+
         ListView {
             id: queueList
             objectName: "queue-list"
             readonly property bool focusIndicatorVisible: activeFocus && enabled
-            visible: !root.roomGuest
+            visible: !root.roomGuest && !root.emptyShown
             Layout.fillWidth: true
             Layout.fillHeight: true
             model: root.presenter.queueModel
@@ -636,7 +651,9 @@ FocusScope {
                 readonly property color secondaryColor: contrastHighlighted ? root.contract.accentTextColor : root.contract.textSecondaryColor
                 objectName: "queue-row-" + occurrenceId
                 width: ListView.view.width
-                height: 64
+                readonly property bool isPlaying: occurrenceId === root.presenter.currentOccurrenceId
+                readonly property bool statusShown: locating || locationFailed || retrying || !available
+                height: root.overlayMode ? 56 : 64
                 padding: root.contract.spacingUnit * 2
                 activeFocusOnTab: false
                 hoverEnabled: true
@@ -677,15 +694,6 @@ FocusScope {
 
                 background: Rectangle {
                     color: root.contract.highContrast ? (row.contrastHighlighted ? root.contract.accentColor : root.contract.surfaceColor) : (root.overlayMode ? (row.ListView.isCurrentItem ? root.contract.selectionColor : (row.hovered ? root.contract.hoverColor : "transparent")) : (row.ListView.isCurrentItem ? Qt.alpha(root.contract.accentColor, 0.12) : (row.hovered ? Qt.alpha(root.contract.focusColor, 0.08) : "transparent")))
-                    Rectangle {
-                        objectName: "queue-row-divider"
-                        visible: root.overlayMode
-                        anchors.bottom: parent.bottom
-                        width: parent.width
-                        height: 1
-                        color: root.contract.highContrast ? root.contract.borderColor : root.contract.dividerColor
-                        Accessible.ignored: true
-                    }
                     radius: root.contract.radiusSmall
                     border.width: row.ListView.isCurrentItem ? (queueList.activeFocus ? 3 : (root.contract.highContrast ? 2 : 0)) : (root.contract.highContrast && row.hovered ? 1 : 0)
                     border.color: row.contrastHighlighted ? root.contract.accentTextColor : root.contract.focusColor
@@ -694,10 +702,27 @@ FocusScope {
                 contentItem: RowLayout {
                     spacing: root.contract.spacingUnit * 2
 
+                    // Aurora: the playing track shows a waveform where the other rows show their number.
+                    Item {
+                        visible: root.overlayMode && row.isPlaying
+                        Layout.preferredWidth: 24
+                        Layout.preferredHeight: 24
+                        Accessible.ignored: true
+
+                        ShellIcon {
+                            objectName: "queue-row-now-icon"
+                            anchors.verticalCenter: parent.verticalCenter
+                            iconName: "waveform"
+                            size: 18
+                            visible: parent.visible
+                            color: row.contrastHighlighted ? root.contract.accentTextColor : root.contract.accentColor
+                        }
+                    }
                     Text {
                         // Aurora numbers the queue; the legacy page marks the playing row.
                         objectName: "queue-row-number"
-                        text: root.overlayMode ? String(row.orderIndex + 1) : (row.occurrenceId === root.presenter.currentOccurrenceId ? "▶" : "")
+                        visible: !(root.overlayMode && row.isPlaying)
+                        text: root.overlayMode ? String(row.orderIndex + 1) : (row.isPlaying ? "▶" : "")
                         color: root.overlayMode ? row.secondaryColor : row.primaryColor
                         font: root.overlayMode ? Qt.font({
                             family: root.contract.bodyFontFamily,
@@ -705,6 +730,17 @@ FocusScope {
                         }) : root.contract.applicationFont
                         Layout.preferredWidth: root.overlayMode ? 24 : 16
                         Accessible.ignored: true
+                    }
+                    TrackArtwork {
+                        objectName: "queue-row-artwork"
+                        visible: root.overlayMode
+                        Layout.preferredWidth: 40
+                        Layout.preferredHeight: 40
+                        implicitWidth: 40
+                        implicitHeight: 40
+                        radius: root.contract.radiusSmall
+                        contract: root.contract
+                        source: row.isPlaying ? root.presenter.currentArtworkSource : ""
                     }
                     ColumnLayout {
                         Layout.fillWidth: true
@@ -714,11 +750,14 @@ FocusScope {
                             text: row.title.length > 0 ? row.title : row.fileName
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
-                            color: root.overlayMode && !root.contract.highContrast && row.occurrenceId === root.presenter.currentOccurrenceId ? root.contract.accentColor : row.primaryColor
+                            color: root.overlayMode && !root.contract.highContrast && row.isPlaying ? root.contract.accentColor : row.primaryColor
                             Layout.fillWidth: true
                             Accessible.ignored: true
                         }
                         Text {
+                            objectName: "queue-row-artist"
+                            // Aurora: the status takes the place of the artist.
+                            visible: !(root.overlayMode && row.statusShown)
                             text: row.artist
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
@@ -731,8 +770,8 @@ FocusScope {
                             text: row.locating ? queueText.locating : (row.locationFailed ? queueText.locationFailed : (row.retrying ? queueText.retrying : queueText.unavailableReason(row.errorCode)))
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
-                            color: row.secondaryColor
-                            visible: row.locating || row.locationFailed || row.retrying || !row.available
+                            color: root.overlayMode && !row.contrastHighlighted ? root.contract.warningColor : row.secondaryColor
+                            visible: row.statusShown
                             Layout.fillWidth: true
                             Accessible.ignored: true
                         }

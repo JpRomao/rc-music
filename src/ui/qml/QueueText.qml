@@ -8,6 +8,7 @@ QtObject {
     readonly property string durationMinutes: qsTr("%1 min")
     readonly property string durationHours: qsTr("%1 h %2 min")
     readonly property string countAndDuration: qsTr("%1 · %2")
+    readonly property string emptyTitle: qsTr("A fila está vazia.")
     readonly property string closeQueue: qsTr("Fechar fila")
     readonly property string addFiles: qsTr("Adicionar arquivos…")
     readonly property string removeFromQueue: qsTr("Remover da fila")

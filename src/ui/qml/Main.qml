@@ -989,6 +989,7 @@ ApplicationWindow {
         lyricVariantActionAvailable: lyricsPanel.queueVariantActionAvailable
         locationFocusRestoreAllowed: window.active && window.windowShortcutsEnabled && !preferencesPanel.visible
         onCloseRequested: window.setQueueOpen(false)
+        onOpenAudioRequested: window.openAudio()
         onPlayRequested: occurrenceId => window.presenter.playQueueOccurrence(occurrenceId)
         onAddLyricVariantRequested: (occurrenceId, displayTitle) => lyricsPanel.openQueuedVariant(occurrenceId, displayTitle)
     }
