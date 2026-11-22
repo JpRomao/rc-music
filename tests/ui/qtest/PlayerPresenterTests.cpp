@@ -566,6 +566,9 @@ class PlayerPresenterTests final : public QObject {
     void shuffleQueuePreservesCurrentPrefixAndMetadata_data();
     void shuffleQueuePreservesCurrentPrefixAndMetadata();
     void shuffleQueueChangesTwoUpcomingItemsForEveryTestSeed();
+    void queueTotalDurationSumsKnownDurations();
+    void queueTotalDurationIsUnknownWhenAnyTrackHasNoDuration();
+    void queueTotalDurationIsUnknownForAnEmptyQueue();
     void shuffleQueueWithNoCurrentShufflesAllRemainingOccurrences();
     void repeatQueueTogglePublishesAndPersistsWithoutTransport();
     void repeatQueueRotatesCompletedOccurrence_data();
@@ -1424,6 +1427,47 @@ void PlayerPresenterTests::shuffleQueueChangesTwoUpcomingItemsForEveryTestSeed()
     QVERIFY(!presenter.shuffleQueue());
     QVERIFY(presenter.requestExit());
     QVERIFY(!presenter.shuffleQueue());
+}
+
+void PlayerPresenterTests::queueTotalDurationSumsKnownDurations() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector sources{localTestPath(u8"A.wav"), localTestPath(u8"B.wav")};
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    auto* const model = qobject_cast<LocalQueueListModel*>(presenter.queueModelObject());
+    QVERIFY(model);
+    QVERIFY(model->updateMetadata({1}, QStringLiteral("A"), {}, {}, 90'000));
+    QVERIFY(model->updateMetadata({2}, QStringLiteral("B"), {}, {}, 120'000));
+
+    const QVariant total = presenter.queueTotalDurationMs();
+
+    QVERIFY(total.isValid());
+    QCOMPARE(total.toLongLong(), 210'000);
+}
+
+void PlayerPresenterTests::queueTotalDurationIsUnknownWhenAnyTrackHasNoDuration() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector sources{localTestPath(u8"A.wav"), localTestPath(u8"B.wav")};
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    auto* const model = qobject_cast<LocalQueueListModel*>(presenter.queueModelObject());
+    QVERIFY(model);
+    QVERIFY(model->updateMetadata({1}, QStringLiteral("A"), {}, {}, 90'000));
+
+    QVERIFY(!presenter.queueTotalDurationMs().isValid());
+}
+
+void PlayerPresenterTests::queueTotalDurationIsUnknownForAnEmptyQueue() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
+
+    QVERIFY(!presenter.queueTotalDurationMs().isValid());
 }
 
 void PlayerPresenterTests::shuffleQueueWithNoCurrentShufflesAllRemainingOccurrences() {

@@ -118,6 +118,8 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(bool selectingAudioFiles READ selectingAudioFiles NOTIFY stateChanged)
     Q_PROPERTY(bool audioFileSelectionFailed READ audioFileSelectionFailed NOTIFY stateChanged)
     Q_PROPERTY(int currentQueueIndex READ currentQueueIndex NOTIFY stateChanged)
+    // Sum of the local queue durations; null with an empty queue or while any track has no duration.
+    Q_PROPERTY(QVariant queueTotalDurationMs READ queueTotalDurationMs NOTIFY stateChanged)
     Q_PROPERTY(bool hasContextOccurrence READ hasContextOccurrence NOTIFY stateChanged)
     Q_PROPERTY(QString contextOccurrenceId READ contextOccurrenceId NOTIFY stateChanged)
     Q_PROPERTY(bool hasPosition READ hasPosition NOTIFY stateChanged)
@@ -290,6 +292,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] bool hasCurrentOccurrence() const noexcept;
     [[nodiscard]] QString currentOccurrenceId() const;
     [[nodiscard]] int currentQueueIndex() const noexcept;
+    [[nodiscard]] QVariant queueTotalDurationMs() const;
     [[nodiscard]] bool hasContextOccurrence() const noexcept;
     [[nodiscard]] QString contextOccurrenceId() const;
     [[nodiscard]] bool hasPosition() const noexcept;

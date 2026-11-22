@@ -1,7 +1,18 @@
 import QtQuick
 
 QtObject {
-    readonly property string drawerEyebrow: qsTr("REPRODUÇÃO / TEMPORÁRIA")
+    readonly property string drawerEyebrow: qsTr("Reprodução")
+    function trackCount(count) {
+        return qsTr("%n faixa", "Contagem de faixas da fila", count);
+    }
+    readonly property string durationMinutes: qsTr("%1 min")
+    readonly property string durationHours: qsTr("%1 h %2 min")
+    readonly property string countAndDuration: qsTr("%1 · %2")
+    readonly property string closeQueue: qsTr("Fechar fila")
+    readonly property string addFiles: qsTr("Adicionar arquivos…")
+    readonly property string removeFromQueue: qsTr("Remover da fila")
+    readonly property string clearEllipsis: qsTr("Limpar fila…")
+    readonly property string clearName: qsTr("Limpar a fila")
     readonly property string manageLyrics: qsTr("Gerenciar letras")
     readonly property string add: qsTr("Adicionar arquivos")
     readonly property string moveUp: qsTr("Mover para cima")

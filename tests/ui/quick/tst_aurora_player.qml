@@ -491,7 +491,8 @@ TestCase {
         verify(waitForPolish(shell));
         const area = rect(drawer);
         const footer = findChild(shell, "player-footer");
-        verify(drawer.width <= productContract.queuePanelMaximumWidth, "the queue is a side drawer, not a full page");
+        compare(shell.drawerWidth, 400);
+        compare(drawer.width, shell.drawerWidth, "the queue is a 400 px side drawer, not a full page");
         compare(area.x + area.width, shell.width);
         compare(area.y, 0);
         compare(area.y + area.height, footer.y);
@@ -518,17 +519,22 @@ TestCase {
         const surface = findChild(drawer, "queue-panel-background");
         compare(surface.radius, 0);
         compare(surface.border.width, 0);
-        const eyebrow = findChild(drawer, "queue-eyebrow");
-        verify(eyebrow && eyebrow.visible && eyebrow.text.length > 0);
-        const title = findChild(drawer, "queue-title");
+        // The drawer header replaces the old eyebrow and title, which stay for the fixture only.
+        for (const name of ["queue-eyebrow", "queue-title"]) {
+            const old = findChild(drawer, name);
+            verify(!old || !old.visible, name + " is not shown in the Aurora drawer");
+        }
+        const header = findChild(drawer, "queue-header");
+        verify(header && header.visible);
+        const title = findChild(header, "drawer-title");
         compare(title.font.family, productContract.headingFontFamily);
-        compare(title.font.pixelSize, productContract.typeHeading);
+        compare(title.font.pixelSize, productContract.typeTitle);
         const icons = {
             "queue-add": "plus",
             "queue-move-up": "arrow-up",
             "queue-move-down": "arrow-down",
             "queue-remove": "minus",
-            "queue-clear": "close"
+            "queue-clear": "trash"
         };
         for (const name in icons) {
             const button = findChild(drawer, name);
@@ -537,7 +543,12 @@ TestCase {
             verify(icon && icon.visible, name + " shows a line icon");
             compare(icon.iconName, icons[name]);
             tryCompare(icon, "status", Image.Ready);
-            compare(button.contentItem.text, "");
+            // Only Limpar fila keeps a visible label; the others are icon only, without the old glyphs.
+            const label = findChild(button, "button-label");
+            if (name === "queue-clear")
+                compare(label.text, "Limpar fila…");
+            else
+                verify(!label, name + " is icon only");
         }
         for (const name of ["queue-shuffle", "queue-repeat"]) {
             const mode = findChild(drawer, name);
@@ -548,6 +559,155 @@ TestCase {
         compare(findChild(first, "queue-row-number").text, "1");
         verify(Qt.colorEqual(findChild(first, "queue-row-title").color, productContract.accentColor), "the playing track is highlighted");
         verify(findChild(first, "queue-row-divider").visible);
+    }
+
+    // Opens a queue with one file per duration and plays each track once so the queue learns its duration.
+    // A null duration leaves that track unknown.
+    function loadQueueWithDurations(durations) {
+        driver.enqueueLocalSelection(durations.map((duration, index) => "C:/Música/Faixa " + (index + 1) + ".mp3"));
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryVerify(() => testCase.presenter.queueLoaded);
+        for (let index = 0; index < durations.length; ++index) {
+            if (index > 0)
+                verify(presenter.nextTrack());
+            tryCompare(presenter, "currentQueueIndex", index);
+            if (durations[index] === null)
+                continue;
+            driver.publishLocalPlaying();
+            driver.publishLocalPosition(0, durations[index]);
+            // The player's duration wins over the tags' one once it is confirmed.
+            tryCompare(presenter, "durationMs", durations[index]);
+            driver.publishCompleteLocalMetadata();
+            tryCompare(presenter, "currentTitle", "Título controlado");
+        }
+    }
+
+    function test_queueDrawerHeaderShowsCountAndDuration() {
+        loadQueueWithDurations([600000, 600000, 600000]);
+        compare(presenter.queueTotalDurationMs, 1800000);
+        const opener = findChild(shell, "player-queue");
+        opener.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        verify(waitForPolish(shell));
+        compare(drawer.width, 400);
+        const header = findChild(drawer, "queue-header");
+        verify(header && header.visible);
+        compare(findChild(header, "drawer-eyebrow").text, "Reprodução");
+        compare(findChild(header, "drawer-title").text, "Fila");
+        compare(findChild(header, "drawer-subtitle").text, "3 faixas · 30 min");
+        compare(drawer.subtitleText, "3 faixas · 30 min");
+        const close = findChild(drawer, "queue-header-close");
+        verify(close && close.visible && close.enabled);
+        compare(close.Accessible.name, "Fechar fila");
+        mouseClick(close);
+        tryVerify(() => !drawer.visible);
+        tryVerify(() => opener.activeFocus, 5000, "closing gives the focus back to whoever opened the drawer");
+    }
+
+    function test_subtitleOmitsDurationWhenUnknown() {
+        loadQueueWithDurations([null]);
+        verify(presenter.queueTotalDurationMs === undefined || presenter.queueTotalDurationMs === null, String(presenter.queueTotalDurationMs));
+        shell.setQueueOpen(true);
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        compare(findChild(drawer, "drawer-subtitle").text, "1 faixa");
+        compare(drawer.subtitleText, "1 faixa");
+    }
+
+    function test_durationRoundsUpAndShowsHours_data() {
+        return [
+            {
+                tag: "an hour and a second",
+                durations: [3000000, 601000],
+                subtitle: "2 faixas · 1 h 1 min"
+            },
+            {
+                tag: "a minute and a second",
+                durations: [61000],
+                subtitle: "1 faixa · 2 min"
+            }
+        ];
+    }
+
+    function test_durationRoundsUpAndShowsHours(data) {
+        loadQueueWithDurations(data.durations);
+        shell.setQueueOpen(true);
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        compare(drawer.subtitleText, data.subtitle);
+        compare(findChild(drawer, "drawer-subtitle").text, data.subtitle);
+    }
+
+    function verifyToolbarButton(drawer, name, accessibleName, description) {
+        const button = findChild(drawer, name);
+        verify(button && button.visible, name);
+        verify(findChild(button, "icon-button-background"), name + " is an AuroraIconButton");
+        compare(button.width, 40, name);
+        compare(button.height, 40, name);
+        compare(button.Accessible.name, accessibleName, name);
+        compare(button.Accessible.description, description, name);
+        return button;
+    }
+
+    function test_queueToolbarUsesAuroraIconButtons() {
+        loadSyntheticQueue();
+        shell.setQueueOpen(true);
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        verify(waitForPolish(shell));
+        verifyToolbarButton(drawer, "queue-add", "Adicionar arquivos…", "");
+        verifyToolbarButton(drawer, "queue-move-up", "Mover para cima", "Alt+↑");
+        verifyToolbarButton(drawer, "queue-move-down", "Mover para baixo", "Alt+↓");
+        verifyToolbarButton(drawer, "queue-remove", "Remover da fila", "Delete");
+        const clear = findChild(drawer, "queue-clear");
+        verify(clear && clear.visible && clear.enabled);
+        compare(clear.kind, AuroraButton.Quiet);
+        const label = findChild(clear, "button-label");
+        compare(label.text, "Limpar fila…");
+        compare(clear.Accessible.name, "Limpar a fila");
+        compare(findChild(clear, "button-icon").iconName, "trash");
+        verify(Qt.colorEqual(label.color, productContract.errorColor), "the clear ink is the error color: " + label.color);
+        verify(Qt.colorEqual(findChild(clear, "button-icon").color, productContract.errorColor), "so is the trash icon");
+        verifyContrast(label.color, Qt.color(productContract.surfaceColor), 4.5, "Limpar fila on the light drawer");
+        mouseMove(clear, clear.width / 2, clear.height / 2);
+        tryVerify(() => clear.hovered);
+        verifyContrast(label.color, clear.background.color, 4.5, "hovered Limpar fila on the light drawer");
+        presenter.setThemePreference(PlayerPresenter.DarkTheme);
+        tryVerify(() => testCase.productContract.darkTheme);
+        verifyContrast(label.color, clear.background.color, 4.5, "hovered Limpar fila on the dark drawer");
+        mouseMove(drawer, 1, drawer.height - 1);
+        tryVerify(() => !clear.hovered);
+        verifyContrast(label.color, Qt.color(productContract.surfaceColor), 4.5, "Limpar fila on the dark drawer");
+        // The clear button sits at the right end of the toolbar, after the icon buttons.
+        const remove = findChild(drawer, "queue-remove");
+        verify(clear.mapToItem(drawer, 0, 0).x > remove.mapToItem(drawer, 0, 0).x + remove.width);
+    }
+
+    // A guest without the host's permission keeps today's reasons on the drawer buttons.
+    function test_queueToolbarKeepsTheRoomReasons() {
+        shell.destroy();
+        fakeRoom.role = 2;
+        fakeRoom.state = "joined";
+        shell = createTemporaryObject(roomShellComponent, null);
+        verify(shell);
+        shell.requestActivate();
+        tryVerify(() => testCase.shell.active);
+        shell.setQueueOpen(true);
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        verify(drawer.roomGuest);
+        // The header leaves out the local count: a guest sees the room queue.
+        compare(drawer.subtitleText, "");
+        verify(!findChild(drawer, "drawer-subtitle").visible);
+        const add = verifyToolbarButton(drawer, "queue-add", "Adicionar arquivos…", queueText.guestLocalQueueHeld);
+        verify(!add.enabled);
+        for (const [name, accessibleName] of [["queue-move-up", "Mover para cima"], ["queue-move-down", "Mover para baixo"], ["queue-remove", "Remover da fila"]]) {
+            const button = verifyToolbarButton(drawer, name, accessibleName, queueText.hostNotAllowed);
+            verify(!button.enabled, name);
+        }
+        verify(!findChild(drawer, "queue-clear").enabled, "a guest does not clear the room queue");
     }
 
     function test_lyricsButtonIsDisabledWithAReasonWithoutLyrics() {

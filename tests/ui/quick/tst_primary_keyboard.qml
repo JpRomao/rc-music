@@ -362,30 +362,53 @@ TestCase {
         compare(repeat.checked, repeated);
         verify(!findChild(shell, "queue-panel").visible);
     }
+    function isInside(item, ancestor) {
+        for (let current = item; current; current = current.parent) {
+            if (current === ancestor)
+                return true;
+        }
+        return false;
+    }
+    // Presses the key from start until the focus comes back to start; every stop stays inside the drawer.
+    function walkDrawerCycle(start, modifiers) {
+        const panel = findChild(shell, "queue-panel");
+        const walked = [];
+        for (let step = 0; step < 40; ++step) {
+            keyClick(Qt.Key_Tab, modifiers);
+            const item = shell.activeFocusItem;
+            verify(item, "focus is never lost while tabbing the drawer");
+            verify(isInside(item, panel), "the focus left the drawer for " + item.objectName + " after " + walked.join(","));
+            if (item === start)
+                return walked;
+            walked.push(item.objectName);
+        }
+        fail("the focus never came back to " + start.objectName + ": " + walked.join(","));
+        return walked;
+    }
     function test_queueDrawerHasNoShuffleOrRepeat() {
         openQueue();
-        focusControl("queue-add");
+        const close = focusControl("queue-header-close");
         verify(findChild(shell, "queue-panel").visible);
         const shuffle = findChild(shell, "queue-shuffle");
         const repeat = findChild(shell, "queue-repeat");
         verify(!shuffle || !shuffle.visible, "queue-shuffle is gone from the drawer");
         verify(!repeat || !repeat.visible, "queue-repeat is gone from the drawer");
-        // Tab walks the whole drawer (actions, then the rows) and leaves it for the sidebar.
-        const walked = [];
-        let left = false;
-        for (let step = 0; step < 40 && !left; ++step) {
-            keyClick(Qt.Key_Tab);
-            const item = shell.activeFocusItem;
-            verify(item, "focus is never lost while tabbing the drawer");
-            verify(item !== shuffle && item !== repeat, "Tab never stops on a removed mode button");
-            if (item.objectName.startsWith("queue-"))
-                walked.push(item.objectName);
-            else if (walked.length > 0)
-                left = true;
-        }
-        verify(left, "Tab left the drawer, so the whole cycle was walked");
+        // Tab walks the whole drawer (actions, then the rows) and comes back to the close button.
+        const walked = walkDrawerCycle(close, Qt.NoModifier);
+        verify(walked.indexOf("queue-shuffle") < 0 && walked.indexOf("queue-repeat") < 0, "Tab never stops on a removed mode button: " + walked.join(","));
         verify(walked.indexOf("queue-clear") >= 0, walked.join(","));
         verify(walked.some(name => name.startsWith("queue-row-")), "the rows were reached: " + walked.join(","));
+    }
+    // The Aurora drawer is modal: Tab and Shift+Tab go around it and never reach the page, the sidebar or the player.
+    function test_queueDrawerKeepsTabInside() {
+        openQueue();
+        const close = focusControl("queue-header-close");
+        const forward = walkDrawerCycle(close, Qt.NoModifier);
+        compare(forward[0], "queue-add", forward.join(","));
+        verify(forward.indexOf("queue-clear") > forward.indexOf("queue-remove"), forward.join(","));
+        verify(forward[forward.length - 1].startsWith("queue-row-"), "the rows close the cycle: " + forward.join(","));
+        const backward = walkDrawerCycle(close, Qt.ShiftModifier);
+        compare(backward.join(","), forward.slice().reverse().join(","), "Shift+Tab walks the same cycle backwards");
     }
     function queueOrder(list) {
         list.forceLayout();

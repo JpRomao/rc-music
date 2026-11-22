@@ -32,6 +32,17 @@
         </message>
     </context>
     <context>
+        <name>QueueText</name>
+        <message numerus="yes">
+            <source>%n faixa</source>
+            <comment>Contagem de faixas da fila</comment>
+            <translation>
+                <numerusform>%n faixa</numerusform>
+                <numerusform>%n faixas</numerusform>
+            </translation>
+        </message>
+    </context>
+    <context>
         <name>DownloadText</name>
         <message>
             <location filename="../qml/DownloadText.qml" line="4"/>

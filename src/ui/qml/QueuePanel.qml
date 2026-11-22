@@ -43,6 +43,25 @@ FocusScope {
     readonly property bool contextMenuOpen: rowMenu.visible
     readonly property bool queueModesAvailable: !roomGuest && !presenter.usesFrozenFixture && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool queueFocusRestoreAllowed: visible && enabled && locationFocusRestoreAllowed && !presenter.exiting && !presenter.selectingAudioFiles && !addingFilesPending && presenter.locatingOccurrenceId.length === 0 && !clearConfirmation.visible
+    // The toolbar actions, shared by the fixture buttons and the Aurora drawer buttons.
+    readonly property bool addAvailable: !roomGuest && !presenter.exiting && !presenter.usesFrozenFixture && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool moveUpAvailable: roomGuest ? roomEdit && roomQueueList.currentIndex > 0 : !presenter.exiting && !presenter.usesFrozenFixture && queueList.currentIndex > 0
+    readonly property bool moveDownAvailable: roomGuest ? roomEdit && roomQueueList.currentIndex >= 0 && roomQueueList.currentIndex < roomQueueList.count - 1 : !presenter.exiting && !presenter.usesFrozenFixture && queueList.currentIndex >= 0 && queueList.currentIndex < queueList.count - 1
+    readonly property bool removeAvailable: roomGuest ? roomEdit && roomQueueList.currentIndex >= 0 : !presenter.exiting && !presenter.usesFrozenFixture && queueList.currentIndex >= 0
+    readonly property bool clearAvailable: !roomGuest && !presenter.exiting && !presenter.usesFrozenFixture && queueList.count > 0
+    // S9.1: a guest's player belongs to the room until it leaves.
+    readonly property string addHint: roomGuest ? queueText.guestLocalQueueHeld : ""
+    // The toolbar of the current mode; its buttons live in a Loader because the ids repeat.
+    readonly property QueueActionsRow actionsRow: (overlayMode ? auroraActions.item : fixtureActions.item) as QueueActionsRow
+    // Aurora drawer header: the local count and, when every track has one, the total duration.
+    // A guest sees the room queue, so the local count does not apply.
+    readonly property string subtitleText: {
+        if (roomGuest)
+            return "";
+        const count = queueText.trackCount(queueList.count);
+        const total = presenter.queueTotalDurationMs;
+        return typeof total === "number" ? queueText.countAndDuration.arg(count).arg(durationText(total)) : count;
+    }
     signal closeRequested
     signal playRequested(string occurrenceId)
     signal addLyricVariantRequested(string occurrenceId, string displayTitle)
@@ -52,6 +71,10 @@ FocusScope {
     }
     QueueText {
         id: queueText
+    }
+    component QueueActionsRow: RowLayout {
+        required property Item addControl
+        required property Item clearControl
     }
     component QueueOccurrenceDelegate: ItemDelegate {
         required property string occurrenceId
@@ -69,6 +92,24 @@ FocusScope {
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
         return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+    }
+    // Below an hour, the minutes rounded up (at least 1); from an hour on, hours and minutes.
+    function durationText(milliseconds) {
+        const minutes = Math.max(1, Math.ceil(milliseconds / 60000));
+        if (milliseconds < 3600000)
+            return queueText.durationMinutes.arg(minutes);
+        return queueText.durationHours.arg(Math.floor(minutes / 60)).arg(minutes % 60);
+    }
+    function editHint(shortcut) {
+        return roomGuest && !roomEdit ? queueText.hostNotAllowed : shortcut;
+    }
+    // The Aurora drawer is modal: a relay reached by Tab hands the focus to the first control, by Shift+Tab
+    // to the last. KeyNavigation is reciprocal, so the relays keep the wrap inside the drawer.
+    function wrapFocus(reason) {
+        const forward = reason !== Qt.BacktabFocusReason;
+        const target = forward ? focusWrapStart.nextItemInFocusChain(true) : focusWrapEnd.nextItemInFocusChain(false);
+        if (target && target !== focusWrapStart && target !== focusWrapEnd)
+            target.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason);
     }
     function rowAccessibleName(title, fileName, artist, durationMs, available, errorCode, position, total, retrying, locating, locationFailed) {
         const displayTitle = title.length > 0 ? title : fileName;
@@ -125,7 +166,7 @@ FocusScope {
         root.playRequested(row.occurrenceId);
     }
     function addFiles() {
-        if (!addButton.enabled)
+        if (!root.addAvailable)
             return;
         root.addingFilesPending = true;
         root.addTerminalObserved = false;
@@ -274,117 +315,197 @@ FocusScope {
         border.color: root.contract.borderColor
     }
 
+    Control {
+        id: focusWrapStart
+        objectName: "queue-focus-wrap-start"
+        visible: root.overlayMode
+        width: 0
+        height: 0
+        focusPolicy: Qt.TabFocus
+        Accessible.ignored: true
+        onActiveFocusChanged: {
+            if (activeFocus)
+                root.wrapFocus(focusReason);
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: root.contract.spacingUnit * 4
         spacing: root.contract.spacingUnit * 3
 
-        Text {
-            objectName: "queue-eyebrow"
-            visible: root.overlayMode
-            text: queueText.drawerEyebrow
-            textFormat: Text.PlainText
-            color: root.contract.textSecondaryColor
-            font.family: root.contract.bodyFontFamily
-            font.pixelSize: root.contract.typeEyebrow
-            font.letterSpacing: 1.2
-            Layout.bottomMargin: -root.contract.spacingUnit * 2
+        Loader {
+            active: root.overlayMode
+            visible: active
+            Layout.fillWidth: true
+            sourceComponent: AuroraDrawerHeader {
+                contract: root.contract
+                controlId: "queue-header"
+                closeText: queueText.closeQueue
+                eyebrow: queueText.drawerEyebrow
+                title: root.contract.queueTitle
+                subtitle: root.subtitleText
+                onCloseRequested: root.closeRequested()
+            }
         }
         Text {
             id: queueTitle
             objectName: "queue-title"
+            visible: !root.overlayMode
             text: root.contract.queueTitle
             color: root.contract.textPrimaryColor
-            font: root.overlayMode ? Qt.font({
-                family: root.contract.headingFontFamily,
-                pixelSize: root.contract.typeHeading
-            }) : Qt.font({
+            font: Qt.font({
                 bold: true
             })
             Accessible.role: Accessible.Heading
             Accessible.name: text
         }
 
-        RowLayout {
-            id: queueActions
-            objectName: "queue-actions"
+        Loader {
+            id: fixtureActions
+            active: !root.overlayMode
+            visible: active
             Layout.fillWidth: true
-            spacing: root.contract.spacingUnit
+            sourceComponent: QueueActionsRow {
+                objectName: "queue-actions"
+                addControl: fixtureAddButton
+                clearControl: fixtureClearButton
+                spacing: root.contract.spacingUnit
 
-            QueueActionButton {
-                id: addButton
-                controlId: "queue-add"
-                iconName: root.overlayMode ? "plus" : ""
-                quiet: root.overlayMode
-                accessibleName: queueText.add
-                text: "+"
-                contract: root.contract
-                // S9.1: a guest's player belongs to the room until it leaves.
-                shortcutHint: root.roomGuest ? queueText.guestLocalQueueHeld : ""
-                enabled: !root.roomGuest && !root.presenter.exiting && !root.presenter.usesFrozenFixture && !root.presenter.selectingAudioFiles && root.presenter.locatingOccurrenceId.length === 0
-                onClicked: root.addFiles()
+                QueueActionButton {
+                    id: fixtureAddButton
+                    controlId: "queue-add"
+                    accessibleName: queueText.add
+                    text: "+"
+                    contract: root.contract
+                    shortcutHint: root.addHint
+                    enabled: root.addAvailable
+                    onClicked: root.addFiles()
+                }
+                QueueActionButton {
+                    controlId: "queue-move-up"
+                    accessibleName: queueText.moveUp
+                    shortcutHint: root.editHint(queueText.shortcutMoveUp)
+                    text: "↑"
+                    contract: root.contract
+                    enabled: root.moveUpAvailable
+                    onClicked: root.roomGuest ? root.moveRoomSelected(-1) : root.moveSelected(-1)
+                }
+                QueueActionButton {
+                    controlId: "queue-move-down"
+                    accessibleName: queueText.moveDown
+                    shortcutHint: root.editHint(queueText.shortcutMoveDown)
+                    text: "↓"
+                    contract: root.contract
+                    enabled: root.moveDownAvailable
+                    onClicked: root.roomGuest ? root.moveRoomSelected(1) : root.moveSelected(1)
+                }
+                QueueActionButton {
+                    controlId: "queue-remove"
+                    accessibleName: queueText.remove
+                    shortcutHint: root.editHint(queueText.shortcutRemove)
+                    text: "−"
+                    contract: root.contract
+                    enabled: root.removeAvailable
+                    onClicked: root.roomGuest ? root.removeRoomSelected() : root.removeSelected()
+                }
+                // S12.1: a guest with the permission sends one of its own files to the room's queue.
+                QueueActionButton {
+                    controlId: "queue-room-upload"
+                    visible: root.roomGuest && root.room.canUploadOwnTracks
+                    iconName: "plus"
+                    accessibleName: roomText.uploadOwnName
+                    text: roomText.uploadOwn
+                    contract: root.contract
+                    onClicked: root.room.roomUploadOwnTrack()
+                }
+                Item {
+                    Layout.fillWidth: true
+                }
+                QueueActionButton {
+                    id: fixtureClearButton
+                    controlId: "queue-clear"
+                    accessibleName: queueText.clear
+                    text: "×"
+                    contract: root.contract
+                    enabled: root.clearAvailable
+                    onClicked: root.requestClear()
+                }
             }
-            QueueActionButton {
-                id: moveUpButton
-                controlId: "queue-move-up"
-                iconName: root.overlayMode ? "arrow-up" : ""
-                quiet: root.overlayMode
-                accessibleName: queueText.moveUp
-                shortcutHint: root.roomGuest && !root.roomEdit ? queueText.hostNotAllowed : queueText.shortcutMoveUp
-                text: "↑"
-                contract: root.contract
-                enabled: root.roomGuest ? root.roomEdit && roomQueueList.currentIndex > 0 : !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex > 0
-                onClicked: root.roomGuest ? root.moveRoomSelected(-1) : root.moveSelected(-1)
-            }
-            QueueActionButton {
-                id: moveDownButton
-                controlId: "queue-move-down"
-                iconName: root.overlayMode ? "arrow-down" : ""
-                quiet: root.overlayMode
-                accessibleName: queueText.moveDown
-                shortcutHint: root.roomGuest && !root.roomEdit ? queueText.hostNotAllowed : queueText.shortcutMoveDown
-                text: "↓"
-                contract: root.contract
-                enabled: root.roomGuest ? root.roomEdit && roomQueueList.currentIndex >= 0 && roomQueueList.currentIndex < roomQueueList.count - 1 : !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0 && queueList.currentIndex < queueList.count - 1
-                onClicked: root.roomGuest ? root.moveRoomSelected(1) : root.moveSelected(1)
-            }
-            QueueActionButton {
-                id: removeButton
-                controlId: "queue-remove"
-                iconName: root.overlayMode ? "minus" : ""
-                quiet: root.overlayMode
-                accessibleName: queueText.remove
-                shortcutHint: root.roomGuest && !root.roomEdit ? queueText.hostNotAllowed : queueText.shortcutRemove
-                text: "−"
-                contract: root.contract
-                enabled: root.roomGuest ? root.roomEdit && roomQueueList.currentIndex >= 0 : !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.currentIndex >= 0
-                onClicked: root.roomGuest ? root.removeRoomSelected() : root.removeSelected()
-            }
-            // S12.1: a guest with the permission sends one of its own files to the room's queue.
-            QueueActionButton {
-                id: roomUploadButton
-                controlId: "queue-room-upload"
-                visible: root.roomGuest && root.room.canUploadOwnTracks
-                iconName: "plus"
-                quiet: root.overlayMode
-                accessibleName: roomText.uploadOwnName
-                text: roomText.uploadOwn
-                contract: root.contract
-                onClicked: root.room.roomUploadOwnTrack()
-            }
-            Item {
-                Layout.fillWidth: true
-            }
-            QueueActionButton {
-                id: clearButton
-                controlId: "queue-clear"
-                iconName: root.overlayMode ? "close" : ""
-                quiet: root.overlayMode
-                accessibleName: queueText.clear
-                text: "×"
-                contract: root.contract
-                enabled: !root.roomGuest && !root.presenter.exiting && !root.presenter.usesFrozenFixture && queueList.count > 0
-                onClicked: root.requestClear()
+        }
+
+        Loader {
+            id: auroraActions
+            active: root.overlayMode
+            visible: active
+            Layout.fillWidth: true
+            sourceComponent: QueueActionsRow {
+                objectName: "queue-actions"
+                addControl: auroraAddButton
+                clearControl: auroraClearButton
+                spacing: root.contract.spacingUnit
+
+                AuroraIconButton {
+                    id: auroraAddButton
+                    contract: root.contract
+                    controlId: "queue-add"
+                    iconName: "plus"
+                    text: queueText.addFiles
+                    description: root.addHint
+                    enabled: root.addAvailable
+                    onClicked: root.addFiles()
+                }
+                AuroraIconButton {
+                    contract: root.contract
+                    controlId: "queue-move-up"
+                    iconName: "arrow-up"
+                    text: queueText.moveUp
+                    description: root.editHint(queueText.shortcutMoveUp)
+                    enabled: root.moveUpAvailable
+                    onClicked: root.roomGuest ? root.moveRoomSelected(-1) : root.moveSelected(-1)
+                }
+                AuroraIconButton {
+                    contract: root.contract
+                    controlId: "queue-move-down"
+                    iconName: "arrow-down"
+                    text: queueText.moveDown
+                    description: root.editHint(queueText.shortcutMoveDown)
+                    enabled: root.moveDownAvailable
+                    onClicked: root.roomGuest ? root.moveRoomSelected(1) : root.moveSelected(1)
+                }
+                AuroraIconButton {
+                    contract: root.contract
+                    controlId: "queue-remove"
+                    iconName: "minus"
+                    text: queueText.removeFromQueue
+                    description: root.editHint(queueText.shortcutRemove)
+                    enabled: root.removeAvailable
+                    onClicked: root.roomGuest ? root.removeRoomSelected() : root.removeSelected()
+                }
+                // S12.1: a guest with the permission sends one of its own files to the room's queue.
+                AuroraIconButton {
+                    contract: root.contract
+                    controlId: "queue-room-upload"
+                    visible: root.roomGuest && root.room.canUploadOwnTracks
+                    iconName: "plus"
+                    text: roomText.uploadOwnName
+                    onClicked: root.room.roomUploadOwnTrack()
+                }
+                Item {
+                    Layout.fillWidth: true
+                }
+                AuroraButton {
+                    id: auroraClearButton
+                    contract: root.contract
+                    controlId: "queue-clear"
+                    kind: AuroraButton.Quiet
+                    errorInk: true
+                    iconName: "trash"
+                    text: queueText.clearEllipsis
+                    Accessible.name: queueText.clearName
+                    enabled: root.clearAvailable
+                    onClicked: root.requestClear()
+                }
             }
         }
 
@@ -745,6 +866,20 @@ FocusScope {
         }
     }
 
+    Control {
+        id: focusWrapEnd
+        objectName: "queue-focus-wrap-end"
+        visible: root.overlayMode
+        width: 0
+        height: 0
+        focusPolicy: Qt.TabFocus
+        Accessible.ignored: true
+        onActiveFocusChanged: {
+            if (activeFocus)
+                root.wrapFocus(focusReason);
+        }
+    }
+
     Menu {
         id: rowMenu
         objectName: "queue-row-menu"
@@ -850,7 +985,7 @@ FocusScope {
         y: Math.max(root.contract.spacingUnit * 4, (root.height - implicitHeight) / 2)
         contract: root.contract
         queueCount: queueList.count
-        fallbackFocusItem: clearButton
+        fallbackFocusItem: root.actionsRow ? root.actionsRow.clearControl : root
         onConfirmed: root.confirmClear()
     }
 
@@ -888,8 +1023,9 @@ FocusScope {
             Qt.callLater(function () {
                 if (revision !== root.addFocusRevision || !root.visible || !root.locationFocusRestoreAllowed || root.presenter.exiting || root.presenter.selectingAudioFiles)
                     return;
-                if (addButton.visible && addButton.enabled)
-                    addButton.forceActiveFocus(Qt.TabFocusReason);
+                const add = root.actionsRow ? root.actionsRow.addControl : null;
+                if (add && add.visible && add.enabled)
+                    add.forceActiveFocus(Qt.TabFocusReason);
             });
         }
         function onFileLocationFinished(occurrenceId, changed) {

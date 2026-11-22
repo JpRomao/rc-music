@@ -19,6 +19,8 @@ Button {
     property int kind: AuroraButton.Primary
     property string iconName
     property bool compact: false
+    // Quiet with the error ink, for a discreet destructive action such as clearing the queue.
+    property bool errorInk: false
     // Motivo do desabilitado ou atalho, lido pelo leitor de tela.
     property string description
 
@@ -58,7 +60,7 @@ Button {
         case AuroraButton.Danger:
             return contract.errorColor;
         default:
-            return contract.textPrimaryColor;
+            return errorInk ? contract.errorColor : contract.textPrimaryColor;
         }
     }
 

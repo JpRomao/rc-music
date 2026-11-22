@@ -46,6 +46,8 @@ ApplicationWindow {
     visible: startupReady
     signal openAudioRequested
     property bool queueOpen: false
+    // Aurora drawers: fixed width, at the right, from the top down to the player.
+    readonly property int drawerWidth: 400
     readonly property bool inlinePages: !presenter.usesFrozenFixture
     readonly property string currentPage: preferencesPanel.visible ? "preferences" : (libraryPanel.visible ? "library" : (searchPanel.visible ? "search" : (roomPanel.visible ? "room" : (playlistsPanel.visible ? "playlists" : (downloadsPanel.visible ? "downloads" : (queuePageActive ? "queue" : "home"))))))
     // Aurora pages hand the focus on to the player after them.
@@ -968,7 +970,7 @@ ApplicationWindow {
         x: window.inlinePages ? window.width - width : mainLayout.x + contentArea.x + contentArea.width - width
         y: window.inlinePages ? 0 : mainLayout.y + contentArea.y
         height: window.inlinePages ? playerFooter.y : contentArea.height
-        width: window.inlinePages ? Math.min(window.uiContract.queuePanelMaximumWidth, contentArea.width) : contentArea.width
+        width: window.inlinePages ? window.drawerWidth : contentArea.width
         z: 10
         visible: window.queuePageActive
         overlayMode: window.inlinePages

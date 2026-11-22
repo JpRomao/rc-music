@@ -871,6 +871,19 @@ bool PlayerPresenter::queueLoaded() const noexcept {
 #endif
     return !local_queue_.empty();
 }
+QVariant PlayerPresenter::queueTotalDurationMs() const {
+    const int rows = local_queue_model_.rowCount();
+    if (rows == 0)
+        return {};
+    qint64 total = 0;
+    for (int row = 0; row < rows; ++row) {
+        const QVariant duration = local_queue_model_.index(row, 0).data(LocalQueueListModel::DurationMsRole);
+        if (!duration.isValid())
+            return {};
+        total += duration.toLongLong();
+    }
+    return QVariant::fromValue(total);
+}
 bool PlayerPresenter::hasCurrentOccurrence() const noexcept {
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     if (uses_frozen_fixture_)
