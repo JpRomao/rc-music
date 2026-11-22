@@ -127,6 +127,11 @@ ComboBox {
             color: control.contract.highContrast ? control.contract.canvasColor : control.contract.surfaceRaisedColor
             border.width: control.contract.highContrast ? 2 : 0
             border.color: control.contract.textPrimaryColor
+
+            AuroraShadow {
+                contract: control.contract
+                radius: parent.radius
+            }
         }
     }
 

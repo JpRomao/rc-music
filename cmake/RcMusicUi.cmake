@@ -198,7 +198,11 @@ function(rc_music_add_ui target support qml_output)
             AuroraStepper.qml
             AuroraCheckBox.qml
             AuroraChip.qml
-            AuroraAvatar.qml)
+            AuroraAvatar.qml
+            AuroraShadow.qml
+            AuroraMenu.qml
+            AuroraMenuItem.qml
+            AuroraMenuSeparator.qml)
         set(qml_source "${RC_MUSIC_SOURCE_ROOT}/src/ui/qml/${qml_file}")
         set_source_files_properties("${qml_source}" PROPERTIES QT_RESOURCE_ALIAS "${qml_file}")
         list(APPEND qml_files "${qml_source}")
