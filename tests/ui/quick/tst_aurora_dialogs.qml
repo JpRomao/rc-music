@@ -347,4 +347,46 @@ TestCase {
         verify(close.mapToItem(title, 0, 0).y < title.font.pixelSize, "fechar fora do alto");
         verify(title.width + close.width <= h.dialog.width, "título invade o fechar");
     }
+    function test_confirmConsequenceIsReadWithBodyFont() {
+        const h = openConfirm({
+            controlId: "kick",
+            question: "Expulsar Ana?",
+            consequence: "Ana sai da sala agora.",
+            confirmText: "Expulsar",
+            destructive: true
+        });
+        compare(child(h.dialog, "confirm-consequence").font.family, contract.bodyFontFamily);
+        // O Popup não carrega Accessible: a consequência vai para os dois botões.
+        compare(child(h.dialog, "kick-cancel").Accessible.description, "Ana sai da sala agora.");
+        compare(child(h.dialog, "kick-confirm").Accessible.description, "Ana sai da sala agora.");
+    }
+    function test_cancelAndEscDoNotConfirm_data() {
+        return [
+            {
+                tag: "Cancelar",
+                key: Qt.Key_Return
+            },
+            {
+                tag: "Esc",
+                key: Qt.Key_Escape
+            }
+        ];
+    }
+    function test_cancelAndEscDoNotConfirm(data) {
+        const h = openConfirm({
+            controlId: "kick",
+            question: "Expulsar Ana?",
+            consequence: "Ana sai da sala agora.",
+            confirmText: "Expulsar",
+            destructive: true
+        });
+        const spy = createTemporaryObject(spyComponent, testCase, {
+            target: h.dialog,
+            signalName: "confirmed"
+        });
+        tryVerify(() => child(h.dialog, "kick-cancel").activeFocus);
+        keyClick(data.key);
+        tryVerify(() => !h.dialog.visible);
+        compare(spy.count, 0);
+    }
 }

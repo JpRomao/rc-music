@@ -2,7 +2,8 @@ import QtQuick
 import MusicPlayer.M0
 
 // Confirmacao Aurora: pergunta, consequencia, Cancelar e confirmar.
-// O foco abre em Cancelar; confirmar emite o sinal e fecha.
+// O foco abre em Cancelar; confirmar emite o sinal e fecha. O Popup nao
+// carrega Accessible, entao a consequencia e a descricao dos dois botoes.
 AuroraDialog {
     id: dialog
 
@@ -22,6 +23,7 @@ AuroraDialog {
         width: parent ? parent.width : implicitWidth
         text: dialog.consequence
         color: dialog.contract.textPrimaryColor
+        font.family: dialog.contract.bodyFontFamily
         font.pixelSize: dialog.contract.typeBody
         wrapMode: Text.Wrap
     }
@@ -33,6 +35,7 @@ AuroraDialog {
             controlId: dialog.controlId + "-cancel"
             kind: AuroraButton.Quiet
             text: confirmControls.cancel
+            description: dialog.consequence
             onClicked: dialog.close()
         },
         AuroraButton {
@@ -40,6 +43,7 @@ AuroraDialog {
             controlId: dialog.controlId + "-confirm"
             kind: dialog.destructive ? AuroraButton.DangerFilled : AuroraButton.Primary
             text: dialog.confirmText
+            description: dialog.consequence
             onClicked: {
                 dialog.confirmed();
                 dialog.close();
