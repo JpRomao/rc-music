@@ -52,6 +52,10 @@ ApplicationWindow {
     // A guest's queue is the room queue, there even when no local queue is loaded.
     readonly property bool roomGuest: room !== null && room.available && room.role === 2
     readonly property bool queuePageActive: queueOpen && (presenter.queueLoaded || roomGuest)
+    // Aurora has no sidebar queue item: the shortcut depends on the queue itself, the fixture on the button.
+    readonly property bool queueShortcutEnabled: windowShortcutsEnabled && (inlinePages ? ((presenter.queueLoaded || roomGuest) && !presenter.exiting) : queueButton.enabled) && !preferencesPanel.visible
+    // The item focused when the Aurora drawer opened; the fixture keeps returning to the sidebar button.
+    property Item queueReturnFocusItem: null
     property alias queueButton: sideNavigation.queueButton
     property alias preferencesButton: sideNavigation.preferencesButton
     property alias playlistsButton: sideNavigation.playlistsButton
@@ -287,16 +291,16 @@ ApplicationWindow {
             downloadsPanel.close();
             preferencesPanel.close();
         }
+        if (window.inlinePages && open && !queueOpen)
+            queueReturnFocusItem = window.activeFocusItem;
         queueOpen = open;
         Qt.callLater(function () {
             if (!window.active || !window.windowShortcutsEnabled || preferencesPanel.visible)
                 return;
             if (window.queueOpen)
                 queuePanel.focusCurrent();
-            else if (queueButton.enabled)
-                queueButton.forceActiveFocus(Qt.TabFocusReason);
             else
-                emptyState.focusPrimary();
+                window.restoreQueueFocus();
         });
     }
     function toggleQueue() {
@@ -430,10 +434,26 @@ ApplicationWindow {
             return;
         if (window.queueOpen && queuePanel.visible)
             queuePanel.focusCurrent();
-        else if (queueButton.enabled)
-            queueButton.forceActiveFocus(Qt.TabFocusReason);
         else
-            emptyState.focusPrimary();
+            window.restoreQueueFocus();
+    }
+    function isFocusable(item) {
+        return item !== null && item !== undefined && item.visible && item.enabled;
+    }
+    // Aurora: whoever opened the drawer, then the player's queue button, then play/pause.
+    function restoreQueueFocus() {
+        if (window.inlinePages) {
+            const target = [queueReturnFocusItem, transport.queueControl, transport.primaryControl].find(isFocusable);
+            queueReturnFocusItem = null;
+            if (target) {
+                target.forceActiveFocus(Qt.TabFocusReason);
+                return;
+            }
+        } else if (queueButton.enabled) {
+            queueButton.forceActiveFocus(Qt.TabFocusReason);
+            return;
+        }
+        emptyState.focusPrimary();
     }
 
     SideNavigation {
@@ -1216,7 +1236,7 @@ ApplicationWindow {
         sequence: "Ctrl+L"
         context: Qt.WindowShortcut
         autoRepeat: false
-        enabled: window.windowShortcutsEnabled && queueButton.enabled && !preferencesPanel.visible
+        enabled: window.queueShortcutEnabled
         onActivated: window.toggleQueue()
     }
     Shortcut {

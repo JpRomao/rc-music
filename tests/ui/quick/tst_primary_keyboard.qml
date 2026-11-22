@@ -83,7 +83,7 @@ TestCase {
         return control;
     }
     function test_spaceNeverActivatesLastControl_data() {
-        return ["mute", "next", "skip-forward", "queue", "preferences", "progress", "volume", "queue-list", "queue-remove", "queue-shuffle", "queue-repeat"].map(function (name) {
+        return ["mute", "next", "skip-forward", "player-queue", "preferences", "progress", "volume", "queue-list", "queue-remove", "queue-shuffle", "queue-repeat"].map(function (name) {
             return {
                 tag: name,
                 control: name

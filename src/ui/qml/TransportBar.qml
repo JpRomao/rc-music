@@ -9,6 +9,7 @@ GridLayout {
     required property ShellUiContract contract
     required property PlayerPresenter presenter
     property alias primaryControl: playPause
+    property alias queueControl: queueAction
     property Item pageReturnFocusItem: null
     readonly property bool editorial: !presenter.usesFrozenFixture
     readonly property bool spread: editorial && width >= 680

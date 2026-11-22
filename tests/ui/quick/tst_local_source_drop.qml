@@ -222,7 +222,7 @@ TestCase {
             return !status.visible;
         });
         tryVerify(function () {
-            return findChild(shell, "queue").activeFocus;
+            return findChild(shell, "player-queue").activeFocus;
         });
     }
 

@@ -71,7 +71,7 @@ TestCase {
         const occurrence = presenter.currentOccurrenceId;
         const commands = audioCommands();
         const queue = findChild(shell, "queue-panel");
-        findChild(shell, "queue").Accessible.pressAction();
+        findChild(shell, "player-queue").Accessible.pressAction();
         tryVerify(() => queue.visible);
         // The home stays under the queue drawer, inactive and out of the keyboard path.
         verify(findChild(shell, "state-layer").visible);
@@ -85,6 +85,55 @@ TestCase {
         compare(presenter.positionMs, 41000);
         compare(presenter.volume, 0.52);
         compare(audioCommands(), commands);
+    }
+
+    function test_auroraSidebarHasNoQueueItem() {
+        loadSyntheticQueue();
+        const item = findChild(shell, "queue");
+        verify(item);
+        compare(item.visible, false);
+        findChild(shell, "now").forceActiveFocus(Qt.TabFocusReason);
+        const transport = findChild(shell, "transport-bar");
+        let reached = false;
+        for (let step = 0; step < 20 && !reached; ++step) {
+            keyClick(Qt.Key_Tab);
+            verify(!item.activeFocus, "Tab never reaches the hidden sidebar queue item");
+            reached = shell.activeFocusItem && (shell.activeFocusItem === transport || transport.contains(transport.mapFromItem(shell.activeFocusItem, 0, 0)) && shell.activeFocusItem.objectName !== "");
+        }
+        verify(reached, "Tab reaches the transport bar");
+    }
+
+    function test_ctrlLOpensTheQueueWithoutTheSidebarItem() {
+        loadSyntheticQueue();
+        const queue = findChild(shell, "queue-panel");
+        const playPause = findChild(shell, "play-pause");
+        playPause.forceActiveFocus(Qt.TabFocusReason);
+        verify(playPause.activeFocus);
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        tryVerify(() => queue.visible);
+        tryVerify(() => findChild(shell, "queue-list").activeFocus);
+        keyClick(Qt.Key_Escape);
+        tryVerify(() => !queue.visible);
+        tryVerify(() => playPause.activeFocus);
+        const opener = findChild(shell, "player-queue");
+        opener.forceActiveFocus(Qt.TabFocusReason);
+        mouseClick(opener);
+        tryVerify(() => queue.visible);
+        keyClick(Qt.Key_Escape);
+        tryVerify(() => !queue.visible);
+        tryVerify(() => opener.activeFocus);
+    }
+
+    function test_ctrlLDoesNothingWithoutAQueue() {
+        // A local queue is "loaded" exactly when it has tracks, so there is no empty drawer to open.
+        verify(!presenter.queueLoaded);
+        const queue = findChild(shell, "queue-panel");
+        const play = findChild(shell, "play-pause");
+        findChild(shell, "now").forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        wait(100);
+        verify(!queue.visible);
+        verify(!shell.queueOpen);
     }
 
     function test_quickThemeUsesThePreferenceAndPreservesPlayback() {
@@ -152,7 +201,7 @@ TestCase {
         const title = findChild(shell, "player-track-title");
         verify(title && title.visible);
         verify(title.text.indexOf(presenter.currentTitle) >= 0);
-        findChild(shell, "queue").Accessible.pressAction();
+        findChild(shell, "player-queue").Accessible.pressAction();
         tryVerify(() => findChild(shell, "queue-panel").visible);
         verify(title.visible);
     }
@@ -201,7 +250,7 @@ TestCase {
         verifyContrast(findChild(shell, "navigation-brand").color, navigation.color, 4.5, "navigation brand");
         verifyContrast(findChild(shell, "player-track-title").color, footer.color, 4.5, "persistent track title");
         verifyContrast(findChild(shell, "elapsed-time").color, footer.color, 4.5, "elapsed time");
-        for (const name of ["now", "queue", "theme-toggle", "preferences"]) {
+        for (const name of ["now", "theme-toggle", "preferences"]) {
             const button = findChild(shell, name);
             verifyContrast(button.contentItem.color, button.background.color, 4.5, name + " text normal/selected");
             mouseMove(button);
@@ -263,7 +312,7 @@ TestCase {
         loadSyntheticQueue();
         presenter.setThemePreference(data.dark ? PlayerPresenter.DarkTheme : PlayerPresenter.LightTheme);
         tryCompare(productContract, "darkTheme", data.dark);
-        for (const entry of [["now", "home"], ["queue", "queue"], ["preferences", "settings"]])
+        for (const entry of [["now", "home"], ["preferences", "settings"]])
             verifyButtonIcon(findChild(shell, entry[0]), entry[1]);
         const selectedIcon = findChild(findChild(shell, "now"), "button-icon");
         verify(Qt.colorEqual(selectedIcon.color, productContract.accentColor), "selected icon uses the accent");
@@ -313,7 +362,7 @@ TestCase {
         verify(waitForPolish(shell));
         const navigation = findChild(shell, "side-navigation");
         const selected = findChild(shell, "now");
-        const other = findChild(shell, "queue");
+        const other = findChild(shell, "preferences");
         verify(selected.checked);
         verify(!other.checked);
         // The selected page must be recognizable without relying on the 3 px bar alone.
@@ -396,9 +445,9 @@ TestCase {
         const footer = findChild(shell, "player-footer");
         verify(footer);
         tryVerify(() => Math.abs(footer.y + footer.height - shell.height) < 0.5);
-        for (const name of ["now", "queue", "preferences", "theme-toggle", "play-pause", "volume", "progress"])
+        for (const name of ["now", "player-queue", "preferences", "theme-toggle", "play-pause", "volume", "progress"])
             verifyInside(findChild(shell, name));
-        findChild(shell, "queue").Accessible.pressAction();
+        findChild(shell, "player-queue").Accessible.pressAction();
         const queue = findChild(shell, "queue-panel");
         tryVerify(() => queue.visible);
         const q = queue.mapToItem(shell.contentItem, 0, 0);

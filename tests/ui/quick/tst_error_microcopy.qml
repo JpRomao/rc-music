@@ -231,7 +231,7 @@ TestCase {
         verify(queue.currentItem.available);
         shell.setQueueOpen(false);
         tryVerify(function () {
-            return !queue.visible && findChild(shell, "queue").activeFocus;
+            return !queue.visible && findChild(shell, "player-queue").activeFocus;
         });
         recovery.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Tab);

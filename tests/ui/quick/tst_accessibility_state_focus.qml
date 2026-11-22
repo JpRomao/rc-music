@@ -161,7 +161,7 @@ TestCase {
         driver.publishLocalPlaying();
         tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
 
-        const queueButton = findChild(shell, "queue");
+        const queueButton = findChild(shell, "player-queue");
         focusItem(queueButton);
         shell.setQueueOpen(true);
         const queueList = findChild(shell, "queue-list");

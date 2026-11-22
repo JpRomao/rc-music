@@ -184,6 +184,7 @@ Rectangle {
                 editorial: root.editorial
                 compact: root.compact
                 objectName: "queue"
+                visible: !root.editorial
                 KeyNavigation.tab: null
                 KeyNavigation.backtab: null
                 Layout.fillWidth: true

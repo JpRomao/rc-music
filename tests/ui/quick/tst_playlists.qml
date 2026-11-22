@@ -819,7 +819,7 @@ TestCase {
         const viewport = findChild(shell, "navigation-viewport");
         verify(viewport);
         let previousBottom = -1;
-        for (const name of ["now", "queue", "playlists", "downloads", "embedded-browser", "theme-toggle", "preferences"]) {
+        for (const name of ["now", "playlists", "downloads", "embedded-browser", "theme-toggle", "preferences"]) {
             const button = findChild(shell, name);
             const boundary = name === "theme-toggle" && shell.inlinePages ? findChild(shell, "workspace-header") : viewport;
             verify(button && button.visible);

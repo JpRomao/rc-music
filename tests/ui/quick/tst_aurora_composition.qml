@@ -172,7 +172,7 @@ TestCase {
         verify(findChild(shell, "player-identity"));
         verify(footer.height <= (data.width >= 1200 ? 130 : 184), "The footer must not remain a full-width enlarged compact player");
         compare(footer.y + footer.height, shell.height);
-        for (const name of ["now", "queue", "preferences", "theme-toggle", "play-pause", "volume", "progress", "player-shuffle", "player-repeat"])
+        for (const name of ["now", "player-queue", "preferences", "theme-toggle", "play-pause", "volume", "progress", "player-shuffle", "player-repeat"])
             assertControlInside(findChild(shell, name));
         if (data.width === 720) {
             compare(findChild(shell, "side-navigation").width, 68);
