@@ -15,8 +15,7 @@ AuroraDialog {
 
     closable: false
     title: question
-
-    onOpened: cancelButton.forceActiveFocus()
+    initialFocusItem: cancelButton
 
     Text {
         objectName: "confirm-consequence"

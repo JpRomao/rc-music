@@ -200,7 +200,7 @@ TestCase {
         const h = openDialog({
             controlId: "track-details"
         });
-        compare(child(h.dialog.header, "track-details-close").Accessible.name, "Fechar");
+        compare(child(h.dialog, "track-details-close").Accessible.name, "Fechar");
     }
     function test_confirmOpensOnCancelAndConfirms() {
         const h = openConfirm({
@@ -223,7 +223,7 @@ TestCase {
     }
     function test_titleUsesHeadingFont() {
         const h = openDialog();
-        compare(child(h.dialog.header, "dialog-title").font.family, contract.headingFontFamily);
+        compare(child(h.dialog, "dialog-title").font.family, contract.headingFontFamily);
     }
     function test_themeChangeWhileOpen() {
         const h = openDialog();
@@ -252,7 +252,7 @@ TestCase {
 
     function test_shortDialogDoesNotScroll() {
         const h = openDialog();
-        const sv = h.dialog.contentItem;
+        const sv = child(h.dialog, "dialog-scroll");
         verify(sv.contentHeight <= sv.availableHeight, "conteudo " + sv.contentHeight + " > area " + sv.availableHeight);
     }
     function test_tallDialogScrollsInsideBounds() {
@@ -265,7 +265,7 @@ TestCase {
         verify(waitForRendering(h.contentItem));
         h.dialog.open();
         tryVerify(() => h.dialog.opened);
-        const sv = h.dialog.contentItem;
+        const sv = child(h.dialog, "dialog-scroll");
         verify(sv.contentHeight > sv.availableHeight);
         verify(sv.availableHeight > 0);
         verify(h.dialog.height <= 520 - 48);
@@ -290,5 +290,24 @@ TestCase {
         sameColor(image.pixel(middleX, box.y - 4), contract.focusColor, "anel acima");
         sameColor(image.pixel(box.x - 4, middleY), contract.focusColor, "anel à esquerda");
         sameColor(image.pixel(box.x + h.first.width + 3, middleY), contract.focusColor, "anel à direita");
+    }
+    function test_openFocusesFirstBodyControl() {
+        const h = openForm();
+        tryVerify(() => h.first.activeFocus);
+    }
+    function test_openWithoutBodyControlFocusesClose() {
+        const h = openDialog();
+        tryVerify(() => child(h.dialog, "dialog-close").activeFocus);
+    }
+    function test_tabOrderFollowsHeaderBodyFooter() {
+        const h = openForm();
+        tryVerify(() => h.first.activeFocus);
+        const order = ["form-last", "form-ok", "form-close", "form-first"];
+        for (const name of order) {
+            keyClick(Qt.Key_Tab);
+            verify(child(h.dialog, name).activeFocus, "Tab devia chegar em " + name);
+        }
+        keyClick(Qt.Key_Backtab);
+        verify(child(h.dialog, "form-close").activeFocus, "Shift+Tab devia voltar ao fechar");
     }
 }
