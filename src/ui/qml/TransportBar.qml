@@ -312,6 +312,8 @@ GridLayout {
                 Text {
                     objectName: "player-time"
                     visible: root.presenter.hasCurrentTrack
+                    // A fixed slot: the line does not move when the duration arrives.
+                    width: parent.width
                     topPadding: 2
                     // While the duration is unknown, only the elapsed time.
                     text: root.presenter.hasDuration ? labels.elapsedOfDuration.arg(root.formattedCompactTime(root.presenter.positionMs)).arg(root.formattedCompactTime(root.presenter.durationMs)) : root.formattedCompactTime(root.presenter.positionMs)
