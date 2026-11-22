@@ -313,6 +313,43 @@ TestCase {
         verify(c.height >= 40);
     }
 
+    function test_focusRingHasGapOnCheckedControls_data() {
+        const rows = [];
+        for (const theme of themes()) {
+            rows.push({
+                tag: "interruptor-" + theme.tag,
+                dark: theme.dark,
+                kind: "switch"
+            });
+            rows.push({
+                tag: "caixinha-" + theme.tag,
+                dark: theme.dark,
+                kind: "check"
+            });
+        }
+        return rows;
+    }
+    function test_focusRingHasGapOnCheckedControls(data) {
+        driver.setSystemAppearance(data.dark, false);
+        const control = data.kind === "switch" ? hostSwitch({
+            label: "Opção",
+            checked: true
+        }) : hostCheck({
+            text: "Opção",
+            checked: true
+        });
+        const mark = data.kind === "switch" ? child(control, "switch-track") : control.indicator;
+        control.forceActiveFocus(Qt.TabFocusReason);
+        const ring = child(control, "focus-ring");
+        verify(ring.visible);
+        const box = mark.mapToItem(control.Window.contentItem, 0, 0);
+        const image = grabImage(control.Window.contentItem);
+        const middle = Math.round(box.y + mark.height / 2);
+        sameColor(image.pixel(box.x - 1, middle), contract.canvasColor, "1 px fora é o fundo");
+        sameColor(image.pixel(box.x - 3, middle), contract.focusColor, "3 px fora é o anel");
+        sameColor(image.pixel(box.x - 4, middle), contract.focusColor, "4 px fora é o anel");
+    }
+
     function test_segmentedFollowsExternalStateThroughBinding() {
         const w = hostWindow(bindingHostComponent, {});
         const seg = w.segmented;

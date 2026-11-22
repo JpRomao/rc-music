@@ -21,6 +21,8 @@ Dialog {
     property Item previousFocus: null
 
     readonly property real margin: 24
+    // Espaço do anel de foco em volta de um controle: folga de 2 px mais o anel.
+    readonly property real ringRoom: contract.focusRingWidth + 2
 
     ControlsText {
         id: controlsText
@@ -111,16 +113,20 @@ Dialog {
         id: scroll
         clip: true
         contentWidth: availableWidth
-        contentHeight: bodyColumn.implicitHeight
-        implicitHeight: bodyColumn.implicitHeight + topPadding + bottomPadding
-        leftPadding: dialog.margin
-        rightPadding: dialog.margin
-        topPadding: 4
-        bottomPadding: 16
+        contentHeight: bodyColumn.implicitHeight + 2 * dialog.ringRoom
+        implicitHeight: contentHeight + topPadding + bottomPadding
+        leftPadding: dialog.margin - dialog.ringRoom
+        rightPadding: dialog.margin - dialog.ringRoom
+        topPadding: 0
+        bottomPadding: 16 - dialog.ringRoom
 
+        // A rolagem recorta no seu interior: o corpo fica recuado o bastante
+        // para o anel de foco dos controles caber dentro do recorte.
         Column {
             id: bodyColumn
-            width: scroll.availableWidth
+            x: dialog.ringRoom
+            y: dialog.ringRoom
+            width: scroll.availableWidth - 2 * dialog.ringRoom
             spacing: 12
         }
     }

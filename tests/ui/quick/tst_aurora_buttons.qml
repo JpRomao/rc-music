@@ -127,6 +127,36 @@ TestCase {
         verify(ring.visible);
         compare(ring.border.width, 3);
         sameColor(ring.border.color, contract.focusColor, "anel");
+        // Folga de 2 px entre o botão e o anel de 3 px.
+        const bg = child(button, "button-background");
+        compare(ring.x, -5);
+        compare(ring.y, bg.y - 5);
+        compare(ring.width, button.width + 10);
+        compare(ring.height, bg.height + 10);
+        compare(ring.radius, contract.radiusControl + 5);
+    }
+    function test_focusRingHasGap_data() {
+        const rows = [];
+        for (const theme of themes())
+            for (const k of [["Primary", AuroraButton.Primary], ["DangerFilled", AuroraButton.DangerFilled]])
+                rows.push({
+                    tag: k[0] + "-" + theme.tag,
+                    dark: theme.dark,
+                    kind: k[1]
+                });
+        return rows;
+    }
+    function test_focusRingHasGap(data) {
+        driver.setSystemAppearance(data.dark, false);
+        const button = host(data.kind);
+        button.forceActiveFocus(Qt.TabFocusReason);
+        const image = grabImage(button.Window.contentItem);
+        const middle = button.y + Math.round(button.height / 2);
+        sameColor(image.pixel(button.x - 1, middle), contract.canvasColor, "1 px fora é o fundo");
+        sameColor(image.pixel(button.x - 3, middle), contract.focusColor, "3 px fora é o anel");
+        sameColor(image.pixel(button.x - 4, middle), contract.focusColor, "4 px fora é o anel");
+        sameColor(image.pixel(button.x + button.width, middle), contract.canvasColor, "1 px fora à direita é o fundo");
+        sameColor(image.pixel(button.x + button.width + 3, middle), contract.focusColor, "4 px fora à direita é o anel");
     }
     function test_disabledIsVisibleAndInert() {
         const button = host(AuroraButton.Primary, {

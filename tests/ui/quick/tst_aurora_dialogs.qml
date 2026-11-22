@@ -100,6 +100,62 @@ TestCase {
         }
     }
 
+    Component {
+        id: formHostComponent
+        Window {
+            id: formHost
+            property alias dialog: formDialog
+            property alias first: firstControl
+            property alias last: lastControl
+            property bool tallContent: false
+            width: 720
+            height: 520
+            visible: true
+            color: testCase.contract.canvasColor
+            AuroraDialog {
+                id: formDialog
+                contract: testCase.contract
+                controlId: "form"
+                title: "Formulário"
+                AuroraButton {
+                    id: firstControl
+                    contract: testCase.contract
+                    controlId: "form-first"
+                    kind: AuroraButton.Primary
+                    text: "Primeiro"
+                }
+                Rectangle {
+                    implicitWidth: 100
+                    implicitHeight: formHost.tallContent ? 1200 : 40
+                    color: testCase.contract.surfaceColor
+                }
+                AuroraButton {
+                    id: lastControl
+                    contract: testCase.contract
+                    controlId: "form-last"
+                    kind: AuroraButton.Tonal
+                    text: "Último"
+                }
+                actions: [
+                    AuroraButton {
+                        contract: testCase.contract
+                        controlId: "form-ok"
+                        text: "Ok"
+                        onClicked: formDialog.close()
+                    }
+                ]
+            }
+        }
+    }
+    function openForm(options) {
+        const h = createTemporaryObject(formHostComponent, testCase, options || {});
+        verify(h);
+        verify(waitForRendering(h.contentItem));
+        h.dialog.open();
+        tryVerify(() => h.dialog.opened);
+        return h;
+    }
+
     function openDialog(options) {
         const h = createTemporaryObject(hostComponent, testCase, options || {});
         verify(h);
@@ -221,5 +277,18 @@ TestCase {
         compare(h.dialog.background.border.width, 2);
         sameColor(h.dialog.background.border.color, contract.textPrimaryColor, "contorno");
         verify(!child(h.dialog.background, "surface-shadow").visible);
+    }
+
+    function test_bodyFocusRingIsNotClipped() {
+        const h = openForm();
+        h.first.forceActiveFocus(Qt.TabFocusReason);
+        verify(h.first.activeFocus);
+        const box = h.first.mapToItem(h.contentItem, 0, 0);
+        const image = grabImage(h.contentItem);
+        const middleX = Math.round(box.x + h.first.width / 2);
+        const middleY = Math.round(box.y + h.first.height / 2);
+        sameColor(image.pixel(middleX, box.y - 4), contract.focusColor, "anel acima");
+        sameColor(image.pixel(box.x - 4, middleY), contract.focusColor, "anel à esquerda");
+        sameColor(image.pixel(box.x + h.first.width + 3, middleY), contract.focusColor, "anel à direita");
     }
 }

@@ -133,7 +133,7 @@ Button {
         target: control
         contract: control.contract
         targetRadius: control.contract.radiusControl
-        y: control.background.y - 2
-        height: control.background.height + 4
+        areaY: control.background.y
+        areaHeight: control.background.height
     }
 }

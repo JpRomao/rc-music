@@ -94,11 +94,11 @@ Switch {
         AuroraFocusRing {
             target: control
             contract: control.contract
-            targetRadius: 12
-            x: track.x - 2
-            y: track.y - 2
-            width: track.width + 4
-            height: track.height + 4
+            targetRadius: track.radius
+            areaX: track.x
+            areaY: track.y
+            areaWidth: track.width
+            areaHeight: track.height
         }
     }
 

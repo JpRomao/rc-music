@@ -47,6 +47,7 @@ CheckBox {
     background: null
 
     indicator: Rectangle {
+        id: box
         x: control.leftPadding
         y: (control.height - height) / 2
         width: 20
@@ -68,11 +69,9 @@ CheckBox {
         AuroraFocusRing {
             target: control
             contract: control.contract
-            targetRadius: 6
-            x: -2
-            y: -2
-            width: 24
-            height: 24
+            targetRadius: box.radius
+            areaWidth: box.width
+            areaHeight: box.height
         }
     }
 
