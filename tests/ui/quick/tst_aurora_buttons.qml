@@ -195,4 +195,88 @@ TestCase {
         });
         verify(withIcon.implicitWidth > plain.implicitWidth);
     }
+
+    Component {
+        id: hostIconComponent
+        Window {
+            id: iconWindow
+            property var props: ({})
+            property alias button: hostedIcon
+            width: 480
+            height: 320
+            visible: true
+            color: testCase.contract.canvasColor
+            AuroraIconButton {
+                id: hostedIcon
+                contract: testCase.contract
+                controlId: "sample-icon-button"
+                iconName: iconWindow.props.iconName
+                x: 20
+                y: 20
+            }
+            Component.onCompleted: {
+                for (const key in props)
+                    hostedIcon[key] = props[key];
+            }
+        }
+    }
+    function hostIcon(props) {
+        const window = createTemporaryObject(hostIconComponent, testCase, {
+            props: props
+        });
+        verify(window);
+        verify(waitForRendering(window.contentItem));
+        return window.button;
+    }
+
+    function test_iconButtonIs40AndNamed() {
+        const b = hostIcon({
+            iconName: "more",
+            text: "Mais ações"
+        });
+        compare(b.width, 40);
+        compare(b.height, 40);
+        compare(b.Accessible.name, "Mais ações");
+        compare(child(b, "button-icon").iconName, "more");
+    }
+    function test_checkedShowsMark_data() {
+        return themes();
+    }
+    function test_checkedShowsMark(data) {
+        driver.setSystemAppearance(data.dark, false);
+        const b = hostIcon({
+            iconName: "shuffle",
+            text: "Aleatório",
+            checkable: true
+        });
+        verify(!child(b, "state-mark").visible);
+        sameColor(child(b, "button-icon").color, contract.textPrimaryColor, "desligado");
+        b.toggle();
+        verify(child(b, "state-mark").visible);
+        compare(child(b, "state-mark").width, 4);
+        sameColor(child(b, "state-mark").color, contract.accentColor, "ponto");
+        sameColor(child(b, "icon-button-background").color, contract.selectionColor, "fundo");
+        sameColor(child(b, "button-icon").color, contract.accentColor, "ícone");
+        compare(b.Accessible.checked, true);
+    }
+    function test_checkedInHighContrastUsesHighlight() {
+        driver.setHighContrast(true, true);
+        const b = hostIcon({
+            iconName: "repeat",
+            text: "Repetir",
+            checkable: true,
+            checked: true
+        });
+        sameColor(child(b, "icon-button-background").color, contract.accentColor, "fundo");
+        sameColor(child(b, "state-mark").color, contract.accentTextColor, "ponto");
+    }
+    function test_tooltipShowsName() {
+        const b = hostIcon({
+            iconName: "close",
+            text: "Fechar fila"
+        });
+        mouseMove(b);
+        tryVerify(() => b.ToolTip.toolTip.visible, 2000);
+        compare(b.ToolTip.text, "Fechar fila");
+    }
 }
