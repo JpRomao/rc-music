@@ -238,10 +238,18 @@ TestCase {
                         spacing: 12
                         AuroraAvatar {
                             contract: testCase.contract
+                            source: "qrc:/rc_music/avatars/avatar-01.svg"
+                            backgroundColor: testCase.contract.canvasColor
                         }
                         AuroraAvatar {
                             contract: testCase.contract
+                            source: "qrc:/rc_music/avatars/avatar-02.svg"
+                            backgroundColor: testCase.contract.canvasColor
                             selected: true
+                        }
+                        AuroraAvatar {
+                            contract: testCase.contract
+                            backgroundColor: testCase.contract.canvasColor
                         }
                     }
                 }

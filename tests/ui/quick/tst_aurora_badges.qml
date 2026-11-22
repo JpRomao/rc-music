@@ -131,4 +131,48 @@ TestCase {
         compare(ring.border.width, 2);
         sameColor(ring.border.color, contract.accentColor, "anel");
     }
+    function test_avatarWithoutImageShowsFallbackDisc_data() {
+        return [
+            {
+                tag: "claro",
+                dark: false
+            },
+            {
+                tag: "escuro",
+                dark: true
+            }
+        ];
+    }
+    function test_avatarWithoutImageShowsFallbackDisc(data) {
+        driver.setSystemAppearance(data.dark, false);
+        const a = hostAvatar({
+            size: 64
+        });
+        const disc = child(a, "avatar-fallback");
+        verify(disc.visible);
+        sameColor(disc.color, contract.selectionColor, "disco");
+        compare(disc.border.width, 0);
+        verify(waitForRendering(a));
+        const image = grabImage(a);
+        sameColor(image.pixel(32, 32), contract.selectionColor, "centro mostra o disco");
+        sameColor(image.pixel(1, 1), contract.surfaceColor, "canto coberto");
+    }
+    function test_avatarFallbackInHighContrast() {
+        driver.setHighContrast(true, true);
+        const a = hostAvatar({
+            size: 64
+        });
+        const disc = child(a, "avatar-fallback");
+        verify(disc.visible);
+        sameColor(disc.color, contract.canvasColor, "disco");
+        compare(disc.border.width, 2);
+        sameColor(disc.border.color, contract.textPrimaryColor, "contorno");
+    }
+    function test_avatarWithImageHidesFallback() {
+        const a = hostAvatar({
+            source: "qrc:/rc_music/avatars/avatar-01.svg",
+            size: 64
+        });
+        verify(!child(a, "avatar-fallback").visible);
+    }
 }
