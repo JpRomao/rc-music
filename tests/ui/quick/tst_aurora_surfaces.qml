@@ -115,8 +115,8 @@ TestCase {
         waitForRendering(w.contentItem);
         for (const key in props)
             w.piece[key] = props[key];
-        // Deixa o layout assentar com as propriedades novas antes de usar o mouse.
-        wait(20);
+        // Espera o layout da janela assentar com as propriedades novas antes de usar o mouse.
+        verify(waitForPolish(w));
         return w.piece;
     }
 
