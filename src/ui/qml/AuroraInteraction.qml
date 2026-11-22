@@ -10,6 +10,8 @@ QtObject {
     required property bool enabled
     property bool hovered: false
     property bool pressed: false
+    // Força da camada de hover e pressionado; menor onde o texto colorido perderia contraste.
+    property real layerScale: 1
 
     readonly property bool inactive: !enabled
     // Em alto contraste o desabilitado não esmaece: troca de cor.
@@ -23,9 +25,9 @@ QtObject {
 
     function tint(rest) {
         if (pressed)
-            return Qt.tint(rest, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.12));
+            return Qt.tint(rest, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.12 * layerScale));
         if (hovered)
-            return Qt.tint(rest, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.06));
+            return Qt.tint(rest, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.06 * layerScale));
         return rest;
     }
 }

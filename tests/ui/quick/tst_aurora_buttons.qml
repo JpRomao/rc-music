@@ -35,6 +35,17 @@ TestCase {
         verify(found, "missing child " + name);
         return found;
     }
+    function luminance(color) {
+        function linear(value) {
+            return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+        }
+        return 0.2126 * linear(color.r) + 0.7152 * linear(color.g) + 0.0722 * linear(color.b);
+    }
+    function contrast(foreground, background) {
+        const first = luminance(foreground);
+        const second = luminance(background);
+        return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+    }
 
     Component {
         id: spyComponent
@@ -434,5 +445,32 @@ TestCase {
         verify(mark.visible);
         sameColor(child(b, "icon-button-background").color, "transparent", "sem preenchimento");
         sameColor(mark.color, contract.disabledTextColor, "ponto desabilitado");
+    }
+    function test_hoverAndPressedKeepTextContrast_data() {
+        const kinds = [["Primary", AuroraButton.Primary], ["Tonal", AuroraButton.Tonal], ["Quiet", AuroraButton.Quiet], ["Danger", AuroraButton.Danger], ["DangerFilled", AuroraButton.DangerFilled]];
+        const rows = [];
+        for (const theme of themes())
+            for (const k of kinds)
+                rows.push({
+                    tag: k[0] + "-" + theme.tag,
+                    dark: theme.dark,
+                    kind: k[1]
+                });
+        return rows;
+    }
+    function test_hoverAndPressedKeepTextContrast(data) {
+        driver.setSystemAppearance(data.dark, false);
+        const button = host(data.kind);
+        const bg = child(button, "button-background");
+        const label = child(button, "button-label");
+        mouseMove(button);
+        tryVerify(() => button.hovered);
+        const hovered = contrast(Qt.color(label.color), Qt.color(bg.color));
+        verify(hovered >= 4.5, "hover: " + hovered);
+        mousePress(button);
+        verify(button.down);
+        const pressed = contrast(Qt.color(label.color), Qt.color(bg.color));
+        mouseRelease(button);
+        verify(pressed >= 4.5, "pressionado: " + pressed);
     }
 }
