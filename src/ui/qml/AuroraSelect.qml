@@ -128,8 +128,23 @@ ComboBox {
         implicitHeight: Math.min(contentItem.implicitHeight + topPadding + bottomPadding, 320)
         padding: 4
         popupType: Popup.Item
-        enter: null
-        exit: null
+        // Entra e sai em fade, como o menu; com movimento reduzido a duração é 0.
+        enter: Transition {
+            NumberAnimation {
+                property: "opacity"
+                from: 0
+                to: 1
+                duration: control.contract.panelTransitionMs
+            }
+        }
+        exit: Transition {
+            NumberAnimation {
+                property: "opacity"
+                from: 1
+                to: 0
+                duration: control.contract.panelTransitionMs
+            }
+        }
         // Aberto pelo teclado, o item atual já mostra o anel; pelo mouse, não.
         onAboutToShow: control.keyboardHighlight = control.visualFocus
 

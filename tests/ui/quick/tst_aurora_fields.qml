@@ -185,6 +185,8 @@ TestCase {
         keyClick(Qt.Key_Down);
         keyClick(Qt.Key_Return);
         compare(s.currentIndex, 1);
+        // O menu sai em fade; a linha normal vale com ele fechado.
+        tryVerify(() => !s.popup.visible);
         // O foco de teclado continua no campo e mantém a linha de foco; a linha normal vale sem foco.
         s.focus = false;
         verify(!s.activeFocus);
@@ -278,5 +280,35 @@ TestCase {
         tryCompare(s, "highlightedIndex", 2);
         sameColor(other.background.color, contract.hoverColor, "fundo com o mouse");
         verify(!findChild(other, "focus-ring").visible);
+    }
+    function test_selectPopupFadesLikeMenu_data() {
+        return [
+            {
+                tag: "normal",
+                reduced: false
+            },
+            {
+                tag: "movimento-reduzido",
+                reduced: true
+            }
+        ];
+    }
+    function test_selectPopupFadesLikeMenu(data) {
+        driver.setSystemAppearance(false, data.reduced);
+        const s = hostSelect({
+            label: "Saída de áudio",
+            model: ["Padrão do sistema", "Fones"]
+        });
+        s.popup.open();
+        tryVerify(() => s.popup.opened);
+        verify(s.popup.enter !== null, "sem transição de entrada");
+        // As transições do Popup são adiadas: a de saída só existe depois de fechar.
+        const fadeIn = s.popup.enter.animations;
+        compare(fadeIn[0].property, "opacity");
+        compare(fadeIn[0].duration, data.reduced ? 0 : contract.panelTransitionMs);
+        s.popup.close();
+        tryVerify(() => !s.popup.visible);
+        const fadeOut = s.popup.exit.animations;
+        compare(fadeOut[0].duration, data.reduced ? 0 : contract.panelTransitionMs);
     }
 }
