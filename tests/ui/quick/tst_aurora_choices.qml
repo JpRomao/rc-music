@@ -278,6 +278,20 @@ TestCase {
         });
         compare(s.Accessible.description, "Indisponível nesta instalação");
     }
+    function test_pressActionIgnoredWhenDisabled() {
+        const s = hostSwitch({
+            label: "Opção",
+            enabled: false
+        });
+        s.Accessible.pressAction();
+        compare(s.checked, false);
+        const c = hostCheck({
+            text: "Opção",
+            enabled: false
+        });
+        c.Accessible.pressAction();
+        compare(c.checked, false);
+    }
     function test_switchMotionFollowsContract() {
         driver.setSystemAppearance(false, true);
         const s = hostSwitch({

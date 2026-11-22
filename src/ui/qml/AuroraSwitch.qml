@@ -28,7 +28,11 @@ Switch {
     Accessible.checked: checked
     Accessible.focusable: enabled
     Accessible.focused: activeFocus
-    Accessible.onPressAction: control.activate()
+    // O leitor de tela não aciona um controle desabilitado.
+    Accessible.onPressAction: {
+        if (control.enabled)
+            control.activate();
+    }
     activeFocusOnTab: true
     hoverEnabled: true
     opacity: interaction.opacity

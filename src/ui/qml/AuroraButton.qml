@@ -68,7 +68,11 @@ Button {
     Accessible.description: description
     Accessible.focusable: enabled
     Accessible.focused: activeFocus
-    Accessible.onPressAction: control.clicked()
+    // O leitor de tela não aciona um botão desabilitado.
+    Accessible.onPressAction: {
+        if (control.enabled)
+            control.clicked();
+    }
     activeFocusOnTab: true
     hoverEnabled: true
     opacity: interaction.opacity

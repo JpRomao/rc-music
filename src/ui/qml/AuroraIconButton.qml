@@ -48,7 +48,11 @@ AbstractButton {
     Accessible.checked: checked
     Accessible.focusable: enabled
     Accessible.focused: activeFocus
-    Accessible.onPressAction: control.activate()
+    // O leitor de tela não aciona um controle desabilitado.
+    Accessible.onPressAction: {
+        if (control.enabled)
+            control.activate();
+    }
     activeFocusOnTab: true
     hoverEnabled: true
     opacity: interaction.opacity
@@ -105,7 +109,8 @@ AbstractButton {
         radius: 2
         x: (control.width - width) / 2
         y: control.height - height - 4
-        color: control.contract.highContrast ? control.contract.accentTextColor : control.contract.accentColor
+        // Desabilitado em alto contraste, o ponto é a única marca de ligado: ganha a cor de desabilitado.
+        color: control.contract.highContrast ? interaction.ink(control.contract.accentTextColor) : control.contract.accentColor
         visible: control.checked
     }
 

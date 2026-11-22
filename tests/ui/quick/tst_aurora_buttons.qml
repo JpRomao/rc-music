@@ -397,4 +397,42 @@ TestCase {
         tryVerify(() => b.ToolTip.toolTip.visible, 2000);
         compare(b.ToolTip.toolTip.text, "Fechar fila");
     }
+    function test_pressActionIgnoredWhenDisabled() {
+        const button = host(AuroraButton.Primary, {
+            enabled: false
+        });
+        const clicked = createTemporaryObject(spyComponent, testCase, {
+            target: button,
+            signalName: "clicked"
+        });
+        button.Accessible.pressAction();
+        compare(clicked.count, 0);
+        const b = hostIcon({
+            iconName: "shuffle",
+            text: "Aleatório",
+            checkable: true,
+            enabled: false
+        });
+        const toggled = createTemporaryObject(spyComponent, testCase, {
+            target: b,
+            signalName: "toggled"
+        });
+        b.Accessible.pressAction();
+        compare(b.checked, false);
+        compare(toggled.count, 0);
+    }
+    function test_disabledCheckedMarkInHighContrast() {
+        driver.setHighContrast(true, true);
+        const b = hostIcon({
+            iconName: "repeat",
+            text: "Repetir",
+            checkable: true,
+            checked: true,
+            enabled: false
+        });
+        const mark = child(b, "state-mark");
+        verify(mark.visible);
+        sameColor(child(b, "icon-button-background").color, "transparent", "sem preenchimento");
+        sameColor(mark.color, contract.disabledTextColor, "ponto desabilitado");
+    }
 }
