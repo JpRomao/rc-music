@@ -133,14 +133,17 @@ Dialog {
             spacing: 8
             Layout.fillWidth: true
 
+            // O título quebra linha: a pergunta da confirmação nomeia o que some.
+            // Três linhas com reticências são só uma guarda.
             Text {
                 objectName: "dialog-title"
                 text: dialog.title
                 color: dialog.contract.textPrimaryColor
                 font.family: dialog.contract.headingFontFamily
                 font.pixelSize: dialog.contract.typeSection
+                wrapMode: Text.Wrap
+                maximumLineCount: 3
                 elide: Text.ElideRight
-                wrapMode: Text.NoWrap
                 Accessible.role: Accessible.Heading
                 Accessible.name: text
                 Layout.fillWidth: true

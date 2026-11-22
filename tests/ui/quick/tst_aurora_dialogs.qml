@@ -320,4 +320,31 @@ TestCase {
         keyClick(Qt.Key_Backtab);
         verify(child(h.dialog, "form-close").activeFocus, "Shift+Tab devia voltar ao fechar");
     }
+    function test_longConfirmQuestionWraps() {
+        const question = "Excluir a playlist “Músicas para estudar de madrugada no inverno”?";
+        const h = openConfirm({
+            question: question,
+            consequence: "A playlist sai da biblioteca.",
+            confirmText: "Excluir",
+            destructive: true
+        });
+        const title = child(h.dialog, "dialog-title");
+        verify(!title.truncated, "pergunta cortada");
+        verify(title.lineCount >= 2, "linhas: " + title.lineCount);
+        compare(title.Accessible.name, question);
+        // O corpo começa abaixo da última linha da pergunta.
+        const consequence = child(h.dialog, "confirm-consequence");
+        verify(consequence.mapToItem(title, 0, 0).y >= title.height, "consequência sob o título");
+    }
+    function test_longTitleWrapsBesideClose() {
+        const h = openDialog();
+        h.dialog.title = "Detalhes da faixa Músicas para estudar de madrugada no inverno e na primavera";
+        const title = child(h.dialog, "dialog-title");
+        tryVerify(() => title.lineCount >= 2);
+        verify(!title.truncated);
+        // O fechar continua no alto, alinhado com a primeira linha.
+        const close = child(h.dialog, "dialog-close");
+        verify(close.mapToItem(title, 0, 0).y < title.font.pixelSize, "fechar fora do alto");
+        verify(title.width + close.width <= h.dialog.width, "título invade o fechar");
+    }
 }
