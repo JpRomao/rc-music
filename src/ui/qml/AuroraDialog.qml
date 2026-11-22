@@ -33,6 +33,8 @@ Dialog {
         id: controlsText
     }
 
+    // Popup não leva Accessible; o controlId fica no objectName.
+    objectName: controlId
     parent: Overlay.overlay
     anchors.centerIn: parent
     modal: true

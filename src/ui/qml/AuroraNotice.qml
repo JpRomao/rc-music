@@ -31,11 +31,13 @@ Control {
         id: controlsText
     }
 
+    objectName: controlId
     padding: 16
     implicitWidth: contentItem.implicitWidth + leftPadding + rightPadding
     implicitHeight: contentItem.implicitHeight + topPadding + bottomPadding
 
     Accessible.role: Accessible.AlertMessage
+    Accessible.id: controlId
     Accessible.name: controlsText.noticeName(title, text)
 
     background: Rectangle {

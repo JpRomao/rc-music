@@ -235,6 +235,35 @@ TestCase {
         sameColor(circle.border.color, contract.textPrimaryColor, "contorno");
         sameColor(child(e, "empty-icon").color, contract.textPrimaryColor, "ícone");
     }
+    // O controlId dá nome à raiz da peça, para testes e para o leitor de tela.
+    function test_controlIdNamesTheRoot_data() {
+        return [
+            {
+                tag: "cabeçalho",
+                host: drawerHeaderHost,
+                id: "queue-drawer"
+            },
+            {
+                tag: "aviso",
+                host: noticeHost,
+                id: "settings-notice"
+            },
+            {
+                tag: "vazio",
+                host: emptyHost,
+                id: "queue-empty"
+            }
+        ];
+    }
+    function test_controlIdNamesTheRoot(data) {
+        const piece = open(data.host, {});
+        compare(piece.objectName, data.id);
+        compare(findChild(piece.parent, data.id), piece);
+    }
+    function test_noticeCarriesAccessibleId() {
+        const n = open(noticeHost, {});
+        compare(n.Accessible.id, "settings-notice");
+    }
     function test_noticeAccessibleName() {
         const n = open(noticeHost, {
             title: "Configurações recuperadas",

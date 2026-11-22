@@ -43,6 +43,7 @@ ColumnLayout {
         rightPadding: 12
         topPadding: 0
         bottomPadding: 0
+        Accessible.id: root.controlId
         Accessible.name: root.label
         Accessible.description: root.hasError ? root.errorText : ""
         onAccepted: root.accepted()

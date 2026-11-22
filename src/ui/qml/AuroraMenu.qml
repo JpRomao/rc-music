@@ -26,6 +26,8 @@ Menu {
     delegate: AuroraMenuItem {
         // Dentro do delegate o id aponta para o tipo base do Menu.
         contract: menu.contract // qmllint disable missing-property
+        // Item criado de uma Action leva o objectName dela como controlId.
+        controlId: action ? action.objectName : ""
     }
 
     enter: Transition {

@@ -210,6 +210,13 @@ TestCase {
         sameColor(mark.color, contract.accentColor, "marca da opção atual");
     }
 
+    function test_fieldInputCarriesControlId() {
+        const h = createTemporaryObject(fieldHostComponent, testCase);
+        verify(h);
+        const input = child(h, "nickname");
+        compare(input, h.field.input);
+        compare(input.Accessible.id, "nickname");
+    }
     function test_fieldShowsFocusRing() {
         const f = hostField({
             label: "Apelido"

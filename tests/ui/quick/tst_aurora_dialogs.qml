@@ -183,6 +183,10 @@ TestCase {
         return h;
     }
 
+    function test_controlIdNamesTheDialog() {
+        const h = openForm();
+        compare(h.dialog.objectName, "form");
+    }
     function test_scrimCoversWholeWindow() {
         const h = openDialog();
         const scrim = child(h.Overlay.overlay, "dialog-scrim");

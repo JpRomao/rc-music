@@ -15,6 +15,8 @@ Item {
 
     signal closeRequested
 
+    // A raiz não é acessível; o nome fica no objectName, e o botão de fechar tem o seu.
+    objectName: controlId
     implicitWidth: layout.implicitWidth
     implicitHeight: Math.max(layout.implicitHeight, contract.controlTargetMinimum)
 

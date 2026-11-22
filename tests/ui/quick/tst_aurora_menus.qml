@@ -64,11 +64,13 @@ TestCase {
                 contract: testCase.contract
                 AuroraMenuItem {
                     contract: testCase.contract
+                    controlId: "menu-play"
                     text: "Tocar"
                     iconName: "play"
                 }
                 AuroraMenuItem {
                     contract: testCase.contract
+                    controlId: "menu-up"
                     text: "Subir"
                     shortcutText: "Alt+\u2191"
                 }
@@ -77,6 +79,7 @@ TestCase {
                 }
                 AuroraMenuItem {
                     contract: testCase.contract
+                    controlId: "menu-remove"
                     text: "Remover"
                     danger: true
                 }
@@ -108,11 +111,13 @@ TestCase {
                 contract: testCase.contract
                 AuroraMenuItem {
                     contract: testCase.contract
+                    controlId: "wide-retry"
                     text: "Tentar reproduzir novamente"
                     iconName: "play"
                 }
                 AuroraMenuItem {
                     contract: testCase.contract
+                    controlId: "wide-info"
                     text: wideHost.longText
                     iconName: "info"
                     shortcutText: "Ctrl+Shift+I"
@@ -164,6 +169,12 @@ TestCase {
         keyClick(Qt.Key_Down);
         keyClick(Qt.Key_Return);
         compare(spy.count, 1);
+    }
+    function test_controlIdNamesTheItem() {
+        const m = openMenu();
+        const item = m.itemAt(3);
+        compare(item.objectName, "menu-remove");
+        compare(item.Accessible.id, "menu-remove");
     }
     function test_dangerItemUsesError() {
         const m = openMenu();

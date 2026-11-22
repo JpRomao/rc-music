@@ -17,6 +17,8 @@ ColumnLayout {
     signal primaryTriggered
     signal secondaryTriggered
 
+    // A raiz não é acessível; o nome fica no objectName, e cada botão tem o seu.
+    objectName: controlId
     spacing: 8
 
     Rectangle {

@@ -7,6 +7,7 @@ MenuItem {
     id: item
 
     required property ShellUiContract contract
+    required property string controlId
     property string iconName
     property string shortcutText
     property bool danger: false
@@ -26,6 +27,8 @@ MenuItem {
     opacity: interaction.opacity
     font.family: contract.bodyFontFamily
     font.pixelSize: contract.typeBody
+    objectName: controlId
+    Accessible.id: controlId
     Accessible.name: text
 
     // O destaque do mouse usa hoverColor; o item atual do teclado ganha o anel interno.
