@@ -22,8 +22,7 @@ Button {
 
     readonly property bool filled: kind === AuroraButton.Primary || kind === AuroraButton.DangerFilled
     readonly property bool outlined: contract.highContrast && !filled && kind !== AuroraButton.Quiet
-    readonly property bool inactive: contract.highContrast && !enabled
-    readonly property color layerColor: Qt.color(contract.textPrimaryColor)
+    readonly property bool inactive: contract.highContrast && interaction.inactive
     readonly property bool hasFill: {
         if (inactive)
             return false;
@@ -36,17 +35,13 @@ Button {
         if (contract.highContrast)
             return filled ? contract.accentColor : contract.canvasColor;
         if (kind === AuroraButton.Quiet)
-            return down ? Qt.tint(contract.hoverColor, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.06)) : contract.hoverColor;
+            return down ? interaction.tint(contract.hoverColor) : contract.hoverColor;
         let rest = contract.selectionColor;
         if (kind === AuroraButton.Primary)
             rest = contract.accentColor;
         else if (kind === AuroraButton.DangerFilled)
             rest = contract.errorColor;
-        if (down)
-            return Qt.tint(rest, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.12));
-        if (hovered)
-            return Qt.tint(rest, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.06));
-        return rest;
+        return interaction.tint(rest);
     }
     readonly property color foregroundColor: {
         if (inactive)
@@ -73,7 +68,7 @@ Button {
     Accessible.onPressAction: control.clicked()
     activeFocusOnTab: true
     hoverEnabled: true
-    opacity: enabled || contract.highContrast ? 1 : 0.4
+    opacity: interaction.opacity
     font.family: contract.bodyFontFamily
     font.pixelSize: contract.typeBody
     font.weight: Font.DemiBold
@@ -126,6 +121,12 @@ Button {
             Layout.minimumWidth: 0
             Layout.alignment: Qt.AlignVCenter
         }
+    }
+
+    AuroraInteraction {
+        id: interaction
+        contract: control.contract
+        control: control
     }
 
     AuroraFocusRing {

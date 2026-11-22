@@ -11,9 +11,8 @@ AbstractButton {
     property bool tonal: false
     property int iconSize: 20
 
-    readonly property bool inactive: contract.highContrast && !enabled
+    readonly property bool inactive: contract.highContrast && interaction.inactive
     readonly property bool outlined: contract.highContrast && tonal && !checked
-    readonly property color layerColor: Qt.color(contract.textPrimaryColor)
     readonly property bool hasFill: {
         if (inactive)
             return false;
@@ -26,12 +25,8 @@ AbstractButton {
         if (contract.highContrast)
             return checked ? contract.accentColor : contract.canvasColor;
         const rest = tonal || checked ? contract.selectionColor : contract.hoverColor;
-        const pressedTint = Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.12);
-        const hoverTint = Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.06);
-        if (down)
-            return Qt.tint(rest, pressedTint);
-        if (hovered && (tonal || checked))
-            return Qt.tint(rest, hoverTint);
+        if (down || (hovered && (tonal || checked)))
+            return interaction.tint(rest);
         return rest;
     }
     readonly property color foregroundColor: {
@@ -53,7 +48,7 @@ AbstractButton {
     Accessible.onPressAction: control.activate()
     activeFocusOnTab: true
     hoverEnabled: true
-    opacity: enabled || contract.highContrast ? 1 : 0.4
+    opacity: interaction.opacity
     implicitWidth: contract.controlTargetMinimum
     implicitHeight: contract.controlTargetMinimum
     width: implicitWidth
@@ -104,6 +99,12 @@ AbstractButton {
         y: control.height - height - 4
         color: control.contract.highContrast ? control.contract.accentTextColor : control.contract.accentColor
         visible: control.checked
+    }
+
+    AuroraInteraction {
+        id: interaction
+        contract: control.contract
+        control: control
     }
 
     AuroraFocusRing {
