@@ -1082,8 +1082,8 @@ FocusScope {
             contract: root.contract
             controlId: "queue-clear-confirmation"
             destructive: true
-            question: queueText.clearTitle
-            consequence: root.clearCount === 1 ? queueText.clearOneMessage : queueText.clearManyMessage.replace("{count}", root.clearCount)
+            question: queueText.clearQuestion
+            consequence: root.clearCount === 1 ? queueText.clearOneConsequence : queueText.clearManyConsequence.replace("{count}", root.clearCount)
             confirmText: queueText.clear
             onConfirmed: root.confirmClear()
             onClosed: root.restoreFocusAfterClear()

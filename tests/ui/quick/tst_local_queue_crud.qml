@@ -15,6 +15,15 @@ TestCase {
         }
     }
 
+    Component {
+        id: fixtureConfirmationComponent
+        QueueClearConfirmation {
+            contract: testShellUiContract // qmllint disable unqualified
+            queueCount: 3
+            fallbackFocusItem: testCase.shell.contentItem
+        }
+    }
+
     property var shell
 
     function cleanup() {
@@ -381,5 +390,26 @@ TestCase {
             return confirmation.opened;
         });
         compare(findChild(confirmation, "confirm-consequence").text, "A faixa sai da fila. Os arquivos, a biblioteca e as playlists não mudam. Isso não pode ser desfeito.");
+    }
+
+    // The frozen fixture keeps its own confirmation texts; the Aurora dialog has its own keys.
+    function test_realQueueFixtureConfirmationKeepsItsTexts() {
+        shell = createTemporaryObject(shellComponent, null);
+        verify(shell);
+        shell.requestActivate();
+        tryVerify(function () {
+            return shell.active;
+        });
+        const confirmation = createTemporaryObject(fixtureConfirmationComponent, shell.contentItem, {
+            "parent": shell.contentItem
+        });
+        verify(confirmation);
+        confirmation.open();
+        tryVerify(function () {
+            return confirmation.opened;
+        });
+        compare(confirmation.contentItem.Accessible.name, "Limpar fila?");
+        compare(findChild(confirmation, "queue-clear-confirmation-message").text, "Os 3 itens da fila serão removidos. Esta ação não pode ser desfeita.");
+        confirmation.close();
     }
 }
