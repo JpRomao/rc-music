@@ -173,4 +173,26 @@ TestCase {
         driver.setSystemAppearance(true, false);
         sameColor(child(button, "button-background").color, contract.accentColor, "depois da troca");
     }
+    function test_iconShowsWithKindColor() {
+        const button = host(AuroraButton.Danger, {
+            iconName: "plus"
+        });
+        const icon = child(button, "button-icon");
+        verify(icon.visible);
+        compare(icon.iconName, "plus");
+        sameColor(icon.color, contract.errorColor, "ícone");
+    }
+    function test_emptyIconDoesNotTakeSpace() {
+        const plain = host(AuroraButton.Tonal);
+        const icon = child(plain, "button-icon");
+        verify(!icon.visible);
+        const label = child(plain, "button-label");
+        const left = label.mapToItem(plain, 0, 0).x;
+        compare(left, plain.leftPadding);
+        compare(plain.implicitWidth, label.implicitWidth + plain.leftPadding + plain.rightPadding);
+        const withIcon = host(AuroraButton.Tonal, {
+            iconName: "plus"
+        });
+        verify(withIcon.implicitWidth > plain.implicitWidth);
+    }
 }

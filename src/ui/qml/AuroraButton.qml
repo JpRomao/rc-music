@@ -23,34 +23,30 @@ Button {
     readonly property bool filled: kind === AuroraButton.Primary || kind === AuroraButton.DangerFilled
     readonly property bool outlined: contract.highContrast && !filled && kind !== AuroraButton.Quiet
     readonly property bool inactive: contract.highContrast && !enabled
-    readonly property color clear: Qt.rgba(0, 0, 0, 0)
     readonly property color layerColor: Qt.color(contract.textPrimaryColor)
-    readonly property color restColor: {
+    readonly property bool hasFill: {
         if (inactive)
-            return clear;
+            return false;
         if (contract.highContrast)
-            return filled ? contract.accentColor : (outlined ? contract.canvasColor : clear);
-        switch (kind) {
-        case AuroraButton.Primary:
-            return contract.accentColor;
-        case AuroraButton.DangerFilled:
-            return contract.errorColor;
-        case AuroraButton.Quiet:
-            return clear;
-        default:
-            return contract.selectionColor;
-        }
+            return filled || outlined;
+        return kind !== AuroraButton.Quiet || hovered || down;
     }
+    // Só vale com hasFill; sem preenchimento o fundo fica sem cor.
     readonly property color fillColor: {
-        if (inactive || contract.highContrast)
-            return restColor;
+        if (contract.highContrast)
+            return filled ? contract.accentColor : contract.canvasColor;
         if (kind === AuroraButton.Quiet)
-            return down ? Qt.tint(contract.hoverColor, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.06)) : (hovered ? contract.hoverColor : clear);
+            return down ? Qt.tint(contract.hoverColor, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.06)) : contract.hoverColor;
+        let rest = contract.selectionColor;
+        if (kind === AuroraButton.Primary)
+            rest = contract.accentColor;
+        else if (kind === AuroraButton.DangerFilled)
+            rest = contract.errorColor;
         if (down)
-            return Qt.tint(restColor, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.12));
+            return Qt.tint(rest, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.12));
         if (hovered)
-            return Qt.tint(restColor, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.06));
-        return restColor;
+            return Qt.tint(rest, Qt.rgba(layerColor.r, layerColor.g, layerColor.b, 0.06));
+        return rest;
     }
     readonly property color foregroundColor: {
         if (inactive)
@@ -103,7 +99,7 @@ Button {
         width: control.width
         height: control.compact ? 32 : control.height
         radius: control.contract.radiusControl
-        color: control.fillColor
+        color: control.hasFill ? control.fillColor : "transparent"
         border.width: control.inactive || control.outlined || (control.contract.highContrast && control.hovered) ? 2 : 0
         border.color: control.inactive ? control.contract.disabledTextColor : (control.contract.highContrast && control.hovered ? control.contract.accentColor : control.contract.textPrimaryColor)
     }
@@ -111,6 +107,7 @@ Button {
     contentItem: RowLayout {
         spacing: 8
         ShellIcon {
+            objectName: "button-icon"
             iconName: control.iconName
             color: control.foregroundColor
             Layout.alignment: Qt.AlignVCenter
