@@ -215,7 +215,7 @@ Exatos. Os plurais vão para o `.ts` à mão.
 
 ---
 
-### Tarefa 1: F1/F2 sem a gaveta, Aleatório e Repetir fora dela
+### Task 1: F1/F2 sem a gaveta, Aleatório e Repetir fora dela
 
 **Arquivos:**
 - Modificar: `src/ui/qml/Main.qml` (atalhos F1/F2, linhas ~1291-1314; funções novas), `src/ui/qml/QueuePanel.qml` (`queue-modes`)
@@ -247,7 +247,7 @@ Exatos. Os plurais vão para o `.ts` à mão.
 - [ ] **Passo 4: rodar e ver passar** `tst_primary_keyboard`, `tst_aurora_player`, `tst_listening_room` e `tst_listening_room_roles`.
 - [ ] **Passo 5: commit** `feat: desliga F1/F2 da gaveta e tira Aleatório e Repetir da Fila`
 
-### Tarefa 2: cabeçalho e barra da gaveta da Fila
+### Task 2: cabeçalho e barra da gaveta da Fila
 
 **Arquivos:**
 - Modificar: `src/presentation/PlayerPresenter.hpp`/`.cpp`, `src/ui/qml/QueuePanel.qml`, `src/ui/qml/QueueText.qml`, `src/ui/translations/music-player_pt_BR.ts`, `src/ui/qml/Main.qml` (`drawerWidth`; largura e borda da gaveta)
@@ -287,7 +287,7 @@ Exatos. Os plurais vão para o `.ts` à mão.
 - [ ] **Passo 5: ver passar** o teste C++ do presenter, `tst_aurora_player`, `tst_local_queue_crud`, `tst_local_queue_deferred_focus`, `tst_keyboard_full_journey` e `tst_empty_shell` (este sem edição).
 - [ ] **Passo 6: commit** `feat: dá à gaveta da Fila o cabeçalho e a barra do redesenho`
 
-### Tarefa 3: linhas e estado vazio da Fila
+### Task 3: linhas e estado vazio da Fila
 
 **Arquivos:**
 - Modificar: `src/ui/qml/QueuePanel.qml`, `src/ui/qml/QueueText.qml`
@@ -310,7 +310,7 @@ Exatos. Os plurais vão para o `.ts` à mão.
 - [ ] **Passo 4: ver passar** `tst_aurora_player`, `tst_listening_room`, `tst_empty_shell` (sem edição), `tst_local_queue_crud` e `tst_queue_microcopy`.
 - [ ] **Passo 5: commit** `feat: desenha as linhas e o estado vazio da gaveta da Fila`
 
-### Tarefa 4: confirmação de limpar a fila com a peça de diálogo
+### Task 4: confirmação de limpar a fila com a peça de diálogo
 
 **Arquivos:**
 - Modificar: `src/ui/qml/QueuePanel.qml`, `src/ui/qml/QueueText.qml`
@@ -330,7 +330,7 @@ Exatos. Os plurais vão para o `.ts` à mão.
 - [ ] **Passo 4: ver passar** os quatro arquivos e `tst_empty_shell` (sem edição).
 - [ ] **Passo 5: commit** `feat: pede a confirmação de limpar a fila com o diálogo de perigo`
 
-### Tarefa 5: linha do verso
+### Task 5: linha do verso
 
 **Arquivos:**
 - Criar: `src/ui/qml/LyricsLine.qml` (e acrescentar em `cmake/RcMusicUi.cmake`)
@@ -373,7 +373,7 @@ Exatos. Os plurais vão para o `.ts` à mão.
 - [ ] **Passo 4: ver passar** `tst_lyrics`, `tst_lyrics_variants`, `tst_lyrics_reader`, `tst_aurora_navigation`, `tst_aurora_composition`, `tst_downloads` e `tst_download_lyrics`.
 - [ ] **Passo 5: commit** `feat: troca a faixa de letras pela linha do verso`
 
-### Tarefa 6: gaveta da Letra
+### Task 6: gaveta da Letra
 
 **Arquivos:**
 - Modificar: `src/ui/qml/LyricsReader.qml`, `src/ui/qml/LyricsPanel.qml`, `src/ui/qml/LyricsText.qml`, `src/ui/qml/ControlsText.qml`, `src/ui/qml/Main.qml` (`player-lyrics` habilitado; gavetas exclusivas)
@@ -418,7 +418,7 @@ Exatos. Os plurais vão para o `.ts` à mão.
 - [ ] **Passo 4: ver passar** `tst_lyrics`, `tst_lyrics_reader` (sem edição), `tst_lyrics_variants`, `tst_aurora_player`, `tst_aurora_navigation` e `tst_download_lyrics`.
 - [ ] **Passo 5: commit** `feat: dá à gaveta da Letra o cabeçalho, a barra e o estado vazio`
 
-### Tarefa 7: contraste e alto contraste das gavetas e da linha
+### Task 7: contraste e alto contraste das gavetas e da linha
 
 **Arquivos:**
 - Testes: `tests/ui/quick/tst_color_contrast.qml`, `tests/ui/quick/tst_aurora_player.qml`
@@ -434,7 +434,7 @@ Exatos. Os plurais vão para o `.ts` à mão.
 - [ ] **Passo 2: rodar.** O que passar já fica como regressão. O que falhar troca de token, com teste vermelho antes.
 - [ ] **Passo 3: commit** `test: fixa o contraste da linha do verso e das gavetas` (ou `fix:`, se algum token mudar)
 
-### Tarefa 8: capturas, documentação e validação da fatia
+### Task 8: capturas, documentação e validação da fatia
 
 **Arquivos:**
 - Modificar: `tests/ui/quick/tst_aurora_composition.qml` (capturas), `docs/ui-tests.md`
