@@ -19,6 +19,114 @@ TestCase {
         }
     }
 
+    ListModel {
+        id: fakeRecords
+    }
+    QtObject {
+        id: fakeLibrary
+        property bool ready: true
+        property bool busy: false
+        property int count: 128
+        property int visibleCount: 0
+        property bool hasPendingChange: false
+        property bool canRetrySave: false
+        property string statusText: ""
+        property string filterText: ""
+        property var model: fakeRecords
+        property bool canLocate: false
+        property string artworkBase: ""
+        function retryLoad() {
+            return true;
+        }
+        function cancelLocate() {
+        }
+        function retrySave() {
+            return true;
+        }
+    }
+    QtObject {
+        id: fakePlaylists
+        property bool ready: true
+        property bool busy: false
+        property bool interactionAllowed: true
+        property bool hasPendingChange: false
+        property bool canRetrySave: false
+        property bool canAddFiles: false
+        property bool canReplaceFile: false
+        property string statusText: ""
+        property string selectedPlaylistId: ""
+        property var playlists: [
+            {
+                id: "a",
+                name: "Uma",
+                count: 0
+            },
+            {
+                id: "b",
+                name: "Outra",
+                count: 0
+            }
+        ]
+        property var entries: []
+        function retryLoad() {
+            return true;
+        }
+    }
+    QtObject {
+        id: fakeSearch
+        property bool available: true
+        property bool busy: false
+        property bool requesting: false
+        property bool searched: false
+        property string query: ""
+        property string statusText: ""
+        property var results: []
+        property bool linksMode: false
+        property var linkIssues: []
+        property bool canDownloadAll: false
+    }
+    QtObject {
+        id: fakeRoom
+        property bool available: false
+        property int role: 0
+    }
+    QtObject {
+        id: fakeDownloads
+        property bool canCloseAfterFinalSaveFailure: false
+        property bool canRetryAdmission: false
+        property bool canRetryFinalSave: false
+        property bool canRetryStartup: false
+        property bool canRenewNamespace: false
+        property string warningText: ""
+        property string statusText: ""
+        property string importConsentJobId: ""
+        property string importConsentToken: ""
+        property string discardConsentJobId: ""
+        property string discardConsentToken: ""
+        property var jobsModel: null
+    }
+    QtObject {
+        id: fakeBrowser
+        property string errorText: ""
+        signal errorChanged
+        function open() {
+        }
+    }
+
+    function mountNavigationBackends() {
+        fakeLibrary.ready = true;
+        fakeLibrary.count = 128;
+        fakePlaylists.ready = true;
+        shell.library = fakeLibrary;
+        shell.playlists = fakePlaylists;
+        shell.onlineSearch = fakeSearch;
+        shell.room = fakeRoom;
+        shell.downloads = fakeDownloads;
+        shell.embeddedBrowser = fakeBrowser;
+        wait(0);
+        verify(waitForPolish(shell));
+    }
+
     function init() {
         driver.resetLocalScenario();
         driver.setHighContrast(false, false);
@@ -250,6 +358,69 @@ TestCase {
         verify(ratio >= minimum, context + ": " + ratio + " < " + minimum);
     }
 
+    function test_sidebarFollowsTheApprovedOrder() {
+        mountNavigationBackends();
+        const viewport = findChild(shell, "navigation-viewport");
+        let previous = -1;
+        for (const name of ["now", "library", "search", "playlists", "room", "downloads", "embedded-browser", "preferences"]) {
+            const item = findChild(shell, name);
+            verify(item && item.visible, name);
+            const y = item.mapToItem(viewport.contentItem, 0, 0).y;
+            verify(y > previous, name + " y=" + y + " after " + previous);
+            previous = y;
+        }
+    }
+
+    function test_sidebarShowsCountsOnlyFromBindings() {
+        mountNavigationBackends();
+        const library = findChild(shell, "library");
+        const playlists = findChild(shell, "playlists");
+        const libraryCount = findChild(library, "navigation-count");
+        const playlistCount = findChild(playlists, "navigation-count");
+        verify(libraryCount.visible);
+        compare(libraryCount.text, "128");
+        compare(library.Accessible.description, "128 faixas");
+        verify(playlistCount.visible);
+        compare(playlistCount.text, "2");
+        compare(playlists.Accessible.description, "2 playlists");
+        verify(!findChild(findChild(shell, "downloads"), "navigation-count").visible);
+        fakeLibrary.count = 1;
+        compare(libraryCount.text, "1");
+        compare(library.Accessible.description, "1 faixa");
+        fakeLibrary.ready = false;
+        fakePlaylists.ready = false;
+        tryVerify(() => !libraryCount.visible && !playlistCount.visible);
+        compare(library.Accessible.description, "");
+        fakeLibrary.ready = true;
+        fakeLibrary.count = 128;
+        fakePlaylists.ready = true;
+        tryVerify(() => libraryCount.visible && playlistCount.visible);
+        shell.width = 720;
+        shell.height = 520;
+        tryCompare(shell.contentItem, "width", 720);
+        verify(waitForPolish(shell));
+        verify(!libraryCount.visible);
+        verify(!playlistCount.visible);
+        compare(library.Accessible.description, "128 faixas");
+        compare(playlists.Accessible.description, "2 playlists");
+    }
+
+    function test_navegarMarksTheExternalWindow() {
+        mountNavigationBackends();
+        const browser = findChild(shell, "embedded-browser");
+        compare(browser.trailingIconName, "external");
+        const icon = findChild(browser, "navigation-trailing-icon");
+        verify(icon && icon.visible);
+        compare(icon.iconName, "external");
+        compare(icon.Accessible.ignored, true);
+        verify(!findChild(findChild(shell, "downloads"), "navigation-trailing-icon").visible);
+        shell.width = 720;
+        shell.height = 520;
+        tryCompare(shell.contentItem, "width", 720);
+        verify(waitForPolish(shell));
+        verify(!icon.visible);
+    }
+
     function test_productContrastUsesActualBackgrounds_data() {
         return [
             {
@@ -291,6 +462,28 @@ TestCase {
         }
         for (const name of ["previous", "play-pause", "next", "mute"])
             verifyContrast(findChild(shell, name).contentItem.color, findChild(shell, name).background.color, 4.5, name + " rendered foreground");
+        mountNavigationBackends();
+        for (const entry of [["library", "navigation-count", 4.5], ["playlists", "navigation-count", 4.5], ["embedded-browser", "navigation-trailing-icon", 3]]) {
+            const button = findChild(shell, entry[0]);
+            const mark = findChild(button, entry[1]);
+            verify(mark.visible, entry[0] + " " + entry[1]);
+            verifyContrast(mark.color, button.background.color, entry[2], entry[0] + " " + entry[1] + " normal");
+            mouseMove(button);
+            tryVerify(() => button.hovered);
+            tryVerify(() => Qt.colorEqual(button.background.color, productContract.hoverColor));
+            tryVerify(() => Qt.colorEqual(mark.color, productContract.textPrimaryColor));
+            verifyContrast(mark.color, button.background.color, entry[2], entry[0] + " " + entry[1] + " hover");
+            mouseMove(shell.contentItem, 5, 5);
+            tryVerify(() => !button.hovered);
+        }
+        const libraryButton = findChild(shell, "library");
+        libraryButton.Accessible.pressAction();
+        tryVerify(() => libraryButton.checked);
+        const selectedCount = findChild(libraryButton, "navigation-count");
+        tryVerify(() => Qt.colorEqual(libraryButton.background.color, productContract.selectionColor));
+        verifyContrast(selectedCount.color, libraryButton.background.color, 4.5, "library count selected");
+        findChild(shell, "now").Accessible.pressAction();
+        tryVerify(() => !libraryButton.checked);
         for (const name of ["progress", "volume"]) {
             const slider = findChild(shell, name);
             verify(slider.enabled);

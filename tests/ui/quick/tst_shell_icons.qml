@@ -9,7 +9,7 @@ TestCase {
 
     // Every icon the shell references. A missing file would only surface as a
     // runtime image warning, so the catalog is exercised here explicitly.
-    readonly property var catalog: ["home", "library", "search", "playlist", "activity", "settings", "arrow", "plus", "close", "play", "pause", "next", "previous", "queue", "lyrics", "volume", "mute", "info", "check", "repeat", "shuffle", "sun", "moon", "browser", "arrow-up", "arrow-down", "minus", "people", "more", "caret-down", "caret-right", "warning", "warning-circle", "check-circle"]
+    readonly property var catalog: ["home", "library", "search", "playlist", "activity", "settings", "arrow", "plus", "close", "play", "pause", "next", "previous", "queue", "lyrics", "volume", "mute", "info", "check", "repeat", "shuffle", "sun", "moon", "browser", "arrow-up", "arrow-down", "minus", "people", "more", "caret-down", "caret-right", "warning", "warning-circle", "check-circle", "external"]
 
     Component {
         id: iconComponent

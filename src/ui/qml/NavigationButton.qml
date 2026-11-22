@@ -6,7 +6,16 @@ AccessibleTransportButton {
     id: root
     property bool compact: false
     property bool editorial: false
+    // Aurora only: a number at the right edge (hidden below zero) and an optional trailing icon.
+    property int count: -1
+    property string countText: ""
+    property string trailingIconName: ""
+    readonly property bool showsCount: editorial && !compact && count >= 0
+    readonly property bool showsTrailingIcon: editorial && !compact && trailingIconName.length > 0
+    // Quiet at rest; the stronger text color on the selected and hover backgrounds keeps 4.5:1.
+    readonly property color accessoryColor: contract.highContrast ? label.color : (checked || (hovered && enabled) ? contract.textPrimaryColor : contract.textSecondaryColor)
     accessibleName: text
+    Accessible.description: countText.length > 0 ? countText : accessibleDescription
     contentItem: Text {
         id: label
         readonly property bool showsIcon: root.editorial && root.iconName.length > 0
@@ -18,6 +27,8 @@ AccessibleTransportButton {
             weight: root.checked && !root.compact ? Font.DemiBold : Font.Normal
         }) : root.font
         leftPadding: root.editorial && !root.compact ? (label.showsIcon ? 12 + navigationIcon.width + 12 : 12) : 0
+        // The name elides before the count or the trailing icon.
+        rightPadding: root.showsCount ? navigationCount.implicitWidth + 12 + 8 : (root.showsTrailingIcon ? trailingIcon.width + 12 + 8 : 0)
         color: root.contract.highContrast && !root.enabled ? root.contract.disabledTextColor : (root.contrastHighlighted ? root.contract.accentTextColor : (root.editorial && root.checked && !root.contract.highContrast ? root.contract.accentColor : root.contract.textPrimaryColor))
         horizontalAlignment: root.editorial && !root.compact ? Text.AlignLeft : Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
@@ -28,6 +39,31 @@ AccessibleTransportButton {
             iconName: label.showsIcon ? root.iconName : ""
             color: label.color
             x: root.compact ? (label.width - width) / 2 : 12
+            anchors.verticalCenter: parent.verticalCenter
+        }
+        Text {
+            id: navigationCount
+            objectName: "navigation-count"
+            visible: root.showsCount
+            text: String(root.count)
+            font.family: root.contract.bodyFontFamily
+            font.pixelSize: root.contract.typeCaption
+            color: root.accessoryColor
+            textFormat: Text.PlainText
+            anchors.right: parent.right
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            Accessible.ignored: true
+        }
+        ShellIcon {
+            id: trailingIcon
+            objectName: "navigation-trailing-icon"
+            size: 16
+            visible: root.showsTrailingIcon
+            iconName: root.trailingIconName
+            color: root.accessoryColor
+            anchors.right: parent.right
+            anchors.rightMargin: 12
             anchors.verticalCenter: parent.verticalCenter
         }
     }

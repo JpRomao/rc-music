@@ -13,6 +13,25 @@
         </message>
     </context>
     <context>
+        <name>NavigationText</name>
+        <message numerus="yes">
+            <source>%n faixa</source>
+            <comment>Contagem da Biblioteca na lateral</comment>
+            <translation>
+                <numerusform>%n faixa</numerusform>
+                <numerusform>%n faixas</numerusform>
+            </translation>
+        </message>
+        <message numerus="yes">
+            <source>%n playlist</source>
+            <comment>Contagem de Playlists na lateral</comment>
+            <translation>
+                <numerusform>%n playlist</numerusform>
+                <numerusform>%n playlists</numerusform>
+            </translation>
+        </message>
+    </context>
+    <context>
         <name>DownloadText</name>
         <message>
             <location filename="../qml/DownloadText.qml" line="4"/>

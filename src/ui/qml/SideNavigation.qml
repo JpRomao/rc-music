@@ -22,6 +22,9 @@ Rectangle {
     property bool hasDownloads: false
     property bool hasBrowser: false
     property bool downloadsExitRecovery: false
+    // Counts come from the bindings; below zero means unknown and shows nothing.
+    property int libraryCount: -1
+    property int playlistCount: -1
     property bool preferencesOpen: false
     property alias nowButton: nowAction
     property alias queueButton: queueAction
@@ -198,6 +201,27 @@ Rectangle {
                 onClicked: root.queueRequested()
             }
             NavigationButton {
+                id: libraryAction
+                iconName: "library"
+                editorial: root.editorial
+                compact: root.compact
+                objectName: "library"
+                KeyNavigation.tab: null
+                KeyNavigation.backtab: null
+                Layout.fillWidth: true
+                contract: root.contract
+                text: labels.library
+                count: root.libraryCount
+                countText: root.libraryCount >= 0 ? labels.trackCount(root.libraryCount) : ""
+                checkable: true
+                checked: root.activePage === "library"
+                visible: root.hasLibrary && root.editorial
+                enabled: visible && !root.exiting
+                Accessible.checkable: true
+                Accessible.checked: checked
+                onClicked: root.libraryRequested()
+            }
+            NavigationButton {
                 id: searchAction
                 iconName: "search"
                 editorial: root.editorial
@@ -217,6 +241,25 @@ Rectangle {
                 onClicked: root.searchRequested()
             }
             NavigationButton {
+                id: playlistsAction
+                iconName: "playlist"
+                editorial: root.editorial
+                compact: root.compact
+                objectName: "playlists"
+                KeyNavigation.tab: null
+                KeyNavigation.backtab: null
+                Layout.fillWidth: true
+                contract: root.contract
+                text: labels.playlists
+                count: root.playlistCount
+                countText: root.playlistCount >= 0 ? labels.playlistCount(root.playlistCount) : ""
+                checkable: true
+                checked: root.activePage === "playlists"
+                visible: root.hasPlaylists
+                enabled: visible && !root.exiting
+                onClicked: root.playlistsRequested()
+            }
+            NavigationButton {
                 id: roomAction
                 iconName: "people"
                 editorial: root.editorial
@@ -234,42 +277,6 @@ Rectangle {
                 Accessible.checkable: true
                 Accessible.checked: checked
                 onClicked: root.roomRequested()
-            }
-            NavigationButton {
-                id: libraryAction
-                iconName: "library"
-                editorial: root.editorial
-                compact: root.compact
-                objectName: "library"
-                KeyNavigation.tab: null
-                KeyNavigation.backtab: null
-                Layout.fillWidth: true
-                contract: root.contract
-                text: labels.library
-                checkable: true
-                checked: root.activePage === "library"
-                visible: root.hasLibrary && root.editorial
-                enabled: visible && !root.exiting
-                Accessible.checkable: true
-                Accessible.checked: checked
-                onClicked: root.libraryRequested()
-            }
-            NavigationButton {
-                id: playlistsAction
-                iconName: "playlist"
-                editorial: root.editorial
-                compact: root.compact
-                objectName: "playlists"
-                KeyNavigation.tab: null
-                KeyNavigation.backtab: null
-                Layout.fillWidth: true
-                contract: root.contract
-                text: labels.playlists
-                checkable: true
-                checked: root.activePage === "playlists"
-                visible: root.hasPlaylists
-                enabled: visible && !root.exiting
-                onClicked: root.playlistsRequested()
             }
             NavigationButton {
                 id: downloadsAction
@@ -299,6 +306,7 @@ Rectangle {
                 Layout.fillWidth: true
                 contract: root.contract
                 text: browserLabels.navigate
+                trailingIconName: "external"
                 visible: root.hasBrowser
                 enabled: visible && !root.exiting
                 onClicked: root.browserRequested()

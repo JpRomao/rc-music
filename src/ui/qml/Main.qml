@@ -477,6 +477,8 @@ ApplicationWindow {
         hasRoom: window.room !== null
         hasDownloads: window.downloads !== null
         hasBrowser: window.embeddedBrowser !== null
+        libraryCount: window.library !== null && window.library.ready ? window.library.count : -1
+        playlistCount: window.playlists !== null && window.playlists.ready ? window.playlists.playlists.length : -1
         downloadsExitRecovery: window.downloadFinalSaveDecisionRequired
         preferencesOpen: preferencesPanel.visible
         onNowRequested: {

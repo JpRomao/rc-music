@@ -14,6 +14,12 @@ QtObject {
     readonly property string paused: qsTr("REPRODUÇÃO PAUSADA")
     readonly property string ready: qsTr("PRONTO PARA OUVIR")
     readonly property string playlists: qsTr("Playlists")
+    function trackCount(count) {
+        return qsTr("%n faixa", "Contagem da Biblioteca na lateral", count);
+    }
+    function playlistCount(count) {
+        return qsTr("%n playlist", "Contagem de Playlists na lateral", count);
+    }
     readonly property string library: qsTr("Biblioteca")
     readonly property string libraryEyebrow: qsTr("BIBLIOTECA / TODAS AS FAIXAS")
     readonly property string libraryDescription: qsTr("A fila muda. As faixas que você guarda continuam aqui.")
@@ -24,7 +30,6 @@ QtObject {
     readonly property string listenTogetherEyebrow: qsTr("OUVIR JUNTO / SALA DE ESCUTA")
     readonly property string listenTogetherDescription: qsTr("Abra uma sala e ouça a mesma música, ao mesmo tempo, com quem você convidar.")
     readonly property string space: qsTr("SEU ESPAÇO MUSICAL")
-    readonly property string collectionHint: qsTr("Ouça, organize e continue de onde parou.")
     readonly property string heading: qsTr("Bom ter sua música por perto.")
     readonly property string themeLight: qsTr("Ativar tema claro")
     readonly property string themeDark: qsTr("Ativar tema escuro")
