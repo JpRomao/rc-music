@@ -364,4 +364,37 @@ TestCase {
         compare(b.checked, true);
         compare(toggled.count, 1);
     }
+    function test_buttonDescriptionIsAccessible() {
+        const button = host(AuroraButton.Tonal, {
+            text: "Abrir letras",
+            description: "Sem letra para esta faixa"
+        });
+        compare(button.Accessible.description, "Sem letra para esta faixa");
+        compare(button.Accessible.name, "Abrir letras");
+    }
+    function test_iconButtonDescriptionGoesToTooltip() {
+        const b = hostIcon({
+            iconName: "shuffle",
+            text: "Aleatório",
+            description: "Só quem criou a sala muda"
+        });
+        compare(b.Accessible.description, "Só quem criou a sala muda");
+        verify(b.ToolTip.text.indexOf("Aleatório") === 0, "dica: " + b.ToolTip.text);
+        verify(b.ToolTip.text.indexOf("Só quem criou a sala muda") > 0, "dica: " + b.ToolTip.text);
+        const plain = hostIcon({
+            iconName: "close",
+            text: "Fechar fila"
+        });
+        compare(plain.ToolTip.text, "Fechar fila");
+    }
+    function test_tooltipShowsWithKeyboardFocus() {
+        const b = hostIcon({
+            iconName: "close",
+            text: "Fechar fila"
+        });
+        verify(!b.ToolTip.visible);
+        b.forceActiveFocus(Qt.TabFocusReason);
+        tryVerify(() => b.ToolTip.toolTip.visible, 2000);
+        compare(b.ToolTip.toolTip.text, "Fechar fila");
+    }
 }

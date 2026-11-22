@@ -311,4 +311,13 @@ TestCase {
         const fadeOut = s.popup.exit.animations;
         compare(fadeOut[0].duration, data.reduced ? 0 : contract.panelTransitionMs);
     }
+    function test_selectDescriptionIsAccessible() {
+        const s = hostSelect({
+            label: "Saída de áudio",
+            description: "Vale para a próxima faixa",
+            model: ["Padrão do sistema", "Fones"]
+        });
+        compare(s.Accessible.description, "Vale para a próxima faixa");
+        compare(s.Accessible.name, "Saída de áudio");
+    }
 }

@@ -19,6 +19,8 @@ Button {
     property int kind: AuroraButton.Primary
     property string iconName
     property bool compact: false
+    // Motivo do desabilitado ou atalho, lido pelo leitor de tela.
+    property string description
 
     readonly property bool filled: kind === AuroraButton.Primary || kind === AuroraButton.DangerFilled
     readonly property bool outlined: contract.highContrast && !filled && kind !== AuroraButton.Quiet
@@ -63,6 +65,7 @@ Button {
     Accessible.role: Accessible.Button
     Accessible.id: controlId
     Accessible.name: text
+    Accessible.description: description
     Accessible.focusable: enabled
     Accessible.focused: activeFocus
     Accessible.onPressAction: control.clicked()

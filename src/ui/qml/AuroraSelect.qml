@@ -10,6 +10,8 @@ ComboBox {
     required property ShellUiContract contract
     required property string controlId
     required property string label
+    // Explicação extra ou motivo do desabilitado, lida pelo leitor de tela.
+    property string description
     // Marca de foco com o foco ativo, como no campo, ou com o menu aberto.
     readonly property bool marked: activeFocus || popup.visible
     // A opção destacada veio do teclado: ela ganha o anel interno em vez do hoverColor.
@@ -29,6 +31,7 @@ ComboBox {
     topPadding: 0
     bottomPadding: 0
     Accessible.name: label
+    Accessible.description: description
     Accessible.id: controlId
 
     Keys.onPressed: keyboardHighlight = true

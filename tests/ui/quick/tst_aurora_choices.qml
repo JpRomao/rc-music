@@ -271,6 +271,13 @@ TestCase {
         sameColor(child(s, "switch-thumb").color, contract.accentTextColor, "polegar ligado");
         verify(s.height >= 40);
     }
+    function test_switchDescriptionIsAccessible() {
+        const s = hostSwitch({
+            label: "Iniciar com o sistema",
+            description: "Indisponível nesta instalação"
+        });
+        compare(s.Accessible.description, "Indisponível nesta instalação");
+    }
     function test_switchMotionFollowsContract() {
         driver.setSystemAppearance(false, true);
         const s = hostSwitch({

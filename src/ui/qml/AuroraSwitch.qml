@@ -9,6 +9,8 @@ Switch {
     required property ShellUiContract contract
     required property string controlId
     required property string label
+    // Motivo do desabilitado, lido pelo leitor de tela.
+    property string description
 
     // Cor do contorno e do polegar desligados.
     readonly property color offColor: {
@@ -21,6 +23,7 @@ Switch {
     Accessible.role: Accessible.CheckBox
     Accessible.id: controlId
     Accessible.name: label
+    Accessible.description: description
     Accessible.checkable: true
     Accessible.checked: checked
     Accessible.focusable: enabled

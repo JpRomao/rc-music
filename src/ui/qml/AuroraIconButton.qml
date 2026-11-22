@@ -10,6 +10,8 @@ AbstractButton {
     required property string iconName
     property bool tonal: false
     property int iconSize: 20
+    // Motivo do desabilitado ou atalho: vai para o leitor de tela e para a dica.
+    property string description
 
     readonly property bool inactive: contract.highContrast && interaction.inactive
     readonly property bool outlined: contract.highContrast && tonal && !checked
@@ -41,6 +43,7 @@ AbstractButton {
     Accessible.role: Accessible.Button
     Accessible.id: controlId
     Accessible.name: text
+    Accessible.description: description
     Accessible.checkable: checkable
     Accessible.checked: checked
     Accessible.focusable: enabled
@@ -53,8 +56,9 @@ AbstractButton {
     implicitHeight: contract.controlTargetMinimum
     width: implicitWidth
     height: implicitHeight
-    ToolTip.text: text
-    ToolTip.visible: hovered && text.length > 0
+    // A dica nomeia o botão só de ícone também para quem usa o teclado.
+    ToolTip.text: controlsText.toolTip(text, description)
+    ToolTip.visible: (hovered || visualFocus) && text.length > 0
     ToolTip.delay: 600
 
     Keys.onReturnPressed: event => {
@@ -71,6 +75,10 @@ AbstractButton {
             toggled();
         }
         clicked();
+    }
+
+    ControlsText {
+        id: controlsText
     }
 
     background: Rectangle {
