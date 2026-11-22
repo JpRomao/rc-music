@@ -204,7 +204,12 @@ function(rc_music_add_ui target support qml_output)
             AuroraMenuItem.qml
             AuroraMenuSeparator.qml
             AuroraDialog.qml
-            AuroraConfirmDialog.qml)
+            AuroraConfirmDialog.qml
+            AuroraDrawerHeader.qml
+            AuroraNotice.qml
+            AuroraFloatingCard.qml
+            AuroraFeedback.qml
+            AuroraEmptyState.qml)
         set(qml_source "${RC_MUSIC_SOURCE_ROOT}/src/ui/qml/${qml_file}")
         set_source_files_properties("${qml_source}" PROPERTIES QT_RESOURCE_ALIAS "${qml_file}")
         list(APPEND qml_files "${qml_source}")
