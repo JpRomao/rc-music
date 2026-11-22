@@ -17,6 +17,135 @@ TestCase {
             presenter: testCase.presenter
         }
     }
+    ListModel {
+        id: fakeRecords
+    }
+    QtObject {
+        id: fakeLibrary
+        property bool ready: true
+        property bool busy: false
+        property int count: 128
+        property int visibleCount: 0
+        property bool hasPendingChange: false
+        property bool canRetrySave: false
+        property string statusText: ""
+        property string filterText: ""
+        property var model: fakeRecords
+        property bool canLocate: false
+        property string artworkBase: ""
+        function retryLoad() {
+            return true;
+        }
+        function cancelLocate() {
+        }
+        function retrySave() {
+            return true;
+        }
+    }
+    QtObject {
+        id: fakePlaylists
+        property bool ready: true
+        property bool busy: false
+        property bool interactionAllowed: true
+        property bool hasPendingChange: false
+        property bool canRetrySave: false
+        property bool canAddFiles: false
+        property bool canReplaceFile: false
+        property string statusText: ""
+        property string selectedPlaylistId: ""
+        property var playlists: [
+            {
+                id: "a",
+                name: "Uma",
+                count: 0
+            },
+            {
+                id: "b",
+                name: "Outra",
+                count: 0
+            }
+        ]
+        property var entries: []
+        function retryLoad() {
+            return true;
+        }
+    }
+    QtObject {
+        id: fakeSearch
+        property bool available: true
+        property bool busy: false
+        property bool requesting: false
+        property bool searched: false
+        property string query: ""
+        property string statusText: ""
+        property var results: []
+        property bool linksMode: false
+        property var linkIssues: []
+        property bool canDownloadAll: false
+    }
+    QtObject {
+        id: fakeRoom
+        property bool available: false
+        property int role: 0
+    }
+    QtObject {
+        id: fakeDownloads
+        property bool canCloseAfterFinalSaveFailure: false
+        property bool canRetryAdmission: false
+        property bool canRetryFinalSave: false
+        property bool canRetryStartup: false
+        property bool canRenewNamespace: false
+        property string warningText: ""
+        property string statusText: ""
+        property string importConsentJobId: ""
+        property string importConsentToken: ""
+        property string discardConsentJobId: ""
+        property string discardConsentToken: ""
+        property var jobsModel: null
+    }
+    QtObject {
+        id: fakeProfile
+        property bool needsSetup: false
+        property bool available: true
+        property string nickname: "Bia"
+        property int avatarIndex: 7
+        readonly property int avatarCount: 20
+        readonly property url avatarSource: "qrc:/rc_music/avatars/avatar-08.svg"
+        property var customAvatars: []
+        function acceptsNickname(text) {
+            return text.length > 0;
+        }
+        function setNickname(text) {
+            return false;
+        }
+        function chooseBundledAvatar(index) {
+            return false;
+        }
+        function chooseCustomAvatar(file) {
+            return false;
+        }
+    }
+    QtObject {
+        id: fakeBrowser
+        property string errorText: ""
+        signal errorChanged
+        function open() {
+        }
+    }
+
+    // The captures show the whole sidebar: counts, the profile chip and the external window icon.
+    function mountShellBackends() {
+        fakeProfile.needsSetup = false;
+        shell.library = fakeLibrary;
+        shell.playlists = fakePlaylists;
+        shell.onlineSearch = fakeSearch;
+        shell.room = fakeRoom;
+        shell.downloads = fakeDownloads;
+        shell.embeddedBrowser = fakeBrowser;
+        shell.profile = fakeProfile;
+        wait(0);
+        verify(waitForPolish(shell));
+    }
     function init() {
         driver.resetLocalScenario();
         driver.setHighContrast(false, false);
@@ -155,6 +284,7 @@ TestCase {
     }
     function test_headerHeroAndFooterUseSeparateResponsiveRegions(data) {
         loadQueue();
+        mountShellBackends();
         shell.width = data.width;
         shell.height = data.height;
         presenter.setThemePreference(data.dark ? PlayerPresenter.DarkTheme : PlayerPresenter.LightTheme);
@@ -197,6 +327,12 @@ TestCase {
             compare(findChild(shell, "side-navigation").width, 68);
             verify(home.contentHeight > home.height, "The small workspace must scroll instead of squeezing controls");
         }
+        // The sidebar pieces the captures must show; the compact sidebar keeps the icons only.
+        const compactSidebar = data.width <= contract.compactWidth;
+        compare(findChild(findChild(shell, "library"), "navigation-count").visible, !compactSidebar);
+        compare(findChild(findChild(shell, "playlists"), "navigation-count").visible, !compactSidebar);
+        compare(findChild(findChild(shell, "embedded-browser"), "navigation-trailing-icon").visible, !compactSidebar);
+        assertControlInside(findChild(shell, "profile-chip"));
         shell.update();
         verify(waitForRendering(shell.contentItem));
         const image = grabImage(shell.contentItem);

@@ -347,6 +347,14 @@ TestCase {
         shell.height = 900;
         tryCompare(shell.contentItem, "width", 1440);
         tryCompare(shell.contentItem, "height", 900);
+        // The captures show the whole sidebar: counts, the profile chip and the external window icon.
+        fakeProfile.needsSetup = false;
+        shell.profile = fakeProfile;
+        mountNavigationBackends();
+        verify(findChild(findChild(shell, "library"), "navigation-count").visible);
+        verify(findChild(findChild(shell, "playlists"), "navigation-count").visible);
+        verify(findChild(findChild(shell, "embedded-browser"), "navigation-trailing-icon").visible);
+        verify(findChild(shell, "profile-chip").visible);
         compare(findChild(shell, "navigation-brand").font.family, "Georgia");
 
         compare(shell.font.family, "Segoe UI");
