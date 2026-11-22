@@ -380,6 +380,9 @@ TestCase {
         verify(waitForPolish(shell));
         verify(title.truncated);
         verify(findChild(shell, "player-track-artist").truncated);
+        // Eliding is visual only: a screen reader still hears the whole title and artist.
+        compare(title.Accessible.name, longTitle);
+        compare(findChild(shell, "player-track-artist").Accessible.name, longArtist);
         const identity = rect(findChild(shell, "player-identity"));
         const shuffle = rect(findChild(shell, "player-shuffle"));
         verify(!overlaps(identity, shuffle), "identity ends at " + (identity.x + identity.width) + ", shuffle starts at " + shuffle.x);
@@ -718,6 +721,15 @@ TestCase {
         verify(footer.height <= 120, "footer is " + footer.height + " px in a room");
         compare(findChild(shell, "player-shuffle").disabledReason, queueText.hostControls);
         compare(findChild(shell, "player-shuffle").disabledReason, "O host controla");
+        compare(findChild(shell, "player-repeat").disabledReason, queueText.hostControls);
+        // Skipping waits for the host's permission, which this guest does not have.
+        verify(!fakeRoom.canSkip);
+        for (const name of ["previous", "next"]) {
+            const button = findChild(shell, name);
+            verify(!button.enabled, name);
+            compare(button.disabledReason, queueText.hostNotAllowed, name);
+            compare(button.disabledReason, "O host não liberou", name);
+        }
         resize(1440, 900);
         compare(footer.height, wideHeight, "the badge does not grow a wide player");
     }
