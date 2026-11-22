@@ -180,12 +180,13 @@ TestCase {
         }
         shell.update();
         verify(waitForRendering(shell.contentItem));
-        const artifact = driver.artifactPath("aurora-redesign-" + data.tag + ".png");
-        verify(artifact.length > 0);
         const image = grabImage(shell.contentItem);
         compare(image.width, data.width);
         compare(image.height, data.height);
-        image.save(artifact);
+        // The capture is evidence for visual review: saved only when RC_MUSIC_UI_ARTIFACT_DIR is set.
+        const artifact = driver.artifactPath("aurora-redesign-" + data.tag + ".png");
+        if (artifact.length > 0)
+            image.save(artifact);
     }
     function test_homeKeepsFocusedActionVisibleWhenResized() {
         loadQueue();
