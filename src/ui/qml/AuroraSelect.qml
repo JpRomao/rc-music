@@ -10,8 +10,8 @@ ComboBox {
     required property ShellUiContract contract
     required property string controlId
     required property string label
-    // Marca de foco só com foco de teclado ou menu aberto: após escolher, o foco volta ao campo sem marca.
-    readonly property bool marked: visualFocus || popup.visible
+    // Marca de foco com o foco ativo, como no campo, ou com o menu aberto.
+    readonly property bool marked: activeFocus || popup.visible
 
     objectName: controlId
     activeFocusOnTab: true
@@ -133,6 +133,12 @@ ComboBox {
                 radius: parent.radius
             }
         }
+    }
+
+    AuroraFocusRing {
+        target: control
+        contract: control.contract
+        targetRadius: control.contract.radiusControl
     }
 
     AuroraInteraction {

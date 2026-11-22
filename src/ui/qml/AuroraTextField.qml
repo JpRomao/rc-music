@@ -3,7 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import MusicPlayer.M0
 
-// Campo preenchido, sem contorno: a linha na base marca o estado (normal, foco, erro).
+// Campo preenchido, sem contorno: a linha na base marca o estado (normal, foco, erro)
+// e o anel de foco aparece em volta do campo com foco ativo.
 ColumnLayout {
     id: root
 
@@ -70,6 +71,12 @@ ColumnLayout {
             color: root.contract.textSecondaryColor
             x: 12
             anchors.verticalCenter: parent.verticalCenter
+        }
+
+        AuroraFocusRing {
+            target: field
+            contract: root.contract
+            targetRadius: root.contract.radiusControl
         }
     }
 

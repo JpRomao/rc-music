@@ -314,6 +314,25 @@ TestCase {
         });
         sameColor(child(st, "stepper-center").color, contract.surfaceColor, "centro em repouso");
     }
+    function test_stepperShowsFocusRingAroundCenter() {
+        const st = hostStepper({
+            label: "Valor",
+            from: 1,
+            to: 60,
+            value: 5
+        });
+        const ring = child(st, "focus-ring");
+        verify(!ring.visible);
+        st.forceActiveFocus(Qt.TabFocusReason);
+        verify(ring.visible);
+        const center = child(st, "stepper-center");
+        const box = ring.mapToItem(center, 0, 0);
+        compare(box.x, -5);
+        compare(box.y, -5);
+        compare(ring.width, center.width + 10);
+        compare(ring.height, center.height + 10);
+        sameColor(ring.border.color, contract.focusColor, "anel");
+    }
     function test_checkBoxStates() {
         const c = hostCheck({
             text: "Avisar ao fechar para a bandeja nesta sessão"

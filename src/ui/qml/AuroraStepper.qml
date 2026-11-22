@@ -108,6 +108,15 @@ SpinBox {
         }
     }
 
+    // O anel marca o centro editável, entre os botões de menos e mais.
+    AuroraFocusRing {
+        target: control
+        contract: control.contract
+        shown: control.fieldFocused
+        areaX: control.contract.controlTargetMinimum
+        areaWidth: control.width - 2 * control.contract.controlTargetMinimum
+    }
+
     AuroraInteraction {
         id: interaction
         contract: control.contract

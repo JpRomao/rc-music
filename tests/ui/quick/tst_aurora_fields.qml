@@ -85,6 +85,35 @@ TestCase {
         }
     }
 
+    Component {
+        id: fieldAfterButtonHostComponent
+        Window {
+            property alias before: beforeButton
+            property alias field: hosted
+            width: 480
+            height: 320
+            visible: true
+            color: testCase.contract.canvasColor
+            AuroraButton {
+                id: beforeButton
+                contract: testCase.contract
+                controlId: "before"
+                text: "Antes"
+                x: 20
+                y: 20
+            }
+            AuroraTextField {
+                id: hosted
+                contract: testCase.contract
+                controlId: "nickname"
+                label: "Apelido"
+                x: 20
+                y: 100
+                width: 300
+            }
+        }
+    }
+
     function hostField(props) {
         const window = createTemporaryObject(fieldHostComponent, testCase, {
             props: props || {}
@@ -177,5 +206,51 @@ TestCase {
         verify(mark, "missing current mark");
         verify(mark.visible);
         sameColor(mark.color, contract.accentColor, "marca da opção atual");
+    }
+
+    function test_fieldShowsFocusRing() {
+        const f = hostField({
+            label: "Apelido"
+        });
+        const ring = child(f, "focus-ring");
+        verify(!ring.visible);
+        f.input.forceActiveFocus(Qt.MouseFocusReason);
+        verify(ring.visible);
+        compare(ring.border.width, contract.focusRingWidth);
+        sameColor(ring.border.color, contract.focusColor, "anel");
+        const bg = f.input.background;
+        const box = ring.mapToItem(bg, 0, 0);
+        compare(box.x, -5);
+        compare(box.y, -5);
+        compare(ring.width, bg.width + 10);
+        compare(ring.height, bg.height + 10);
+        compare(ring.radius, contract.radiusControl + 5);
+        // A linha continua como marca de estado.
+        compare(child(f, "field-line").height, 2);
+    }
+    function test_tabLandsInTextField() {
+        const w = createTemporaryObject(fieldAfterButtonHostComponent, testCase);
+        verify(w);
+        verify(waitForRendering(w.contentItem));
+        w.before.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        verify(w.field.input.activeFocus);
+        verify(child(w.field, "focus-ring").visible);
+    }
+    function test_selectShowsFocusRingWithAnyFocus() {
+        const s = hostSelect({
+            label: "Saída de áudio",
+            model: ["Padrão do sistema", "Fones"]
+        });
+        const ring = child(s, "focus-ring");
+        verify(!ring.visible);
+        // O mesmo sinal do campo: foco ativo, venha do teclado ou do mouse.
+        s.forceActiveFocus(Qt.MouseFocusReason);
+        verify(ring.visible);
+        compare(child(s, "field-line").height, 2);
+        sameColor(child(s, "field-line").color, contract.focusColor, "linha com foco");
+        compare(ring.x, -5);
+        compare(ring.width, s.width + 10);
+        compare(ring.radius, contract.radiusControl + 5);
     }
 }
