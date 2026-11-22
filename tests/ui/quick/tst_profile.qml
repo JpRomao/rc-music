@@ -299,6 +299,24 @@ TestCase {
         tryVerify(() => panel.visible);
         compare(panel.section, 0);
     }
+    // Settings opened from its own button, then moved to Profile by the chip: Esc returns to the chip.
+    function test_escapeAfterTheChipChangedTheSectionReturnsToTheChip() {
+        readyProfile();
+        createShell();
+        const panel = findChild(shell, "preferences-panel");
+        const chip = findChild(shell, "profile-chip");
+        findChild(shell, "preferences").Accessible.pressAction();
+        tryVerify(() => panel.visible);
+        compare(panel.section, 0);
+        mouseClick(chip);
+        compare(panel.section, panel.profileSection);
+        tryVerify(() => findChild(shell, "preferences-profile-nickname").visible);
+        tryVerify(() => shell.activeFocusItem && !chip.activeFocus);
+        keyClick(Qt.Key_Escape);
+        tryVerify(() => !panel.visible);
+        tryVerify(() => chip.activeFocus);
+        verify(!findChild(shell, "preferences").activeFocus);
+    }
     function test_profileChipIsAvatarOnlyWhenCompact() {
         readyProfile();
         createShell();
