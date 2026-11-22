@@ -670,6 +670,7 @@ TestCase {
         verify(focused && focused.visible && focused.enabled, "the focus rests on a visible, enabled item");
     }
 
+    // Opens a queue with one file per duration (null leaves the duration unknown).
     function loadQueueWithDurations(durations) {
         driver.enqueueLocalSelection(durations.map((duration, index) => "C:/Música/Faixa " + (index + 1) + ".mp3"));
         findChild(shell, "open-audio").Accessible.pressAction();

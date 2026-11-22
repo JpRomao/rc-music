@@ -17,6 +17,11 @@ TestCase {
 
     property var shell
 
+    function cleanup() {
+        if (testLocalPlayerPresenter.queueLoaded) // qmllint disable unqualified
+            testLocalPlayerPresenter.clearQueue(); // qmllint disable unqualified
+    }
+
     function revealRow(listView, index) {
         listView.currentIndex = index;
         listView.positionViewAtIndex(index, ListView.Contain);
@@ -234,11 +239,12 @@ TestCase {
         compare(queueList.count, countBeforeClear);
         compare(testLocalPlayerPresenter.currentOccurrenceId, currentBeforeClear); // qmllint disable unqualified
         compare(testScenarioDriver.localUnloadCount(), unloadsBeforeClear); // qmllint disable unqualified
-        compare(confirmation.contentItem.Accessible.role, Accessible.Dialog);
-        compare(confirmation.contentItem.Accessible.name, "Limpar fila?");
-        tryCompare(findChild(shell, "queue-clear-confirmation-message"), "text", "Os " + countBeforeClear + " itens da fila serão removidos. Esta ação não pode ser desfeita.");
-        const cancelClear = findChild(shell, "queue-clear-cancel");
-        const confirmClear = findChild(shell, "queue-clear-confirm");
+        compare(findChild(confirmation, "dialog-title").text, "Limpar a fila?");
+        tryCompare(findChild(confirmation, "confirm-consequence"), "text", "As " + countBeforeClear + " faixas saem da fila. Os arquivos, a biblioteca e as playlists não mudam. Isso não pode ser desfeito.");
+        const cancelClear = findChild(shell, "queue-clear-confirmation-cancel");
+        const confirmClear = findChild(shell, "queue-clear-confirmation-confirm");
+        compare(confirmClear.text, "Limpar fila");
+        compare(confirmClear.kind, AuroraButton.DangerFilled);
         const preferences = findChild(shell, "preferences-panel");
         tryVerify(function () {
             return cancelClear.activeFocus;
@@ -294,5 +300,86 @@ TestCase {
         tryVerify(function () {
             return !queuePanel.visible && shell.activeFocusItem !== null && shell.activeFocusItem.visible && shell.activeFocusItem.enabled;
         });
+    }
+
+    // Opens the drawer on a local queue of the given files and returns its controls.
+    function openDrawerWith(paths) {
+        shell = createTemporaryObject(shellComponent, null);
+        verify(shell);
+        shell.requestActivate();
+        tryVerify(function () {
+            return shell.active;
+        });
+        enqueue(paths);
+        findChild(shell, "open-audio").forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        tryVerify(function () {
+            return testLocalPlayerPresenter.queueLoaded; // qmllint disable unqualified
+        });
+        testScenarioDriver.publishLocalReady(); // qmllint disable unqualified
+        testScenarioDriver.publishLocalPlaying(); // qmllint disable unqualified
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Playing); // qmllint disable unqualified
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        const panel = findChild(shell, "queue-panel");
+        tryVerify(function () {
+            return panel.visible && findChild(shell, "queue-list").count === paths.length;
+        });
+        return findChild(shell, "queue-clear");
+    }
+
+    function test_realQueueClearAsksWithTheDangerDialog() {
+        const queueClear = openDrawerWith(["C:/Música/Primeira.mp3", "C:/Música/Segunda.mp3"]);
+        queueClear.forceActiveFocus(Qt.TabFocusReason);
+        queueClear.Accessible.pressAction();
+        const confirmation = findChild(shell, "queue-clear-confirmation");
+        tryVerify(function () {
+            return confirmation.opened;
+        });
+        verify(confirmation instanceof AuroraConfirmDialog);
+        compare(findChild(confirmation, "dialog-title").text, "Limpar a fila?");
+        compare(findChild(confirmation, "confirm-consequence").text, "As 2 faixas saem da fila. Os arquivos, a biblioteca e as playlists não mudam. Isso não pode ser desfeito.");
+        const cancel = findChild(shell, "queue-clear-confirmation-cancel");
+        const confirm = findChild(shell, "queue-clear-confirmation-confirm");
+        tryVerify(function () {
+            return cancel.activeFocus;
+        });
+        compare(confirm.text, "Limpar fila");
+        compare(confirm.kind, AuroraButton.DangerFilled);
+
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !confirmation.visible && queueClear.activeFocus;
+        });
+        queueClear.Accessible.pressAction();
+        tryVerify(function () {
+            return confirmation.opened && cancel.activeFocus;
+        });
+        cancel.Accessible.pressAction();
+        tryVerify(function () {
+            return !confirmation.visible && queueClear.activeFocus;
+        });
+        compare(findChild(shell, "queue-list").count, 2);
+
+        queueClear.Accessible.pressAction();
+        tryVerify(function () {
+            return confirmation.opened;
+        });
+        confirm.Accessible.pressAction();
+        tryVerify(function () {
+            return !testLocalPlayerPresenter.queueLoaded; // qmllint disable unqualified
+        });
+        tryVerify(function () {
+            return !confirmation.visible && findChild(shell, "queue-empty-primary").activeFocus;
+        });
+    }
+
+    function test_realQueueClearOfOneTrackUsesTheSingularMessage() {
+        const queueClear = openDrawerWith(["C:/Música/Unica.mp3"]);
+        queueClear.Accessible.pressAction();
+        const confirmation = findChild(shell, "queue-clear-confirmation");
+        tryVerify(function () {
+            return confirmation.opened;
+        });
+        compare(findChild(confirmation, "confirm-consequence").text, "A faixa sai da fila. Os arquivos, a biblioteca e as playlists não mudam. Isso não pode ser desfeito.");
     }
 }

@@ -160,8 +160,8 @@ TestCase {
         keyClick(Qt.Key_Return);
 
         const confirmation = findChild(shell, "queue-clear-confirmation");
-        const cancel = findChild(shell, "queue-clear-cancel");
-        const confirm = findChild(shell, "queue-clear-confirm");
+        const cancel = findChild(shell, "queue-clear-confirmation-cancel");
+        const confirm = findChild(shell, "queue-clear-confirmation-confirm");
         tryVerify(function () {
             return confirmation.opened && cancel.activeFocus;
         });

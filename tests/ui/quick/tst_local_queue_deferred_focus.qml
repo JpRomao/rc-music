@@ -116,7 +116,7 @@ TestCase {
         queue.panel.moveSelected(1);
         queue.panel.requestClear();
         const confirmation = findChild(shell, "queue-clear-confirmation");
-        const cancel = findChild(shell, "queue-clear-cancel");
+        const cancel = findChild(shell, "queue-clear-confirmation-cancel");
         verify(confirmation.visible);
         cancel.forceActiveFocus(Qt.TabFocusReason);
         guardedModal = confirmation;

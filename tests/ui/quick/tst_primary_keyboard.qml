@@ -526,7 +526,7 @@ TestCase {
         compare(presenter.repeatQueueEnabled, repeat);
         keyClick(Qt.Key_F1);
         compare(presenter.shuffleQueueEnabled, shuffle);
-        findChild(shell, "queue-clear-cancel").forceActiveFocus(Qt.TabFocusReason);
+        findChild(shell, "queue-clear-confirmation-cancel").forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Space);
         tryVerify(function () {
             return !confirmation.visible;

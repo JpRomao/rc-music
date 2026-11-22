@@ -39,10 +39,14 @@ FocusScope {
     property int queueFocusRevision: 0
     property string accessibilityAnnouncement: ""
     readonly property string observedCurrentOccurrenceId: presenter.currentOccurrenceId
-    readonly property bool clearConfirmationOpen: clearConfirmation.opened
+    // The clear confirmation of the current mode; each lives in its own Loader because the id repeats.
+    readonly property QtObject activeClearConfirmation: overlayMode ? auroraConfirmation.item : fixtureConfirmation.item
+    readonly property bool clearConfirmationOpen: activeClearConfirmation !== null && activeClearConfirmation.opened
+    // The count the Aurora confirmation names; kept while it fades out after the queue emptied.
+    property int clearCount: 0
     readonly property bool contextMenuOpen: rowMenu.visible
     readonly property bool queueModesAvailable: !roomGuest && !presenter.usesFrozenFixture && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
-    readonly property bool queueFocusRestoreAllowed: visible && enabled && locationFocusRestoreAllowed && !presenter.exiting && !presenter.selectingAudioFiles && !addingFilesPending && presenter.locatingOccurrenceId.length === 0 && !clearConfirmation.visible
+    readonly property bool queueFocusRestoreAllowed: visible && enabled && locationFocusRestoreAllowed && !presenter.exiting && !presenter.selectingAudioFiles && !addingFilesPending && presenter.locatingOccurrenceId.length === 0 && !(activeClearConfirmation !== null && activeClearConfirmation.visible)
     // The toolbar actions, shared by the fixture buttons and the Aurora drawer buttons.
     readonly property bool addAvailable: !roomGuest && !presenter.exiting && !presenter.usesFrozenFixture && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     readonly property bool moveUpAvailable: roomGuest ? roomEdit && roomQueueList.currentIndex > 0 : !presenter.exiting && !presenter.usesFrozenFixture && queueList.currentIndex > 0
@@ -259,8 +263,10 @@ FocusScope {
         rowMenu.popup(row, 0, row.height);
     }
     function requestClear() {
-        if (queueList.count > 0)
-            clearConfirmation.open();
+        if (queueList.count === 0 || activeClearConfirmation === null)
+            return;
+        clearCount = queueList.count;
+        activeClearConfirmation.open();
     }
     function toggleShuffle() {
         if (queueModesAvailable)
@@ -273,8 +279,18 @@ FocusScope {
     function confirmClear() {
         if (!root.presenter.clearQueue())
             return;
-        clearConfirmation.accepted = true;
-        clearConfirmation.close();
+        if (!overlayMode) {
+            fixtureConfirmation.item.accepted = true;
+            fixtureConfirmation.item.close();
+        }
+    }
+    // The drawer stays open on its empty state: the cleared button is disabled, so the focus goes to the empty action.
+    function restoreFocusAfterClear() {
+        if (emptyShown && visible)
+            Qt.callLater(function () {
+                if (root && root.emptyShown && root.visible)
+                    root.focusCurrent();
+            });
     }
     function dropInsertionIndexAt(panelX, panelY) {
         if (!root.visible)
@@ -1044,16 +1060,34 @@ FocusScope {
         }
     }
 
-    QueueClearConfirmation {
-        id: clearConfirmation
-        parent: root
-        width: Math.min(root.width - root.contract.spacingUnit * 8, 320)
-        x: (root.width - width) / 2
-        y: Math.max(root.contract.spacingUnit * 4, (root.height - implicitHeight) / 2)
-        contract: root.contract
-        queueCount: queueList.count
-        fallbackFocusItem: root.actionsRow ? root.actionsRow.clearControl : root
-        onConfirmed: root.confirmClear()
+    Loader {
+        id: fixtureConfirmation
+        active: !root.overlayMode
+        sourceComponent: QueueClearConfirmation {
+            parent: root
+            width: Math.min(root.width - root.contract.spacingUnit * 8, 320)
+            x: (root.width - width) / 2
+            y: Math.max(root.contract.spacingUnit * 4, (root.height - implicitHeight) / 2)
+            contract: root.contract
+            queueCount: queueList.count
+            fallbackFocusItem: root.actionsRow ? root.actionsRow.clearControl : root
+            onConfirmed: root.confirmClear()
+        }
+    }
+
+    Loader {
+        id: auroraConfirmation
+        active: root.overlayMode
+        sourceComponent: AuroraConfirmDialog {
+            contract: root.contract
+            controlId: "queue-clear-confirmation"
+            destructive: true
+            question: queueText.clearTitle
+            consequence: root.clearCount === 1 ? queueText.clearOneMessage : queueText.clearManyMessage.replace("{count}", root.clearCount)
+            confirmText: queueText.clear
+            onConfirmed: root.confirmClear()
+            onClosed: root.restoreFocusAfterClear()
+        }
     }
 
     Keys.onEscapePressed: event => {
