@@ -47,7 +47,6 @@ ApplicationWindow {
     signal openAudioRequested
     property bool queueOpen: false
     readonly property bool inlinePages: !presenter.usesFrozenFixture
-    readonly property Item themeButton: inlinePages ? workspaceHeader.themeButton : sideNavigation.themeButton
     readonly property string currentPage: preferencesPanel.visible ? "preferences" : (libraryPanel.visible ? "library" : (searchPanel.visible ? "search" : (roomPanel.visible ? "room" : (playlistsPanel.visible ? "playlists" : (downloadsPanel.visible ? "downloads" : (queuePageActive ? "queue" : "home"))))))
     // Aurora pages hand the focus on to the player after them.
     readonly property Item pageExitFocusItem: transport.firstControl
