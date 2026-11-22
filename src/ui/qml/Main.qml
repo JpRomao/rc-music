@@ -590,7 +590,8 @@ ApplicationWindow {
         id: downloadsPanel
         parent: window.contentItem
         embedded: window.inlinePages
-        previousFocusItem: downloadsButton
+        // Aurora: Shift+Tab leaves the page for the header; the fixture's dialog keeps returning to its opener.
+        previousFocusItem: window.inlinePages ? workspaceHeader.themeButton : downloadsButton
         nextFocusItem: window.pageExitFocusItem
         width: embedded ? contentArea.width : Math.min(window.width - window.uiContract.spacingUnit * 12, 760)
         height: embedded ? contentArea.height : Math.min(window.height - window.uiContract.spacingUnit * 12, 640)

@@ -622,8 +622,6 @@ TestCase {
             if (mismatch < 0 && shell.activeFocusItem !== cycle[cycle.length - 1 - step])
                 mismatch = step;
         }
-        if (data.tag === "activity")
-            expectFail("activity", "Shift+Tab da Atividade ainda volta direto à lateral, como tst_downloads fixa; pendente de decisão");
         verify(mismatch < 0, "back step " + mismatch + "; trail: " + backward.join(", "));
     }
 

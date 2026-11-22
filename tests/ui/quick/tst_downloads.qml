@@ -806,7 +806,8 @@ TestCase {
         verify(leftPage, "Tab must reach the persistent player instead of looping in a page");
         close.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Backtab);
-        tryCompare(findChild(shell, "downloads"), "activeFocus", true);
+        // Shift+Tab leaves the page for the header, the step before it in the Aurora order.
+        tryCompare(findChild(shell, "theme-toggle"), "activeFocus", true);
         const list = findChild(shell, "downloads-list");
         // ListView is a focus scope; re-enter its navigation item rather than
         // restoring the last focused row action (the same target as the header).
