@@ -10178,6 +10178,9 @@ void PlayerPresenterTests::roomHostLeadsEachStartOnceOverQueuedConfirmations() {
         QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
         QVERIFY(backend.snapshot().status != PlaybackStatus::Playing);
         QTRY_COMPARE(backend.snapshot().status, PlaybackStatus::Playing);
+        // The backend's confirmation is queued: the clock moves only once the room's player has it, or the
+        // room would see the player still at the anchor position after the anchor and re-anchor for drift.
+        QTRY_VERIFY(!player.state().starting);
         QCOMPARE(backend.snapshot().position_ms, position);
         now = led.anchor_host_ms;
         play(3);
