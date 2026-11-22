@@ -1,0 +1,196 @@
+import QtQuick
+import QtQuick.Controls
+import QtTest
+import MusicPlayer.M0
+
+TestCase {
+    id: testCase
+    name: "AuroraDialogs"
+    when: windowShown
+    readonly property var contract: testProductUiContract // qmllint disable unqualified
+    readonly property var driver: testScenarioDriver // qmllint disable unqualified
+
+    function cleanup() {
+        driver.setHighContrast(false, false);
+        driver.setSystemAppearance(false, false);
+    }
+    function sameColor(actual, expected, context) {
+        verify(Qt.colorEqual(actual, expected), context + ": " + actual + " != " + expected);
+    }
+    // QtTest nao desce em um Popup: a busca parte do item visual do popup.
+    function child(item, name) {
+        const isPopup = item && item.contentItem && item.contentItem.parent && item.open !== undefined;
+        const root = isPopup ? item.contentItem.parent : item;
+        const found = findChild(root, name);
+        verify(found, "missing child " + name);
+        return found;
+    }
+
+    Component {
+        id: spyComponent
+        SignalSpy {}
+    }
+    Component {
+        id: hostComponent
+        Window {
+            id: host
+            property alias dialog: hosted
+            property alias opener: button
+            property string controlId: "dialog"
+            property int preferredWidth: 480
+            property bool tallContent: false
+            width: 960
+            height: 640
+            visible: true
+            color: testCase.contract.canvasColor
+            AuroraButton {
+                id: button
+                contract: testCase.contract
+                controlId: "open-dialog"
+                text: "Abrir"
+                x: 20
+                y: 20
+                onClicked: hosted.open()
+            }
+            AuroraDialog {
+                id: hosted
+                contract: testCase.contract
+                controlId: host.controlId
+                title: "Detalhes"
+                preferredWidth: host.preferredWidth
+                Rectangle {
+                    implicitWidth: 100
+                    implicitHeight: host.tallContent ? 2000 : 40
+                    color: testCase.contract.surfaceColor
+                }
+                actions: [
+                    AuroraButton {
+                        contract: testCase.contract
+                        controlId: "ok"
+                        text: "Ok"
+                        onClicked: hosted.close()
+                    }
+                ]
+            }
+        }
+    }
+    Component {
+        id: confirmHostComponent
+        Window {
+            id: host
+            property alias dialog: hosted
+            property string controlId: "confirm"
+            property string question: "Pergunta?"
+            property string consequence: "Consequencia."
+            property string confirmText: "Sim"
+            property bool destructive: false
+            width: 960
+            height: 640
+            visible: true
+            color: testCase.contract.canvasColor
+            AuroraConfirmDialog {
+                id: hosted
+                contract: testCase.contract
+                controlId: host.controlId
+                question: host.question
+                consequence: host.consequence
+                confirmText: host.confirmText
+                destructive: host.destructive
+            }
+        }
+    }
+
+    function openDialog(options) {
+        const h = createTemporaryObject(hostComponent, testCase, options || {});
+        verify(h);
+        verify(waitForRendering(h.contentItem));
+        h.dialog.open();
+        tryVerify(() => h.dialog.opened);
+        return h;
+    }
+    function openDialogFromButton() {
+        const h = createTemporaryObject(hostComponent, testCase);
+        verify(h);
+        verify(waitForRendering(h.contentItem));
+        h.opener.forceActiveFocus();
+        verify(h.opener.activeFocus);
+        h.dialog.open();
+        tryVerify(() => h.dialog.opened);
+        return h;
+    }
+    function openConfirm(options) {
+        const h = createTemporaryObject(confirmHostComponent, testCase, options || {});
+        verify(h);
+        verify(waitForRendering(h.contentItem));
+        h.dialog.open();
+        tryVerify(() => h.dialog.opened);
+        return h;
+    }
+
+    function test_scrimCoversWholeWindow() {
+        const h = openDialog();
+        const scrim = child(h.Overlay.overlay, "dialog-scrim");
+        compare(scrim.width, h.width);
+        compare(scrim.height, h.height);
+        sameColor(scrim.color, contract.scrimColor, "veu");
+    }
+    function test_escClosesAndRestoresFocus() {
+        const h = openDialogFromButton();
+        keyClick(Qt.Key_Escape);
+        tryVerify(() => !h.dialog.visible);
+        verify(h.opener.activeFocus);
+    }
+    function test_closeButtonIsNamed() {
+        const h = openDialog({
+            controlId: "track-details"
+        });
+        compare(child(h.dialog.header, "track-details-close").Accessible.name, "Fechar");
+    }
+    function test_confirmOpensOnCancelAndConfirms() {
+        const h = openConfirm({
+            controlId: "kick",
+            question: "Expulsar Ana?",
+            consequence: "Ana sai da sala agora.",
+            confirmText: "Expulsar",
+            destructive: true
+        });
+        tryVerify(() => child(h.dialog, "kick-cancel").activeFocus);
+        compare(child(h.dialog, "kick-confirm").kind, AuroraButton.DangerFilled);
+        const spy = createTemporaryObject(spyComponent, testCase, {
+            target: h.dialog,
+            signalName: "confirmed"
+        });
+        keyClick(Qt.Key_Tab);
+        keyClick(Qt.Key_Return);
+        compare(spy.count, 1);
+        tryVerify(() => !h.dialog.visible);
+    }
+    function test_titleUsesHeadingFont() {
+        const h = openDialog();
+        compare(child(h.dialog.header, "dialog-title").font.family, contract.headingFontFamily);
+    }
+    function test_themeChangeWhileOpen() {
+        const h = openDialog();
+        driver.setSystemAppearance(true, false);
+        sameColor(h.dialog.background.color, contract.surfaceRaisedColor, "fundo depois da troca");
+    }
+    function test_dialogMotionFollowsContract() {
+        driver.setSystemAppearance(false, true);
+        const h = openDialog();
+        compare(h.dialog.enter.animations[0].duration, 0);
+    }
+    function test_dialogFitsMinimumWindow() {
+        const h = createTemporaryObject(hostComponent, testCase, {
+            width: 720,
+            height: 520,
+            preferredWidth: 800,
+            tallContent: true
+        });
+        verify(h);
+        verify(waitForRendering(h.contentItem));
+        h.dialog.open();
+        tryVerify(() => h.dialog.opened);
+        verify(h.dialog.width <= 720 - 48);
+        verify(h.dialog.height <= 520 - 48);
+    }
+}
