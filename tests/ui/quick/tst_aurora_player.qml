@@ -343,6 +343,27 @@ TestCase {
         compare(time.text, "0:41 / 3:00");
     }
 
+    // Without a duration there is no position to mark: no marker at the left edge, no "0:00 / 0:00".
+    function test_progressMarkerAndTimeWaitForTheDuration() {
+        const progress = findChild(shell, "progress");
+        verify(!presenter.hasDuration);
+        verify(!progress.handle.visible, "no marker without a track");
+        driver.enqueueLocalSelection(["C:/Música/Primeira.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        const time = findChild(shell, "player-time");
+        verify(presenter.hasCurrentTrack);
+        verify(!presenter.hasDuration);
+        verify(time.visible);
+        verify(!progress.handle.visible, "no marker while the duration is unknown");
+        compare(time.text, "0:00");
+        driver.publishLocalPlaying();
+        driver.publishLocalPosition(41000, 180000);
+        tryVerify(() => presenter.hasDuration);
+        verify(progress.handle.visible);
+        compare(time.text, "0:41 / 3:00");
+    }
+
     function test_identityElidesLongMetadataAtMinimumWindow() {
         resize(720, 520);
         let longTitle = "";

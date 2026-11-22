@@ -150,6 +150,7 @@ GridLayout {
             anchors.fill: parent
             contract: root.contract
             edge: root.editorial
+            markerVisible: root.presenter.hasDuration
             handleSize: root.editorial ? 14 : 28
             property bool dragStarted: false
             property bool synchronizingValue: false
@@ -312,7 +313,8 @@ GridLayout {
                     objectName: "player-time"
                     visible: root.presenter.hasCurrentTrack
                     topPadding: 2
-                    text: labels.elapsedOfDuration.arg(root.formattedCompactTime(root.presenter.positionMs)).arg(root.formattedCompactTime(root.presenter.durationMs))
+                    // While the duration is unknown, only the elapsed time.
+                    text: root.presenter.hasDuration ? labels.elapsedOfDuration.arg(root.formattedCompactTime(root.presenter.positionMs)).arg(root.formattedCompactTime(root.presenter.durationMs)) : root.formattedCompactTime(root.presenter.positionMs)
                     textFormat: Text.PlainText
                     font.family: root.contract.bodyFontFamily
                     font.pixelSize: root.contract.typeCaption

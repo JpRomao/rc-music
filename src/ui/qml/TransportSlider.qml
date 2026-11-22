@@ -9,6 +9,8 @@ Slider {
     // full-width click area, with a small marker centered on the track.
     property bool edge: false
     property int handleSize: 28
+    // The edge marker shows a position only when there is one to show (Player C, no duration yet).
+    property bool markerVisible: true
     readonly property int edgeTrackHeight: 4
     readonly property int edgeRingWidth: 3
     readonly property bool focusIndicatorVisible: activeFocus && enabled
@@ -20,6 +22,7 @@ Slider {
     palette.dark: fillColor
 
     handle: Rectangle {
+        visible: !control.edge || control.markerVisible
         x: control.leftPadding + control.visualPosition * (control.availableWidth - width)
         y: control.edge ? (control.edgeTrackHeight - height) / 2 : control.topPadding + (control.availableHeight - height) / 2
         implicitWidth: control.handleSize
