@@ -97,8 +97,7 @@ TestCase {
         let reached = false;
         for (let step = 0; step < 20 && !reached; ++step) {
             keyClick(Qt.Key_Tab);
-            verify(!item.activeFocus, "Tab never reaches the hidden sidebar queue item");
-            reached = shell.activeFocusItem && (shell.activeFocusItem === transport || transport.contains(transport.mapFromItem(shell.activeFocusItem, 0, 0)) && shell.activeFocusItem.objectName !== "");
+            reached = shell.activeFocusItem && (shell.activeFocusItem === transport || (transport.contains(transport.mapFromItem(shell.activeFocusItem, 0, 0)) && shell.activeFocusItem.objectName !== ""));
         }
         verify(reached, "Tab reaches the transport bar");
     }
@@ -128,12 +127,37 @@ TestCase {
         // A local queue is "loaded" exactly when it has tracks, so there is no empty drawer to open.
         verify(!presenter.queueLoaded);
         const queue = findChild(shell, "queue-panel");
-        const play = findChild(shell, "play-pause");
         findChild(shell, "now").forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_L, Qt.ControlModifier);
         wait(100);
         verify(!queue.visible);
         verify(!shell.queueOpen);
+    }
+
+    function test_queueFocusFallsBackToThePlayerQueueThenPlayPause() {
+        loadSyntheticQueue();
+        const queue = findChild(shell, "queue-panel");
+        const playQueue = findChild(shell, "player-queue");
+        const playPause = findChild(shell, "play-pause");
+        const opener = findChild(shell, "preferences");
+        opener.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        tryVerify(() => queue.visible);
+        // The opener becomes unavailable while the drawer is open: focus goes to the player's queue button.
+        opener.enabled = false;
+        keyClick(Qt.Key_Escape);
+        tryVerify(() => !queue.visible);
+        tryVerify(() => playQueue.activeFocus);
+        opener.enabled = true;
+        // Without the opener and the player's queue button, focus ends on play/pause.
+        opener.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        tryVerify(() => queue.visible);
+        opener.enabled = false;
+        playQueue.visible = false;
+        keyClick(Qt.Key_Escape);
+        tryVerify(() => !queue.visible);
+        tryVerify(() => playPause.activeFocus);
     }
 
     function test_quickThemeUsesThePreferenceAndPreservesPlayback() {
@@ -177,6 +201,7 @@ TestCase {
             "play-pause": "pause",
             "next": "next",
             "player-repeat": "repeat",
+            "player-queue": "queue",
             // The mute button shows the sound state: audible here.
             "mute": "volume"
         };

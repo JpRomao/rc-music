@@ -275,6 +275,19 @@ TestCase {
         });
     }
 
+    // Aurora has no sidebar queue item: a guest opens the room queue with Ctrl+L even without a local queue.
+    function test_aGuestOpensTheRoomQueueWithCtrlL() {
+        joinAsGuest();
+        createShell();
+        verify(!localPresenter.queueLoaded);
+        findChild(shell, "now").forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_L, Qt.ControlModifier);
+        tryVerify(() => findChild(shell, "queue-panel").visible);
+        compare(visibleChild("room-queue-list").count, 2);
+        keyClick(Qt.Key_Escape);
+        tryVerify(() => !findChild(shell, "queue-panel").visible);
+    }
+
     // S8.2: the guest's queue shows the room's items, "Carregando…" until a file arrives, and who added each.
     function test_aGuestQueueShowsLoadingItemsWithTheirAuthor() {
         joinAsGuest();
