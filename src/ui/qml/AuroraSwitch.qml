@@ -66,9 +66,9 @@ Switch {
             width: 40
             height: 24
             radius: 12
-            color: control.checked ? interaction.tint(control.contract.accentColor) : "transparent"
+            color: control.checked && !(control.contract.highContrast && interaction.inactive) ? interaction.tint(control.contract.accentColor) : "transparent"
             border.width: 2
-            border.color: control.checked ? control.contract.accentColor : control.offColor
+            border.color: control.checked ? interaction.ink(control.contract.accentColor) : control.offColor
         }
 
         Rectangle {
@@ -82,7 +82,7 @@ Switch {
             radius: width / 2
             x: control.checked ? checkedX : uncheckedX
             y: track.y + (track.height - height) / 2
-            color: control.checked ? control.contract.accentTextColor : control.offColor
+            color: control.checked ? interaction.ink(control.contract.accentTextColor) : control.offColor
 
             Behavior on x {
                 NumberAnimation {

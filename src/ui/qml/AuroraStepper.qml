@@ -20,6 +20,8 @@ SpinBox {
     hoverEnabled: true
     opacity: interaction.opacity
     padding: 0
+    leftPadding: contract.controlTargetMinimum
+    rightPadding: contract.controlTargetMinimum
     implicitWidth: 160
     implicitHeight: contract.controlTargetMinimum
     Accessible.role: Accessible.SpinBox
@@ -63,8 +65,8 @@ SpinBox {
         ShellIcon {
             anchors.centerIn: parent
             iconName: "minus"
-            color: interaction.inactive && control.contract.highContrast ? control.contract.disabledTextColor : control.contract.textPrimaryColor
-            opacity: control.value > control.from ? 1 : 0.4
+            color: control.contract.highContrast && control.value <= control.from ? control.contract.disabledTextColor : interaction.ink(control.contract.textPrimaryColor)
+            opacity: control.contract.highContrast || control.value > control.from ? 1 : 0.4
         }
     }
 
@@ -79,8 +81,8 @@ SpinBox {
         ShellIcon {
             anchors.centerIn: parent
             iconName: "plus"
-            color: interaction.inactive && control.contract.highContrast ? control.contract.disabledTextColor : control.contract.textPrimaryColor
-            opacity: control.value < control.to ? 1 : 0.4
+            color: control.contract.highContrast && control.value >= control.to ? control.contract.disabledTextColor : interaction.ink(control.contract.textPrimaryColor)
+            opacity: control.contract.highContrast || control.value < control.to ? 1 : 0.4
         }
     }
 

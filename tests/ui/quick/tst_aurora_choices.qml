@@ -82,6 +82,31 @@ TestCase {
         }
     }
     Component {
+        id: bindingHostComponent
+        Window {
+            property var props: ({})
+            property int external: 0
+            property alias segmented: hosted
+            width: 480
+            height: 320
+            visible: true
+            color: testCase.contract.canvasColor
+            AuroraSegmented {
+                id: hosted
+                contract: testCase.contract
+                controlId: "view"
+                label: "Exibição"
+                options: ["Lista", "Capas"]
+                onActivated: index => external = index
+            }
+            Binding {
+                target: hosted
+                property: "currentIndex"
+                value: external
+            }
+        }
+    }
+    Component {
         id: switchHostComponent
         Window {
             property var props: ({})
@@ -286,5 +311,64 @@ TestCase {
         verify(c.checked);
         sameColor(c.indicator.color, contract.accentColor, "marcada");
         verify(c.height >= 40);
+    }
+
+    function test_segmentedFollowsExternalStateThroughBinding() {
+        const w = hostWindow(bindingHostComponent, {});
+        const seg = w.segmented;
+        child(seg, "view-0").forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Right);
+        compare(seg.currentIndex, 1);
+        compare(w.external, 1);
+        w.external = 0;
+        compare(seg.currentIndex, 0);
+    }
+    function test_segmentedDisabledInHighContrastMarksInDisabledColor() {
+        driver.setHighContrast(true, true);
+        const h = hostSegmented({
+            options: ["Lista", "Capas"],
+            currentIndex: 0,
+            enabled: false
+        });
+        sameColor(child(child(h.segmented, "view-0"), "state-mark").color, contract.disabledTextColor, "traço desabilitado");
+    }
+    function test_switchDisabledCheckedInHighContrastHasNoFill() {
+        driver.setHighContrast(true, true);
+        const s = hostSwitch({
+            label: "Opção",
+            checked: true,
+            enabled: false
+        });
+        sameColor(child(s, "switch-track").color, "transparent", "trilho sem preenchimento");
+        sameColor(child(s, "switch-track").border.color, contract.disabledTextColor, "contorno");
+        sameColor(child(s, "switch-thumb").color, contract.disabledTextColor, "polegar");
+        compare(s.opacity, 1);
+    }
+    function test_checkBoxDisabledCheckedInHighContrastHasNoFill() {
+        driver.setHighContrast(true, true);
+        const c = hostCheck({
+            text: "Opção",
+            checked: true,
+            enabled: false
+        });
+        sameColor(c.indicator.color, "transparent", "indicador sem preenchimento");
+        sameColor(c.indicator.border.color, contract.disabledTextColor, "contorno");
+        sameColor(child(c, "check-icon").color, contract.disabledTextColor, "marca");
+    }
+    function test_stepperIndicatorsClickAndTextIsInset() {
+        const st = hostStepper({
+            label: "Valor",
+            from: 1,
+            to: 60,
+            value: 5
+        });
+        mouseClick(st.up.indicator);
+        compare(st.value, 6);
+        mouseClick(st.down.indicator);
+        mouseClick(st.down.indicator);
+        compare(st.value, 4);
+        const input = st.contentItem;
+        verify(input.x >= st.down.indicator.x + st.down.indicator.width);
+        verify(input.x + input.width <= st.up.indicator.x);
     }
 }

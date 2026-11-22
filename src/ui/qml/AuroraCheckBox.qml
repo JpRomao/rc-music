@@ -52,15 +52,16 @@ CheckBox {
         width: 20
         height: 20
         radius: 6
-        color: control.checked ? interaction.tint(control.contract.accentColor) : "transparent"
+        color: control.checked && !(control.contract.highContrast && interaction.inactive) ? interaction.tint(control.contract.accentColor) : "transparent"
         border.width: 2
-        border.color: control.checked ? control.contract.accentColor : control.offColor
+        border.color: control.checked ? interaction.ink(control.contract.accentColor) : control.offColor
 
         ShellIcon {
             anchors.centerIn: parent
+            objectName: "check-icon"
             iconName: "check"
             size: 14
-            color: control.contract.accentTextColor
+            color: interaction.ink(control.contract.accentTextColor)
             visible: control.checked
         }
 

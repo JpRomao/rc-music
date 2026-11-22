@@ -14,6 +14,11 @@ QtObject {
     readonly property real opacity: contract.highContrast || (control && control.enabled) ? 1 : 0.4
     readonly property color layerColor: Qt.color(contract.textPrimaryColor)
 
+    // Cor de tinta: em alto contraste e desabilitado vira a cor de desabilitado.
+    function ink(color) {
+        return contract.highContrast && inactive ? contract.disabledTextColor : color;
+    }
+
     function tint(rest) {
         if (!control)
             return rest;

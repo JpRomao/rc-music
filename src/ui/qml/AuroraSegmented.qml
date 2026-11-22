@@ -5,6 +5,8 @@ import MusicPlayer.M0
 
 // Chave segmentada: um grupo de opções exclusivas, no padrão de grupo de rádio.
 // Só a opção escolhida entra na ordem de Tab; as setas movem e escolhem.
+// Quem espelha um estado externo deve guiar currentIndex com um elemento Binding
+// e gravar o novo valor de volta em onActivated, pois a escolha atribui currentIndex.
 FocusScope {
     id: root
 
@@ -72,7 +74,8 @@ FocusScope {
                     objectName: root.controlId + "-" + option.index
                     width: Math.max(64, segmentLabel.implicitWidth + 32)
                     height: root.contract.controlTargetMinimum
-                    activeFocusOnTab: chosen
+                    // Uma opção com foco fica na ordem de Tab mesmo se a escolha mudar por fora.
+                    activeFocusOnTab: chosen || activeFocus
                     Accessible.role: Accessible.RadioButton
                     Accessible.name: String(option.modelData)
                     Accessible.checkable: true
@@ -151,7 +154,7 @@ FocusScope {
                         radius: 1.5
                         x: segmentLabel.x
                         y: segmentLabel.y + segmentLabel.height + 1
-                        color: root.contract.highContrast ? root.contract.accentTextColor : root.contract.accentColor
+                        color: root.contract.highContrast ? groupInteraction.ink(root.contract.accentTextColor) : root.contract.accentColor
                         visible: option.chosen
                     }
 
