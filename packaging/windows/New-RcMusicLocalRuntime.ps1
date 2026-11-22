@@ -87,7 +87,7 @@ function Get-RuntimeRecipeFiles {
         'notices/taglib/NOTICE.txt', 'notices/taglib/TagLib-AUTHORS.txt',
         'notices/taglib/TagLib-COPYING.LGPL.txt', 'notices/taglib/TagLib-COPYING.MPL.txt',
         'notices/taglib/utfcpp-LICENSE.txt',
-    'notices/phosphor/NOTICE.txt', 'notices/phosphor/Phosphor-LICENSE.txt',
+        'notices/phosphor/NOTICE.txt', 'notices/phosphor/Phosphor-LICENSE.txt',
         'notices/qtbase/NOTICE.txt', 'notices/qtbase/LGPL-3.0-only.txt',
         'notices/qtbase/GPL-3.0-only.txt', 'notices/qtbase/Qtbase-freetype-LICENSE.txt',
         'notices/qtbase/Qtbase-freetype-BDF-LICENSE.txt', 'notices/qtbase/Qtbase-freetype-PCF-LICENSE.txt',

@@ -86,6 +86,10 @@ A receita inclui quatro textos de licença sem alterações e um aviso com os cr
 
 O teste da receita detectou os cinco arquivos ausentes e passou em 26/26 casos depois da inclusão. A montagem Lite de `937ca73` conferiu os 645 arquivos no disco. O manifesto e a verificação em `out/product/r9/out/product/qt-declarative-svg-20261111/` registram os cinco avisos novos e a igualdade por SHA-256 dos 640 arquivos anteriores.
 
+### Aviso dos ícones Phosphor
+
+Os ícones SVG da interface vêm do Phosphor Icons, sob a licença MIT, e são compilados no recurso `:/rc_music/icons`. A receita do runtime local e o seu teste listam os dois arquivos de `notices/phosphor/`: o aviso, com a origem `phosphor-icons/core` no commit `2b75f3ad12b420c9504ef05df8d2564a28f8500e`, e o texto da licença sem alterações. Nenhum runtime ou setup foi montado com esses avisos até agora. [Aviso no pacote](../packaging/windows/notices/phosphor/NOTICE.txt) · [Phosphor Icons](https://github.com/phosphor-icons/core/tree/2b75f3ad12b420c9504ef05df8d2564a28f8500e)
+
 ### Runtime Lite com teclado e aviso Expat
 
 A montagem Release de `0107bf2` inclui a navegação por teclado nas listas de [Lidarr](lidarr-integration.md#evidência-de-implementação) e [versões de letras](lyrics-variants.md#navegação-nas-versões-por-teclado). A conferência dos 646 arquivos encontrou o novo executável, a licença Expat no componente opcional e 644 arquivos com os hashes anteriores. O planejador vinculou a licença à opção de downloads nas cinco combinações e a configuração de produção registrou zero testes. Manifesto e recibos em `out/product/r9/out/product/keyboard-expat-20261111/`.
