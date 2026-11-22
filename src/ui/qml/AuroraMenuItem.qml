@@ -14,7 +14,8 @@ MenuItem {
     readonly property bool hasSubMenu: subMenu !== null
     readonly property color restInk: danger ? contract.errorColor : contract.textPrimaryColor
 
-    implicitWidth: 200
+    // Largura pelo conteúdo (ícone, texto, atalho e seta), com mínimo de 200.
+    implicitWidth: Math.max(200, contentItem.implicitWidth + leftPadding + rightPadding)
     implicitHeight: contract.controlTargetMinimum
     leftPadding: 12
     rightPadding: 12

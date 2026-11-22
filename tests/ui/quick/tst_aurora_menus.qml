@@ -84,6 +84,51 @@ TestCase {
         }
     }
 
+    Component {
+        id: wideHostComponent
+        Window {
+            id: wideHost
+            property alias menu: wideMenu
+            property alias opener: wideButton
+            property string longText: "Informações do download"
+            width: 960
+            height: 400
+            visible: true
+            color: testCase.contract.canvasColor
+            AuroraButton {
+                id: wideButton
+                contract: testCase.contract
+                controlId: "open-wide-menu"
+                text: "Abrir"
+                x: 20
+                y: 20
+            }
+            AuroraMenu {
+                id: wideMenu
+                contract: testCase.contract
+                AuroraMenuItem {
+                    contract: testCase.contract
+                    text: "Tentar reproduzir novamente"
+                    iconName: "play"
+                }
+                AuroraMenuItem {
+                    contract: testCase.contract
+                    text: wideHost.longText
+                    iconName: "info"
+                    shortcutText: "Ctrl+Shift+I"
+                }
+            }
+        }
+    }
+    function openWideMenu(options) {
+        const h = createTemporaryObject(wideHostComponent, testCase, options || {});
+        verify(h);
+        verify(waitForRendering(h.contentItem));
+        h.menu.popup(h.opener, 0, h.opener.height);
+        tryVerify(() => h.menu.opened);
+        return h;
+    }
+
     function openMenu() {
         const h = createTemporaryObject(hostComponent, testCase);
         verify(h);
@@ -171,5 +216,34 @@ TestCase {
         tryVerify(() => item.highlighted);
         sameColor(child(item, "menu-item-background").color, contract.hoverColor, "fundo com o mouse");
         verify(!findChild(item, "focus-ring").visible);
+    }
+    function test_menuWidensForLongItems() {
+        const h = openWideMenu();
+        verify(h.menu.width > 200, "menu com " + h.menu.width);
+        for (let i = 0; i < 2; ++i) {
+            const item = h.menu.itemAt(i);
+            verify(!child(item, "menu-item-label").truncated, "rótulo cortado: " + item.text);
+            verify(child(item, "menu-item-label").width >= child(item, "menu-item-label").implicitWidth);
+        }
+        verify(child(h.menu.itemAt(1), "menu-item-shortcut").visible);
+    }
+    function test_menuWidthStaysInsideWindow() {
+        const h = openWideMenu({
+            width: 300,
+            longText: "Informações do download que não cabem numa janela estreita de jeito nenhum"
+        });
+        verify(h.menu.width <= 300, "menu com " + h.menu.width);
+        verify(child(h.menu.itemAt(1), "menu-item-label").truncated);
+    }
+    function test_menuMotionFollowsContract() {
+        driver.setSystemAppearance(false, true);
+        const m = openMenu();
+        // As transições do Popup são adiadas: a de saída só existe depois de fechar.
+        const fadeIn = m.enter.animations;
+        compare(fadeIn[0].duration, 0);
+        m.close();
+        tryVerify(() => !m.visible);
+        const fadeOut = m.exit.animations;
+        compare(fadeOut[0].duration, 0);
     }
 }

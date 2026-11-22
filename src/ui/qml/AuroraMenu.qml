@@ -7,9 +7,21 @@ Menu {
     id: menu
 
     required property ShellUiContract contract
+    // Largura do item mais largo; cada item tem no mínimo 200.
+    readonly property real widestItem: {
+        let widest = 200;
+        for (let i = 0; i < count; ++i) {
+            const entry = itemAt(i);
+            if (entry)
+                widest = Math.max(widest, entry.implicitWidth);
+        }
+        return widest;
+    }
+
     padding: 6
     popupType: Popup.Item
-    implicitWidth: Math.max(200, contentItem.implicitWidth + leftPadding + rightPadding)
+    // Acompanha o item mais largo, com teto na largura da janela.
+    implicitWidth: Math.min(widestItem + leftPadding + rightPadding, Overlay.overlay ? Overlay.overlay.width : Number.POSITIVE_INFINITY)
 
     delegate: AuroraMenuItem {
         // Dentro do delegate o id aponta para o tipo base do Menu.
