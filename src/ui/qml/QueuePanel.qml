@@ -390,6 +390,7 @@ FocusScope {
 
         RowLayout {
             objectName: "queue-modes"
+            visible: !root.overlayMode
             Layout.fillWidth: true
             spacing: root.contract.spacingUnit
 

@@ -539,11 +539,9 @@ TestCase {
             tryCompare(icon, "status", Image.Ready);
             compare(button.contentItem.text, "");
         }
-        for (const entry of [["queue-shuffle", "shuffle", "Aleatório"], ["queue-repeat", "repeat", "Repetir"]]) {
-            const mode = findChild(drawer, entry[0]);
-            verify(mode.flat, entry[0]);
-            compare(findChild(mode, "button-icon").iconName, entry[1]);
-            verify(mode.text.indexOf(entry[2]) >= 0, mode.text);
+        for (const name of ["queue-shuffle", "queue-repeat"]) {
+            const mode = findChild(drawer, name);
+            verify(!mode || !mode.visible, name + " lives in the player, not in the Aurora drawer");
         }
         const list = findChild(drawer, "queue-list");
         const first = list.itemAtIndex(0);

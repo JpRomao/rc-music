@@ -110,7 +110,7 @@ TestCase {
         return control;
     }
     function test_spaceNeverActivatesLastControl_data() {
-        return ["mute", "next", "previous", "player-shuffle", "player-repeat", "player-queue", "preferences", "profile-chip", "theme-toggle", "progress", "volume", "queue-list", "queue-remove", "queue-shuffle", "queue-repeat"].map(function (name) {
+        return ["mute", "next", "previous", "player-shuffle", "player-repeat", "player-queue", "preferences", "profile-chip", "theme-toggle", "progress", "volume", "queue-list", "queue-remove"].map(function (name) {
             return {
                 tag: name,
                 control: name
@@ -305,10 +305,10 @@ TestCase {
     }
     function test_queueModesHaveVisibleAccessibleControls() {
         openQueue();
-        focusControl("queue-list");
-        const shuffle = findChild(shell, "queue-shuffle");
-        const repeat = findChild(shell, "queue-repeat");
-        verify(shuffle && repeat, "F1 and F2 require visible queue actions");
+        focusControl("player-repeat");
+        const shuffle = findChild(shell, "player-shuffle");
+        const repeat = findChild(shell, "player-repeat");
+        verify(shuffle && repeat, "F1 and F2 require visible player actions");
         verify(shuffle.visible && repeat.visible);
         compare(shuffle.Accessible.name, "Modo aleatório");
         compare(shuffle.Accessible.description, "F1");
@@ -319,19 +319,55 @@ TestCase {
         compare(presenter.repeatQueueEnabled, !before);
         compare(repeat.checked, !before);
         compare(repeat.Accessible.checked, !before);
-        verify(repeat.text.indexOf(!before ? "Ligada" : "Desligada") >= 0);
         verify(driver.repeatKey(Qt.Key_F2, Qt.NoModifier));
         compare(presenter.repeatQueueEnabled, !before);
         repeat.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Return);
         compare(presenter.repeatQueueEnabled, before);
         compare(repeat.checked, before);
+        compare(repeat.Accessible.checked, before);
         shell.width = 720;
         shell.height = 520;
         verify(waitForPolish(shell));
         verify(shuffle.width >= 40 && repeat.width >= 40);
-        verify(shuffle.mapToItem(repeat, shuffle.width, 0).x <= 0);
-        verify(repeat.x + repeat.width <= repeat.parent.width);
+    }
+    function test_f1F2WorkWithTheQueueClosed() {
+        openQueue();
+        verify(!findChild(shell, "queue-panel").visible);
+        const shuffle = findChild(shell, "player-shuffle");
+        const repeat = findChild(shell, "player-repeat");
+        const shuffled = presenter.shuffleQueueEnabled;
+        keyClick(Qt.Key_F1);
+        compare(presenter.shuffleQueueEnabled, !shuffled);
+        compare(shuffle.checked, !shuffled);
+        keyClick(Qt.Key_F1);
+        compare(presenter.shuffleQueueEnabled, shuffled);
+        compare(shuffle.checked, shuffled);
+        const repeated = presenter.repeatQueueEnabled;
+        keyClick(Qt.Key_F2);
+        compare(presenter.repeatQueueEnabled, !repeated);
+        compare(repeat.checked, !repeated);
+        keyClick(Qt.Key_F2);
+        compare(presenter.repeatQueueEnabled, repeated);
+        compare(repeat.checked, repeated);
+        verify(!findChild(shell, "queue-panel").visible);
+    }
+    function test_queueDrawerHasNoShuffleOrRepeat() {
+        openQueue();
+        const list = focusControl("queue-list");
+        verify(findChild(shell, "queue-panel").visible);
+        const shuffle = findChild(shell, "queue-shuffle");
+        const repeat = findChild(shell, "queue-repeat");
+        verify(!shuffle || !shuffle.visible, "queue-shuffle is gone from the drawer");
+        verify(!repeat || !repeat.visible, "queue-repeat is gone from the drawer");
+        const panel = findChild(shell, "queue-panel");
+        for (let step = 0; step < 12; ++step) {
+            keyClick(Qt.Key_Tab);
+            const item = shell.activeFocusItem;
+            verify(item !== shuffle && item !== repeat, "Tab never stops on a removed mode button");
+            if (item && item.objectName === "queue-list" && step > 0)
+                break;
+        }
     }
     function queueOrder(list) {
         list.forceLayout();
@@ -357,11 +393,10 @@ TestCase {
         compare(presenter.shuffleQueueEnabled, !before);
         verify(list.activeFocus);
         const displayedOrder = queueOrder(list).join(",");
-        const shuffle = findChild(shell, "queue-shuffle");
+        const shuffle = findChild(shell, "player-shuffle");
         verify(shuffle && shuffle.enabled);
         compare(shuffle.checked, !before);
         compare(shuffle.Accessible.checked, !before);
-        verify(shuffle.text.indexOf(!before ? "Ligado" : "Desligado") >= 0);
         verify(driver.repeatKey(Qt.Key_F1, Qt.NoModifier));
         compare(presenter.shuffleQueueEnabled, !before);
         compare(queueOrder(list).join(","), displayedOrder);

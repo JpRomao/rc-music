@@ -355,6 +355,8 @@ GridLayout {
             enabled: root.queueModesAvailable
             checkable: true
             checked: root.presenter.shuffleQueueEnabled
+            Accessible.checkable: true
+            Accessible.checked: checked
             contract: root.contract
             text: "⇄"
             iconName: root.editorial ? "shuffle" : ""
@@ -461,6 +463,8 @@ GridLayout {
             enabled: root.queueModesAvailable
             checkable: true
             checked: root.presenter.repeatQueueEnabled
+            Accessible.checkable: true
+            Accessible.checked: checked
             contract: root.contract
             text: "↻"
             iconName: root.editorial ? "repeat" : ""

@@ -323,6 +323,19 @@ ApplicationWindow {
                 window.restoreQueueFocus(opener);
         });
     }
+    // F1 and F2 act on the player's own modes in the Aurora, with the queue open or not.
+    function toggleShuffle() {
+        if (!inlinePages)
+            queuePanel.toggleShuffle();
+        else if (transport.queueModesAvailable)
+            presenter.toggleShuffleQueue();
+    }
+    function toggleRepeat() {
+        if (!inlinePages)
+            queuePanel.toggleRepeat();
+        else if (transport.queueModesAvailable)
+            presenter.toggleRepeatQueue();
+    }
     function toggleQueue() {
         setQueueOpen(!queueOpen);
     }
@@ -1293,7 +1306,7 @@ ApplicationWindow {
         context: Qt.WindowShortcut
         autoRepeat: false
         enabled: window.primaryKeysEnabled
-        onActivated: queuePanel.toggleShuffle()
+        onActivated: window.toggleShuffle()
     }
     ProfileSetupDialog {
         id: profileSetupDialog
@@ -1310,7 +1323,7 @@ ApplicationWindow {
         context: Qt.WindowShortcut
         autoRepeat: false
         enabled: window.primaryKeysEnabled
-        onActivated: queuePanel.toggleRepeat()
+        onActivated: window.toggleRepeat()
     }
     Shortcut {
         sequence: "Esc"

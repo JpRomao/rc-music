@@ -322,7 +322,7 @@ TestCase {
         createShell();
         shell.setQueueOpen(true);
         tryVerify(() => findChild(testCase.shell, "queue-panel").visible);
-        for (const name of ["queue-shuffle", "queue-repeat", "player-shuffle", "player-repeat"]) {
+        for (const name of ["player-shuffle", "player-repeat"]) {
             const button = findChild(shell, name);
             verify(button, name);
             verify(!button.enabled, name);
@@ -340,10 +340,21 @@ TestCase {
         // Back outside the room, they work again.
         fakeRoom.role = 0;
         fakeRoom.state = "idle";
-        verify(findChild(shell, "queue-shuffle").enabled);
-        verify(findChild(shell, "queue-repeat").enabled);
+        // The player stays disabled as a whole while there is no queue; the modes themselves are open again.
+        verify(findChild(shell, "transport-bar").queueModesAvailable);
         compare(findChild(shell, "player-shuffle").disabledReason, "");
         compare(findChild(shell, "player-repeat").disabledReason, "");
+    }
+
+    function test_f1F2DoNothingForAGuest() {
+        joinAsGuest();
+        createShell();
+        const shuffled = localPresenter.shuffleQueueEnabled;
+        const repeated = localPresenter.repeatQueueEnabled;
+        keyClick(Qt.Key_F1);
+        keyClick(Qt.Key_F2);
+        compare(localPresenter.shuffleQueueEnabled, shuffled);
+        compare(localPresenter.repeatQueueEnabled, repeated);
     }
 
     // S9.1: a guest's player belongs to the room; its own queue waits until it leaves.
