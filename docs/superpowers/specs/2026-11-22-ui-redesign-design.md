@@ -25,6 +25,7 @@ Sobre o que incomoda hoje, o mantenedor disse: **“As bordas são feias e poder
 | Configurações, perfil e detalhes | `configuracoes.html` | `68abddf1ea2192a6d90f85a2d655c95fe0e7671524a47848073566a72bd5534a` |
 | Diálogos de letra e avisos | `dialogos-e-avisos.html` | `fde11fef4b4513dd286f4ad32fa7ca17964b273cfca595d1a19911952079460c` |
 | Janela estreita, alto contraste e bandeja | `estreita-contraste-bandeja.html` | `731bc01e4993e139b0306eee0e67c615166d4fd341f8bf7973cbd8aea28e31fb` |
+| Marcas de estado | `marcas-de-estado.html` | `7581d176e000b1f02cde02bd5dafe33d93d18fa2402d81715bd7b827307f66cc` |
 
 Os mockups são HTML descartável. Eles mostram composição, hierarquia e comportamento, não pixels exatos nem uma stack nova. Os textos que aparecem neles são os de hoje ou rascunhos. Os textos definitivos seguem a seção “Textos”.
 
@@ -62,7 +63,7 @@ O app hoje funciona, mas cada tela foi crescendo com o próprio jeito de fazer a
 - Contraste abaixo de WCAG AA em qualquer tema: 4,5:1 para texto e 3:1 para elementos não textuais que carregam informação.
 - O fixture M0 congelado mudar de aparência, ou asserts antigos serem relaxados para o novo visual passar.
 - Textos prometerem algo que o app não faz, ou literais de UI aparecerem fora dos catálogos `*Text.qml`.
-- Duas implementações da mesma peça convivendo no fim.
+- Duas implementações da mesma peça convivendo no modo Aurora no fim. O caminho do fixture M0 congelado, que só existe nos builds de teste, continua usando os componentes antigos, porque o contrato 4 do Aurora manda preservar a aparência histórica.
 
 ## Restrições
 
@@ -97,13 +98,17 @@ Na ordem em que foram tomadas:
 11. Diálogos de letra e avisos: “Estão bons”.
 12. Janela estreita, alto contraste e bandeja: “Estão bons”.
 13. **Revisão de textos**: “Se puder melhorar os diálogos e escritas do app, faça”.
+14. **Marcas de estado**: entre manter só o preenchimento dos mockups e acrescentar uma marca pequena em Destaque nos estados ligado, escolhido e nos campos, escolheu **“Com marca”** (tela `marcas-de-estado.html`).
+15. **Tocar agora uma playlist com Aleatório ligado**: escolheu **“1ª, depois sorteio”**. Toca a primeira da playlist, e as próximas saem do sorteio de sempre, entre tudo o que vem depois na fila.
 
-Sem objeção do mantenedor, as propostas de casca valem como decisões minhas, registradas aqui:
+Estas são decisões minhas, sem objeção do mantenedor, e valem até ele dizer o contrário:
 - a Fila sai da lateral;
 - o topo não tem busca;
 - o perfil fica no rodapé da lateral;
 - o destaque mostra “Detalhes da faixa” e “Letras”;
-- “Abrir áudio” é a ação principal do cabeçalho da Início.
+- “Abrir áudio” é a ação principal do cabeçalho da Início;
+- o caminho do fixture M0 mantém os componentes antigos (contrato 4 do Aurora);
+- a Busca fica sem miniatura, porque o app não recebe miniaturas do YouTube e buscá-las seria rede nova.
 
 ## Linguagem visual
 
@@ -118,6 +123,14 @@ Sem objeção do mantenedor, as propostas de casca valem como decisões minhas, 
 
 Divisórias de 1 px só aparecem entre linhas de configuração, dentro de menus e acima do rodapé de diálogos. **Em alto contraste**, os controles tonais e os cartões ganham contorno de 2 px na cor do texto do sistema, porque o preenchimento deixa de distinguir. O item escolhido e o botão principal usam a cor de seleção do sistema, e não há sombras.
 
+**Marcas de estado** (decisão 14). Como o preenchimento tonal tem só cerca de 1,2:1 contra o fundo, cada estado que carrega informação ganha uma marca pequena em Destaque, que tem 4,9:1 ou mais contra todos os fundos nos dois temas:
+- botão de ícone ligado: ponto de 4 px sob o ícone;
+- item escolhido da lateral e das abas de Configurações: barra de 3 px à esquerda;
+- opção escolhida da chave segmentada: traço de 3 px sob o texto;
+- campo: linha de 1 px embaixo, que vira 2 px em Destaque no foco.
+
+A linha do campo precisa de 3:1 contra o fundo em que o campo está. O contorno sobre o canvas no tema claro dá 2,83:1, então ali vale outro token, como o texto secundário. Em alto contraste, as marcas usam a cor de seleção do sistema.
+
 **Raios.**
 - Controles: cerca de 10 px.
 - Cartões, gavetas e diálogos: cerca de 16 px.
@@ -128,7 +141,7 @@ Os valores exatos e se viram tokens novos ficam com o construtor (ver “Deixado
 
 **Sombras.** Só menus, diálogos, gavetas e o cartão flutuante de importação têm sombra suave. Nada de sombra em alto contraste.
 
-**Ícones.** Phosphor regular nos controles. Play, pausa, anterior e próxima usam a variante fill. O tingimento segue o `ShellIcon.qml` atual (cor do texto do controle). Os 29 ícones desenhados à mão em `assets/icons/` são substituídos; os glifos de texto (−5, +5, ↑, ↓, ×, ✓, A−, A+, ✕, +) somem do modo Aurora. Mapeamento usado nos mockups (`gerador/kit.mjs`):
+**Ícones.** Phosphor regular nos controles. Play, pausa, anterior e próxima usam a variante fill. O tingimento segue o `ShellIcon.qml` atual (cor do texto do controle). No modo Aurora, os 29 ícones desenhados à mão em `assets/icons/` são substituídos (ficam só os que o fixture M0 ainda usar); os glifos de texto (−5, +5, ↑, ↓, ×, ✓, A−, A+, ✕, +) somem do modo Aurora. Mapeamento usado nos mockups (`gerador/kit.mjs`):
 
 | Uso | Ícone |
 |---|---|
@@ -169,10 +182,10 @@ Estes são os papéis e o comportamento de cada peça. Nomes de arquivo e API fi
    | perigo preenchido | fundo Erro, texto claro no tema claro e escuro no tema escuro; só no botão que confirma uma ação destrutiva |
 
    Ícone opcional à esquerda. Alvo de no mínimo 40 px. A versão “pequena” dos mockups pode ser visualmente menor, desde que a área clicável fique em 40 px. Substitui `AccessibleActionButton`, o `primary` de `AccessibleTransportButton` e os botões soltos com estilo próprio.
-2. **Botão de ícone**: quadrado de 40 px, discreto ou tonal, com estado “ligado” (Seleção e ícone em Destaque). O nome acessível é sempre o texto da ação, por exemplo “Mais ações”, “Fechar fila” ou “Adicionar à fila”.
-3. **Campo de texto** e **campo de busca** (com lupa): preenchidos, sem borda, com erro abaixo do campo em Erro e marca de erro no próprio campo. Substitui os quatro campos locais duplicados e os TextField Basic (filtro da Biblioteca, Buscar, link da sala, nomes de cargo, nome de playlist).
+2. **Botão de ícone**: quadrado de 40 px, discreto ou tonal, com estado “ligado” (Seleção, ícone em Destaque e o ponto da marca de estado). O nome acessível é sempre o texto da ação, por exemplo “Mais ações”, “Fechar fila” ou “Adicionar à fila”.
+3. **Campo de texto** e **campo de busca** (com lupa): preenchidos, sem contorno, com a linha de baixo da marca de estado e erro abaixo do campo em Erro e marca de erro no próprio campo. Substitui os quatro campos locais duplicados e os TextField Basic (filtro da Biblioteca, Buscar, link da sala, nomes de cargo, nome de playlist).
 4. **Caixa de seleção** (ComboBox) com o mesmo desenho do campo e popup no estilo do menu.
-5. **Chave segmentada**: duas a cinco opções, um único ponto de Tab e setas para mover. Serve para Tema, Movimento, Ao fechar, Ao terminar a fila, Pesquisar/Colar links, filtros da Atividade, Lista/Capas, duração do convite e Como o cargo/Liberar/Negar.
+5. **Chave segmentada**: duas a cinco opções, um único ponto de Tab e setas para mover. A opção escolhida tem o traço da marca de estado. Serve para Tema, Movimento, Ao fechar, Ao terminar a fila, Pesquisar/Colar links, filtros da Atividade, Lista/Capas, duração do convite e Como o cargo/Liberar/Negar.
 6. **Interruptor** para sim/não: Restaurar última sessão, Iniciar minimizado, Visível para a sala e permissões de um cargo. A trilha desligada precisa de 3:1 contra o fundo, então usa o token de contorno, não a divisória.
 7. **− valor +** para números: segundos de avanço e retrocesso, sincronia e quantidade de pessoas na sala. Mantém a edição por teclado de hoje.
 8. **Caixinha de marcar** só dentro de diálogos (por exemplo “Avisar ao fechar para a bandeja nesta sessão”): arredondada e em Destaque quando marcada.
@@ -197,7 +210,7 @@ Estes são os papéis e o comportamento de cada peça. Nomes de arquivo e API fi
 - Itens: Início; Biblioteca, com contagem de faixas; Buscar; Playlists, com contagem; Ouvir junto; Atividade, com contagem do que precisa de atenção; Navegar, com o ícone de janela externa, porque abre a janela nativa e não uma página.
 - Embaixo, Configurações e o chip do perfil (avatar, apelido e “Seu perfil”), que abre Configurações › Perfil.
 - **A Fila sai da lateral.** Ela abre pelo botão Fila do player e por Ctrl+L, como hoje.
-- Item escolhido: Seleção, texto em Destaque e semibold.
+- Item escolhido: Seleção, texto em Destaque, semibold e a barra da marca de estado.
 - Lateral compacta (68 px): só ícones, com nome no tooltip e no leitor de tela.
 - As contagens só aparecem se o binding já expuser o número. Não se cria estado novo para isso.
 
@@ -246,8 +259,9 @@ Cada item descreve o mockup aprovado. O que não está escrito segue o mockup.
 **Buscar**:
 - Chave “Pesquisar / Colar links” (o mesmo estado `linksMode` de hoje).
 - Campo de busca grande com “Buscar” (principal); durante a busca, o botão vira “Cancelar busca”.
-- Resultado: número, miniatura 16:9 quando existir, título, “canal · duração”, ícone “Abrir no YouTube” e “Baixar” (tonal); quando já pedido, mostra “Pedido” em `success`.
+- Resultado: número, título, “canal · duração”, ícone “Abrir no YouTube” e “Baixar” (tonal); quando já pedido, mostra “Pedido” em `success`.
 - Selo “Com letra” quando `hasLyricsPage` (já existe no binding e não aparecia).
+- Sem miniatura. O mockup mostra uma só como ilustração, mas `OnlineSearchResult` não traz imagem e buscá-la seria rede nova, fora do escopo.
 - Colar links: área de links preenchida, “Consultar links”, status, “Baixar todos” (principal) e problemas por linha em Aviso, com ícone.
 
 **Playlists**:
@@ -379,7 +393,7 @@ São as únicas mudanças de comportamento aprovadas. Cada uma é uma fatia pró
    - Durante a sala, segue as mesmas permissões e restrições que “Adicionar à fila” já segue hoje.
    - Recomendação: um caso de uso único no presenter, que enfileira, posiciona e toca de forma atômica e testável, em vez de compor três chamadas no QML.
 2. **“Adicionar à fila” continua como ação própria** em todo lugar (fim da fila, sem interromper o que toca).
-3. **Tocar agora uma playlist**: insere a playlist inteira logo depois da faixa atual e toca a primeira. “Adicionar à fila” da playlist continua indo para o fim.
+3. **Tocar agora uma playlist**: insere a playlist inteira logo depois da faixa atual e toca a primeira. Com Aleatório ligado, as próximas saem do sorteio de sempre, entre tudo o que vem depois na fila (decisão 15); o sorteio não muda. “Adicionar à fila” da playlist continua indo para o fim.
 4. **Faixa de playlist individual**: “Tocar agora” (clique duplo e Enter também) e “Adicionar à fila” para uma faixa da playlist. Hoje só a playlist inteira vai para a fila.
 5. **Menu da faixa em todo lugar**: botão direito, ⋯, tecla Menu e Shift+F10 abrem o menu. Os itens condicionais só aparecem quando valem.
 
@@ -420,7 +434,7 @@ O glossário, as inconsistências e as trocas propostas, catálogo por catálogo
 
 ## Acessibilidade
 
-- **Contraste**: todos os pares de texto/fundo e de elemento não textual/fundo usados pelas peças são verificados nos dois temas (4,5:1 para texto; 3:1 para ícones, trilha do interruptor desligado, anel de foco e marcador do progresso). Os pares que falharem trocam de token, nunca o contrário. Em alto contraste valem as cores do sistema.
+- **Contraste**: todos os pares de texto/fundo e de elemento não textual/fundo usados pelas peças são verificados nos dois temas (4,5:1 para texto; 3:1 para ícones, marcas de estado, trilha do interruptor desligado, anel de foco e marcador do progresso). O preenchimento tonal é decorativo: o que identifica o controle é o texto ou o ícone, e o que identifica o estado é a marca. Os pares que falharem trocam de token, nunca o contrário. Dois já falham com os tokens de hoje: texto secundário sobre Seleção no tema claro (4,37:1) e contorno sobre o canvas no tema claro (2,83:1). Em alto contraste valem as cores do sistema.
 - **Teclado**:
   - Tab percorre lateral → topo → página → linha do verso → player, com as gavetas e diálogos prendendo o foco enquanto abertos (a Letra não é modal e não prende).
   - Enter toca; tecla Menu e Shift+F10 abrem o menu da faixa.
@@ -435,7 +449,7 @@ O glossário, as inconsistências e as trocas propostas, catálogo por catálogo
 
 - **Peças**: testes Quick por peça, escritos antes (Red), cobrindo tipos, estados, foco, teclado, nome acessível e alto contraste.
 - **Telas**: os testes Quick existentes acompanham cada fatia. Quando um id, a ordem de Tab ou um texto mudam, o teste muda no mesmo commit, para o novo comportamento aprovado, sem enfraquecer o que verifica. Testes de composição ganham casos para os estados novos (vazios, aviso único da Atividade, linha do verso).
-- **Comportamento novo**: testes C++ (Catch2/Qt Test) para Tocar agora (faixa, playlist e faixa de playlist, com e sem faixa atual, fila vazia, indisponível, sala) e testes Quick para os gestos (clique duplo, Enter, Menu/Shift+F10, ⋯) e para as confirmações da sala.
+- **Comportamento novo**: testes C++ (Catch2/Qt Test) para Tocar agora (faixa, playlist e faixa de playlist, com e sem faixa atual, fila vazia, indisponível, sala, Aleatório ligado) e testes Quick para os gestos (clique duplo, Enter, Menu/Shift+F10, ⋯) e para as confirmações da sala.
 - **Capturas**: o harness de capturas (`RC_MUSIC_UI_ARTIFACT_DIR`) gera, por fatia, as telas afetadas em claro, escuro e 720×520. O alto contraste é capturado nas fatias de peças e no fim. As capturas são evidência para o aceite visual do mantenedor, não substituto dele.
 - **Contraste**: um teste que calcula o contraste dos pares de tokens usados pelas peças nos dois temas.
 - Testes que tocam som exigem aviso e permissão antes. Não há instalador até o fim do redesenho. A suíte completa roda só nos marcos (fim das peças, metade das telas, fim).
@@ -455,7 +469,7 @@ O glossário, as inconsistências e as trocas propostas, catálogo por catálogo
 11. Configurações, Perfil, primeiro uso e Detalhes da faixa.
 12. Diálogos de letra (Versões, LRCLIB, Letra do áudio baixado).
 13. Avisos e bandeja.
-14. Passada final de casos de borda (720×520, alto contraste, escala), remoção do que ficou morto (componentes antigos, ícones antigos), guia do usuário e status.
+14. Passada final de casos de borda (720×520, alto contraste, escala), remoção do que ficou morto (componentes e ícones que nem o Aurora nem o fixture M0 usam), guia do usuário e status.
 
 Cada fatia aplica os textos revisados da sua área. Ao fechar as fatias, o mantenedor faz o aceite visual. Só depois sai o instalador.
 
@@ -473,7 +487,7 @@ Cada fatia aplica os textos revisados da sua área. Ao fechar as fatias, o mante
 - **`QT_FATAL_WARNINGS`**: peças novas não podem gerar avisos de binding, anchors ou propriedades inexistentes. Tratar como falha.
 - **Ícones**: o Phosphor usa grade de 256 e preenchimento, enquanto os ícones atuais usam traço. É preciso confirmar o tingimento pelo `ShellIcon` e a nitidez em 16–24 px e em DPI alto na fatia de peças.
 - **Sala**: o redesenho toca a UI recém-entregue do ADR-0022. Não muda binding, protocolo nem sincronia, e os testes da sala continuam verdes a cada fatia.
-- **M0**: as peças só valem no modo Aurora. O fixture congelado não muda.
+- **M0**: as peças só valem no modo Aurora. O fixture congelado não muda. Ele só existe nos builds de teste (`RC_MUSIC_ENABLE_FIXTURE_SCENARIOS`), mas renderiza os mesmos arquivos QML pelos ramos `!inlinePages` e `usesFrozenFixture`, e cerca de 13 arquivos Quick conferem a aparência antiga. Cada fatia mantém esses ramos e esses testes intactos.
 
 ## Fora do escopo
 
