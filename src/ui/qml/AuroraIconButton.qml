@@ -50,7 +50,7 @@ AbstractButton {
     Accessible.checked: checked
     Accessible.focusable: enabled
     Accessible.focused: activeFocus
-    Accessible.onPressAction: control.clicked()
+    Accessible.onPressAction: control.activate()
     activeFocusOnTab: true
     hoverEnabled: true
     opacity: enabled || contract.highContrast ? 1 : 0.4
@@ -71,8 +71,10 @@ AbstractButton {
         event.accepted = true;
     }
     function activate() {
-        if (checkable)
+        if (checkable) {
             toggle();
+            toggled();
+        }
         clicked();
     }
 

@@ -279,4 +279,59 @@ TestCase {
         tryVerify(() => b.ToolTip.toolTip.visible, 2000);
         compare(b.ToolTip.text, "Fechar fila");
     }
+
+    function test_keysActivateCheckableOnce_data() {
+        return [
+            {
+                tag: "Enter",
+                key: Qt.Key_Enter
+            },
+            {
+                tag: "Return",
+                key: Qt.Key_Return
+            },
+            {
+                tag: "Espaço",
+                key: Qt.Key_Space
+            }
+        ];
+    }
+    function test_keysActivateCheckableOnce(data) {
+        const b = hostIcon({
+            iconName: "shuffle",
+            text: "Aleatório",
+            checkable: true
+        });
+        const toggled = createTemporaryObject(spyComponent, testCase, {
+            target: b,
+            signalName: "toggled"
+        });
+        const clicked = createTemporaryObject(spyComponent, testCase, {
+            target: b,
+            signalName: "clicked"
+        });
+        b.forceActiveFocus();
+        keyClick(data.key);
+        tryCompare(b, "checked", true);
+        compare(toggled.count, 1);
+        compare(clicked.count, 1);
+        keyClick(data.key);
+        tryCompare(b, "checked", false);
+        compare(toggled.count, 2);
+        compare(clicked.count, 2);
+    }
+    function test_pressActionTogglesCheckable() {
+        const b = hostIcon({
+            iconName: "shuffle",
+            text: "Aleatório",
+            checkable: true
+        });
+        const toggled = createTemporaryObject(spyComponent, testCase, {
+            target: b,
+            signalName: "toggled"
+        });
+        b.Accessible.pressAction();
+        compare(b.checked, true);
+        compare(toggled.count, 1);
+    }
 }
