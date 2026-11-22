@@ -13,10 +13,11 @@ AbstractButton {
     // Motivo do desabilitado ou atalho: vai para o leitor de tela e para a dica.
     property string description
 
-    readonly property bool inactive: contract.highContrast && interaction.inactive
+    // Desabilitado em alto contraste: troca de cor em vez de esmaecer.
+    readonly property bool hcDisabled: contract.highContrast && interaction.inactive
     readonly property bool outlined: contract.highContrast && tonal && !checked
     readonly property bool hasFill: {
-        if (inactive)
+        if (hcDisabled)
             return false;
         if (contract.highContrast)
             return checked || outlined;
@@ -32,7 +33,7 @@ AbstractButton {
         return rest;
     }
     readonly property color foregroundColor: {
-        if (inactive)
+        if (hcDisabled)
             return contract.disabledTextColor;
         if (checked)
             return contract.highContrast ? contract.accentTextColor : contract.accentColor;
@@ -89,8 +90,8 @@ AbstractButton {
         objectName: "icon-button-background"
         radius: control.contract.radiusControl
         color: control.hasFill ? control.fillColor : "transparent"
-        border.width: control.inactive || control.outlined || (control.contract.highContrast && control.hovered && !control.checked) ? 2 : 0
-        border.color: control.inactive ? control.contract.disabledTextColor : (control.contract.highContrast && control.hovered ? control.contract.accentColor : control.contract.textPrimaryColor)
+        border.width: control.hcDisabled || control.outlined || (control.contract.highContrast && control.hovered && !control.checked) ? 2 : 0
+        border.color: control.hcDisabled ? control.contract.disabledTextColor : (control.contract.highContrast && control.hovered ? control.contract.accentColor : control.contract.textPrimaryColor)
     }
 
     contentItem: Item {

@@ -24,9 +24,10 @@ Button {
 
     readonly property bool filled: kind === AuroraButton.Primary || kind === AuroraButton.DangerFilled
     readonly property bool outlined: contract.highContrast && !filled && kind !== AuroraButton.Quiet
-    readonly property bool inactive: contract.highContrast && interaction.inactive
+    // Desabilitado em alto contraste: troca de cor em vez de esmaecer.
+    readonly property bool hcDisabled: contract.highContrast && interaction.inactive
     readonly property bool hasFill: {
-        if (inactive)
+        if (hcDisabled)
             return false;
         if (contract.highContrast)
             return filled || outlined;
@@ -46,7 +47,7 @@ Button {
         return interaction.tint(rest);
     }
     readonly property color foregroundColor: {
-        if (inactive)
+        if (hcDisabled)
             return contract.disabledTextColor;
         if (contract.highContrast && filled)
             return contract.accentTextColor;
@@ -102,8 +103,8 @@ Button {
         height: control.compact ? 32 : control.height
         radius: control.contract.radiusControl
         color: control.hasFill ? control.fillColor : "transparent"
-        border.width: control.inactive || control.outlined || (control.contract.highContrast && control.hovered) ? 2 : 0
-        border.color: control.inactive ? control.contract.disabledTextColor : (control.contract.highContrast && control.hovered ? control.contract.accentColor : control.contract.textPrimaryColor)
+        border.width: control.hcDisabled || control.outlined || (control.contract.highContrast && control.hovered) ? 2 : 0
+        border.color: control.hcDisabled ? control.contract.disabledTextColor : (control.contract.highContrast && control.hovered ? control.contract.accentColor : control.contract.textPrimaryColor)
     }
 
     contentItem: RowLayout {
