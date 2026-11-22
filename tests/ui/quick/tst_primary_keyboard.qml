@@ -18,6 +18,29 @@ TestCase {
             presenter: testCase.presenter
         }
     }
+    // Just enough of a profile for the sidebar chip to show.
+    QtObject {
+        id: fakeProfile
+        property bool needsSetup: false
+        property bool available: true
+        property string nickname: "Bia"
+        property int avatarIndex: 7
+        readonly property int avatarCount: 20
+        readonly property url avatarSource: "qrc:/rc_music/avatars/avatar-08.svg"
+        property var customAvatars: []
+        function acceptsNickname(text) {
+            return text.length > 0;
+        }
+        function setNickname(text) {
+            return false;
+        }
+        function chooseBundledAvatar(index) {
+            return false;
+        }
+        function chooseCustomAvatar(file) {
+            return false;
+        }
+    }
     Component {
         id: editorComponent
         TextInput {
@@ -74,8 +97,12 @@ TestCase {
             verify(waitForPolish(shell));
             wait(0);
         }
+        if (name === "profile-chip")
+            shell.profile = fakeProfile;
         const control = findChild(shell, name);
         verify(control, name);
+        // An invisible control can take focus from code, never from the user.
+        verify(control.visible, name + " is reachable");
         control.forceActiveFocus(Qt.TabFocusReason);
         tryVerify(function () {
             return control.activeFocus;
@@ -83,7 +110,7 @@ TestCase {
         return control;
     }
     function test_spaceNeverActivatesLastControl_data() {
-        return ["mute", "next", "skip-forward", "player-queue", "preferences", "progress", "volume", "queue-list", "queue-remove", "queue-shuffle", "queue-repeat"].map(function (name) {
+        return ["mute", "next", "previous", "player-shuffle", "player-repeat", "player-queue", "preferences", "profile-chip", "theme-toggle", "progress", "volume", "queue-list", "queue-remove", "queue-shuffle", "queue-repeat"].map(function (name) {
             return {
                 tag: name,
                 control: name
