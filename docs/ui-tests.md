@@ -144,6 +144,20 @@ As três condições foram corrigidas em 2026-11-22:
 - `test_headerHeroAndFooterUseSeparateResponsiveRegions` confere o layout e o tamanho da captura sempre, e só grava `aurora-redesign-<linha>.png` com `RC_MUSIC_UI_ARTIFACT_DIR` definido.
 - `roomHostLeadsEachStartOnceOverQueuedConfirmations` espera o player da sala receber a confirmação do backend, que chega pela fila de eventos, antes de avançar o relógio da sala. Se o timer de 300 ms soltava a faixa no fim de uma espera, a confirmação ficava na fila, e a sala via o player parado na posição da âncora depois dela. Então reancorava duas vezes por desvio. Uma sonda que forçava essa ordem reproduziu a falha (2 estados a mais) e passou com a correção.
 
+## Casca Aurora (fatia 2)
+
+Ids que a casca nova expõe aos testes Quick:
+
+- `profile-chip` (com `profile-chip-nickname`, `profile-chip-caption` e `profile-chip-avatar`): chip do perfil no pé da lateral, só com `profile` disponível. Abre Configurações › Perfil.
+- `theme-toggle`: no Aurora vive no topo (`workspace-header`), como `AuroraIconButton` tonal; no fixture congelado continua na lateral. Cada modo o carrega num `Loader` de `active` exclusivo, então `findChild` nunca acha a cópia do outro modo.
+- `navigation-count` (contagem de Biblioteca e Playlists, só a partir dos bindings) e `navigation-trailing-icon` (ícone `external` do Navegar).
+- `player-time` (“1:19 / 3:37”) e `progress` na borda de cima do player, com `player-lyrics`, `player-queue`, `mute` e `volume` à direita. Na janela compacta (até 900 px) o `volume` fica oculto e o `mute` permanece.
+- A lateral do Aurora não mostra `queue`: a Fila abre por `player-queue` e Ctrl+L.
+
+Ordem de Tab fixada por `tst_aurora_navigation::test_tabFollowsSidebarHeaderPageAndPlayer` (1440×900): lateral (`library`, `search`, `playlists`, `room`, `downloads`, `embedded-browser`, `preferences`, `profile-chip`), `theme-toggle`, página e então `progress`, `player-shuffle`, `previous`, `play-pause`, `next`, `player-repeat`, `player-queue`, `mute`, `volume`; Shift+Tab percorre o caminho inverso. A página de Atividade aponta o `KeyNavigation` para relés internos (`focus-relay-before`/`focus-relay-after`): o `KeyNavigation` é recíproco e um alvo externo teria o próprio Tab reescrito pela página oculta.
+
+Capturas da fatia, em `out/product/ui-redesign-captures/casca` (via `RC_MUSIC_UI_ARTIFACT_DIR`): `aurora-redesign-{wide,medium,minimum}-{light,dark}.png` (`tst_aurora_composition`) e `aurora-native-{light,dark}.png` (`tst_aurora_navigation`).
+
 ## Limites
 
 ### Geometria durante metadata e capa
