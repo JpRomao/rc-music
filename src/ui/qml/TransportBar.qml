@@ -563,10 +563,14 @@ GridLayout {
                     if (enabled)
                         root.queueRequested();
                 }
-                // A small badge on the icon's top-right corner; high contrast outlines it instead.
+                // A small badge on the icon's top-right corner; high contrast outlines it instead. It fades
+                // with the button, and high contrast gives it the button's disabled color.
                 Rectangle {
+                    id: queueCountBadge
                     objectName: "player-queue-count"
                     readonly property string text: String(root.queueCount)
+                    readonly property color inkColor: root.contract.highContrast && !queueAction.enabled ? root.contract.disabledTextColor : root.contract.textPrimaryColor
+                    visible: root.queueCount > 0
                     anchors.top: parent.top
                     anchors.topMargin: 4
                     anchors.right: parent.right
@@ -576,7 +580,7 @@ GridLayout {
                     radius: 8
                     color: root.contract.highContrast ? root.contract.canvasColor : root.contract.selectionColor
                     border.width: root.contract.highContrast ? 2 : 0
-                    border.color: root.contract.textPrimaryColor
+                    border.color: inkColor
                     Accessible.ignored: true
                     Text {
                         id: queueCountText
@@ -587,7 +591,7 @@ GridLayout {
                         font.family: root.contract.bodyFontFamily
                         font.pixelSize: root.contract.typeEyebrow
                         font.weight: Font.DemiBold
-                        color: root.contract.textPrimaryColor
+                        color: queueCountBadge.inkColor
                         Accessible.ignored: true
                     }
                 }

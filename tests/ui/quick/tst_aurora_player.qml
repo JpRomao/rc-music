@@ -443,6 +443,26 @@ TestCase {
         compare(audioCommands(), commands, "opening the queue must not touch playback");
     }
 
+    // The badge counts something only with a queue, and dims with its button.
+    function test_queueBadgeFollowsTheCountAndTheButtonState() {
+        const button = findChild(shell, "player-queue");
+        const badge = findChild(button, "player-queue-count");
+        const text = findChild(button, "player-queue-count-text");
+        verify(!presenter.queueLoaded);
+        verify(!badge.visible, "no badge without a queue");
+        loadSyntheticQueue();
+        verify(badge.visible);
+        compare(badge.text, "2");
+        driver.setHighContrast(true, true);
+        tryVerify(() => productContract.highContrast);
+        verify(Qt.colorEqual(text.color, productContract.textPrimaryColor));
+        verify(Qt.colorEqual(badge.border.color, productContract.textPrimaryColor));
+        findChild(shell, "transport-bar").queueAvailable = false;
+        verify(!button.enabled);
+        verify(Qt.colorEqual(text.color, productContract.disabledTextColor), "count " + text.color);
+        verify(Qt.colorEqual(badge.border.color, productContract.disabledTextColor), "outline " + badge.border.color);
+    }
+
     function test_queueOpensAsADrawerOverTheHome_data() {
         return [
             {
