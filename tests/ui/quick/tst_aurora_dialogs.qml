@@ -256,19 +256,29 @@ TestCase {
         verify(sv.contentHeight <= sv.availableHeight, "conteudo " + sv.contentHeight + " > area " + sv.availableHeight);
     }
     function test_tallDialogScrollsInsideBounds() {
-        const h = createTemporaryObject(hostComponent, testCase, {
-            width: 720,
-            height: 520,
+        const h = openForm({
             tallContent: true
         });
-        verify(h);
-        verify(waitForRendering(h.contentItem));
-        h.dialog.open();
-        tryVerify(() => h.dialog.opened);
         const sv = child(h.dialog, "dialog-scroll");
         verify(sv.contentHeight > sv.availableHeight);
         verify(sv.availableHeight > 0);
         verify(h.dialog.height <= 520 - 48);
+        // O Tab leva o controle de baixo, com o anel, para dentro da vista.
+        tryVerify(() => h.first.activeFocus);
+        verifyInView(sv, h.first, "primeiro ao abrir");
+        keyClick(Qt.Key_Tab);
+        verify(h.last.activeFocus);
+        verifyInView(sv, h.last, "último depois do Tab");
+        keyClick(Qt.Key_Backtab);
+        verify(h.first.activeFocus);
+        verifyInView(sv, h.first, "primeiro de volta");
+    }
+    function verifyInView(scrollView, control, context) {
+        const view = scrollView.contentItem;
+        const top = control.mapToItem(view, 0, 0).y;
+        const room = contract.focusRingWidth + 2;
+        verify(top - room >= 0, context + ": topo " + top + " fora da vista");
+        verify(top + control.height + room <= view.height, context + ": base " + (top + control.height) + " além de " + view.height);
     }
     function test_highContrastSurface() {
         driver.setHighContrast(true, true);

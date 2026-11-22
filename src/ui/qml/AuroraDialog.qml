@@ -64,6 +64,20 @@ Dialog {
         const next = area.nextItemInFocusChain(true);
         return next && contains(area, next) ? next : null;
     }
+    // Rola o corpo até o controle com foco, com o anel, ficar inteiro na vista.
+    function reveal(item) {
+        if (!item || !contains(bodyColumn, item))
+            return;
+        const view = scroll.contentItem as Flickable;
+        if (!view)
+            return;
+        const top = item.mapToItem(view.contentItem, 0, 0).y - ringRoom;
+        const bottom = top + item.height + 2 * ringRoom;
+        if (top < view.contentY)
+            view.contentY = top;
+        else if (bottom > view.contentY + view.height)
+            view.contentY = bottom - view.height;
+    }
     function firstFocusTarget() {
         const body = firstInside(bodyColumn);
         if (body)
@@ -152,6 +166,9 @@ Dialog {
         ScrollView {
             id: scroll
             objectName: "dialog-scroll"
+            // O Tab num diálogo alto leva o controle com foco para dentro da vista.
+            readonly property Item focusedItem: Window.activeFocusItem
+            onFocusedItemChanged: dialog.reveal(focusedItem)
             clip: true
             contentWidth: availableWidth
             contentHeight: bodyColumn.implicitHeight + 2 * dialog.ringRoom
