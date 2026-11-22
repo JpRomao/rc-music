@@ -111,6 +111,8 @@ SpinBox {
     AuroraInteraction {
         id: interaction
         contract: control.contract
-        control: control
+        enabled: control.enabled
+        // O centro é o campo: o hover dos botões de menos e mais não o tinge.
+        hovered: control.hovered && !control.up.hovered && !control.down.hovered
     }
 }

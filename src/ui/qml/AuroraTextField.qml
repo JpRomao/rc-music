@@ -89,6 +89,7 @@ ColumnLayout {
     AuroraInteraction {
         id: interaction
         contract: root.contract
-        control: field
+        enabled: field.enabled
+        hovered: field.hovered
     }
 }

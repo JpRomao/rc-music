@@ -113,7 +113,9 @@ FocusScope {
                     AuroraInteraction {
                         id: interaction
                         contract: root.contract
-                        control: option
+                        enabled: option.enabled
+                        hovered: option.hovered
+                        pressed: option.down
                     }
 
                     Rectangle {
@@ -171,6 +173,6 @@ FocusScope {
     AuroraInteraction {
         id: groupInteraction
         contract: root.contract
-        control: root
+        enabled: root.enabled
     }
 }

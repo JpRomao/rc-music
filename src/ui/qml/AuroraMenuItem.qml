@@ -84,6 +84,8 @@ MenuItem {
     AuroraInteraction {
         id: interaction
         contract: item.contract
-        control: item
+        enabled: item.enabled
+        hovered: item.hovered
+        pressed: item.down
     }
 }

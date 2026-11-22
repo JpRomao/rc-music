@@ -301,6 +301,19 @@ TestCase {
         compare(st.value, 60);
         verify(st.up.indicator.width >= 40 && st.down.indicator.height >= 40);
     }
+    function test_stepperCenterRestsOnSurface_data() {
+        return themes();
+    }
+    function test_stepperCenterRestsOnSurface(data) {
+        driver.setSystemAppearance(data.dark, false);
+        const st = hostStepper({
+            label: "Valor",
+            from: 1,
+            to: 60,
+            value: 5
+        });
+        sameColor(child(st, "stepper-center").color, contract.surfaceColor, "centro em repouso");
+    }
     function test_checkBoxStates() {
         const c = hostCheck({
             text: "Avisar ao fechar para a bandeja nesta sessão"

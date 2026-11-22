@@ -126,7 +126,9 @@ Button {
     AuroraInteraction {
         id: interaction
         contract: control.contract
-        control: control
+        enabled: control.enabled
+        hovered: control.hovered
+        pressed: control.down
     }
 
     AuroraFocusRing {
