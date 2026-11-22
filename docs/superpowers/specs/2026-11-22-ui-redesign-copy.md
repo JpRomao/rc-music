@@ -861,6 +861,12 @@ Os textos abaixo são novos. Cada um vira uma propriedade nova no catálogo indi
 | botão de texto | Cancelar | "Cancelar importação" | |
 | botão de texto | Fechar | "Fechar resumo da importação" | |
 
+### 4.8 Lateral (`BrowserText`)
+
+| elemento | texto visível | nome acessível / descrição | observação |
+|---|---|---|---|
+| item Navegar | Navegar | descrição: "Abre em uma janela separada." | Diz ao leitor de tela o que o ícone de janela externa mostra na tela; a descrição fica também na lateral compacta, que esconde o ícone. |
+
 ---
 
 ## 5. As 15 mudanças mais importantes

@@ -299,6 +299,8 @@ Rectangle {
                 contract: root.contract
                 text: browserLabels.navigate
                 trailingIconName: "external"
+                // The trailing icon is decoration; a screen reader hears the same warning here.
+                description: browserLabels.opensSeparateWindow
                 visible: root.hasBrowser
                 enabled: visible && !root.exiting
                 onClicked: root.browserRequested()

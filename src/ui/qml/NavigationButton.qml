@@ -10,12 +10,14 @@ AccessibleTransportButton {
     property int count: -1
     property string countText: ""
     property string trailingIconName: ""
+    // Read by screen readers when the item has no count, for instance what the trailing icon shows.
+    property string description: ""
     readonly property bool showsCount: editorial && !compact && count >= 0
     readonly property bool showsTrailingIcon: editorial && !compact && trailingIconName.length > 0
     // Quiet at rest; the stronger text color on the selected and hover backgrounds keeps 4.5:1.
     readonly property color accessoryColor: contract.highContrast ? label.color : (checked || (hovered && enabled) ? contract.textPrimaryColor : contract.textSecondaryColor)
     accessibleName: text
-    Accessible.description: countText.length > 0 ? countText : accessibleDescription
+    Accessible.description: countText.length > 0 ? countText : (description.length > 0 ? description : accessibleDescription)
     contentItem: Text {
         id: label
         readonly property bool showsIcon: root.editorial && root.iconName.length > 0

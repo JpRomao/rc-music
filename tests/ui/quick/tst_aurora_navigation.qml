@@ -672,12 +672,15 @@ TestCase {
         verify(icon && icon.visible);
         compare(icon.iconName, "external");
         compare(icon.Accessible.ignored, true);
+        // The icon is decoration: a screen reader hears the same warning from the item itself.
+        compare(browser.Accessible.description, "Abre em uma janela separada.");
         verify(!findChild(findChild(shell, "downloads"), "navigation-trailing-icon").visible);
         shell.width = 720;
         shell.height = 520;
         tryCompare(shell.contentItem, "width", 720);
         verify(waitForPolish(shell));
         verify(!icon.visible);
+        compare(browser.Accessible.description, "Abre em uma janela separada.");
     }
 
     function test_productContrastUsesActualBackgrounds_data() {
