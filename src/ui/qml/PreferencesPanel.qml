@@ -12,6 +12,9 @@ PageSurface {
     property var downloads: null
     property var profile: null
     property int section: 0
+    readonly property int profileSection: 4
+    // Section for the next opening only; read and cleared in onAboutToShow.
+    property int requestedSection: 0
     property bool profileNicknameRejected: false
     property bool profileNicknameSaved: false
     property bool customAvatarRejected: false
@@ -123,7 +126,8 @@ PageSurface {
         defaultAppsSettingsFeedback.Accessible.announce(feedback, Accessible.Assertive);
     }
     onAboutToShow: {
-        section = 0;
+        section = requestedSection;
+        requestedSection = 0;
         audioOutputSelectionRejected = false;
         backwardField.resetDraft();
         forwardField.resetDraft();

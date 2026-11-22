@@ -122,6 +122,18 @@ TestCase {
         function open() {
         }
     }
+    QtObject {
+        id: optionalProfile
+        readonly property bool needsSetup: false
+        readonly property bool available: true
+        readonly property string nickname: "Bia"
+        readonly property url avatarSource: "qrc:/rc_music/avatars/avatar-01.svg"
+        readonly property int avatarIndex: 0
+        readonly property int avatarCount: 20
+        function acceptsNickname(text) {
+            return text.length > 0;
+        }
+    }
     Component {
         id: shellComponent
         Main {
@@ -814,12 +826,13 @@ TestCase {
     function test_remainingOptionalNavigationActionsFitTogether() {
         shell.downloads = optionalDownloads;
         shell.embeddedBrowser = optionalBrowser;
+        shell.profile = optionalProfile;
         wait(0);
         verify(waitForPolish(shell));
         const viewport = findChild(shell, "navigation-viewport");
         verify(viewport);
         let previousBottom = -1;
-        for (const name of ["now", "playlists", "downloads", "embedded-browser", "theme-toggle", "preferences"]) {
+        for (const name of ["now", "playlists", "downloads", "embedded-browser", "theme-toggle", "preferences", "profile-chip"]) {
             const button = findChild(shell, name);
             const boundary = name === "theme-toggle" && shell.inlinePages ? findChild(shell, "workspace-header") : viewport;
             verify(button && button.visible);

@@ -18,5 +18,7 @@ QtObject {
     readonly property string customAvatarFilter: qsTr("Imagens PNG ou JPEG (*.png *.jpg *.jpeg)")
     readonly property string customAvatarRejected: qsTr("Não foi possível usar essa imagem. Escolha um PNG ou JPEG de até 2 MiB.")
     readonly property string customAvatarActive: qsTr("Você está usando uma imagem própria. Escolha um avatar abaixo para trocar.")
+    readonly property string yourProfile: qsTr("Seu perfil")
+    readonly property string openProfile: qsTr("Abrir seu perfil")
     readonly property string unavailable: qsTr("O perfil não pode ser lido ou foi criado por uma versão mais recente do RC Music. Ele não será alterado nesta execução.")
 }

@@ -26,6 +26,7 @@ Rectangle {
     property int libraryCount: -1
     property int playlistCount: -1
     property bool preferencesOpen: false
+    property var profile: null
     property alias nowButton: nowAction
     property alias queueButton: queueAction
     property alias preferencesButton: preferencesAction
@@ -36,6 +37,7 @@ Rectangle {
     property alias downloadsButton: downloadsAction
     property alias browserButton: browserAction
     property alias themeButton: themeAction
+    property alias profileChip: profileAction
     signal nowRequested
     signal queueRequested
     signal preferencesRequested
@@ -46,6 +48,7 @@ Rectangle {
     signal downloadsRequested
     signal browserRequested
     signal themeRequested
+    signal profileRequested
 
     color: contract.navigationColor
     NavigationText {
@@ -349,6 +352,18 @@ Rectangle {
                 checked: root.preferencesOpen
                 enabled: !root.exiting
                 onClicked: root.preferencesRequested()
+            }
+            ProfileChip {
+                id: profileAction
+                Layout.fillWidth: true
+                contract: root.contract
+                profile: root.profile
+                compact: root.compact
+                visible: root.editorial && root.profile !== null && root.profile.available === true
+                enabled: !root.exiting
+                KeyNavigation.tab: null
+                KeyNavigation.backtab: null
+                onClicked: root.profileRequested()
             }
         }
     }

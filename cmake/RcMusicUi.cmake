@@ -199,6 +199,7 @@ function(rc_music_add_ui target support qml_output)
             AuroraCheckBox.qml
             AuroraChip.qml
             AuroraAvatar.qml
+            ProfileChip.qml
             AuroraShadow.qml
             AuroraMenu.qml
             AuroraMenuItem.qml

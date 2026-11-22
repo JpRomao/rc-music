@@ -56,6 +56,8 @@ ApplicationWindow {
     readonly property bool queueShortcutEnabled: windowShortcutsEnabled && (inlinePages ? ((presenter.queueLoaded || roomGuest) && !presenter.exiting) : queueButton.enabled) && !preferencesPanel.visible
     // The item focused when the Aurora drawer opened; the fixture keeps returning to the sidebar button.
     property Item queueReturnFocusItem: null
+    // Who opened Settings from outside the Settings button; null means the button.
+    property Item preferencesReturnFocusItem: null
     property alias queueButton: sideNavigation.queueButton
     property alias preferencesButton: sideNavigation.preferencesButton
     property alias playlistsButton: sideNavigation.playlistsButton
@@ -331,7 +333,21 @@ ApplicationWindow {
         const percent = presenter.volume * 100;
         presenter.setVolume(Math.max(0, Math.min(100, percent + percentagePoints)) / 100);
     }
+    function openProfile() {
+        if (preferencesPanel.opened) {
+            preferencesPanel.section = preferencesPanel.profileSection;
+            preferencesPanel.focusFirst();
+        } else {
+            preferencesPanel.requestedSection = preferencesPanel.profileSection;
+            openPreferences();
+            preferencesPanel.requestedSection = 0;
+        }
+        if (preferencesPanel.opened)
+            preferencesReturnFocusItem = sideNavigation.profileChip;
+    }
     function openPreferences() {
+        if (!preferencesPanel.opened)
+            preferencesReturnFocusItem = null;
         if ((!window.inlinePages && (playlistsPanel.visible || downloadsPanel.visible)) || presenter.exiting)
             return;
         queueOpen = false;
@@ -481,6 +497,7 @@ ApplicationWindow {
         playlistCount: window.playlists !== null && window.playlists.ready ? window.playlists.playlists.length : -1
         downloadsExitRecovery: window.downloadFinalSaveDecisionRequired
         preferencesOpen: preferencesPanel.visible
+        profile: window.profile
         onNowRequested: {
             if (window.inlinePages) {
                 libraryPanel.close();
@@ -495,6 +512,7 @@ ApplicationWindow {
         }
         onQueueRequested: window.toggleQueue()
         onPreferencesRequested: window.openPreferences()
+        onProfileRequested: window.openProfile()
         onPlaylistsRequested: window.openPlaylists()
         onLibraryRequested: window.openLibrary()
         onSearchRequested: window.openSearch()
@@ -889,9 +907,13 @@ ApplicationWindow {
             if (!window.presenter.exiting) {
                 if (windowNotice.visible)
                     windowNotice.focusFirst();
-                else
-                    preferencesButton.forceActiveFocus(Qt.TabFocusReason);
+                else {
+                    const opener = window.preferencesReturnFocusItem;
+                    const target = opener && opener.visible && opener.enabled ? opener : preferencesButton;
+                    target.forceActiveFocus(Qt.TabFocusReason);
+                }
             }
+            window.preferencesReturnFocusItem = null;
         }
     }
     TrackDetailsPanel {

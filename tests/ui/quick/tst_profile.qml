@@ -8,6 +8,7 @@ TestCase {
     name: "ListenerProfile"
     when: windowShown
     readonly property PlayerPresenter localPresenter: testLocalPlayerPresenter // qmllint disable unqualified
+    readonly property ShellUiContract productContract: testProductUiContract // qmllint disable unqualified
     readonly property string invalidNickname: "O apelido precisa ter de 1 a 32 caracteres, numa linha só, sem espaços repetidos nem caracteres especiais."
     property var shell
 
@@ -58,6 +59,14 @@ TestCase {
         }
     }
     Component {
+        id: productShellComponent
+        Main {
+            uiContract: testCase.productContract
+            presenter: testCase.localPresenter
+            profile: fakeProfile
+        }
+    }
+    Component {
         id: shellWithoutProfileComponent
         Main {
             uiContract: testShellUiContract // qmllint disable unqualified
@@ -78,6 +87,7 @@ TestCase {
         if (shell)
             shell.destroy();
         shell = null;
+        localPresenter.setThemePreference(PlayerPresenter.SystemTheme);
         wait(0);
     }
     function createShell(component) {
@@ -239,5 +249,131 @@ TestCase {
         mouseClick(tab);
         tryVerify(() => findChild(shell, "preferences-profile-unavailable").visible);
         verify(!findChild(shell, "preferences-profile-nickname").visible);
+    }
+
+    function readyProfile(nickname) {
+        fakeProfile.needsSetup = false;
+        fakeProfile.nickname = nickname === undefined ? "Bia" : nickname;
+    }
+    function test_sidebarProfileChipOpensProfileSettings() {
+        readyProfile();
+        createShell();
+        const chip = findChild(shell, "profile-chip");
+        verify(chip && chip.visible);
+        const preferencesButton = findChild(shell, "preferences");
+        verify(chip.mapToItem(null, 0, 0).y > preferencesButton.mapToItem(null, 0, 0).y);
+        compare(findChild(shell, "profile-chip-nickname").text, "Bia");
+        compare(findChild(shell, "profile-chip-caption").text, "Seu perfil");
+        compare(String(findChild(shell, "profile-chip-avatar").source), String(fakeProfile.avatarSource));
+        const panel = findChild(shell, "preferences-panel");
+        mouseClick(chip);
+        tryVerify(() => panel.visible);
+        compare(panel.section, panel.profileSection);
+        tryVerify(() => findChild(shell, "preferences-profile-nickname").visible);
+        keyClick(Qt.Key_Escape);
+        tryVerify(() => !panel.visible);
+        tryVerify(() => chip.activeFocus);
+        keyClick(Qt.Key_Return);
+        tryVerify(() => panel.visible);
+        compare(panel.section, panel.profileSection);
+        tryVerify(() => findChild(shell, "preferences-profile-nickname").visible);
+        keyClick(Qt.Key_Escape);
+        tryVerify(() => !panel.visible);
+        tryVerify(() => chip.activeFocus);
+    }
+    function test_chipChangesSectionWhenSettingsIsAlreadyOpen() {
+        readyProfile();
+        createShell();
+        const panel = findChild(shell, "preferences-panel");
+        shell.openPreferences();
+        tryVerify(() => panel.visible);
+        compare(panel.section, 0);
+        mouseClick(findChild(shell, "profile-chip"));
+        compare(panel.section, panel.profileSection);
+        verify(panel.visible);
+        tryVerify(() => findChild(shell, "preferences-profile-nickname").visible);
+        // A later plain opening still starts on the first section.
+        shell.openPreferences();
+        panel.close();
+        shell.openPreferences();
+        tryVerify(() => panel.visible);
+        compare(panel.section, 0);
+    }
+    function test_profileChipIsAvatarOnlyWhenCompact() {
+        readyProfile();
+        createShell();
+        shell.width = 720;
+        shell.height = 520;
+        verify(waitForPolish(shell));
+        const chip = findChild(shell, "profile-chip");
+        verify(chip.visible);
+        verify(!findChild(shell, "profile-chip-nickname").visible);
+        verify(!findChild(shell, "profile-chip-caption").visible);
+        verify(findChild(shell, "profile-chip-avatar").visible);
+        compare(chip.Accessible.name, "Abrir seu perfil");
+        compare(chip.Accessible.description, "Bia");
+        compare(chip.toolTipText, "Abrir seu perfil");
+        verify(chip.width >= 40 && chip.height >= 40);
+    }
+    function test_profileChipHandlesMissingProfileAndEmptyNickname() {
+        createShell(shellWithoutProfileComponent);
+        verify(!findChild(shell, "profile-chip").visible);
+        shell.destroy();
+        shell = null;
+        wait(0);
+        fakeProfile.needsSetup = false;
+        fakeProfile.available = false;
+        createShell();
+        verify(!findChild(shell, "profile-chip").visible);
+        fakeProfile.available = true;
+        tryVerify(() => findChild(shell, "profile-chip").visible);
+        compare(findChild(shell, "profile-chip").Accessible.description, "");
+        verify(!findChild(shell, "profile-chip-nickname").visible);
+        compare(findChild(shell, "profile-chip-caption").text, "Seu perfil");
+        fakeProfile.avatarIndex = -1;
+        tryVerify(() => findChild(shell, "profile-chip-avatar").showsFallback);
+        verify(findChild(findChild(shell, "profile-chip-avatar"), "avatar-fallback").visible);
+    }
+    function luminance(color) {
+        function linear(value) {
+            return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+        }
+        return 0.2126 * linear(color.r) + 0.7152 * linear(color.g) + 0.0722 * linear(color.b);
+    }
+    function verifyContrast(foreground, background, context) {
+        const first = luminance(foreground);
+        const second = luminance(background);
+        const ratio = (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+        verify(ratio >= 4.5, context + ": " + ratio);
+    }
+    function test_profileChipContrast_data() {
+        return [
+            {
+                tag: "light",
+                dark: false
+            },
+            {
+                tag: "dark",
+                dark: true
+            }
+        ];
+    }
+    function test_profileChipContrast(data) {
+        readyProfile();
+        localPresenter.setThemePreference(data.dark ? PlayerPresenter.DarkTheme : PlayerPresenter.LightTheme);
+        createShell(productShellComponent);
+        tryCompare(productContract, "darkTheme", data.dark);
+        const chip = findChild(shell, "profile-chip");
+        const nickname = findChild(shell, "profile-chip-nickname");
+        const caption = findChild(shell, "profile-chip-caption");
+        const navigation = findChild(shell, "side-navigation");
+        verify(chip.visible);
+        verifyContrast(nickname.color, navigation.color, "nickname on navigation");
+        verifyContrast(caption.color, navigation.color, "caption on navigation");
+        mouseMove(chip, chip.width / 2, chip.height / 2);
+        tryVerify(() => chip.hovered);
+        verifyContrast(nickname.color, Qt.color(productContract.hoverColor), "nickname on hover");
+        verifyContrast(caption.color, Qt.color(productContract.hoverColor), "caption on hover");
+        compare(caption.color, Qt.color(productContract.textPrimaryColor));
     }
 }
