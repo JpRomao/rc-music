@@ -48,8 +48,10 @@ Slider {
         width: control.availableWidth
         height: implicitHeight
         radius: control.edge ? 0 : 3
-        color: control.edge ? control.contract.dividerColor : (control.contract.highContrast ? control.contract.surfaceColor : control.outlineColor)
-        border.width: !control.edge && control.contract.highContrast ? 1 : 0
+        // The edge track is a divider line; in high contrast it becomes an outlined canvas track, so the
+        // system highlight of the filled part stands apart from it.
+        color: control.contract.highContrast ? (control.edge ? control.contract.canvasColor : control.contract.surfaceColor) : (control.edge ? control.contract.dividerColor : control.outlineColor)
+        border.width: control.contract.highContrast ? 1 : 0
         border.color: control.outlineColor
         scale: control.mirrored ? -1 : 1
         Rectangle {

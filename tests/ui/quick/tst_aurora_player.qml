@@ -236,6 +236,58 @@ TestCase {
         compare(transport.formattedCompactTime(3723000), "1:02:03");
     }
 
+    function test_progressEdgeStaysDistinguishableInHighContrast_data() {
+        return [
+            {
+                tag: "light",
+                light: true
+            },
+            {
+                tag: "dark",
+                light: false
+            }
+        ];
+    }
+
+    // System high contrast: the filled part, the empty track and the marker stay apart.
+    function test_progressEdgeStaysDistinguishableInHighContrast(data) {
+        loadSyntheticQueue();
+        driver.setHighContrast(true, data.light);
+        tryVerify(() => productContract.highContrast);
+        const footer = findChild(shell, "player-footer");
+        const progress = findChild(shell, "progress");
+        verify(progress.edge && progress.enabled);
+        const track = progress.background;
+        const fill = track.children[0];
+        verifyContrast(fill.color, track.color, 3, "filled part against the empty track");
+        verifyContrast(progress.handle.color, footer.color, 3, "marker on the player");
+        // The empty part shows either by its own color or by its outline.
+        const trackEdge = track.border.width > 0 ? track.border.color : track.color;
+        verifyContrast(trackEdge, footer.color, 3, "empty track on the player");
+        verifyContrast(fill.color, footer.color, 3, "filled part on the player");
+    }
+
+    // A "%1" or "%2" inside a name is text, never a placeholder.
+    function test_artistLineKeepsPlaceholdersInsideNames() {
+        verify(driver.followRoom("Faixa", "Banda %2", "%1 ao vivo", 600000));
+        const artist = findChild(shell, "player-track-artist");
+        tryCompare(artist, "text", "Banda %2 · %1 ao vivo");
+    }
+
+    // Without a track the player shows only the empty title: no "Artista desconhecido", no "0:00 / 0:00".
+    function test_identityWithoutATrackShowsOnlyTheEmptyTitle() {
+        compare(presenter.hasCurrentTrack, false);
+        compare(findChild(shell, "player-track-title").text, productContract.emptyTitle);
+        const artist = findChild(shell, "player-track-artist");
+        const time = findChild(shell, "player-time");
+        verify(!artist.visible, "no artist line without a track");
+        verify(!time.visible, "no time without a track");
+        loadSyntheticQueue();
+        verify(artist.visible);
+        verify(time.visible);
+        compare(time.text, "0:41 / 3:00");
+    }
+
     function test_identityElidesLongMetadataAtMinimumWindow() {
         resize(720, 520);
         let longTitle = "";

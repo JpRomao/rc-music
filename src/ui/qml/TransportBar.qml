@@ -84,12 +84,14 @@ GridLayout {
             return minutes + ":" + seconds;
         return hours + ":" + String(minutes % 60).padStart(2, "0") + ":" + seconds;
     }
-    // Each value replaces its own placeholder once, so a "%1" inside an artist or album stays text.
+    // One pass over the template: a translation may reorder the placeholders, and a "%1" or "%2"
+    // inside an artist or album stays text.
     function artistLine() {
         const artist = presenter.currentArtist.length > 0 ? presenter.currentArtist : navigationLabels.localAudio;
         if (presenter.currentAlbum.length === 0)
             return artist;
-        return labels.artistAlbum.replace("%2", () => presenter.currentAlbum).replace("%1", () => artist);
+        const album = presenter.currentAlbum;
+        return labels.artistAlbum.replace(/%([12])/g, (placeholder, index) => index === "1" ? artist : album);
     }
     // A guest never seeks the shared player locally: only the room moves the music.
     function commitImmediateSeek(target) {
@@ -296,6 +298,8 @@ GridLayout {
                 }
                 Text {
                     objectName: "player-track-artist"
+                    // Without a track, only the empty title shows.
+                    visible: root.presenter.hasCurrentTrack
                     width: parent.width
                     text: root.artistLine()
                     textFormat: Text.PlainText
@@ -307,6 +311,7 @@ GridLayout {
                 }
                 Text {
                     objectName: "player-time"
+                    visible: root.presenter.hasCurrentTrack
                     topPadding: 2
                     text: labels.elapsedOfDuration.arg(root.formattedCompactTime(root.presenter.positionMs)).arg(root.formattedCompactTime(root.presenter.durationMs))
                     textFormat: Text.PlainText
