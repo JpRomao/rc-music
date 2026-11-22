@@ -253,4 +253,30 @@ TestCase {
         compare(ring.width, s.width + 10);
         compare(ring.radius, contract.radiusControl + 5);
     }
+    function test_selectKeyboardOptionShowsInnerRing() {
+        const s = hostSelect({
+            label: "Saída de áudio",
+            model: ["Padrão do sistema", "Fones", "Caixa"]
+        });
+        s.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Space);
+        tryVerify(() => s.popup.opened);
+        keyClick(Qt.Key_Down);
+        compare(s.highlightedIndex, 1);
+        const list = s.popup.contentItem;
+        tryVerify(() => list.itemAtIndex(1) !== null, 1000, "opção 1 de " + list.count + " em " + list);
+        const option = list.itemAtIndex(1);
+        const ring = findChild(option, "focus-ring");
+        verify(ring, "missing focus-ring");
+        verify(ring.visible);
+        compare(ring.x, 0);
+        compare(ring.width, option.width);
+        sameColor(option.background.color, "transparent", "fundo da opção do teclado");
+        // Com o mouse, a opção ganha o hoverColor e o anel some.
+        const other = list.itemAtIndex(2);
+        mouseMove(other, other.width / 2, other.height / 2);
+        tryCompare(s, "highlightedIndex", 2);
+        sameColor(other.background.color, contract.hoverColor, "fundo com o mouse");
+        verify(!findChild(other, "focus-ring").visible);
+    }
 }

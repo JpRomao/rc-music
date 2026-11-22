@@ -144,4 +144,32 @@ TestCase {
         tryVerify(() => !h.menu.visible);
         verify(h.opener.activeFocus);
     }
+    function test_keyboardCurrentItemShowsInnerRing() {
+        const h = hostMenuWithOpener();
+        h.opener.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Return);
+        tryVerify(() => h.menu.opened);
+        keyClick(Qt.Key_Down);
+        const current = h.menu.itemAt(h.menu.currentIndex);
+        verify(current.visualFocus);
+        const ring = findChild(current, "focus-ring");
+        verify(ring, "missing focus-ring");
+        verify(ring.visible);
+        sameColor(ring.border.color, contract.focusColor, "anel");
+        // Anel interno: não invade os itens vizinhos.
+        compare(ring.x, 0);
+        compare(ring.y, 0);
+        compare(ring.width, current.width);
+        compare(ring.height, current.height);
+        // O hoverColor fica para o mouse.
+        sameColor(child(current, "menu-item-background").color, "transparent", "fundo do item do teclado");
+    }
+    function test_mouseHoverUsesHoverColorWithoutRing() {
+        const m = openMenu();
+        const item = m.itemAt(1);
+        mouseMove(item, item.width / 2, item.height / 2);
+        tryVerify(() => item.highlighted);
+        sameColor(child(item, "menu-item-background").color, contract.hoverColor, "fundo com o mouse");
+        verify(!findChild(item, "focus-ring").visible);
+    }
 }

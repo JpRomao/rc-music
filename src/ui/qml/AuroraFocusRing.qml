@@ -4,6 +4,7 @@ import MusicPlayer.M0
 // Anel de foco: 3 px em focusColor, separado do alvo por uma folga de 2 px,
 // visível só com foco ativo. Pensado para ser filho do alvo; quem marca outra
 // área ajusta areaX, areaY, areaWidth e areaHeight, nas coordenadas do pai do anel.
+// Com inside, o anel fica por dentro da área, para itens colados (menus e listas).
 Rectangle {
     id: root
     required property Item target
@@ -15,9 +16,10 @@ Rectangle {
     property real areaHeight: target.height
     // Quando o anel aparece; por padrão, com o foco ativo do alvo.
     property bool shown: target.activeFocus
+    property bool inside: false
 
     readonly property real gap: 2
-    readonly property real outset: gap + contract.focusRingWidth
+    readonly property real outset: inside ? 0 : gap + contract.focusRingWidth
 
     objectName: "focus-ring"
     x: areaX - outset

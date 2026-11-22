@@ -27,10 +27,11 @@ MenuItem {
     font.pixelSize: contract.typeBody
     Accessible.name: text
 
+    // O destaque do mouse usa hoverColor; o item atual do teclado ganha o anel interno.
     background: Rectangle {
         objectName: "menu-item-background"
         radius: item.contract.radiusControl
-        color: item.highlighted ? (item.contract.highContrast ? item.contract.accentColor : item.contract.hoverColor) : "transparent"
+        color: item.highlighted && (item.contract.highContrast || !item.visualFocus) ? (item.contract.highContrast ? item.contract.accentColor : item.contract.hoverColor) : "transparent"
     }
 
     // Seta do submenu: o Menu posiciona o indicador de seta do MenuItem.
@@ -79,6 +80,14 @@ MenuItem {
             font.pixelSize: item.contract.typeCaption
             color: item.highlighted ? (item.contract.highContrast ? item.contract.accentTextColor : item.contract.textPrimaryColor) : interaction.ink(item.contract.textSecondaryColor)
         }
+    }
+
+    AuroraFocusRing {
+        target: item
+        contract: item.contract
+        inside: true
+        targetRadius: item.contract.radiusControl
+        shown: item.visualFocus
     }
 
     AuroraInteraction {

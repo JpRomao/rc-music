@@ -12,6 +12,9 @@ ComboBox {
     required property string label
     // Marca de foco com o foco ativo, como no campo, ou com o menu aberto.
     readonly property bool marked: activeFocus || popup.visible
+    // A opção destacada veio do teclado: ela ganha o anel interno em vez do hoverColor.
+    // Liga com qualquer tecla, desliga quando o mouse passa por uma opção.
+    property bool keyboardHighlight: false
 
     objectName: controlId
     activeFocusOnTab: true
@@ -27,6 +30,8 @@ ComboBox {
     bottomPadding: 0
     Accessible.name: label
     Accessible.id: controlId
+
+    Keys.onPressed: keyboardHighlight = true
 
     background: Rectangle {
         objectName: "select-background"
@@ -78,9 +83,13 @@ ComboBox {
         text: control.textAt(option.index)
         font: control.font
         Accessible.name: text
+        onHoveredChanged: {
+            if (hovered)
+                control.keyboardHighlight = false;
+        }
         background: Rectangle {
             radius: control.contract.radiusControl
-            color: option.marked ? (control.contract.highContrast ? control.contract.accentColor : control.contract.hoverColor) : "transparent"
+            color: option.marked && (control.contract.highContrast || !control.keyboardHighlight) ? (control.contract.highContrast ? control.contract.accentColor : control.contract.hoverColor) : "transparent"
         }
         contentItem: Item {
             Text {
@@ -103,6 +112,14 @@ ComboBox {
                 anchors.verticalCenter: parent.verticalCenter
             }
         }
+
+        AuroraFocusRing {
+            target: option
+            contract: control.contract
+            inside: true
+            targetRadius: control.contract.radiusControl
+            shown: option.marked && control.keyboardHighlight && control.popup.visible
+        }
     }
 
     popup: Popup {
@@ -113,6 +130,8 @@ ComboBox {
         popupType: Popup.Item
         enter: null
         exit: null
+        // Aberto pelo teclado, o item atual já mostra o anel; pelo mouse, não.
+        onAboutToShow: control.keyboardHighlight = control.visualFocus
 
         contentItem: ListView {
             clip: true
