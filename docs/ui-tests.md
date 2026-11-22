@@ -112,6 +112,21 @@ O novo teste [rc_music.ui.build-boundary](../tests/cmake/UiBuildBoundaryTests.cm
 - Consumidor histórico recompilado com as fontes movidas: seleção **8/8** em **36,18 s**, cobrindo as quatro suites UI, bindings de diagnóstico/mídia/energia e startup combinado. Mantém seus inputs originais e o comportamento histórico; não é execução completa do experimento.
 - Check final aprovado: formato **154 C++/52 QML**, runner **33/33**, formatter **18/18**, documentos **53 Markdown/83 requisitos/17 checks/76 etapas** e diff sem erros. O índice Git conserva os 34 movimentos em 100% de similaridade e somente o ajuste de tradução no Quick; nenhum processo de app/build/teste do workspace permaneceu ativo.
 
+## Peças Aurora
+
+Os arquivos `tests/ui/quick/tst_aurora_*.qml` cobrem as peças do redesenho em `src/ui/qml/Aurora*.qml`. Cada um hospeda a peça numa `Window` própria e roda com `QT_FATAL_WARNINGS=1`; nenhum toca som.
+
+- `tst_aurora_buttons`: botões (cinco tipos, compacto, rótulo longo cortado com nome acessível inteiro) e botão de ícone ligado/desligado.
+- `tst_aurora_fields`: campo de texto (foco, erro, linha de estado) e caixa de seleção.
+- `tst_aurora_choices`: segmentado, interruptor, stepper e caixinha, incluindo movimento reduzido.
+- `tst_aurora_badges`: selos de cinco tons, avatar com anel de escolhido e alto contraste.
+- `tst_aurora_menus`: menu com itens, separador, Esc devolvendo o foco e troca de tema com o menu aberto.
+- `tst_aurora_dialogs`: diálogo e diálogo de confirmação, foco, janela mínima e movimento reduzido.
+- `tst_aurora_surfaces`: avisos, mensagem de retorno, estado vazio, cabeçalho de gaveta e cartão flutuante.
+- `tst_aurora_pieces_visual`: contraste dos 18 pares de cores que as peças usam, nos temas claro e escuro, e galeria com todas as peças em claro, escuro e alto contraste dentro de `ColumnLayout`/`RowLayout` sem tamanhos explícitos, para que um aviso de layout falhe o teste. Com `RC_MUSIC_UI_ARTIFACT_DIR` definido, grava `aurora-pecas-claro.png`, `aurora-pecas-escuro.png` e `aurora-pecas-alto-contraste.png` para o aceite visual; as imagens não são versionadas.
+
+Contagens do marco (`develop.ps1 validate` e execução direta do Quick): `tst_aurora_pieces_visual` 7/7; Quick inteiro 695 passaram e 6 falharam, todas linhas de `AuroraComposition::test_headerHeroAndFooterUseSeparateResponsiveRegions`, que exige `RC_MUSIC_UI_ARTIFACT_DIR` e já falhava antes desta fatia. No CTest, `rc_music.ui.quick` estoura o prazo de 90 s (a suíte leva cerca de 150 s ou mais nesta máquina) e `rc_music.ui.presenter` falhou uma vez em `roomHostLeadsEachStartOnceOverQueuedConfirmations` sob carga, passando 336/336 quando rodado isolado.
+
 ## Limites
 
 ### Geometria durante metadata e capa
