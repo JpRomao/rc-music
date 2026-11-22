@@ -151,6 +151,9 @@ int ShellUiContract::controlTargetMinimum() const noexcept { return layout_.cont
 int ShellUiContract::controlTargetPreferred() const noexcept { return layout_.control_target_preferred_px; }
 int ShellUiContract::radiusMedium() const noexcept { return layout_.radius_medium_px; }
 int ShellUiContract::radiusSmall() const noexcept { return layout_.radius_small_px; }
+int ShellUiContract::radiusControl() const noexcept { return 10; }
+int ShellUiContract::radiusLarge() const noexcept { return 16; }
+int ShellUiContract::focusRingWidth() const noexcept { return 3; }
 int ShellUiContract::spacingUnit() const noexcept { return layout_.spacing_unit_px; }
 int ShellUiContract::typeEyebrow() const noexcept { return 10; }
 int ShellUiContract::typeCaption() const noexcept { return 12; }
@@ -252,6 +255,13 @@ QString ShellUiContract::hoverColor() const { return high_contrast_ ? high_contr
 QString ShellUiContract::scrimColor() const {
     // Prototype drawer backdrop: #080d0b at 33 % opacity, shared by both themes.
     return high_contrast_ ? QStringLiteral("#00000000") : QStringLiteral("#55080d0b");
+}
+QString ShellUiContract::shadowColor() const {
+    // Aurora piece shadow: warm tint on light, neutral black on dark, none in high contrast.
+    if (high_contrast_) {
+        return QStringLiteral("#00000000");
+    }
+    return dark_theme_ ? QStringLiteral("#59000000") : QStringLiteral("#1A3C2814");
 }
 QString ShellUiContract::dividerColor() const {
     return high_contrast_ ? high_contrast_->window_text.name() : palette().divider;

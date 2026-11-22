@@ -170,6 +170,7 @@ class ShellUiContractTests final : public QObject {
     void productConstantsRetainFrozenBehaviorWithAuroraColors();
     void productAppearanceUsesAuroraWhileHistoricalPalettesStayFrozen();
     void interactionTokensFollowAuroraHighContrastAndFrozenFixture();
+    void exposesAuroraPieceTokens();
     void exposesTypeScaleAndLayoutBreakpoints();
     void productTextRetainsTheHistoricalTranslationContract();
     void historicalConstructorRetainsAcceptedVisualOverrides();
@@ -352,6 +353,9 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("controlTargetPreferred"),
         QStringLiteral("radiusMedium"),
         QStringLiteral("radiusSmall"),
+        QStringLiteral("radiusControl"),
+        QStringLiteral("radiusLarge"),
+        QStringLiteral("focusRingWidth"),
         QStringLiteral("spacingUnit"),
         QStringLiteral("typeEyebrow"),
         QStringLiteral("typeCaption"),
@@ -417,6 +421,7 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("hoverColor"),
         QStringLiteral("dividerColor"),
         QStringLiteral("scrimColor"),
+        QStringLiteral("shadowColor"),
         QStringLiteral("highContrast"),
         QStringLiteral("darkTheme"),
         QStringLiteral("reducedMotion"),
@@ -426,18 +431,18 @@ void ShellUiContractTests::exposesFrozenConstantsAndAuthenticatedResources() {
         QStringLiteral("trackSource"),
     };
     const QStringList appearance_properties = {
-        QStringLiteral("navigationColor"),      QStringLiteral("canvasColor"),
-        QStringLiteral("surfaceColor"),         QStringLiteral("surfaceRaisedColor"),
-        QStringLiteral("textPrimaryColor"),     QStringLiteral("textSecondaryColor"),
-        QStringLiteral("accentColor"),          QStringLiteral("accentTextColor"),
-        QStringLiteral("focusColor"),           QStringLiteral("borderColor"),
-        QStringLiteral("errorColor"),           QStringLiteral("warningColor"),
-        QStringLiteral("successColor"),         QStringLiteral("disabledTextColor"),
-        QStringLiteral("selectionColor"),       QStringLiteral("hoverColor"),
-        QStringLiteral("dividerColor"),         QStringLiteral("scrimColor"),
-        QStringLiteral("highContrast"),         QStringLiteral("darkTheme"),
-        QStringLiteral("reducedMotion"),        QStringLiteral("panelTransitionMs"),
-        QStringLiteral("feedbackTransitionMs"),
+        QStringLiteral("navigationColor"),   QStringLiteral("canvasColor"),
+        QStringLiteral("surfaceColor"),      QStringLiteral("surfaceRaisedColor"),
+        QStringLiteral("textPrimaryColor"),  QStringLiteral("textSecondaryColor"),
+        QStringLiteral("accentColor"),       QStringLiteral("accentTextColor"),
+        QStringLiteral("focusColor"),        QStringLiteral("borderColor"),
+        QStringLiteral("errorColor"),        QStringLiteral("warningColor"),
+        QStringLiteral("successColor"),      QStringLiteral("disabledTextColor"),
+        QStringLiteral("selectionColor"),    QStringLiteral("hoverColor"),
+        QStringLiteral("dividerColor"),      QStringLiteral("scrimColor"),
+        QStringLiteral("shadowColor"),       QStringLiteral("highContrast"),
+        QStringLiteral("darkTheme"),         QStringLiteral("reducedMotion"),
+        QStringLiteral("panelTransitionMs"), QStringLiteral("feedbackTransitionMs"),
     };
     QStringList actual_properties;
     for (int index = meta->propertyOffset(); index < meta->propertyCount(); ++index) {
@@ -597,6 +602,19 @@ void ShellUiContractTests::interactionTokensFollowAuroraHighContrastAndFrozenFix
         QCOMPARE(historical.hoverColor(), historical.surfaceRaisedColor());
         QCOMPARE(historical.dividerColor(), historical.borderColor());
     }
+}
+
+void ShellUiContractTests::exposesAuroraPieceTokens() {
+    ShellUiContract contract{nullptr};
+    QCOMPARE(contract.radiusControl(), 10);
+    QCOMPARE(contract.radiusLarge(), 16);
+    QCOMPARE(contract.focusRingWidth(), 3);
+    contract.updateAppearance(ThemeMode::Light, MotionMode::System, false, false);
+    QCOMPARE(contract.shadowColor(), QStringLiteral("#1A3C2814"));
+    contract.updateAppearance(ThemeMode::Dark, MotionMode::System, true, false);
+    QCOMPARE(contract.shadowColor(), QStringLiteral("#59000000"));
+    contract.updateAppearance(ThemeMode::Light, MotionMode::System, false, false, HighContrastPalette{});
+    QCOMPARE(contract.shadowColor(), QStringLiteral("#00000000"));
 }
 
 void ShellUiContractTests::exposesTypeScaleAndLayoutBreakpoints() {

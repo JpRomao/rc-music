@@ -31,6 +31,9 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(int controlTargetPreferred READ controlTargetPreferred CONSTANT)
     Q_PROPERTY(int radiusMedium READ radiusMedium CONSTANT)
     Q_PROPERTY(int radiusSmall READ radiusSmall CONSTANT)
+    Q_PROPERTY(int radiusControl READ radiusControl CONSTANT)
+    Q_PROPERTY(int radiusLarge READ radiusLarge CONSTANT)
+    Q_PROPERTY(int focusRingWidth READ focusRingWidth CONSTANT)
     Q_PROPERTY(int spacingUnit READ spacingUnit CONSTANT)
     // Type scale in pixels; QML uses these roles instead of literal sizes.
     Q_PROPERTY(int typeEyebrow READ typeEyebrow CONSTANT)
@@ -99,6 +102,7 @@ class ShellUiContract final : public QObject {
     Q_PROPERTY(QString dividerColor READ dividerColor NOTIFY appearanceChanged)
     // Translucent backdrop behind side drawers (#AARRGGBB); transparent in high contrast.
     Q_PROPERTY(QString scrimColor READ scrimColor NOTIFY appearanceChanged)
+    Q_PROPERTY(QString shadowColor READ shadowColor NOTIFY appearanceChanged)
     Q_PROPERTY(bool highContrast READ highContrast NOTIFY appearanceChanged)
     Q_PROPERTY(bool darkTheme READ darkTheme NOTIFY appearanceChanged)
     Q_PROPERTY(bool reducedMotion READ reducedMotion NOTIFY appearanceChanged)
@@ -124,6 +128,9 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] int controlTargetPreferred() const noexcept;
     [[nodiscard]] int radiusMedium() const noexcept;
     [[nodiscard]] int radiusSmall() const noexcept;
+    [[nodiscard]] int radiusControl() const noexcept;
+    [[nodiscard]] int radiusLarge() const noexcept;
+    [[nodiscard]] int focusRingWidth() const noexcept;
     [[nodiscard]] int spacingUnit() const noexcept;
     [[nodiscard]] int typeEyebrow() const noexcept;
     [[nodiscard]] int typeCaption() const noexcept;
@@ -189,6 +196,7 @@ class ShellUiContract final : public QObject {
     [[nodiscard]] QString hoverColor() const;
     [[nodiscard]] QString dividerColor() const;
     [[nodiscard]] QString scrimColor() const;
+    [[nodiscard]] QString shadowColor() const;
     [[nodiscard]] bool highContrast() const noexcept;
     [[nodiscard]] bool darkTheme() const noexcept;
     [[nodiscard]] bool reducedMotion() const noexcept;
