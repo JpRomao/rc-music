@@ -627,6 +627,11 @@ TestCase {
                 tag: "a minute and a second",
                 durations: [61000],
                 subtitle: "1 faixa · 2 min"
+            },
+            {
+                tag: "just under an hour rounds up to the hour",
+                durations: [3599500],
+                subtitle: "1 faixa · 1 h 0 min"
             }
         ];
     }

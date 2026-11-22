@@ -93,10 +93,10 @@ FocusScope {
         const seconds = totalSeconds % 60;
         return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
     }
-    // Below an hour, the minutes rounded up (at least 1); from an hour on, hours and minutes.
+    // The minutes rounded up (at least 1); from 60 rounded minutes on, hours and minutes.
     function durationText(milliseconds) {
         const minutes = Math.max(1, Math.ceil(milliseconds / 60000));
-        if (milliseconds < 3600000)
+        if (minutes < 60)
             return queueText.durationMinutes.arg(minutes);
         return queueText.durationHours.arg(Math.floor(minutes / 60)).arg(minutes % 60);
     }
@@ -107,8 +107,13 @@ FocusScope {
     // to the last. KeyNavigation is reciprocal, so the relays keep the wrap inside the drawer.
     function wrapFocus(reason) {
         const forward = reason !== Qt.BacktabFocusReason;
-        const target = forward ? focusWrapStart.nextItemInFocusChain(true) : focusWrapEnd.nextItemInFocusChain(false);
-        if (target && target !== focusWrapStart && target !== focusWrapEnd)
+        let target = forward ? focusWrapStart.nextItemInFocusChain(true) : focusWrapEnd.nextItemInFocusChain(false);
+        // Never rest on an invisible relay: fall back to the close button.
+        if (!target || target === focusWrapStart || target === focusWrapEnd) {
+            const header = headerLoader.item as AuroraDrawerHeader;
+            target = header ? header.closeButton : null;
+        }
+        if (target)
             target.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason);
     }
     function rowAccessibleName(title, fileName, artist, durationMs, available, errorCode, position, total, retrying, locating, locationFailed) {
@@ -335,6 +340,7 @@ FocusScope {
         spacing: root.contract.spacingUnit * 3
 
         Loader {
+            id: headerLoader
             active: root.overlayMode
             visible: active
             Layout.fillWidth: true

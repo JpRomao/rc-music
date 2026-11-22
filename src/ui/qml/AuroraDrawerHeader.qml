@@ -13,6 +13,9 @@ Item {
     property string title
     property string subtitle
 
+    // The close button, for a drawer that wraps the focus around itself.
+    readonly property Item closeButton: closeControl
+
     signal closeRequested
 
     // A raiz não é acessível; o nome fica no objectName, e o botão de fechar tem o seu.
@@ -70,6 +73,7 @@ Item {
             }
         }
         AuroraIconButton {
+            id: closeControl
             contract: root.contract
             controlId: root.controlId + "-close"
             iconName: "close"
