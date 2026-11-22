@@ -106,6 +106,28 @@ TestCase {
         property var jobsModel: null
     }
     QtObject {
+        id: fakeProfile
+        property bool needsSetup: false
+        property bool available: true
+        property string nickname: "Bia"
+        property int avatarIndex: 7
+        readonly property int avatarCount: 20
+        readonly property url avatarSource: "qrc:/rc_music/avatars/avatar-08.svg"
+        property var customAvatars: []
+        function acceptsNickname(text) {
+            return text.length > 0;
+        }
+        function setNickname(text) {
+            return false;
+        }
+        function chooseBundledAvatar(index) {
+            return false;
+        }
+        function chooseCustomAvatar(file) {
+            return false;
+        }
+    }
+    QtObject {
         id: fakeBrowser
         property string errorText: ""
         signal errorChanged
@@ -388,6 +410,69 @@ TestCase {
         const second = luminance(background);
         const ratio = (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
         verify(ratio >= minimum, context + ": " + ratio + " < " + minimum);
+    }
+
+    function focusName() {
+        const item = shell.activeFocusItem;
+        return item ? (item.objectName !== "" ? String(item.objectName) : String(item) + "<" + String(item.parent) + ">") : "";
+    }
+
+    function tabTrail(key, modifier, limit) {
+        const trail = [];
+        for (let step = 0; step < limit; ++step) {
+            keyClick(key, modifier);
+            trail.push(focusName());
+        }
+        return trail;
+    }
+
+    function verifyOrderedSubsequence(trail, names) {
+        let from = 0;
+        for (const name of names) {
+            const at = trail.indexOf(name, from);
+            verify(at >= 0, name + " must follow in order; trail: " + trail.join(", "));
+            from = at + 1;
+        }
+        return from;
+    }
+
+    function test_tabFollowsSidebarHeaderPageAndPlayer() {
+        loadSyntheticQueue();
+        shell.width = 1440;
+        shell.height = 900;
+        tryCompare(shell.contentItem, "width", 1440);
+        tryCompare(shell.contentItem, "height", 900);
+        fakeProfile.needsSetup = false;
+        shell.profile = fakeProfile;
+        mountNavigationBackends();
+        verify(findChild(shell, "profile-chip").visible);
+        const sidebar = ["library", "search", "playlists", "room", "downloads", "embedded-browser", "preferences", "profile-chip", "theme-toggle"];
+        const player = ["progress", "player-shuffle", "previous", "play-pause", "next", "player-repeat", "player-queue", "mute", "volume"];
+        findChild(shell, "now").forceActiveFocus(Qt.TabFocusReason);
+        compare(focusName(), "now");
+        const forward = tabTrail(Qt.Key_Tab, Qt.NoModifier, 59);
+        // The sidebar, then preferences, the profile chip and the theme button come one right after the other.
+        for (let i = 0; i < sidebar.length; ++i)
+            compare(forward[i], sidebar[i], "step " + i + "; trail: " + forward.join(", "));
+        // The page comes next, and only after it the player, in its own order.
+        const afterHeader = forward.slice(sidebar.length);
+        const progressAt = afterHeader.indexOf("progress");
+        verify(progressAt > 0, "the page comes before the player; trail: " + forward.join(", "));
+        const playerTrail = afterHeader.slice(progressAt);
+        verifyOrderedSubsequence(playerTrail, player);
+        // The player buttons are consecutive in this order, with the disabled lyrics button skipped.
+        const first = playerTrail.indexOf("progress");
+        for (let i = 0; i < player.length; ++i)
+            compare(playerTrail[first + i], player[i], "player step " + i + "; trail: " + playerTrail.join(", "));
+        verify(!playerTrail.includes("player-lyrics"), "lyrics is disabled without a lyric");
+
+        // Shift+Tab walks the same path backwards, from the volume to the theme button.
+        findChild(shell, "volume").forceActiveFocus(Qt.BacktabFocusReason);
+        const backward = tabTrail(Qt.Key_Backtab, Qt.NoModifier, 40);
+        const reversedPlayer = player.slice(0, -1).reverse();
+        for (let i = 0; i < reversedPlayer.length; ++i)
+            compare(backward[i], reversedPlayer[i], "back step " + i + "; trail: " + backward.join(", "));
+        verifyOrderedSubsequence(backward, ["theme-toggle", "profile-chip", "preferences", "embedded-browser", "downloads", "room", "playlists", "search", "library", "now"]);
     }
 
     function test_sidebarFollowsTheApprovedOrder() {

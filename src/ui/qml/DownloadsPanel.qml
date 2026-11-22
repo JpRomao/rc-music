@@ -247,7 +247,7 @@ PageSurface {
     }
     function firstRowControl() {
         const controls = rowControls(jobsList.currentItem);
-        return controls.length > 0 ? controls[0] : (embedded ? nextFocusItem : closeButton);
+        return controls.length > 0 ? controls[0] : (embedded ? focusRelayAfter : closeButton);
     }
     function invalidateCloseConsent() {
         closeConsentOwner = null;
@@ -271,13 +271,13 @@ PageSurface {
         const index = controls.indexOf(item);
         if (backwards)
             return index > 0 ? controls[index - 1] : row;
-        return index >= 0 && index + 1 < controls.length ? controls[index + 1] : (embedded ? nextFocusItem : closeButton);
+        return index >= 0 && index + 1 < controls.length ? controls[index + 1] : (embedded ? focusRelayAfter : closeButton);
     }
     function nextTopControl(item, backwards) {
         const controls = topControls();
         const index = controls.indexOf(item);
         if (backwards)
-            return index > 0 ? controls[index - 1] : (embedded ? previousFocusItem : lastRowControl());
+            return index > 0 ? controls[index - 1] : (embedded ? focusRelayBefore : lastRowControl());
         return index >= 0 && index + 1 < controls.length ? controls[index + 1] : (jobsList.currentItem || jobsList);
     }
     function lastTopControl() {
@@ -361,6 +361,33 @@ PageSurface {
         border.width: root.embedded ? 0 : (root.contract.highContrast ? 2 : 1)
         color: root.embedded ? root.contract.canvasColor : root.contract.surfaceRaisedColor
         radius: root.embedded ? 0 : root.contract.radiusMedium
+
+        // KeyNavigation is reciprocal: a target outside the page would get its own Tab/Shift+Tab rewired into this
+        // page, even while it is hidden. The page points at these relays instead and they hand the focus on.
+        Item {
+            id: focusRelayBefore
+            objectName: "focus-relay-before"
+            width: 0
+            height: 0
+            activeFocusOnTab: false
+            Accessible.ignored: true
+            onActiveFocusChanged: {
+                if (activeFocus && root.previousFocusItem)
+                    root.previousFocusItem.forceActiveFocus(Qt.BacktabFocusReason);
+            }
+        }
+        Item {
+            id: focusRelayAfter
+            objectName: "focus-relay-after"
+            width: 0
+            height: 0
+            activeFocusOnTab: false
+            Accessible.ignored: true
+            onActiveFocusChanged: {
+                if (activeFocus && root.nextFocusItem)
+                    root.nextFocusItem.forceActiveFocus(Qt.TabFocusReason);
+            }
+        }
     }
     contentItem: ColumnLayout {
         Accessible.name: root.embedded ? navigationLabels.activity : labels.title
