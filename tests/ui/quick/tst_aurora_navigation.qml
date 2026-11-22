@@ -23,6 +23,21 @@ TestCase {
         id: fakeRecords
     }
     QtObject {
+        id: fakeLyrics
+        property string title: "Cantiga"
+        property string artist: "Artista"
+        property string album: "Disco"
+        property int durationMs: 180000
+        property string statusText: ""
+        property string currentLine: "Primeiro verso"
+        property string nextLine: "Segundo verso"
+        property string plainText: ""
+        property bool hasSyncedLyrics: true
+        property bool busy: false
+        property bool canSearch: true
+        property bool lyricsCopyProtected: false
+    }
+    QtObject {
         id: fakeLibrary
         property bool ready: true
         property bool busy: false
@@ -150,6 +165,7 @@ TestCase {
     }
 
     function init() {
+        fakeLyrics.hasSyncedLyrics = true;
         driver.resetLocalScenario();
         driver.setHighContrast(false, false);
         driver.setSystemAppearance(false, false);
@@ -623,6 +639,83 @@ TestCase {
                 mismatch = step;
         }
         verify(mismatch < 0, "back step " + mismatch + "; trail: " + backward.join(", "));
+    }
+
+    // Tab from the sidebar to the player: the names and the items visited before the progress bar comes back around.
+    function trailToPlayer() {
+        const now = findChild(shell, "now");
+        now.forceActiveFocus(Qt.TabFocusReason);
+        const names = [];
+        const items = [];
+        for (let step = 0; step < 90 && names.indexOf("progress") < 0; ++step) {
+            keyClick(Qt.Key_Tab);
+            names.push(focusName());
+            items.push(shell.activeFocusItem);
+        }
+        verify(names.indexOf("progress") >= 0, "Tab reaches the player; trail: " + names.join(", "));
+        return {
+            names: names,
+            items: items
+        };
+    }
+
+    function mountVerseLine(synchronized) {
+        loadSyntheticQueue();
+        shell.width = 1440;
+        shell.height = 900;
+        tryCompare(shell.contentItem, "width", 1440);
+        mountNavigationBackends();
+        fakeLyrics.hasSyncedLyrics = synchronized;
+        shell.lyrics = fakeLyrics;
+        wait(0);
+        verify(waitForPolish(shell));
+    }
+
+    function test_tabVisitsTheVerseLineBetweenPageAndPlayer() {
+        mountVerseLine(true);
+        const line = findChild(shell, "lyrics-line");
+        tryVerify(() => line.visible);
+        const forward = trailToPlayer();
+        const at = forward.names.indexOf("lyrics-line-open");
+        verify(at > 0, "the verse line is on the way; trail: " + forward.names.join(", "));
+        compare(forward.names[at + 1], "progress", "the line comes right before the player");
+        const lastOfPage = forward.items[at - 1];
+        verify(isInside(lastOfPage, findChild(shell, "state-layer")), "the line follows the page's last control; trail: " + forward.names.join(", "));
+        // Shift+Tab from the player reaches the line first, then the page's last control.
+        findChild(shell, "progress").forceActiveFocus(Qt.BacktabFocusReason);
+        keyClick(Qt.Key_Backtab);
+        compare(focusName(), "lyrics-line-open");
+        keyClick(Qt.Key_Backtab);
+        compare(shell.activeFocusItem, lastOfPage);
+    }
+
+    function test_withoutSynchronizedLyricsThePageGoesStraightToThePlayer() {
+        mountVerseLine(false);
+        tryVerify(() => !findChild(shell, "lyrics-line").visible);
+        const forward = trailToPlayer();
+        verify(!forward.names.includes("lyrics-line-open"), "no verse line; trail: " + forward.names.join(", "));
+        compare(forward.names[forward.names.length - 1], "progress");
+        findChild(shell, "progress").forceActiveFocus(Qt.BacktabFocusReason);
+        keyClick(Qt.Key_Backtab);
+        verify(isInside(shell.activeFocusItem, findChild(shell, "state-layer")), "Shift+Tab goes back to the page; got " + focusName());
+    }
+
+    function test_activityPageTabReachesTheVerseLine() {
+        mountVerseLine(true);
+        const page = findChild(shell, "downloads-panel");
+        findChild(shell, "downloads").Accessible.pressAction();
+        tryVerify(() => page.visible);
+        tryVerify(() => findChild(shell, "lyrics-line").visible);
+        const forward = trailToPlayer();
+        const at = forward.names.indexOf("lyrics-line-open");
+        verify(at > 0, "Tab leaves the Atividade page through the verse line; trail: " + forward.names.join(", "));
+        compare(forward.names[at + 1], "progress");
+        verify(isInside(forward.items[at - 1], page), "the line follows the page's last control; trail: " + forward.names.join(", "));
+        findChild(shell, "progress").forceActiveFocus(Qt.BacktabFocusReason);
+        keyClick(Qt.Key_Backtab);
+        compare(focusName(), "lyrics-line-open");
+        keyClick(Qt.Key_Backtab);
+        compare(shell.activeFocusItem, forward.items[at - 1]);
     }
 
     function test_activityRelaysFollowTheTabChainWithoutATarget() {

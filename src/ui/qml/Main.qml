@@ -50,8 +50,9 @@ ApplicationWindow {
     readonly property int drawerWidth: 400
     readonly property bool inlinePages: !presenter.usesFrozenFixture
     readonly property string currentPage: preferencesPanel.visible ? "preferences" : (libraryPanel.visible ? "library" : (searchPanel.visible ? "search" : (roomPanel.visible ? "room" : (playlistsPanel.visible ? "playlists" : (downloadsPanel.visible ? "downloads" : (queuePageActive ? "queue" : "home"))))))
-    // Aurora pages hand the focus on to the player after them.
-    readonly property Item pageExitFocusItem: transport.firstControl
+    // Aurora pages hand the focus on to the verse line, then to the player.
+    readonly property Item pageExitFocusItem: lineEntryAvailable ? lyricsPanel.lineEntryItem : transport.firstControl
+    readonly property bool lineEntryAvailable: lyricsPanel.lineEntryItem !== null && lyricsPanel.visible && lyricsPanel.enabled && lyricsPanel.lineEntryItem.visible && lyricsPanel.lineEntryItem.enabled
     // A guest's queue is the room queue, there even when no local queue is loaded.
     readonly property bool roomGuest: room !== null && room.available && room.role === 2
     // The Aurora drawer stays open when its queue empties; it is only never opened empty.
@@ -699,6 +700,8 @@ ApplicationWindow {
         anchors.top: window.inlinePages ? workspaceHeader.bottom : parent.top
         anchors.bottom: playerFooter.top
         anchors.margins: window.inlinePages ? 30 : window.uiContract.spacingUnit * 6
+        // The verse line carries its own 12 px below it.
+        anchors.bottomMargin: window.inlinePages ? (lyricsPanel.lineVisible ? 0 : 30) : window.uiContract.spacingUnit * 6
         anchors.leftMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 23 : 38) : window.uiContract.spacingUnit * 6
         anchors.rightMargin: window.inlinePages ? (window.width <= window.uiContract.compactWidth ? 23 : 38) : window.uiContract.spacingUnit * 6
         Item {
@@ -867,6 +870,11 @@ ApplicationWindow {
         LyricsPanel {
             id: lyricsPanel
             Layout.fillWidth: true
+            // The verse line sits 32 px (16 compact) from the edges of the area, not from the page margins.
+            Layout.leftMargin: window.inlinePages ? (compact ? 16 - mainLayout.anchors.leftMargin : 32 - mainLayout.anchors.leftMargin) : 0
+            Layout.rightMargin: window.inlinePages ? (compact ? 16 - mainLayout.anchors.rightMargin : 32 - mainLayout.anchors.rightMargin) : 0
+            editorial: window.inlinePages
+            compact: window.width <= window.uiContract.compactWidth
             visible: window.lyrics !== null && (window.presenter.hasCurrentTrack || queuedSaveFeedback || (typeof window.lyrics.variantsHasPendingChange !== "undefined" && window.lyrics.variantsHasPendingChange))
             contract: window.uiContract
             lyrics: window.lyrics

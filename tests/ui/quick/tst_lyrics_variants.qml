@@ -405,9 +405,9 @@ TestCase {
         compare(lastCall("searchQueuedRecordings").args, ["untagged-manager", "Título informado", "Artista informado", "", 0]);
     }
     function openPanel() {
-        const opener = findChild(shell, "lyrics-versions");
-        verify(opener && opener.visible, "Versions action must be available for a variants backend");
-        mouseClick(opener);
+        const lyricsPanel = findChild(shell, "lyrics-panel");
+        verify(lyricsPanel.variantsAvailable, "Versions must be available for a variants backend");
+        lyricsPanel.openVersions();
         const panel = findChild(shell, "lyrics-variants-panel");
         verify(panel);
         tryCompare(panel, "visible", true);
@@ -503,6 +503,25 @@ TestCase {
         tryCompare(choice.popup, "visible", false);
         compare(lastCall("selectOnline").args[0], index);
     }
+    function test_verseLineShowsPendingChangeAndReview() {
+        backend.variantsHasPendingChange = true;
+        backend.variantsBusy = false;
+        backend.variantsStatusText = "Salvando versão da letra…";
+        const status = findChild(shell, "lyrics-line-status");
+        const review = findChild(shell, "lyrics-line-review");
+        tryVerify(() => status.visible && review.visible);
+        compare(status.text, "Salvando versão da letra…");
+        compare(review.text, "Revisar alterações");
+        compare(review.Accessible.name, "Revisar alterações não salvas da letra");
+        verify(!findChild(shell, "lyrics-line-open").visible, "the notice has precedence over the verse");
+        mouseClick(review);
+        tryCompare(findChild(shell, "lyrics-variants-panel"), "visible", true);
+        backend.variantsHasPendingChange = false;
+        backend.variantsStatusText = "Versões guardadas";
+        findChild(shell, "lyrics-variants-panel").close();
+        tryVerify(() => findChild(shell, "lyrics-line-open").visible);
+        tryCompare(findChild(shell, "lyrics-line-open"), "activeFocus", true);
+    }
     function test_openingDoesNotSaveSearchOrChangePlaybackAndUsesPlainText() {
         const state = presenter.playbackState;
         const current = presenter.currentOccurrenceId;
@@ -522,12 +541,12 @@ TestCase {
         openPanel();
         mouseClick(rowAt(2));
         compare(lastCall("select").args[0], "9007199254740993");
-        compare(findChild(shell, "lyrics-current-line").text, "Romanized verse");
+        compare(findChild(shell, "lyrics-line-current").text, "Romanized verse");
         compare(presenter.currentOccurrenceId, current);
         compare(presenter.playbackState, PlayerPresenter.Playing);
         mouseClick(rowAt(0));
         compare(lastCall("select").args[0], "");
-        compare(findChild(shell, "lyrics-current-line").text, "<b>Service verse</b>");
+        compare(findChild(shell, "lyrics-line-current").text, "<b>Service verse</b>");
     }
     function test_keyboardCanTurnLyricsOffAndReopenTheSelectedOptionWithoutPausing() {
         backend.selectedVariantId = "1";
@@ -707,7 +726,7 @@ TestCase {
         compare(driver.localLoadCount(), loads);
         compare(driver.localPlayCount(), plays);
         compare(menu.list.count, 3);
-        const status = findChild(shell, "lyrics-status");
+        const status = findChild(shell, "lyrics-line-status");
         compare(status.text, "Salvando versão da letra…");
         verify(presenter.clearQueue());
         tryCompare(presenter, "hasCurrentTrack", false);
@@ -715,7 +734,7 @@ TestCase {
         compare(status.text, "Salvando versão da letra…");
         backend.variantsBusy = false;
         backend.variantsCanRetrySave = true;
-        compare(findChild(shell, "lyrics-versions").text, "Revisar salvamento");
+        compare(findChild(shell, "lyrics-line-review").text, "Revisar alterações");
         backend.variantsCanRetrySave = false;
         backend.queuedVariantStatusText = "Versão da letra salva.";
         backend.variantsHasPendingChange = false;
@@ -894,7 +913,7 @@ TestCase {
                 compare(plainLyrics.text, "<b>Outra letra</b>");
                 compare(plainLyrics.textFormat, Text.PlainText);
             } else {
-                compare(findChild(shell, "lyrics-current-line").text, "Letra sincronizada");
+                compare(findChild(shell, "lyrics-line-current").text, "Letra sincronizada");
             }
             mouseClick(findChild(shell, "lyrics-variant-save-current"));
             const form = findChild(shell, "lyrics-variant-form");
@@ -1138,7 +1157,7 @@ TestCase {
         compare(presenter.playbackState, PlayerPresenter.Playing);
         keyClick(Qt.Key_Escape);
         tryCompare(findChild(shell, "lyrics-variants-panel"), "visible", false);
-        tryCompare(findChild(shell, "lyrics-versions"), "activeFocus", true);
+        tryCompare(findChild(shell, "lyrics-line-open"), "activeFocus", true);
     }
     function test_keyboardCanChooseASavedVersionWithoutTransportShortcuts() {
         const lastId = "9007199254740993";

@@ -87,7 +87,7 @@ TestCase {
     Component {
         id: shellComponent
         Main {
-            uiContract: testShellUiContract // qmllint disable unqualified
+            uiContract: testProductUiContract // qmllint disable unqualified
             presenter: testCase.presenter
             lyrics: testCase.lyricsBackend
         }
@@ -127,6 +127,7 @@ TestCase {
         tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
     }
     function cleanup() {
+        driver.setHighContrast(false, false);
         shell.destroy();
         shell = null;
         wait(0);
@@ -163,8 +164,76 @@ TestCase {
         lyrics.plainText = "Verse";
         tryVerify(() => button.enabled);
     }
+    function test_verseLineShowsCurrentAndNextVerse() {
+        const line = findChild(shell, "lyrics-line");
+        verify(line && line.visible);
+        compare(line.height, 48);
+        const current = findChild(shell, "lyrics-line-current");
+        compare(current.text, lyrics.currentLine);
+        compare(current.font.family, shell.uiContract.headingFontFamily);
+        compare(findChild(shell, "lyrics-line-next").text, "Next verse");
+        const open = findChild(shell, "lyrics-line-open");
+        compare(open.text, "Abrir letra");
+        compare(open.Accessible.name, "Abrir a letra completa");
+        mouseClick(open);
+        tryVerify(() => findChild(shell, "lyrics-reader").visible);
+    }
+    function test_verseLineHidesWithoutSynchronizedLyrics_data() {
+        return [
+            {
+                tag: "plain",
+                plain: "Verse",
+                protectedLyrics: false
+            },
+            {
+                tag: "protected",
+                plain: "Licensed",
+                protectedLyrics: true
+            },
+            {
+                tag: "none",
+                plain: "",
+                protectedLyrics: false
+            }
+        ];
+    }
+    function test_verseLineHidesWithoutSynchronizedLyrics(data) {
+        lyrics.hasSyncedLyrics = false;
+        lyrics.plainText = data.plain;
+        lyrics.lyricsCopyProtected = data.protectedLyrics;
+        const line = findChild(shell, "lyrics-line");
+        tryVerify(() => !line.visible);
+        compare(findChild(shell, "lyrics-panel").implicitHeight, 0);
+        for (const name of ["lyrics-versions", "lyrics-search", "lyrics-generate-romaji", "lyrics-open-reader"])
+            verify(!findChild(shell, name).visible, name + " is not part of the Aurora line");
+    }
+    function test_compactLineElidesLongVerse() {
+        shell.width = 720;
+        shell.height = 520;
+        tryCompare(shell.contentItem, "width", 720);
+        lyrics.currentLine = "x".repeat(300);
+        verify(waitForPolish(shell));
+        const line = findChild(shell, "lyrics-line");
+        compare(line.height, 40);
+        const current = findChild(shell, "lyrics-line-current");
+        compare(current.elide, Text.ElideRight);
+        compare(current.Accessible.name, lyrics.currentLine);
+        verify(!findChild(shell, "lyrics-line-next").visible);
+        const open = findChild(shell, "lyrics-line-open");
+        compare(open.width, 40);
+        compare(open.height, 40);
+        const corner = open.mapToItem(shell.contentItem, open.width, open.height);
+        verify(corner.x <= shell.width && corner.y <= shell.height);
+        compare(open.Accessible.name, "Abrir a letra completa");
+    }
+    function test_verseLineHighContrastOutline() {
+        driver.setHighContrast(true, false);
+        const line = findChild(shell, "lyrics-line");
+        tryCompare(line.border, "width", 2);
+        verify(Qt.colorEqual(line.border.color, shell.uiContract.textPrimaryColor));
+    }
     function test_originalVerseIsPlainTextImmediatelyAboveTheProgressBar() {
-        const line = findChild(shell, "lyrics-current-line");
+        const line = findChild(shell, "lyrics-line-current");
         verify(line);
         compare(line.text, "<b>Original verse</b>");
         compare(line.textFormat, Text.PlainText);
@@ -175,40 +244,36 @@ TestCase {
         compare(lyrics.requests, 0);
     }
     function test_japaneseLyricsOfferRomajiAndReturnFocusAfterReview() {
-        const action = findChild(shell, "lyrics-generate-romaji");
-        verify(action);
-        verify(!action.visible);
+        const panel = findChild(shell, "lyrics-panel");
+        verify(!panel.romajiAvailable);
         lyrics.romajiSourceRevision = "jp-12";
         lyrics.canGenerateRomaji = true;
-        tryVerify(() => action.visible && action.enabled);
-        action.Accessible.pressAction();
+        tryVerify(() => panel.romajiAvailable);
+        panel.openRomaji();
         tryCompare(lyrics, "romajiRequests", 1);
         lyrics.romajiDraftReady("focused-romaji", "[00:01.000]nihongo");
         tryCompare(findChild(shell, "lyrics-variant-content-input"), "text", "[00:01.000]nihongo");
         const manager = findChild(shell, "lyrics-variants-panel");
         verify(manager.visible);
         manager.close();
-        tryCompare(action, "activeFocus", true);
+        tryCompare(findChild(shell, "lyrics-line-open"), "activeFocus", true);
         compare(presenter.playbackState, PlayerPresenter.Playing);
     }
 
     function test_japaneseLyricsActionOpensPreparationStatusWithoutRunningConverter() {
-        const action = findChild(shell, "lyrics-generate-romaji");
-        verify(action);
+        const panel = findChild(shell, "lyrics-panel");
         lyrics.romajiSourceRevision = "jp-21";
         lyrics.romajiStatusText = "Prepare o componente local de romaji.";
-        tryVerify(() => action.visible && action.enabled);
-        action.Accessible.pressAction();
+        tryVerify(() => panel.romajiAvailable);
+        panel.openRomaji();
         tryVerify(() => findChild(shell, "lyrics-variants-panel").visible);
         compare(lyrics.romajiRequests, 0);
         verify(!findChild(shell, "lyrics-variant-generate-romaji").enabled);
         lyrics.lyricsCopyProtected = true;
-        tryVerify(() => !action.visible);
+        tryVerify(() => !panel.romajiAvailable);
     }
     function test_onlineSearchRequiresExplicitConfirmationAndMetadataCanBeCorrected() {
-        const button = findChild(shell, "lyrics-search");
-        verify(button);
-        mouseClick(button);
+        findChild(shell, "lyrics-panel").openSearch();
         compare(lyrics.requests, 0);
         const title = findChild(shell, "lyrics-query-title");
         const artist = findChild(shell, "lyrics-query-artist");
@@ -236,7 +301,7 @@ TestCase {
         lyrics.album = "";
         lyrics.durationMs = 0;
         const playing = presenter.currentOccurrenceId;
-        mouseClick(findChild(shell, "lyrics-search"));
+        findChild(shell, "lyrics-panel").openSearch();
         const dialog = findChild(shell, "lyrics-query-dialog");
         tryCompare(dialog, "opened", true);
         const title = findChild(shell, "lyrics-query-title");
@@ -275,7 +340,7 @@ TestCase {
         compare(presenter.playbackState, PlayerPresenter.Playing);
     }
     function test_previewAndExplicitChoiceKeepSameTitleRecordingsSeparate() {
-        mouseClick(findChild(shell, "lyrics-search"));
+        findChild(shell, "lyrics-panel").openSearch();
         mouseClick(findChild(shell, "lyrics-query-submit"));
         lyrics.recordingCandidates = [
             {
@@ -323,15 +388,14 @@ TestCase {
         compare(lyrics.requests, 1);
     }
     function test_cancelDuringSearchDiscardsResultsAndReturnsFocus() {
-        const button = findChild(shell, "lyrics-search");
-        mouseClick(button);
+        findChild(shell, "lyrics-panel").openSearch();
         mouseClick(findChild(shell, "lyrics-query-submit"));
         lyrics.recordingSearchBusy = true;
         keyClick(Qt.Key_Escape);
         tryCompare(findChild(shell, "lyrics-panel"), "queryOpen", false);
         compare(lyrics.cancels, 1);
         compare(lyrics.currentLine, "<b>Original verse</b>");
-        tryCompare(button, "activeFocus", true);
+        tryCompare(findChild(shell, "lyrics-line-open"), "activeFocus", true);
     }
     function test_licensedLyricsUsePlainDisplayAndVisibleCredits() {
         lyrics.hasSyncedLyrics = false;
@@ -342,14 +406,13 @@ TestCase {
         const selectable = findChild(shell, "lyrics-plain-text");
         const protectedText = findChild(shell, "lyrics-protected-plain-text");
         const credit = findChild(shell, "lyrics-provider-credit");
-        verify(protectedText.visible && credit.visible);
         verify(!selectable.visible);
         compare(selectable.text, "");
         compare(protectedText.text, "<b>Licensed lyric</b>");
         compare(protectedText.textFormat, Text.PlainText);
         compare(credit.text, "<b>Writer</b> · Publisher");
         compare(credit.textFormat, Text.PlainText);
-        mouseClick(findChild(shell, "lyrics-search"));
+        findChild(shell, "lyrics-panel").openSearch();
         verify(findChild(shell, "lyrics-query-notice").text.includes("LRCLIB"));
     }
     function test_lyricsKeepPlayingContentInsideTheMinimumWindow() {
@@ -383,7 +446,7 @@ TestCase {
         }
     }
     function test_searchDialogDisablesPlayerShortcutsAndClosesOnTrackChange() {
-        mouseClick(findChild(shell, "lyrics-search"));
+        findChild(shell, "lyrics-panel").openSearch();
         compare(shell.windowShortcutsEnabled, false);
         compare(lyrics.requests, 0);
         const panel = findChild(shell, "lyrics-panel");

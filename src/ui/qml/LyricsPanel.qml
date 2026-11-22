@@ -31,18 +31,65 @@ Item {
     readonly property bool protectedLyrics: lyrics !== null && lyrics.lyricsCopyProtected === true
     readonly property string lyricsAttribution: protectedLyrics ? lyrics.lyricsAttribution : ""
     readonly property bool romajiAvailable: variantsAvailable && !protectedLyrics && (lyrics.romajiSourceRevision ?? "").length > 0
-    implicitHeight: protectedLyrics ? 96 + contract.controlTargetMinimum + contract.spacingUnit : 96
+    // Aurora swaps the strip for the verse line; the panel stays as the host of the reader and the dialogs.
+    property bool editorial: false
+    property bool compact: false
+    readonly property bool lineNotice: editorial && (variantsPending || queuedFeedbackText.length > 0)
+    readonly property bool lineVisible: editorial && (lineNotice || synchronizedLyrics)
+    readonly property Item lineEntryItem: lineVisible ? verseLine.entryItem : null
+    readonly property string statusLabel: {
+        if (queuedFeedbackText.length > 0)
+            return queuedFeedbackText;
+        if (variantsPending && lyrics.variantsStatusText.length > 0)
+            return lyrics.variantsStatusText;
+        return lyrics && lyrics.statusText.length > 0 ? lyrics.statusText : lyricsText.title;
+    }
+    implicitHeight: editorial ? (lineVisible ? verseLine.height + 18 : 0) : (protectedLyrics ? 96 + contract.controlTargetMinimum + contract.spacingUnit : 96)
     Layout.minimumHeight: implicitHeight
     Layout.maximumHeight: implicitHeight
     signal queuedVariantFormClosed
     signal readerSeekRequested(int timeMs)
     signal readerTextSizeRequested(int size)
     property bool versionsOpenedForRomaji: false
+    property Item readerOpener: null
     // The persistent player opens the same reader as the panel's own action.
     readonly property bool readerAvailable: enabled && (synchronizedLyrics || plainLyrics)
     function showReader() {
         if (readerAvailable)
             reader.open();
+    }
+
+    // The strip buttons and the Aurora verse line share these entry points.
+    function openVersions() {
+        if (!variantsAvailable || !enabled || !visible)
+            return;
+        if (!reviewSaveAvailable)
+            queuedSaveFeedback = false;
+        queryDialog.close();
+        variantsPanel.open();
+    }
+
+    function openSearch() {
+        if (!searchAvailable)
+            return;
+        queuedSaveFeedback = false;
+        variantsPanel.close();
+        queryDialog.openForTarget(false, "", lyrics.title, lyrics.artist, lyrics.album ?? "", lyrics.durationMs ?? 0);
+    }
+
+    function openRomaji() {
+        if (!romajiAvailable || !enabled || queryOpen)
+            return;
+        versionsOpenedForRomaji = true;
+        queuedSaveFeedback = false;
+        variantsPanel.openForRomaji();
+    }
+
+    // Aurora: the dialogs hand the focus back to the verse line.
+    function restoreLineFocus() {
+        const target = lineEntryItem;
+        if (editorial && visible && enabled && target && target.visible && target.enabled)
+            target.forceActiveFocus(Qt.TabFocusReason);
     }
 
     function openLyricFind() {
@@ -95,8 +142,29 @@ Item {
             reader.close();
     }
 
+    LyricsLine {
+        id: verseLine
+        y: 6
+        width: root.width
+        contract: root.contract
+        compact: root.compact
+        notice: root.lineNotice
+        verseAvailable: root.synchronizedLyrics
+        currentLine: root.lyrics ? root.lyrics.currentLine : ""
+        nextLine: root.lyrics ? (root.lyrics.nextLine ?? "") : ""
+        statusText: root.statusLabel
+        reviewAvailable: root.reviewSaveAvailable
+        visible: root.lineVisible
+        onOpenRequested: opener => {
+            root.readerOpener = opener;
+            reader.open();
+        }
+        onReviewRequested: root.openVersions()
+    }
+
     ColumnLayout {
         anchors.fill: parent
+        visible: !root.editorial
         spacing: root.contract.spacingUnit
         RowLayout {
             Layout.fillWidth: true
@@ -106,13 +174,7 @@ Item {
             Text {
                 objectName: "lyrics-status"
                 Layout.fillWidth: true
-                text: {
-                    if (root.queuedFeedbackText.length > 0)
-                        return root.queuedFeedbackText;
-                    if (root.variantsPending && root.lyrics.variantsStatusText.length > 0)
-                        return root.lyrics.variantsStatusText;
-                    return root.lyrics && root.lyrics.statusText.length > 0 ? root.lyrics.statusText : lyricsText.title;
-                }
+                text: root.statusLabel
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
                 color: root.contract.textSecondaryColor
@@ -127,13 +189,7 @@ Item {
                 Accessible.description: root.romajiAvailable ? (root.lyrics.romajiStatusText ?? "") : ""
                 visible: root.romajiAvailable
                 enabled: visible && root.enabled
-                onClicked: {
-                    if (!enabled || root.queryOpen)
-                        return;
-                    root.versionsOpenedForRomaji = true;
-                    root.queuedSaveFeedback = false;
-                    variantsPanel.openForRomaji();
-                }
+                onClicked: root.openRomaji()
             }
             AccessibleTransportButton {
                 id: versionsButton
@@ -144,14 +200,7 @@ Item {
                 Layout.preferredHeight: root.contract.controlTargetMinimum
                 visible: root.variantsAvailable
                 enabled: visible && root.enabled
-                onClicked: {
-                    if (!enabled || !root.visible)
-                        return;
-                    if (!root.reviewSaveAvailable)
-                        root.queuedSaveFeedback = false;
-                    queryDialog.close();
-                    variantsPanel.open();
-                }
+                onClicked: root.openVersions()
             }
             AccessibleTransportButton {
                 id: openReader
@@ -173,13 +222,7 @@ Item {
                 accessibleName: lyricsText.searchOnline
                 Layout.preferredHeight: root.contract.controlTargetMinimum
                 enabled: root.searchAvailable
-                onClicked: {
-                    if (!searchButton.enabled)
-                        return;
-                    root.queuedSaveFeedback = false;
-                    variantsPanel.close();
-                    queryDialog.openForTarget(false, "", root.lyrics.title, root.lyrics.artist, root.lyrics.album ?? "", root.lyrics.durationMs ?? 0);
-                }
+                onClicked: root.openSearch()
             }
         }
         Text {
@@ -322,7 +365,14 @@ Item {
         onAttributionRequested: root.openLyricFind()
         onTextSizeRequested: size => root.readerTextSizeRequested(size)
         onClosed: {
-            if (openReader.enabled)
+            const opener = root.readerOpener;
+            root.readerOpener = null;
+            if (root.editorial) {
+                if (opener && opener.visible && opener.enabled)
+                    opener.forceActiveFocus(Qt.TabFocusReason);
+                else
+                    root.restoreLineFocus();
+            } else if (openReader.enabled)
                 openReader.forceActiveFocus(Qt.TabFocusReason);
         }
     }
@@ -350,6 +400,8 @@ Item {
             if (root.visible && root.enabled && versionsButton.visible) {
                 const opener = returnToRomaji && romajiButton.visible ? romajiButton : versionsButton;
                 opener.forceActiveFocus(Qt.TabFocusReason);
+            } else if (root.variantsAvailable) {
+                root.restoreLineFocus();
             }
         }
     }
@@ -425,8 +477,10 @@ Item {
             resetChoice();
             if (returnToManager)
                 variantsPanel.focusRecordingSearch();
-            else if (root.visible && searchButton.enabled)
+            else if (!root.editorial && root.visible && searchButton.enabled)
                 searchButton.forceActiveFocus(Qt.TabFocusReason);
+            else
+                root.restoreLineFocus();
         }
 
         function durationText(durationMs) {

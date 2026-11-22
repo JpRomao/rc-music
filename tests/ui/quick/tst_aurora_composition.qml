@@ -21,6 +21,21 @@ TestCase {
         id: fakeRecords
     }
     QtObject {
+        id: fakeLyrics
+        property string title: "Cantiga"
+        property string artist: "Artista"
+        property string album: "Disco"
+        property int durationMs: 180000
+        property string statusText: ""
+        property string currentLine: "Primeiro verso"
+        property string nextLine: "Segundo verso"
+        property string plainText: ""
+        property bool hasSyncedLyrics: true
+        property bool busy: false
+        property bool canSearch: true
+        property bool lyricsCopyProtected: false
+    }
+    QtObject {
         id: fakeLibrary
         property bool ready: true
         property bool busy: false
@@ -443,6 +458,40 @@ TestCase {
         keyClick(Qt.Key_Backtab);
         verifyFocused(ids.indexOf(focusedId));
         compare(commands(), audio, "Focus, reorder and removal of other occurrences must not play audio");
+    }
+    function test_verseLineSitsAboveThePlayer_data() {
+        return [
+            {
+                tag: "wide",
+                width: 1440,
+                height: 900,
+                lineHeight: 48
+            },
+            {
+                tag: "compact",
+                width: 720,
+                height: 520,
+                lineHeight: 40
+            }
+        ];
+    }
+    function test_verseLineSitsAboveThePlayer(data) {
+        loadQueue();
+        mountShellBackends();
+        shell.lyrics = fakeLyrics;
+        shell.width = data.width;
+        shell.height = data.height;
+        tryCompare(shell.contentItem, "width", data.width);
+        tryCompare(shell.contentItem, "height", data.height);
+        verify(waitForPolish(shell));
+        const line = findChild(shell, "lyrics-line");
+        const footer = findChild(shell, "player-footer");
+        tryVerify(() => line.visible);
+        compare(line.height, data.lineHeight);
+        compare(Math.round(point(footer).y - (point(line).y + line.height)), 12);
+        // The page and the line do not overlap.
+        const layer = findChild(shell, "state-layer");
+        verify(point(layer).y + layer.height <= point(line).y + 1);
     }
     function test_emptyHomeDoesNotInventACollection() {
         const list = findChild(shell, "home-queue-list");
