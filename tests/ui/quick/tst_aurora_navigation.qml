@@ -501,6 +501,38 @@ TestCase {
         verifyOrderedSubsequence(backward, ["theme-toggle", "profile-chip", "preferences", "embedded-browser", "downloads", "room", "playlists", "search", "library", "now"]);
     }
 
+    function homeFocusables(item, found) {
+        for (const child of item.children) {
+            if (!child.visible)
+                continue;
+            if (child.activeFocusOnTab && child.enabled)
+                found.push(child);
+            homeFocusables(child, found);
+        }
+        return found;
+    }
+
+    function test_homeScrollsTheFocusedItemIntoView() {
+        loadSyntheticQueue();
+        shell.width = productContract.minimumWidth;
+        shell.height = productContract.minimumHeight;
+        tryCompare(shell.contentItem, "height", productContract.minimumHeight);
+        const home = findChild(shell, "state-layer");
+        verify(home && home.visible);
+        tryVerify(() => home.contentHeight > home.height + 1, 5000, "the minimum home has to scroll");
+        const items = homeFocusables(home.contentItem, []);
+        verify(items.length > 1);
+        const visibleIn = item => {
+            const y = item.mapToItem(home.contentItem, 0, 0).y;
+            return y >= home.contentY - 0.5 && y + item.height <= home.contentY + home.height + 0.5;
+        };
+        const last = items[items.length - 1];
+        last.forceActiveFocus(Qt.TabFocusReason);
+        tryVerify(() => home.contentY > 0 && visibleIn(last), 5000, "the last home item scrolls into view");
+        items[0].forceActiveFocus(Qt.BacktabFocusReason);
+        tryVerify(() => visibleIn(items[0]), 5000, "the first home item scrolls back into view");
+    }
+
     function isInside(item, ancestor) {
         for (let current = item; current; current = current.parent) {
             if (current === ancestor)

@@ -129,7 +129,10 @@ ApplicationWindow {
     }
     onActiveFocusItemChanged: {
         sideNavigation.revealFocus(activeFocusItem);
-        revealHomeFocus(activeFocusItem);
+        // Reveal with the geometry of the next frame: a focus restored while a transient line (the file
+        // picker status) still shrinks the home must not scroll it.
+        homeRevealPending = true;
+        update();
         if (activeFocusItem && !isPassiveFocusFallback(activeFocusItem))
             lastActiveFocusItem = activeFocusItem;
     }
@@ -151,6 +154,14 @@ ApplicationWindow {
             stateLayer.contentY = Math.max(0, point.y);
         else if (point.y + item.height > stateLayer.contentY + stateLayer.height)
             stateLayer.contentY = Math.max(0, Math.min(stateLayer.contentHeight - stateLayer.height, point.y + item.height - stateLayer.height));
+    }
+
+    property bool homeRevealPending: false
+    onAfterAnimating: {
+        if (!homeRevealPending)
+            return;
+        homeRevealPending = false;
+        revealHomeFocus(activeFocusItem);
     }
 
     function refreshHomeFocus() {
