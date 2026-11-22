@@ -894,6 +894,7 @@ ApplicationWindow {
             readerTextSize: window.presenter.lyricsTextSize
             drawerWidth: window.drawerWidth
             readerFallback: transport.lyricsControl
+            readerExitItem: transport.firstControl
             enabled: !window.presenter.exiting
             onQueueCloseRequested: window.closeQueueForLyrics()
             onReaderSeekRequested: timeMs => transport.commitImmediateSeek(timeMs)

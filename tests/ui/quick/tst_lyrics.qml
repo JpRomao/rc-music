@@ -756,45 +756,50 @@ TestCase {
         lyrics.statusText = "";
         tryVerify(() => !status.visible);
     }
-    function walkDrawerCycle(start, modifiers) {
-        const reader = findChild(shell, "lyrics-reader");
-        const walked = [];
-        for (let step = 0; step < 40; ++step) {
-            keyClick(Qt.Key_Tab, modifiers);
-            const item = shell.activeFocusItem;
-            verify(item, "focus is never lost while tabbing the drawer");
-            verify(isInside(item, reader.contentItem), "the focus left the drawer for " + item.objectName + " after " + walked.join(","));
-            if (item === start)
-                return walked;
-            walked.push(item.objectName);
-        }
-        fail("the focus never came back to " + start.objectName + ": " + walked.join(","));
-        return walked;
-    }
-    function test_lyricsDrawerKeepsTabInside() {
+    // The drawer is not modal and does not trap Tab: the last control hands the focus to the player, the first
+    // one to the verse line, and the drawer stays open.
+    function test_lyricsDrawerLetsTabLeave() {
         lyrics.readerVerses = [
             {
                 text: "One",
                 timeMs: 1000
-            },
-            {
-                text: "Two",
-                timeMs: 2000
             }
         ];
         lyrics.activeReaderVerse = 0;
         enableRomaji("jp-9");
-        openDrawer();
+        const reader = openDrawer();
         const close = findChild(shell, "lyrics-drawer-close");
         close.forceActiveFocus(Qt.TabFocusReason);
         tryCompare(close, "activeFocus", true);
-        const forward = walkDrawerCycle(close, Qt.NoModifier);
-        compare(forward.slice(0, 4).join(","), "lyrics-drawer-versions,lyrics-drawer-search,lyrics-drawer-more,lyrics-drawer-smaller", forward.join(","));
-        // The list reports the verse under its cursor as the focused item.
-        verify(forward.findIndex(name => name.startsWith("lyrics-reader-verse")) > forward.indexOf("lyrics-drawer-larger"), forward.join(","));
-        verify(forward.indexOf("lyrics-drawer-focus-wrap-start") < 0 && forward.indexOf("lyrics-drawer-focus-wrap-end") < 0, "the relays are never a resting place: " + forward.join(","));
-        const backward = walkDrawerCycle(close, Qt.ShiftModifier);
-        compare(backward.join(","), forward.slice().reverse().join(","), "Shift+Tab walks the same cycle backwards");
+        // Shift+Tab from the first control leaves for the verse line.
+        keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        const line = findChild(shell, "lyrics-line-open");
+        tryCompare(line, "activeFocus", true);
+        verify(!isInside(shell.activeFocusItem, reader.contentItem));
+        verify(reader.opened, "the drawer stays open");
+        // Tab through the whole drawer: the last control leaves for the first control of the player.
+        close.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(close, "activeFocus", true);
+        let left = null;
+        const walked = [];
+        for (let step = 0; step < 20 && !left; ++step) {
+            keyClick(Qt.Key_Tab);
+            const item = shell.activeFocusItem;
+            verify(item, "focus is never lost");
+            if (isInside(item, reader.contentItem))
+                walked.push(item.objectName);
+            else
+                left = item;
+        }
+        verify(left, "Tab leaves the drawer: " + walked.join(","));
+        verify(walked.indexOf("lyrics-drawer-larger") >= 0, walked.join(","));
+        verify(left.visible && left.enabled);
+        compare(left.objectName, findChild(shell, "transport-bar").firstControl.objectName);
+        verify(reader.opened, "the drawer stays open");
+        // The drawer is still reachable and closes with Escape, back to its opener.
+        close.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Escape);
+        tryCompare(reader, "visible", false);
     }
     function test_drawerReturnsFocusToItsRealOpener() {
         const player = findChild(shell, "player-lyrics");

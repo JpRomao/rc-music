@@ -20,6 +20,8 @@ Item {
     property int drawerWidth: 400
     // The player's lyrics button: where the focus goes when the opener is gone.
     property Item readerFallback: null
+    // Where Tab goes when it leaves the last control of the drawer: the player, after the verse line.
+    property Item readerExitItem: null
     readonly property bool variantsAvailable: lyrics !== null && typeof lyrics.variants !== "undefined"
     property bool queuedSaveFeedback: false
     readonly property bool variantsPending: variantsAvailable && lyrics.variantsHasPendingChange === true
@@ -440,6 +442,12 @@ Item {
         }
         onSeekRequested: timeMs => root.readerSeekRequested(timeMs)
         onAttributionRequested: root.openLyricFind()
+        onFocusLeft: forward => {
+            // Forward: the player. Backward: the verse line, or the player's lyrics button without one.
+            const target = (forward ? [root.readerExitItem, root.readerFallback] : [root.lineEntryItem, root.readerFallback]).find(root.isFocusable);
+            if (target)
+                target.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason);
+        }
         onTextSizeRequested: size => root.readerTextSizeRequested(size)
         onClosed: {
             const opener = root.readerOpener;

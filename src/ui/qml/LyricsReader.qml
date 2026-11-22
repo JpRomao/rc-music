@@ -55,6 +55,8 @@ Dialog {
     signal searchRequested(Item opener)
     signal romajiRequested(Item opener)
     signal addVersionRequested(Item opener)
+    // Tab left the last control (true) or Shift+Tab the first (false).
+    signal focusLeft(bool forward)
 
     parent: Overlay.overlay
     // Aurora side drawer: flush to the right edge, from the top of the window to the player.
@@ -84,16 +86,19 @@ Dialog {
         revealCurrent();
     }
 
-    // The Aurora drawer keeps Tab inside: a relay reached by Tab hands the focus to the first control, by
-    // Shift+Tab to the last. KeyNavigation is reciprocal, so the relays are the only way around the wrap.
-    function wrapFocus(reason) {
-        const forward = reason !== Qt.BacktabFocusReason;
-        let target = forward ? focusWrapStart.nextItemInFocusChain(true) : focusWrapEnd.nextItemInFocusChain(false);
-        // Never rest on an invisible relay: fall back to the close button.
-        if (!target || target === focusWrapStart || target === focusWrapEnd)
-            target = closeControl;
-        if (target)
-            target.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason);
+    // The Aurora drawer does not trap Tab. A zero-size relay on each end passes the focus out when Tab leaves the
+    // last control or Shift+Tab the first; reached from the other side it hands the focus on into the drawer.
+    // KeyNavigation is reciprocal, so the way out is a relay, never a link to an item outside.
+    function relayFocus(atEnd, reason) {
+        const backward = reason === Qt.BacktabFocusReason;
+        if (atEnd === backward) {
+            const inner = atEnd ? focusRelayAfter.nextItemInFocusChain(false) : focusRelayBefore.nextItemInFocusChain(true);
+            const target = (!inner || inner === focusRelayBefore || inner === focusRelayAfter) ? closeControl : inner;
+            if (target)
+                target.forceActiveFocus(reason);
+        } else {
+            focusLeft(atEnd);
+        }
     }
 
     onOpened: {
@@ -153,8 +158,8 @@ Dialog {
         }
 
         Control {
-            id: focusWrapStart
-            objectName: "lyrics-drawer-focus-wrap-start"
+            id: focusRelayBefore
+            objectName: "lyrics-drawer-focus-relay-before"
             visible: root.editorial
             width: 0
             height: 0
@@ -162,7 +167,7 @@ Dialog {
             Accessible.ignored: true
             onActiveFocusChanged: {
                 if (activeFocus)
-                    root.wrapFocus(focusReason);
+                    root.relayFocus(false, focusReason);
             }
         }
 
@@ -595,8 +600,8 @@ Dialog {
         }
 
         Control {
-            id: focusWrapEnd
-            objectName: "lyrics-drawer-focus-wrap-end"
+            id: focusRelayAfter
+            objectName: "lyrics-drawer-focus-relay-after"
             visible: root.editorial
             width: 0
             height: 0
@@ -604,7 +609,7 @@ Dialog {
             Accessible.ignored: true
             onActiveFocusChanged: {
                 if (activeFocus)
-                    root.wrapFocus(focusReason);
+                    root.relayFocus(true, focusReason);
             }
         }
 
