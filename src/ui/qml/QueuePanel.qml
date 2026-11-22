@@ -64,6 +64,18 @@ FocusScope {
     }
     // Aurora: an empty local queue offers to open audio instead of an empty list.
     readonly property bool emptyShown: overlayMode && !roomGuest && queueList.count === 0
+    // The list gives way to the empty state: hand the focus to a control that is still there.
+    onEmptyShownChanged: {
+        if (emptyShown && visible)
+            Qt.callLater(function () {
+                // The panel can be gone by then (a closed shell).
+                if (!root)
+                    return;
+                const focused = root.Window.window ? root.Window.window.activeFocusItem : null;
+                if (root.emptyShown && root.visible && (!focused || focused === root || focused === queueList || focused instanceof Loader || !focused.visible || !focused.enabled))
+                    root.focusCurrent();
+            });
+    }
     signal closeRequested
     signal openAudioRequested
     signal playRequested(string occurrenceId)
@@ -155,7 +167,10 @@ FocusScope {
         if (rowMenu.visible)
             return;
         syncCurrent();
-        queueList.forceActiveFocus(Qt.TabFocusReason);
+        if (emptyShown)
+            emptyState.primaryButton.forceActiveFocus(Qt.TabFocusReason);
+        else
+            queueList.forceActiveFocus(Qt.TabFocusReason);
     }
     function selectFocusOccurrence(index) {
         if (index < 0 || index >= queueList.count)
@@ -562,23 +577,30 @@ FocusScope {
             }
         }
 
-        AuroraEmptyState {
+        Item {
             visible: root.emptyShown
-            contract: root.contract
-            controlId: "queue-empty"
-            iconName: "queue"
-            title: queueText.emptyTitle
-            primaryActionText: root.contract.openAudioText
-            onPrimaryTriggered: root.openAudioRequested()
             Layout.fillWidth: true
             Layout.fillHeight: true
+
+            AuroraEmptyState {
+                id: emptyState
+                anchors.centerIn: parent
+                width: parent.width
+                contract: root.contract
+                controlId: "queue-empty"
+                iconName: "queue"
+                title: queueText.emptyTitle
+                primaryActionText: root.contract.openAudioText
+                onPrimaryTriggered: root.openAudioRequested()
+            }
         }
 
         ListView {
             id: queueList
             objectName: "queue-list"
             readonly property bool focusIndicatorVisible: activeFocus && enabled
-            visible: !root.roomGuest && !root.emptyShown
+            // Hidden by the empty state only while the drawer shows; a closed drawer keeps building its rows.
+            visible: !root.roomGuest && !(root.emptyShown && root.visible)
             Layout.fillWidth: true
             Layout.fillHeight: true
             model: root.presenter.queueModel
@@ -1093,7 +1115,14 @@ FocusScope {
             if (rowMenu.visible || root.presenter.selectingAudioFiles || root.addingFilesPending)
                 return;
             if (index < 0) {
-                root.closeRequested();
+                // The Aurora drawer stays open on its empty state; the legacy page closes.
+                if (root.overlayMode && !root.roomGuest)
+                    Qt.callLater(function () {
+                        if (revision === root.queueFocusRevision && root.emptyShown && root.visible)
+                            root.focusCurrent();
+                    });
+                else
+                    root.closeRequested();
                 return;
             }
             if (!root.queueFocusRestoreAllowed)

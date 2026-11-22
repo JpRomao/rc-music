@@ -13,6 +13,7 @@ ColumnLayout {
     property string hint
     property string primaryActionText
     property string secondaryActionText
+    property alias primaryButton: primary
 
     signal primaryTriggered
     signal secondaryTriggered

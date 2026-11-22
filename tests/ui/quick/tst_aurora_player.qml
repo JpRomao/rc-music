@@ -633,29 +633,43 @@ TestCase {
         verify(artist && !artist.visible, "the status takes the place of the artist");
     }
 
-    // The drawer only opens over a loaded queue today, so the empty state is reached by clearing the queue
-    // under the open drawer and keeping the drawer on screen.
+    // The drawer is never opened empty, but it stays open when its queue empties underneath it.
     function test_emptyQueueShowsTheEmptyState() {
         const drawer = openDrawerWithThreeTracks();
         verify(presenter.clearQueue());
         tryVerify(() => !testCase.presenter.queueLoaded);
-        drawer.visible = true;
-        tryVerify(() => drawer.emptyShown);
+        verify(drawer.visible, "the open drawer stays open");
         const empty = findChild(drawer, "queue-empty");
-        verify(empty && empty.visible);
+        tryVerify(() => empty.visible);
         compare(findChild(empty, "empty-title").text, "A fila está vazia.");
         const primary = findChild(empty, "queue-empty-primary");
         verify(primary && primary.visible);
         compare(primary.text, "Abrir áudio");
         verify(!findChild(drawer, "queue-list").visible);
+        // Vertically centered in the list area.
+        const area = empty.parent;
+        verify(Math.abs(empty.y + empty.height / 2 - area.height / 2) <= 1, "centered: " + empty.y + " " + empty.height + " " + area.height);
         driver.enqueueLocalSelection(["C:/Música/Nova.mp3"]);
         mouseClick(primary);
         tryVerify(() => testCase.presenter.queueLoaded);
         compare(presenter.queueModel.rowCount(), 1);
     }
 
-    // Opens a queue with one file per duration and plays each track once so the queue learns its duration.
-    // A null duration leaves that track unknown.
+    function test_emptyDrawerClosesAndStaysClosed() {
+        const drawer = openDrawerWithThreeTracks();
+        verify(presenter.clearQueue());
+        tryVerify(() => !testCase.presenter.queueLoaded);
+        tryVerify(() => findChild(drawer, "queue-empty").visible);
+        tryVerify(() => testCase.shell.activeFocusItem !== null && testCase.shell.activeFocusItem.objectName === "queue-empty-primary", 5000, "the focus moves to the empty action");
+        keyClick(Qt.Key_Escape);
+        tryVerify(() => !drawer.visible);
+        verify(!shell.queueOpen);
+        wait(100);
+        verify(!drawer.visible, "the empty drawer does not reopen");
+        const focused = shell.activeFocusItem;
+        verify(focused && focused.visible && focused.enabled, "the focus rests on a visible, enabled item");
+    }
+
     function loadQueueWithDurations(durations) {
         driver.enqueueLocalSelection(durations.map((duration, index) => "C:/Música/Faixa " + (index + 1) + ".mp3"));
         findChild(shell, "open-audio").Accessible.pressAction();

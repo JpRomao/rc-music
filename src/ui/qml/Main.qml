@@ -54,9 +54,10 @@ ApplicationWindow {
     readonly property Item pageExitFocusItem: transport.firstControl
     // A guest's queue is the room queue, there even when no local queue is loaded.
     readonly property bool roomGuest: room !== null && room.available && room.role === 2
-    readonly property bool queuePageActive: queueOpen && (presenter.queueLoaded || roomGuest)
+    // The Aurora drawer stays open when its queue empties; it is only never opened empty.
+    readonly property bool queuePageActive: queueOpen && (presenter.queueLoaded || roomGuest || inlinePages)
     // Aurora has no sidebar queue item: the shortcut depends on the queue itself, the fixture on the button.
-    readonly property bool queueShortcutEnabled: windowShortcutsEnabled && (inlinePages ? ((presenter.queueLoaded || roomGuest) && !presenter.exiting) : queueButton.enabled) && !preferencesPanel.visible
+    readonly property bool queueShortcutEnabled: windowShortcutsEnabled && (inlinePages ? ((presenter.queueLoaded || roomGuest || queueOpen) && !presenter.exiting) : queueButton.enabled) && !preferencesPanel.visible
     // The item focused when the Aurora drawer opened; the fixture keeps returning to the sidebar button.
     property Item queueReturnFocusItem: null
     // Who opened Settings from outside the Settings button; null means the button.

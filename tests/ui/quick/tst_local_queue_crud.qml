@@ -286,8 +286,13 @@ TestCase {
         compare(testScenarioDriver.localUnloadCount(), unloadsBeforeClear + 1); // qmllint disable unqualified
         wait(50);
         compare(testScenarioDriver.localUnloadCount(), unloadsBeforeClear + 1); // qmllint disable unqualified
+        // The drawer stays open on its empty state and the focus moves to its action; closing it leaves a usable item focused.
         tryVerify(function () {
-            return !queuePanel.visible && openAudio.activeFocus;
+            return queuePanel.visible && findChild(queuePanel, "queue-empty-primary").activeFocus;
+        });
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !queuePanel.visible && shell.activeFocusItem !== null && shell.activeFocusItem.visible && shell.activeFocusItem.enabled;
         });
     }
 }

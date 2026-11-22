@@ -410,6 +410,24 @@ TestCase {
         const backward = walkDrawerCycle(close, Qt.ShiftModifier);
         compare(backward.join(","), forward.slice().reverse().join(","), "Shift+Tab walks the same cycle backwards");
     }
+    // With the queue emptied under the open drawer, Tab still goes around the drawer: close, the toolbar, the empty action.
+    function test_emptyQueueDrawerKeepsTabInside() {
+        openQueue();
+        const close = focusControl("queue-header-close");
+        verify(presenter.clearQueue());
+        tryVerify(() => !testCase.presenter.queueLoaded);
+        const panel = findChild(shell, "queue-panel");
+        verify(panel.visible);
+        tryVerify(() => findChild(panel, "queue-empty").visible);
+        verify(!findChild(panel, "queue-list").visible);
+        close.forceActiveFocus(Qt.TabFocusReason);
+        tryVerify(() => close.activeFocus);
+        const forward = walkDrawerCycle(close, Qt.NoModifier);
+        verify(forward.indexOf("queue-empty-primary") >= 0, forward.join(","));
+        verify(forward.indexOf("queue-list") < 0, forward.join(","));
+        const backward = walkDrawerCycle(close, Qt.ShiftModifier);
+        compare(backward.join(","), forward.slice().reverse().join(","), "Shift+Tab walks the same cycle backwards");
+    }
     function queueOrder(list) {
         list.forceLayout();
         const ids = [];

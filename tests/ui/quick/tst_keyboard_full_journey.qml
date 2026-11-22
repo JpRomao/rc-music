@@ -191,8 +191,14 @@ TestCase {
         tryVerify(function () {
             return !confirmation.visible && !presenter.queueLoaded;
         });
+        // The drawer stays open on its empty state and the focus moves to its action; closing it leaves a usable item focused.
+        const emptyPanel = findChild(shell, "queue-panel");
         tryVerify(function () {
-            return findChild(shell, "open-audio").activeFocus;
+            return emptyPanel.visible && findChild(emptyPanel, "queue-empty-primary").activeFocus;
+        });
+        keyClick(Qt.Key_Escape);
+        tryVerify(function () {
+            return !emptyPanel.visible && shell.activeFocusItem !== null && shell.activeFocusItem.visible && shell.activeFocusItem.enabled;
         });
     }
 }
