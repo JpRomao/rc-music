@@ -49,7 +49,8 @@ ApplicationWindow {
     readonly property bool inlinePages: !presenter.usesFrozenFixture
     readonly property Item themeButton: inlinePages ? workspaceHeader.themeButton : sideNavigation.themeButton
     readonly property string currentPage: preferencesPanel.visible ? "preferences" : (libraryPanel.visible ? "library" : (searchPanel.visible ? "search" : (roomPanel.visible ? "room" : (playlistsPanel.visible ? "playlists" : (downloadsPanel.visible ? "downloads" : (queuePageActive ? "queue" : "home"))))))
-    readonly property Item pageReturnFocusItem: inlinePages ? (currentPage === "preferences" ? preferencesPanel.lastFocusItem : (currentPage === "library" ? libraryPanel.lastFocusItem : (currentPage === "search" ? searchPanel.lastFocusItem : (currentPage === "room" ? roomPanel.lastFocusItem : (currentPage === "playlists" ? playlistsPanel.lastFocusItem : (currentPage === "downloads" ? downloadsPanel.lastFocusItem : null)))))) : null
+    // Aurora pages hand the focus on to the player after them.
+    readonly property Item pageExitFocusItem: transport.firstControl
     // A guest's queue is the room queue, there even when no local queue is loaded.
     readonly property bool roomGuest: room !== null && room.available && room.role === 2
     readonly property bool queuePageActive: queueOpen && (presenter.queueLoaded || roomGuest)
@@ -488,7 +489,6 @@ ApplicationWindow {
         queueAvailable: window.presenter.queueLoaded || window.roomGuest
         queueActive: window.queuePageActive
         activePage: window.currentPage
-        pageReturnFocusItem: window.pageReturnFocusItem
         exiting: window.presenter.exiting
         hasPlaylists: window.playlists !== null
         hasLibrary: window.library !== null
@@ -541,6 +541,124 @@ ApplicationWindow {
         exiting: window.presenter.exiting
         onThemeRequested: window.toggleTheme()
         pageTitle: window.currentPage === "home" ? navigationText.home : (window.currentPage === "queue" ? window.uiContract.queueTitle : (window.currentPage === "library" ? navigationText.library : window.currentPage === "search" ? navigationText.search : window.currentPage === "room" ? navigationText.listenTogether : window.currentPage === "playlists" ? navigationText.playlists : (window.currentPage === "downloads" ? navigationText.activity : navigationText.settings)))
+    }
+    // Aurora's Tab order is sidebar, header, page, player: the pages sit in the tree between the header and the
+    // main layout. The fixture opens them as dialogs, out of this order.
+    PreferencesPanel {
+        id: preferencesPanel
+        parent: window.contentItem
+        embedded: window.inlinePages
+        previousFocusItem: preferencesButton
+        nextFocusItem: window.pageExitFocusItem
+        width: embedded ? contentArea.width : Math.min(window.width - window.uiContract.spacingUnit * 12, 600)
+        height: embedded ? contentArea.height : Math.min(contentArea.height, 400)
+        x: embedded ? mainLayout.x + contentArea.x : (window.width - width) / 2
+        y: mainLayout.y + contentArea.y
+        contract: window.uiContract
+        presenter: window.presenter
+        downloads: window.downloads
+        profile: window.profile
+        onClosed: {
+            if (!window.presenter.exiting) {
+                if (windowNotice.visible)
+                    windowNotice.focusFirst();
+                else {
+                    const opener = window.preferencesReturnFocusItem;
+                    const target = opener && opener.visible && opener.enabled ? opener : preferencesButton;
+                    target.forceActiveFocus(Qt.TabFocusReason);
+                }
+            }
+            window.preferencesReturnFocusItem = null;
+        }
+    }
+    DownloadsPanel {
+        id: downloadsPanel
+        parent: window.contentItem
+        embedded: window.inlinePages
+        previousFocusItem: downloadsButton
+        nextFocusItem: window.pageExitFocusItem
+        width: embedded ? contentArea.width : Math.min(window.width - window.uiContract.spacingUnit * 12, 760)
+        height: embedded ? contentArea.height : Math.min(window.height - window.uiContract.spacingUnit * 12, 640)
+        x: embedded ? mainLayout.x + contentArea.x : (window.width - width) / 2
+        y: embedded ? mainLayout.y + contentArea.y : (window.height - height) / 2
+        contract: window.uiContract
+        downloads: window.downloads
+        library: window.library
+        fallbackFocusItem: downloadsButton
+        focusRestoreAllowed: window.active && (!window.inlinePages || window.currentPage === "home") && (!window.presenter.exiting || window.downloadFinalSaveDecisionRequired)
+        onExitRequested: window.presenter.requestExit()
+    }
+    LibraryPanel {
+        id: libraryPanel
+        previousFocusItem: libraryButton
+        nextFocusItem: window.pageExitFocusItem
+        parent: window.contentItem
+        x: mainLayout.x + contentArea.x
+        y: mainLayout.y + contentArea.y
+        width: contentArea.width
+        height: contentArea.height
+        contract: window.uiContract
+        library: window.library
+        playlists: window.playlists
+        enabled: !window.presenter.exiting
+        onClosed: {
+            if (window.active && !window.presenter.exiting && !searchPanel.visible && !roomPanel.visible && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && libraryButton.visible)
+                libraryButton.forceActiveFocus(Qt.TabFocusReason);
+        }
+    }
+    SearchPanel {
+        id: searchPanel
+        previousFocusItem: searchButton
+        nextFocusItem: window.pageExitFocusItem
+        parent: window.contentItem
+        x: mainLayout.x + contentArea.x
+        y: mainLayout.y + contentArea.y
+        width: contentArea.width
+        height: contentArea.height
+        contract: window.uiContract
+        onlineSearch: window.onlineSearch
+        enabled: !window.presenter.exiting
+        onClosed: {
+            if (window.active && !window.presenter.exiting && !libraryPanel.visible && !roomPanel.visible && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && searchButton.visible)
+                searchButton.forceActiveFocus(Qt.TabFocusReason);
+        }
+    }
+    ListeningRoomPanel {
+        id: roomPanel
+        previousFocusItem: roomButton
+        nextFocusItem: window.pageExitFocusItem
+        parent: window.contentItem
+        x: mainLayout.x + contentArea.x
+        y: mainLayout.y + contentArea.y
+        width: contentArea.width
+        height: contentArea.height
+        contract: window.uiContract
+        room: window.room
+        presenter: window.presenter
+        enabled: !window.presenter.exiting
+        onClosed: {
+            if (window.active && !window.presenter.exiting && !libraryPanel.visible && !searchPanel.visible && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && roomButton.visible)
+                roomButton.forceActiveFocus(Qt.TabFocusReason);
+        }
+    }
+    PlaylistsPanel {
+        id: playlistsPanel
+        embedded: window.inlinePages
+        previousFocusItem: playlistsButton
+        nextFocusItem: window.pageExitFocusItem
+        parent: embedded ? window.contentItem : Overlay.overlay
+        x: embedded ? mainLayout.x + contentArea.x : (parent.width - width) / 2
+        y: embedded ? mainLayout.y + contentArea.y : (parent.height - height) / 2
+        width: embedded ? contentArea.width : Math.min(920, parent ? parent.width - contract.spacingUnit * 8 : 920)
+        height: embedded ? contentArea.height : Math.min(680, parent ? parent.height - contract.spacingUnit * 8 : 680)
+        contract: window.uiContract
+        queueHasTracks: !window.presenter.usesFrozenFixture && window.presenter.queueLoaded
+        playlists: window.playlists
+        enabled: !window.presenter.exiting
+        onClosed: {
+            if (window.active && !window.presenter.exiting && !downloadsPanel.visible)
+                playlistsButton.forceActiveFocus(Qt.TabFocusReason);
+        }
     }
     ColumnLayout {
         id: mainLayout
@@ -752,7 +870,6 @@ ApplicationWindow {
         TransportBar {
             id: transport
             objectName: "transport-bar"
-            pageReturnFocusItem: window.pageReturnFocusItem
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: window.inlinePages ? parent.top : undefined
@@ -875,33 +992,6 @@ ApplicationWindow {
         onRetryRequested: window.presenter.retryPreferenceSave()
         onReplacementConfirmed: revision => window.presenter.confirmPreferenceReplacement(revision)
     }
-    PreferencesPanel {
-        id: preferencesPanel
-        parent: window.contentItem
-        embedded: window.inlinePages
-        previousFocusItem: preferencesButton
-        nextFocusItem: transport.primaryControl.enabled ? transport.primaryControl : (sideNavigation.nowButton.enabled ? sideNavigation.nowButton : downloadsButton)
-        width: embedded ? contentArea.width : Math.min(window.width - window.uiContract.spacingUnit * 12, 600)
-        height: embedded ? contentArea.height : Math.min(contentArea.height, 400)
-        x: embedded ? mainLayout.x + contentArea.x : (window.width - width) / 2
-        y: mainLayout.y + contentArea.y
-        contract: window.uiContract
-        presenter: window.presenter
-        downloads: window.downloads
-        profile: window.profile
-        onClosed: {
-            if (!window.presenter.exiting) {
-                if (windowNotice.visible)
-                    windowNotice.focusFirst();
-                else {
-                    const opener = window.preferencesReturnFocusItem;
-                    const target = opener && opener.visible && opener.enabled ? opener : preferencesButton;
-                    target.forceActiveFocus(Qt.TabFocusReason);
-                }
-            }
-            window.preferencesReturnFocusItem = null;
-        }
-    }
     TrackDetailsPanel {
         id: trackDetailsPanel
         parent: window.contentItem
@@ -924,101 +1014,12 @@ ApplicationWindow {
         presenter: window.presenter
         fallbackFocusItem: preferencesButton
     }
-    DownloadsPanel {
-        id: downloadsPanel
-        parent: window.contentItem
-        embedded: window.inlinePages
-        previousFocusItem: downloadsButton
-        nextFocusItem: transport.primaryControl.enabled ? transport.primaryControl : (sideNavigation.nowButton.enabled ? sideNavigation.nowButton : downloadsButton)
-        width: embedded ? contentArea.width : Math.min(window.width - window.uiContract.spacingUnit * 12, 760)
-        height: embedded ? contentArea.height : Math.min(window.height - window.uiContract.spacingUnit * 12, 640)
-        x: embedded ? mainLayout.x + contentArea.x : (window.width - width) / 2
-        y: embedded ? mainLayout.y + contentArea.y : (window.height - height) / 2
-        contract: window.uiContract
-        downloads: window.downloads
-        library: window.library
-        fallbackFocusItem: downloadsButton
-        focusRestoreAllowed: window.active && (!window.inlinePages || window.currentPage === "home") && (!window.presenter.exiting || window.downloadFinalSaveDecisionRequired)
-        onExitRequested: window.presenter.requestExit()
-    }
 
     Connections {
         target: window.embeddedBrowser
         function onErrorChanged() {
             if (window.embeddedBrowser !== null && window.embeddedBrowser.errorText.length > 0)
                 browserError.open();
-        }
-    }
-    LibraryPanel {
-        id: libraryPanel
-        previousFocusItem: libraryButton
-        nextFocusItem: transport.primaryControl.enabled ? transport.primaryControl : sideNavigation.nowButton
-        parent: window.contentItem
-        x: mainLayout.x + contentArea.x
-        y: mainLayout.y + contentArea.y
-        width: contentArea.width
-        height: contentArea.height
-        contract: window.uiContract
-        library: window.library
-        playlists: window.playlists
-        enabled: !window.presenter.exiting
-        onClosed: {
-            if (window.active && !window.presenter.exiting && !searchPanel.visible && !roomPanel.visible && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && libraryButton.visible)
-                libraryButton.forceActiveFocus(Qt.TabFocusReason);
-        }
-    }
-    SearchPanel {
-        id: searchPanel
-        previousFocusItem: searchButton
-        nextFocusItem: transport.primaryControl.enabled ? transport.primaryControl : sideNavigation.nowButton
-        parent: window.contentItem
-        x: mainLayout.x + contentArea.x
-        y: mainLayout.y + contentArea.y
-        width: contentArea.width
-        height: contentArea.height
-        contract: window.uiContract
-        onlineSearch: window.onlineSearch
-        enabled: !window.presenter.exiting
-        onClosed: {
-            if (window.active && !window.presenter.exiting && !libraryPanel.visible && !roomPanel.visible && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && searchButton.visible)
-                searchButton.forceActiveFocus(Qt.TabFocusReason);
-        }
-    }
-    ListeningRoomPanel {
-        id: roomPanel
-        previousFocusItem: roomButton
-        nextFocusItem: transport.primaryControl.enabled ? transport.primaryControl : sideNavigation.nowButton
-        parent: window.contentItem
-        x: mainLayout.x + contentArea.x
-        y: mainLayout.y + contentArea.y
-        width: contentArea.width
-        height: contentArea.height
-        contract: window.uiContract
-        room: window.room
-        presenter: window.presenter
-        enabled: !window.presenter.exiting
-        onClosed: {
-            if (window.active && !window.presenter.exiting && !libraryPanel.visible && !searchPanel.visible && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && roomButton.visible)
-                roomButton.forceActiveFocus(Qt.TabFocusReason);
-        }
-    }
-    PlaylistsPanel {
-        id: playlistsPanel
-        embedded: window.inlinePages
-        previousFocusItem: playlistsButton
-        nextFocusItem: transport.primaryControl.enabled ? transport.primaryControl : (sideNavigation.nowButton.enabled ? sideNavigation.nowButton : downloadsButton)
-        parent: embedded ? window.contentItem : Overlay.overlay
-        x: embedded ? mainLayout.x + contentArea.x : (parent.width - width) / 2
-        y: embedded ? mainLayout.y + contentArea.y : (parent.height - height) / 2
-        width: embedded ? contentArea.width : Math.min(920, parent ? parent.width - contract.spacingUnit * 8 : 920)
-        height: embedded ? contentArea.height : Math.min(680, parent ? parent.height - contract.spacingUnit * 8 : 680)
-        contract: window.uiContract
-        queueHasTracks: !window.presenter.usesFrozenFixture && window.presenter.queueLoaded
-        playlists: window.playlists
-        enabled: !window.presenter.exiting
-        onClosed: {
-            if (window.active && !window.presenter.exiting && !downloadsPanel.visible)
-                playlistsButton.forceActiveFocus(Qt.TabFocusReason);
         }
     }
     Dialog {

@@ -12,7 +12,8 @@ GridLayout {
     required property PlayerPresenter presenter
     property alias primaryControl: playPause
     property alias queueControl: queueAction
-    property Item pageReturnFocusItem: null
+    // The player's first control in the Tab order, where a page hands the focus on; null when none is.
+    readonly property Item firstControl: [progress, shuffleAction, previousTrack, skipBackward, playPause, skipForward, nextTrack, repeatAction, lyricsAction, queueAction, muteAction, volume].find(item => item.visible && item.enabled) ?? null
     readonly property bool editorial: !presenter.usesFrozenFixture
     // Set by the window: the same compact rule as the side navigation.
     property bool compact: false
@@ -335,6 +336,7 @@ GridLayout {
             Layout.fillWidth: true
         }
         AccessibleTransportButton {
+            id: shuffleAction
             objectName: "player-shuffle"
             flat: root.editorial
             visible: root.editorial
@@ -399,16 +401,6 @@ GridLayout {
             Layout.preferredWidth: root.editorial ? 52 : -1
             Layout.preferredHeight: root.editorial ? 52 : -1
             iconSize: 22
-            KeyNavigation.backtab: null
-            Keys.onBacktabPressed: event => {
-                const target = root.pageReturnFocusItem;
-                if (target && target.visible && target.enabled) {
-                    target.forceActiveFocus(Qt.BacktabFocusReason);
-                    event.accepted = true;
-                } else {
-                    event.accepted = false;
-                }
-            }
             font.family: root.presenter.usesFrozenFixture ? root.contract.applicationFont.family : root.contract.symbolFontFamily
             enabled: root.roomGuest ? root.roomPause : root.playbackEnabled
             contract: root.contract
@@ -450,6 +442,7 @@ GridLayout {
             onClicked: root.roomGuest ? root.room.roomNext() : root.presenter.nextTrack()
         }
         AccessibleTransportButton {
+            id: repeatAction
             objectName: "player-repeat"
             flat: root.editorial
             visible: root.editorial
@@ -538,6 +531,7 @@ GridLayout {
             Layout.alignment: Qt.AlignRight
             spacing: 4
             AccessibleTransportButton {
+                id: lyricsAction
                 objectName: "player-lyrics"
                 flat: true
                 Layout.preferredWidth: 40
@@ -604,6 +598,7 @@ GridLayout {
         Layout.alignment: root.editorial ? Qt.AlignVCenter : Qt.AlignHCenter | Qt.AlignVCenter
         spacing: root.editorial ? 4 : 5
         AccessibleTransportButton {
+            id: muteAction
             objectName: "mute"
             flat: root.editorial
             Layout.preferredWidth: root.editorial ? 40 : -1

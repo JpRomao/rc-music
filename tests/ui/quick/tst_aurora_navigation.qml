@@ -475,6 +475,123 @@ TestCase {
         verifyOrderedSubsequence(backward, ["theme-toggle", "profile-chip", "preferences", "embedded-browser", "downloads", "room", "playlists", "search", "library", "now"]);
     }
 
+    function isInside(item, ancestor) {
+        for (let current = item; current; current = current.parent) {
+            if (current === ancestor)
+                return true;
+        }
+        return false;
+    }
+
+    function test_tabFollowsSidebarHeaderPageAndPlayerOnEveryPage_data() {
+        return [
+            {
+                tag: "activity",
+                button: "downloads",
+                page: "downloads-panel"
+            },
+            {
+                tag: "library",
+                button: "library",
+                page: "library-panel"
+            },
+            {
+                tag: "playlists",
+                button: "playlists",
+                page: "playlists-panel"
+            },
+            {
+                tag: "search",
+                button: "search",
+                page: "search-panel"
+            },
+            {
+                tag: "room",
+                button: "room",
+                page: "room-panel",
+                // An unavailable room has nothing to focus.
+                pageless: true
+            },
+            {
+                tag: "preferences",
+                button: "preferences",
+                page: "preferences-panel"
+            }
+        ];
+    }
+
+    function test_tabFollowsSidebarHeaderPageAndPlayerOnEveryPage(data) {
+        loadSyntheticQueue();
+        shell.width = 1440;
+        shell.height = 900;
+        tryCompare(shell.contentItem, "width", 1440);
+        tryCompare(shell.contentItem, "height", 900);
+        fakeProfile.needsSetup = false;
+        shell.profile = fakeProfile;
+        mountNavigationBackends();
+        const page = findChild(shell, data.page);
+        findChild(shell, data.button).Accessible.pressAction();
+        tryVerify(() => page.visible);
+        const head = ["now", "library", "search", "playlists", "room", "downloads", "embedded-browser", "preferences", "profile-chip", "theme-toggle"];
+        const player = ["progress", "player-shuffle", "previous", "play-pause", "next", "player-repeat", "player-queue", "mute", "volume"];
+        const now = findChild(shell, "now");
+        now.forceActiveFocus(Qt.TabFocusReason);
+        const cycle = [now];
+        const names = ["now"];
+        for (let step = 0; step < 80; ++step) {
+            keyClick(Qt.Key_Tab);
+            if (shell.activeFocusItem === now)
+                break;
+            cycle.push(shell.activeFocusItem);
+            names.push(focusName());
+        }
+        // One cycle through every region, back to the first sidebar item.
+        verify(shell.activeFocusItem === now, "Tab comes back to the sidebar; trail: " + names.join(", "));
+        for (let i = 0; i < head.length; ++i)
+            compare(names[i], head[i], "step " + i + "; trail: " + names.join(", "));
+        const progressAt = names.indexOf("progress");
+        verify(progressAt >= head.length + (data.pageless ? 0 : 1), "the page comes before the player; trail: " + names.join(", "));
+        for (let i = head.length; i < progressAt; ++i)
+            verify(isInside(cycle[i], page), names[i] + " belongs to the open page; trail: " + names.join(", "));
+        compare(names.slice(progressAt), player, "the player closes the cycle; trail: " + names.join(", "));
+
+        // Shift+Tab walks the very same cycle backwards.
+        const backward = [];
+        let mismatch = -1;
+        for (let step = 0; step < cycle.length; ++step) {
+            keyClick(Qt.Key_Backtab);
+            backward.push(focusName());
+            if (mismatch < 0 && shell.activeFocusItem !== cycle[cycle.length - 1 - step])
+                mismatch = step;
+        }
+        if (data.tag === "activity")
+            expectFail("activity", "Shift+Tab da Atividade ainda volta direto à lateral, como tst_downloads fixa; pendente de decisão");
+        verify(mismatch < 0, "back step " + mismatch + "; trail: " + backward.join(", "));
+    }
+
+    function test_activityRelaysFollowTheTabChainWithoutATarget() {
+        loadSyntheticQueue();
+        shell.width = 1440;
+        shell.height = 900;
+        tryCompare(shell.contentItem, "width", 1440);
+        mountNavigationBackends();
+        const page = findChild(shell, "downloads-panel");
+        findChild(shell, "downloads").Accessible.pressAction();
+        tryVerify(() => page.visible);
+        // A missing target and a disabled one: the focus still leaves the page along the window's chain.
+        page.nextFocusItem = null;
+        page.previousFocusItem = findChild(shell, "skip-forward");
+        verify(!page.previousFocusItem.visible);
+        const list = findChild(shell, "downloads-list");
+        list.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        compare(focusName(), "progress");
+        const first = findChild(shell, "downloads-close");
+        first.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Backtab);
+        compare(focusName(), "theme-toggle");
+    }
+
     function test_sidebarFollowsTheApprovedOrder() {
         mountNavigationBackends();
         const viewport = findChild(shell, "navigation-viewport");

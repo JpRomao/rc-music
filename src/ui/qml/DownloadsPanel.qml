@@ -340,6 +340,13 @@ PageSurface {
         jobsList.currentIndex = index;
         jobsList.positionViewAtIndex(index, ListView.Contain);
     }
+    // A relay target can be missing or disabled, for instance while the app exits: the focus then
+    // follows the window's own Tab chain past this page.
+    function relayFocus(target, fallback, reason) {
+        const next = target && target.visible && target.enabled ? target : fallback;
+        if (next)
+            next.forceActiveFocus(reason);
+    }
     function topControls() {
         return [closeButton, openFolderButton, lyricsButton, archiveButton, retryStartupButton, renewNamespaceButton, retryAdmissionButton, retryFinalSaveButton, closeWithoutSaveButton, filterButtons()[jobFilter]].filter(function (item) {
             return item && item.visible && item.enabled;
@@ -372,8 +379,8 @@ PageSurface {
             activeFocusOnTab: false
             Accessible.ignored: true
             onActiveFocusChanged: {
-                if (activeFocus && root.previousFocusItem)
-                    root.previousFocusItem.forceActiveFocus(Qt.BacktabFocusReason);
+                if (activeFocus)
+                    root.relayFocus(root.previousFocusItem, root.nextItemInFocusChain(false), Qt.BacktabFocusReason);
             }
         }
         Item {
@@ -384,8 +391,8 @@ PageSurface {
             activeFocusOnTab: false
             Accessible.ignored: true
             onActiveFocusChanged: {
-                if (activeFocus && root.nextFocusItem)
-                    root.nextFocusItem.forceActiveFocus(Qt.TabFocusReason);
+                if (activeFocus)
+                    root.relayFocus(root.nextFocusItem, focusRelayAfter.nextItemInFocusChain(true), Qt.TabFocusReason);
             }
         }
     }

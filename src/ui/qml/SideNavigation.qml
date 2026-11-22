@@ -12,7 +12,6 @@ Rectangle {
     property bool queueAvailable: false
     property bool queueActive: false
     property string activePage: ""
-    property Item pageReturnFocusItem: null
     property bool exiting: false
     property bool hasPlaylists: false
     property bool hasLibrary: false
@@ -164,15 +163,6 @@ Rectangle {
                 objectName: "now"
                 KeyNavigation.tab: null
                 KeyNavigation.backtab: null
-                Keys.onBacktabPressed: event => {
-                    const target = root.pageReturnFocusItem;
-                    if (target && target.visible && target.enabled) {
-                        target.forceActiveFocus(Qt.BacktabFocusReason);
-                        event.accepted = true;
-                    } else {
-                        event.accepted = false;
-                    }
-                }
                 Layout.fillWidth: true
                 contract: root.contract
                 text: root.editorial ? labels.home : labels.now
