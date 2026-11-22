@@ -112,7 +112,7 @@ Dialog {
         clip: true
         contentWidth: availableWidth
         contentHeight: bodyColumn.implicitHeight
-        implicitHeight: bodyColumn.implicitHeight
+        implicitHeight: bodyColumn.implicitHeight + topPadding + bottomPadding
         leftPadding: dialog.margin
         rightPadding: dialog.margin
         topPadding: 4

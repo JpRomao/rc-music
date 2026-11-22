@@ -193,4 +193,33 @@ TestCase {
         verify(h.dialog.width <= 720 - 48);
         verify(h.dialog.height <= 520 - 48);
     }
+
+    function test_shortDialogDoesNotScroll() {
+        const h = openDialog();
+        const sv = h.dialog.contentItem;
+        verify(sv.contentHeight <= sv.availableHeight, "conteudo " + sv.contentHeight + " > area " + sv.availableHeight);
+    }
+    function test_tallDialogScrollsInsideBounds() {
+        const h = createTemporaryObject(hostComponent, testCase, {
+            width: 720,
+            height: 520,
+            tallContent: true
+        });
+        verify(h);
+        verify(waitForRendering(h.contentItem));
+        h.dialog.open();
+        tryVerify(() => h.dialog.opened);
+        const sv = h.dialog.contentItem;
+        verify(sv.contentHeight > sv.availableHeight);
+        verify(sv.availableHeight > 0);
+        verify(h.dialog.height <= 520 - 48);
+    }
+    function test_highContrastSurface() {
+        driver.setHighContrast(true, true);
+        const h = openDialog();
+        sameColor(h.dialog.background.color, contract.canvasColor, "fundo em alto contraste");
+        compare(h.dialog.background.border.width, 2);
+        sameColor(h.dialog.background.border.color, contract.textPrimaryColor, "contorno");
+        verify(!child(h.dialog.background, "surface-shadow").visible);
+    }
 }
