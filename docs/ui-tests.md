@@ -138,6 +138,12 @@ Valem para as telas que usarem as peças nos planos seguintes:
 
 Resultado do marco do fim das peças (`develop.ps1 validate`): as etapas de formato, documentos, build e lint passaram, e o CTest teve 667 de 669 aprovados. As duas falhas: `rc_music.ui.quick` estoura o prazo de 90 s (a suíte leva cerca de 150 s ou mais nesta máquina), o que já ocorria antes da fatia; e `rc_music.ui.presenter` (`roomHostLeadsEachStartOnceOverQueuedConfirmations`) falhou uma vez sob carga e passa sozinho (336/336 no binário inteiro). O Quick rodado direto, sem o limite do CTest, deu 695 aprovados e 6 falhas, todas linhas já falhando de `AuroraComposition::test_headerHeroAndFooterUseSeparateResponsiveRegions`, que exige `RC_MUSIC_UI_ARTIFACT_DIR`. `LocalRuntime.Tests.ps1` ficou pendente: precisa de um runtime montado. `tst_aurora_pieces_visual` passou 7/7.
 
+As três condições foram corrigidas em 2026-11-22:
+
+- `rc_music.ui.quick` tem prazo de 360 s. A suíte inteira levou 108 s com a máquina livre, cerca de 160 s dentro do `validate` e 309 s com a máquina ocupada. O prazo só pega um processo travado; cada `tryCompare` tem o próprio limite.
+- `test_headerHeroAndFooterUseSeparateResponsiveRegions` confere o layout e o tamanho da captura sempre, e só grava `aurora-redesign-<linha>.png` com `RC_MUSIC_UI_ARTIFACT_DIR` definido.
+- `roomHostLeadsEachStartOnceOverQueuedConfirmations` espera o player da sala receber a confirmação do backend, que chega pela fila de eventos, antes de avançar o relógio da sala. Se o timer de 300 ms soltava a faixa no fim de uma espera, a confirmação ficava na fila, e a sala via o player parado na posição da âncora depois dela. Então reancorava duas vezes por desvio. Uma sonda que forçava essa ordem reproduziu a falha (2 estados a mais) e passou com a correção.
+
 ## Limites
 
 ### Geometria durante metadata e capa
