@@ -47,7 +47,7 @@ Dialog {
     onOpened: {
         const target = initialFocusItem ? initialFocusItem : firstFocusTarget();
         if (target)
-            target.forceActiveFocus(Qt.TabFocusReason);
+            target.forceActiveFocus(Qt.OtherFocusReason);
     }
     onClosed: {
         if (previousFocus)

@@ -213,6 +213,23 @@ TestCase {
         keyClick(Qt.Key_Tab);
         verify(h.after.activeFocus);
     }
+    function test_segmentFocusRingStaysInsideTheTrack() {
+        const h = hostSegmented({
+            options: ["Sistema", "Claro", "Escuro"],
+            currentIndex: 0
+        });
+        h.before.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        keyClick(Qt.Key_Right);
+        const segment = child(h.segmented, "view-1");
+        verify(segment.activeFocus);
+        const ring = findChild(segment, "focus-ring");
+        verify(ring && ring.visible, "anel visível");
+        verify(ring.x >= 0, "x " + ring.x);
+        verify(ring.y >= 0, "y " + ring.y);
+        verify(ring.x + ring.width <= segment.width, "direita " + (ring.x + ring.width) + " > " + segment.width);
+        verify(ring.y + ring.height <= segment.height, "base " + (ring.y + ring.height) + " > " + segment.height);
+    }
     function test_segmentedArrowsSelect() {
         const h = hostSegmented({
             options: ["Sistema", "Claro", "Escuro"],

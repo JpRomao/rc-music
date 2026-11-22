@@ -164,6 +164,7 @@ FocusScope {
                         target: option
                         contract: root.contract
                         targetRadius: root.contract.radiusControl
+                        inside: true
                     }
                 }
             }

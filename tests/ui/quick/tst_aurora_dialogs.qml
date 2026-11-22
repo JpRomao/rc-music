@@ -313,6 +313,19 @@ TestCase {
         const h = openDialog();
         tryVerify(() => child(h.dialog, "dialog-close").activeFocus);
     }
+    function test_openingFocusDoesNotPopTheCloseToolTip() {
+        const h = openDialog();
+        const close = child(h.dialog, "dialog-close");
+        tryVerify(() => close.activeFocus);
+        verify(!close.visualFocus, "abrir não deve marcar foco visual no fechar");
+        wait(700);
+        verify(!close.ToolTip.visible, "a dica não aparece sozinha ao abrir");
+        keyClick(Qt.Key_Tab);
+        keyClick(Qt.Key_Backtab);
+        verify(close.activeFocus);
+        verify(close.visualFocus, "Tab mostra o foco visual");
+        tryVerify(() => close.ToolTip.visible, 2000);
+    }
     function test_tabOrderFollowsHeaderBodyFooter() {
         const h = openForm();
         tryVerify(() => h.first.activeFocus);

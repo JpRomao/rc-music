@@ -63,6 +63,7 @@ TestCase {
             property alias focusPrimary: focusPrimary
             property alias focusSnapshot: focusSnapshot
             property alias focusField: focused
+            property alias focusSegmented: focusedSegmented
 
             Flow {
                 id: gallery
@@ -200,6 +201,14 @@ TestCase {
                         controlId: "g-segmented"
                         label: "Exibição"
                         options: ["Lista", "Capas", "Álbuns"]
+                    }
+                    AuroraSegmented {
+                        id: focusedSegmented
+                        contract: testCase.contract
+                        controlId: "g-segmented-focus"
+                        label: "Exibição"
+                        options: ["Lista", "Capas", "Álbuns"]
+                        currentIndex: 1
                     }
                     RowLayout {
                         spacing: 12
@@ -387,6 +396,20 @@ TestCase {
         tryVerify(() => win.focusSnapshot.status === Image.Ready);
         win.focusField.input.forceActiveFocus(Qt.TabFocusReason);
         verify(findChild(win.focusField, "focus-ring").visible);
+        // Segundo segmento com foco de teclado: o anel fica dentro da chave.
+        const focusedSegment = findChild(win.focusSegmented, "g-segmented-focus-1");
+        verify(focusedSegment);
+        focusedSegment.forceActiveFocus(Qt.TabFocusReason);
+        verify(findChild(focusedSegment, "focus-ring").visible);
+        waitForRendering(win.contentItem);
+        const segmentedPath = driver.artifactPath("aurora-pecas-segmentada-foco-" + data.tag + ".png");
+        if (segmentedPath.length > 0 && !data.high) {
+            let segmentedSnapshot = null;
+            verify(win.focusSegmented.grabToImage(result => segmentedSnapshot = result));
+            tryVerify(() => segmentedSnapshot !== null);
+            verify(segmentedSnapshot.saveToFile(segmentedPath));
+        }
+        win.focusField.input.forceActiveFocus(Qt.TabFocusReason);
         const path = driver.artifactPath("aurora-pecas-" + data.tag + ".png");
         if (path.length > 0) {
             const image = grabImage(win.contentItem);
