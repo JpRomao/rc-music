@@ -73,6 +73,7 @@ Item {
     signal readerTextSizeRequested(int size)
     property bool versionsOpenedForRomaji: false
     property Item readerOpener: null
+    property bool readerClosingWithFocus: false
     // Who launched the open dialog from inside the Aurora drawer; the focus goes back to it.
     property Item dialogOpener: null
     readonly property bool readerOpen: reader.visible
@@ -95,6 +96,11 @@ Item {
     }
     function closeReader() {
         reader.close();
+    }
+    // Aurora: where the focus goes when the drawer closes while holding it. A new track takes the drawer's opener
+    // with it: the player's button is the stable way back.
+    function readerReturnItem() {
+        return [reader.trackChanged ? null : readerOpener, readerFallback].find(isFocusable) ?? null;
     }
 
     // The strip buttons and the Aurora verse line share these entry points.
@@ -455,13 +461,19 @@ Item {
                 target.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason);
         }
         onTextSizeRequested: size => root.readerTextSizeRequested(size)
+        onAboutToHide: {
+            // Measured in Qt 6.11: by aboutToHide a popup that held the focus has already dropped it to the
+            // window's root item. Any other item means the focus works outside the drawer, and stays there.
+            const focusItem = root.Window.activeFocusItem;
+            root.readerClosingWithFocus = !focusItem || focusItem === root.Window.contentItem;
+        }
         onClosed: {
-            const opener = root.readerOpener;
+            const target = root.readerReturnItem();
             root.readerOpener = null;
             root.dialogOpener = null;
             if (root.editorial) {
-                // A new track takes the drawer's opener with it: the player's button is the stable way back.
-                const target = [reader.trackChanged ? null : opener, root.readerFallback].find(root.isFocusable);
+                if (!root.readerClosingWithFocus)
+                    return;
                 if (target)
                     target.forceActiveFocus(Qt.TabFocusReason);
                 else

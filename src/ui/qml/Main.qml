@@ -309,7 +309,11 @@ ApplicationWindow {
     function setQueueOpen(open) {
         if (open && !presenter.queueLoaded && !roomGuest)
             return;
-        // The Aurora drawers are exclusive; the lyrics drawer hands the focus back before the queue takes it.
+        // The Aurora drawers are exclusive. The queue's opener is whoever held the focus, unless that was inside
+        // the lyrics drawer: then it is the lyrics drawer's own opener, which gets the focus back as it closes.
+        // Closing the lyrics drawer leaves a focus held elsewhere where it is.
+        const opensFromReader = window.inlinePages && open && lyricsPanel.readerFocused;
+        const readerReturn = opensFromReader ? lyricsPanel.readerReturnItem() : null;
         if (window.inlinePages && open)
             lyricsPanel.closeReader();
         if (window.inlinePages && open) {
@@ -322,7 +326,7 @@ ApplicationWindow {
         }
         const opener = queueReturnFocusItem;
         if (window.inlinePages && open && !queueOpen)
-            queueReturnFocusItem = window.activeFocusItem;
+            queueReturnFocusItem = opensFromReader ? readerReturn : window.activeFocusItem;
         queueOpen = open;
         Qt.callLater(function () {
             if (!window.active || !window.windowShortcutsEnabled || preferencesPanel.visible)

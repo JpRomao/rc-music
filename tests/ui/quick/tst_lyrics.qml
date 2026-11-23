@@ -87,6 +87,53 @@ TestCase {
             recordingSearchBusy = false;
         }
     }
+    // A small library, so a page with a text field sits beside the drawer.
+    ListModel {
+        id: records
+        ListElement {
+            recordId: "3"
+            title: "Song"
+            artist: "Artist"
+            album: "Disc"
+            durationText: "3:37"
+            available: true
+            fileName: "Song.mp3"
+        }
+    }
+    QtObject {
+        id: catalog
+        property bool ready: true
+        property bool busy: false
+        property int count: 1
+        property int visibleCount: 1
+        property bool hasPendingChange: false
+        property bool canRetrySave: false
+        property string statusText: ""
+        property string filterText: ""
+        property var model: records
+        property bool canLocate: false
+        property string artworkBase: ""
+        function enqueue(id) {
+            return false;
+        }
+        function remove(id) {
+            return false;
+        }
+        function locate(id) {
+            return false;
+        }
+        function cancelLocate() {
+        }
+        function addToPlaylist(id, playlist) {
+            return false;
+        }
+        function retryLoad() {
+            return true;
+        }
+        function retrySave() {
+            return true;
+        }
+    }
     Component {
         id: shellComponent
         Main {
@@ -879,6 +926,46 @@ TestCase {
         keyClick(Qt.Key_Escape);
         tryCompare(reader, "visible", false);
         tryCompare(player, "activeFocus", true);
+    }
+    // The drawer is not modal: closing it while the focus works elsewhere leaves that focus alone.
+    function test_trackChangeLeavesTheFocusInAPageField() {
+        driver.enqueueLocalSelection(["C:/Music/other.mp3"]);
+        verify(presenter.addAudio());
+        tryCompare(presenter, "selectingAudioFiles", false);
+        shell.library = catalog;
+        const libraryButton = findChild(shell, "library");
+        tryVerify(() => libraryButton.visible);
+        mouseClick(libraryButton);
+        tryCompare(findChild(shell, "library-panel"), "opened", true);
+        const reader = openDrawer();
+        const field = findChild(shell, "library-filter");
+        tryVerify(() => field.visible && field.enabled);
+        // The field's left end, clear of the drawer.
+        mouseClick(field, 12, field.height / 2);
+        tryCompare(field, "activeFocus", true);
+        verify(reader.opened, "the drawer stays open beside the page");
+        const before = presenter.currentOccurrenceId;
+        verify(presenter.nextTrack());
+        tryVerify(() => presenter.currentOccurrenceId !== before);
+        tryCompare(reader, "visible", false);
+        verify(waitForRendering(shell.contentItem));
+        compare(shell.activeFocusItem, field);
+    }
+    function test_queueOpenedBesideTheDrawerReturnsTheFocusToItsOwnOpener() {
+        const reader = openDrawer();
+        const queueButton = findChild(shell, "player-queue");
+        tryVerify(() => queueButton.visible && queueButton.enabled);
+        queueButton.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(queueButton, "activeFocus", true);
+        verify(reader.opened);
+        keyClick(Qt.Key_Return);
+        tryCompare(shell, "queueOpen", true);
+        tryCompare(reader, "visible", false);
+        const queue = findChild(shell, "queue-panel");
+        tryVerify(() => queue.visible && isInside(shell.activeFocusItem, queue));
+        keyClick(Qt.Key_Escape);
+        tryCompare(shell, "queueOpen", false);
+        tryCompare(queueButton, "activeFocus", true);
     }
     function test_lyricsDrawerShiftTabWithoutVerseLineLandsOnThePlayerButton() {
         // Without synchronized lyrics there is no verse line: the way out backwards is the player's button.
