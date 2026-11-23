@@ -74,6 +74,8 @@ Item {
     property bool versionsOpenedForRomaji: false
     property Item readerOpener: null
     property bool readerClosingWithFocus: false
+    readonly property Item windowFocusItem: Window.activeFocusItem
+    readonly property Item windowRootItem: Window.contentItem
     // Who launched the open dialog from inside the Aurora drawer; the focus goes back to it.
     property Item dialogOpener: null
     readonly property bool readerOpen: reader.visible
@@ -465,8 +467,8 @@ Item {
         onAboutToHide: {
             // Measured in Qt 6.11: by aboutToHide a popup that held the focus has already dropped it to the
             // window's root item. Any other item means the focus works outside the drawer, and stays there.
-            const focusItem = root.Window.activeFocusItem;
-            root.readerClosingWithFocus = !focusItem || focusItem === root.Window.contentItem;
+            const focusItem = root.windowFocusItem;
+            root.readerClosingWithFocus = !focusItem || focusItem === root.windowRootItem;
         }
         onClosed: {
             const target = root.readerReturnItem();
