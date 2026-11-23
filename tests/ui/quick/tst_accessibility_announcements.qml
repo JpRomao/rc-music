@@ -154,7 +154,7 @@ TestCase {
             {
                 tag: "missing",
                 missing: true,
-                reason: "não está mais disponível"
+                reason: "não está mais no lugar de antes"
             },
             {
                 tag: "literal-placeholder-in-title",

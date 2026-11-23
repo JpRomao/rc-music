@@ -110,12 +110,12 @@ TestCase {
         const details = findChild(shell, "track-details-error");
         verify(errorState.visible);
         compare(title.text, "Não foi possível reproduzir esta faixa");
-        compare(body.text, "O arquivo está corrompido ou usa um formato não reconhecido.");
+        compare(body.text, "O arquivo pode estar corrompido ou em um formato que o RC Music não reconhece. Abra outro áudio.");
         verify(body.visible);
         compare(context.text, "Falha contextual 日本語");
         compare(action.text, "Abrir outro áudio");
         compare(action.Accessible.name, "Abrir outro áudio");
-        compare(errorState.Accessible.name, "Não foi possível reproduzir esta faixa. O arquivo está corrompido ou usa um formato não reconhecido.");
+        compare(errorState.Accessible.name, "Não foi possível reproduzir esta faixa. O arquivo pode estar corrompido ou em um formato que o RC Music não reconhece. Abra outro áudio.");
         verify(details.enabled);
         verify(testLocalPlayerPresenter.detailsAvailable); // qmllint disable unqualified
         verify(title.text.indexOf("invalid_media") < 0);
@@ -131,14 +131,79 @@ TestCase {
         verify(!testLocalPlayerPresenter.hasError); // qmllint disable unqualified
     }
 
+    function test_auroraErrorUsesTheEmptyStateLook() {
+        enterInvalidMediaError();
+        const contract = testShellUiContract; // qmllint disable unqualified
+        const state = findChild(shell, "error-state");
+        const circle = findChild(state, "error-icon-circle");
+        verify(circle && circle.visible);
+        const icon = findChild(circle, "empty-icon");
+        verify(icon);
+        compare(icon.iconName, "warning-circle");
+        verify(Qt.colorEqual(icon.color, contract.errorColor));
+        const title = findChild(state, "error-title");
+        compare(title.font.family, contract.headingFontFamily);
+        compare(title.font.pixelSize, contract.typeTitle);
+        const body = findChild(state, "error-body");
+        compare(body.font.family, contract.bodyFontFamily);
+        compare(body.font.pixelSize, contract.typeBody);
+        const primary = findChild(state, "error-open-audio");
+        const details = findChild(state, "track-details-error");
+        compare(primary.kind, AuroraButton.Primary);
+        compare(details.kind, AuroraButton.Tonal);
+        compare(details.iconName, "info");
+        compare(primary.height, 40);
+        compare(details.height, 40);
+        compare(findChild(primary, "button-background").border.width, 0);
+        compare(findChild(details, "button-background").border.width, 0);
+    }
+
+    function test_auroraErrorKeepsEveryRecoveryAction() {
+        shell.width = 720;
+        shell.height = 520;
+        testScenarioDriver.enqueueLocalSelection(["C:/Música/Arquivo movido 日本語.mp3"]); // qmllint disable unqualified
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Loading); // qmllint disable unqualified
+        testScenarioDriver.publishLocalSourceUnavailable(); // qmllint disable unqualified
+        tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Error); // qmllint disable unqualified
+        verify(testLocalPlayerPresenter.canRetryCurrentOccurrence); // qmllint disable unqualified
+        verify(testLocalPlayerPresenter.canLocateCurrentOccurrence); // qmllint disable unqualified
+        const state = findChild(shell, "error-state");
+        const primary = findChild(state, "error-open-audio");
+        const retry = findChild(state, "error-retry-occurrence");
+        const locate = findChild(state, "error-locate-occurrence");
+        compare(retry.text, "Tentar tocar novamente");
+        compare(locate.text, "Localizar arquivo…");
+        for (const action of [retry, locate]) {
+            verify(action.visible);
+            compare(action.kind, AuroraButton.Tonal);
+        }
+        for (const action of [primary, retry, locate, findChild(state, "track-details-error")]) {
+            verify(action.visible && action.width > 0 && action.height > 0);
+            const position = action.mapToItem(shell.contentItem, 0, 0);
+            verify(position.x >= 0 && position.y >= 0);
+            verify(position.x + action.width <= shell.width + 0.5);
+            verify(position.y + action.height <= shell.height + 0.5);
+        }
+        primary.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        tryVerify(function () {
+            return retry.activeFocus;
+        });
+        keyClick(Qt.Key_Tab);
+        tryVerify(function () {
+            return locate.activeFocus;
+        });
+    }
+
     function test_outputErrorsDescribePausedRecoveryInsteadOfAFileFailure() {
         compare(expandedLabels.titleFor("audio_output_unavailable_error"), "Saída de áudio indisponível");
-        compare(expandedLabels.messageFor("audio_output_unavailable_error"), "Conecte uma saída de áudio ou selecione outra nas configurações de som do Windows. Depois, tente novamente. A faixa será recuperada pausada.");
+        compare(expandedLabels.messageFor("audio_output_unavailable_error"), "Conecte uma saída de áudio ou escolha outra nas configurações de som do Windows e tente novamente. A faixa volta pausada.");
         compare(expandedLabels.titleFor("audio_output_changed_error"), "A saída de áudio mudou");
-        compare(expandedLabels.messageFor("audio_output_changed_error"), "A saída de áudio mudou e a reprodução foi interrompida. Tente novamente para recuperar esta faixa pausada. A posição será restaurada quando o arquivo permitir.");
+        compare(expandedLabels.messageFor("audio_output_changed_error"), "A reprodução parou. Tente novamente para retomar a faixa pausada, na mesma posição quando possível.");
         for (const key of ["audio_output_unavailable_error", "audio_output_changed_error"]) {
             const message = expandedLabels.messageFor(key, true);
-            verify(message.includes("Preferências > Reprodução"));
+            verify(message.includes("Configurações > Reprodução"));
             verify(message.includes("pausada"));
         }
         compare(expandedLabels.actionFor("recover-audio-output"), "Tentar novamente");
@@ -208,14 +273,14 @@ TestCase {
         compare(recovery.Accessible.role, Accessible.Button);
         compare(recovery.Accessible.name, "Tentar novamente");
         verify(recovery.Accessible.description.includes("pausada"));
-        verify(recovery.Accessible.description.includes("quando o arquivo permitir"));
+        verify(recovery.Accessible.description.includes("A posição volta quando possível"));
         compare(findChild(state, "error-title").text, data.changed ? "A saída de áudio mudou" : "Saída de áudio indisponível");
         compare(findChild(state, "error-context-title").text, "Saída interrompida 日本語");
         const body = findChild(state, "error-body").text;
         verify(body.includes("pausada"));
-        verify(body.includes("Preferências > Reprodução"));
+        verify(body.includes("Configurações > Reprodução"));
         tryVerify(function () {
-            return testScenarioDriver.lastAccessibleAnnouncement().includes("Preferências > Reprodução"); // qmllint disable unqualified
+            return testScenarioDriver.lastAccessibleAnnouncement().includes("Configurações > Reprodução"); // qmllint disable unqualified
         });
         verify(!retryFile.visible);
         verify(openAnother.visible && openAnother.enabled);
@@ -297,10 +362,10 @@ TestCase {
         verifyInside(harness, openAnother);
         verifyInside(harness, details);
         verify(!findChild(state, "error-retry-occurrence").visible);
-        verify(recovery.contentItem.paintedWidth <= recovery.contentItem.width + 0.5);
-        verify(openAnother.contentItem.paintedWidth <= openAnother.contentItem.width + 0.5);
-        verify(!recovery.contentItem.truncated);
-        verify(!openAnother.contentItem.truncated);
+        verify(findChild(recovery, "button-label").paintedWidth <= findChild(recovery, "button-label").width + 0.5);
+        verify(findChild(openAnother, "button-label").paintedWidth <= findChild(openAnother, "button-label").width + 0.5);
+        verify(!findChild(recovery, "button-label").truncated);
+        verify(!findChild(openAnother, "button-label").truncated);
     }
 
     function test_retryUnavailableOccurrence_data() {
@@ -327,7 +392,7 @@ TestCase {
         const retry = findChild(shell, "error-retry-occurrence");
         verify(retry && retry.visible && retry.enabled);
         compare(retry.Accessible.role, Accessible.Button);
-        compare(retry.Accessible.name, "Tentar reproduzir novamente");
+        compare(retry.Accessible.name, "Tentar tocar novamente");
         verify(retry.Accessible.description.length > 0);
         compare(openAnother.text, "Abrir outro áudio");
         verify(openAnother.enabled);
@@ -381,8 +446,8 @@ TestCase {
         compare(body.wrapMode, Text.Wrap);
         verify(title.paintedWidth <= title.width + 0.5);
         verify(body.paintedWidth <= body.width + 0.5);
-        verify(action.contentItem.paintedWidth <= action.contentItem.width + 0.5);
-        verify(!action.contentItem.truncated);
+        verify(findChild(action, "button-label").paintedWidth <= findChild(action, "button-label").width + 0.5);
+        verify(!findChild(action, "button-label").truncated);
     }
 
     function test_expandedEmptyCopyFitsTheMinimumWindowWithoutLosingTheAccessibleAction() {

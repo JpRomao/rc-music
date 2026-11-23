@@ -23,24 +23,11 @@ ColumnLayout {
     objectName: controlId
     spacing: 8
 
-    Rectangle {
-        objectName: "empty-icon-circle"
-        implicitWidth: 64
-        implicitHeight: 64
-        radius: 32
-        color: root.contract.highContrast ? root.contract.canvasColor : root.contract.selectionColor
-        border.width: root.contract.highContrast ? 2 : 0
-        border.color: root.contract.textPrimaryColor
+    AuroraIconCircle {
+        contract: root.contract
+        iconName: root.iconName
         Layout.alignment: Qt.AlignHCenter
         Layout.bottomMargin: 8
-
-        ShellIcon {
-            objectName: "empty-icon"
-            anchors.centerIn: parent
-            iconName: root.iconName
-            size: 28
-            color: root.contract.highContrast ? root.contract.textPrimaryColor : root.contract.accentColor
-        }
     }
     Text {
         objectName: "empty-title"
