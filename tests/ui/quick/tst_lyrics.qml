@@ -967,6 +967,57 @@ TestCase {
         tryCompare(shell, "queueOpen", false);
         tryCompare(queueButton, "activeFocus", true);
     }
+    function sceneRect(item) {
+        const corner = item.mapToItem(null, 0, 0);
+        return Qt.rect(corner.x, corner.y, item.width, item.height);
+    }
+    function intersects(a, b) {
+        return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    }
+    function test_verseLineStaysBesideTheOpenDrawer_data() {
+        return [
+            {
+                tag: "1440",
+                width: 1440,
+                height: 900
+            },
+            {
+                tag: "720",
+                width: 720,
+                height: 520
+            }
+        ];
+    }
+    // The drawer covers the right side of the window: the verse line ends at its left edge, so Shift+Tab out of
+    // the drawer lands on a button the user can see.
+    function test_verseLineStaysBesideTheOpenDrawer(data) {
+        shell.width = data.width;
+        shell.height = data.height;
+        tryCompare(shell.contentItem, "width", data.width);
+        tryCompare(shell.contentItem, "height", data.height);
+        const reader = openDrawer();
+        const close = findChild(shell, "lyrics-drawer-close");
+        close.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(close, "activeFocus", true);
+        keyClick(Qt.Key_Tab, Qt.ShiftModifier);
+        tryVerify(() => shell.activeFocusItem && shell.activeFocusItem.objectName === "lyrics-line-open");
+        const open = shell.activeFocusItem;
+        const line = findChild(shell, "lyrics-line");
+        verify(waitForPolish(shell.contentItem));
+        const drawer = sceneRect(reader.contentItem.parent);
+        tryVerify(() => !intersects(sceneRect(open), drawer), 5000, "the focused open button is not under the drawer");
+        verify(!intersects(sceneRect(line), drawer), "the verse line ends before the drawer");
+        const button = sceneRect(open);
+        verify(open.visible && open.width >= shell.uiContract.controlTargetMinimum);
+        verify(button.x >= 0 && button.x + button.width <= drawer.x, "the open button sits in the window, left of the drawer");
+        verify(findChild(shell, "lyrics-line-current").visible);
+        // Closing the drawer gives the line its whole width back.
+        keyClick(Qt.Key_Return);
+        tryCompare(close, "activeFocus", true);
+        keyClick(Qt.Key_Escape);
+        tryCompare(reader, "visible", false);
+        tryVerify(() => sceneRect(findChild(shell, "lyrics-line")).x + findChild(shell, "lyrics-line").width > drawer.x);
+    }
     function test_lyricsDrawerShiftTabWithoutVerseLineLandsOnThePlayerButton() {
         // Without synchronized lyrics there is no verse line: the way out backwards is the player's button.
         lyrics.hasSyncedLyrics = false;

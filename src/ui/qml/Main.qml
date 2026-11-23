@@ -884,9 +884,10 @@ ApplicationWindow {
         LyricsPanel {
             id: lyricsPanel
             Layout.fillWidth: true
-            // The verse line sits 32 px (16 compact) from the edges of the area, not from the page margins.
+            // The verse line sits 32 px (16 compact) from the edges of the area, not from the page margins. With the
+            // lyrics drawer open it ends the same distance from the drawer's edge, so it stays in view beside it.
             Layout.leftMargin: window.inlinePages ? (compact ? 16 - mainLayout.anchors.leftMargin : 32 - mainLayout.anchors.leftMargin) : 0
-            Layout.rightMargin: window.inlinePages ? (compact ? 16 - mainLayout.anchors.rightMargin : 32 - mainLayout.anchors.rightMargin) : 0
+            Layout.rightMargin: window.inlinePages ? (compact ? 16 - mainLayout.anchors.rightMargin : 32 - mainLayout.anchors.rightMargin) + (readerOpen ? window.drawerWidth : 0) : 0
             editorial: window.inlinePages
             compact: window.width <= window.uiContract.compactWidth
             visible: window.lyrics !== null && (window.presenter.hasCurrentTrack || queuedSaveFeedback || (typeof window.lyrics.variantsHasPendingChange !== "undefined" && window.lyrics.variantsHasPendingChange))
