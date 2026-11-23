@@ -60,6 +60,28 @@ class LibraryArtworkTests final : public QObject {
         index.update(snapshot({}));
         QVERIFY(!index.find(1));
     }
+    void replaceSwapsTheWholeIndex() {
+        LibraryArtworkIndex index;
+        const std::filesystem::path a(L"C:/Música/a.mp3"), b(L"D:/b.flac");
+        index.replace({{7, a}, {9, b}});
+        QCOMPARE(index.find(7), std::optional{a});
+        QCOMPARE(index.find(9), std::optional{b});
+        index.replace({{9, b}});
+        QVERIFY(!index.find(7));
+        QCOMPARE(index.find(9), std::optional{b});
+    }
+    void queueProviderUsesItsOwnScheme() {
+        QCOMPARE(LibraryArtworkProvider::queueProviderId(), QStringLiteral("queueart"));
+        QCOMPARE(LibraryArtworkProvider::queueSourceBase(), QStringLiteral("image://queueart/"));
+        auto library_index = std::make_shared<LibraryArtworkIndex>();
+        auto queue_index = std::make_shared<LibraryArtworkIndex>();
+        queue_index->replace({{7, std::filesystem::path(L"C:/Música/capa.mp3")}});
+        auto extractor = std::make_shared<FakeExtractor>();
+        LibraryArtworkProvider library(library_index, extractor);
+        LibraryArtworkProvider queue(queue_index, extractor);
+        QCOMPARE(request(queue, QStringLiteral("7")).size(), QSize(2, 3));
+        QCOMPARE(request(library, QStringLiteral("7")).size(), QSize(1, 1));
+    }
     void embeddedArtIsReadOnceAndKeptInMemory() {
         auto index = std::make_shared<LibraryArtworkIndex>();
         index->update(snapshot({record(3, L"C:/Música/capa.mp3")}));

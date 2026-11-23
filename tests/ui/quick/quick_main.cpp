@@ -29,6 +29,7 @@
 #include <QPointer>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QQuickImageProvider>
 #include <QQuickStyle>
 #include <QStringList>
 #include <QTimer>
@@ -51,6 +52,18 @@
 #include <vector>
 
 namespace {
+// Stands in for the product's `image://queueart/`: every cover is a transparent 1x1 pixel.
+class TransparentQueueArtworkProvider final : public QQuickImageProvider {
+  public:
+    TransparentQueueArtworkProvider() : QQuickImageProvider(QQuickImageProvider::Image) {}
+    QImage requestImage(const QString&, QSize* size, const QSize&) override {
+        QImage image(1, 1, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        if (size != nullptr)
+            *size = image.size();
+        return image;
+    }
+};
 
 class QuickTestPlatform final : public music_player::m0::PlatformIntegration {
   public:
@@ -606,6 +619,8 @@ class ScenarioDriver final : public QObject {
     }
     Q_INVOKABLE void publishCompleteLocalMetadata() { publishLocalMetadata(false); }
     Q_INVOKABLE void publishArtworkLocalMetadata() { publishLocalMetadata(true); }
+    // The queue rows read `<base><occurrence value>`; the test provider answers with a transparent pixel.
+    Q_INVOKABLE void setLocalQueueArtworkBase(const QString& base) { local_presenter_.setQueueArtwork({}, base); }
     // Tags with only the given fields: an empty artist or album stays absent.
     Q_INVOKABLE void publishNamedLocalMetadata(const QString& title, const QString& artist, const QString& album) {
         if (local_metadata_reader_.requests.empty())
@@ -1194,6 +1209,7 @@ class EmptyShellQuickTestSetup final : public QObject {
                                                       .now = [this] { return pending_exit_now_; },
                                                   },
                                                   engine);
+        engine->addImageProvider(QStringLiteral("queueart"), new TransparentQueueArtworkProvider);
         auto local_artwork_cache = std::make_shared<music_player::m0::ArtworkImageCache>();
         engine->addImageProvider(music_player::m0::ArtworkImageProvider::providerId(),
                                  new music_player::m0::ArtworkImageProvider(local_artwork_cache));

@@ -10,6 +10,14 @@ void LibraryArtworkIndex::update(const LibrarySnapshot& snapshot) {
     std::lock_guard lock(mutex_);
     paths_ = std::move(paths);
 }
+void LibraryArtworkIndex::replace(std::vector<std::pair<std::uint64_t, std::filesystem::path>> entries) {
+    std::unordered_map<std::uint64_t, std::filesystem::path> paths;
+    paths.reserve(entries.size());
+    for (auto& entry : entries)
+        paths.emplace(entry.first, std::move(entry.second));
+    std::lock_guard lock(mutex_);
+    paths_ = std::move(paths);
+}
 std::optional<std::filesystem::path> LibraryArtworkIndex::find(const std::uint64_t record_id) const {
     std::lock_guard lock(mutex_);
     const auto found = paths_.find(record_id);

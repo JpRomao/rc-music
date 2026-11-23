@@ -899,6 +899,12 @@ int main(int argc, char* argv[]) {
         library_binding->setArtworkIndex(library_artwork, music_player::m0::LibraryArtworkProvider::sourceBase());
         engine.addImageProvider(music_player::m0::LibraryArtworkProvider::providerId(),
                                 new music_player::m0::LibraryArtworkProvider(library_artwork, library_extractor));
+        // Queue covers: the same reader over a second index that the presenter keeps current.
+        const auto queue_artwork = std::make_shared<music_player::m0::LibraryArtworkIndex>();
+        engine.addImageProvider(music_player::m0::LibraryArtworkProvider::queueProviderId(),
+                                new music_player::m0::LibraryArtworkProvider(queue_artwork, library_extractor));
+        presenter.setQueueArtwork([queue_artwork](auto entries) { queue_artwork->replace(std::move(entries)); },
+                                  music_player::m0::LibraryArtworkProvider::queueSourceBase());
         library_binding->setFileLocator(&library_audio_locator);
 #endif
         library_binding->setPlaylistAppender([&](const QString& playlist_id, auto paths) {

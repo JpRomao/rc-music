@@ -13,6 +13,14 @@ LocalQueueListModel::LocalQueueListModel(QObject* parent) : QAbstractListModel(p
 
 bool LocalQueueListModel::loaded() const noexcept { return loaded_; }
 
+void LocalQueueListModel::setArtworkBase(const QString& base) {
+    if (artwork_base_ == base)
+        return;
+    artwork_base_ = base;
+    if (!items_.isEmpty())
+        emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {ArtworkSourceRole});
+}
+
 bool LocalQueueListModel::replace(const LocalFileQueue& queue) {
     if (queue.empty()) {
         return false;
@@ -168,7 +176,7 @@ bool LocalQueueListModel::markUnavailable(const LocalQueueOccurrenceId occurrenc
     item->error_code = std::move(error_code);
     const QModelIndex changed = index(static_cast<int>(std::distance(items_.begin(), item)), 0);
     const QList<int> roles =
-        availability_changed ? QList<int>{AvailableRole, ErrorCodeRole} : QList<int>{ErrorCodeRole};
+        availability_changed ? QList<int>{AvailableRole, ErrorCodeRole, ArtworkSourceRole} : QList<int>{ErrorCodeRole};
     emit dataChanged(changed, changed, roles);
     return true;
 }
@@ -181,7 +189,7 @@ bool LocalQueueListModel::markAvailable(const LocalQueueOccurrenceId occurrence_
     item->available = true;
     item->error_code.reset();
     const QModelIndex changed = index(static_cast<int>(std::distance(items_.begin(), item)), 0);
-    emit dataChanged(changed, changed, {AvailableRole, ErrorCodeRole});
+    emit dataChanged(changed, changed, {AvailableRole, ErrorCodeRole, ArtworkSourceRole});
     return true;
 }
 
@@ -200,7 +208,9 @@ bool LocalQueueListModel::replaceUnavailableSource(const LocalFileQueueItem& sou
     replacement.error_code = QStringLiteral("source_relocated");
     *item = std::move(replacement);
     const QModelIndex changed = index(static_cast<int>(std::distance(items_.begin(), item)), 0);
-    emit dataChanged(changed, changed, {FileNameRole, TitleRole, ArtistRole, AlbumRole, DurationMsRole, ErrorCodeRole});
+    emit dataChanged(
+        changed, changed,
+        {FileNameRole, TitleRole, ArtistRole, AlbumRole, DurationMsRole, ErrorCodeRole, ArtworkSourceRole});
     return true;
 }
 
@@ -237,6 +247,9 @@ QVariant LocalQueueListModel::data(const QModelIndex& index, const int role) con
         return item.available;
     case ErrorCodeRole:
         return item.error_code.has_value() ? QVariant{*item.error_code} : QVariant{};
+    case ArtworkSourceRole:
+        return artwork_base_.isEmpty() || !item.available ? QString{}
+                                                          : artwork_base_ + QString::number(item.occurrence_id.value);
     default:
         return {};
     }
@@ -255,6 +268,7 @@ QHash<int, QByteArray> LocalQueueListModel::roleNames() const {
         {DurationMsRole, QByteArrayLiteral("durationMs")},
         {AvailableRole, QByteArrayLiteral("available")},
         {ErrorCodeRole, QByteArrayLiteral("errorCode")},
+        {ArtworkSourceRole, QByteArrayLiteral("artworkSource")},
     };
 }
 

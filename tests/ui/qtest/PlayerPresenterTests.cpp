@@ -567,6 +567,9 @@ class PlayerPresenterTests final : public QObject {
     void shuffleQueuePreservesCurrentPrefixAndMetadata();
     void shuffleQueueChangesTwoUpcomingItemsForEveryTestSeed();
     void queueTotalDurationSumsKnownDurations();
+    void queueArtworkSinkReceivesTheAvailableOccurrences();
+    void queueArtworkFollowsAvailabilityAndRelocation();
+    void queueModelExposesArtworkSourcePerOccurrence();
     void queueTotalDurationIsUnknownWhenAnyTrackHasNoDuration();
     void queueTotalDurationIsUnknownForAnEmptyQueue();
     void shuffleQueueWithNoCurrentShufflesAllRemainingOccurrences();
@@ -1073,7 +1076,11 @@ void PlayerPresenterTests::localOpenPublishesOrderedQueueWithDistinctDuplicateOc
     QCOMPARE(presenter.currentQueueIndex(), 0);
     QCOMPARE(model, presenter.queueModelObject());
     QCOMPARE(model->rowCount(), 3);
-    QCOMPARE(model->roleNames(), presenter.queueModel()->roleNames());
+    // The local model adds only the cover role over the fixture's.
+    auto local_roles = model->roleNames();
+    QVERIFY(local_roles.values().contains("artworkSource"));
+    local_roles.remove(LocalQueueListModel::ArtworkSourceRole);
+    QCOMPARE(local_roles, presenter.queueModel()->roleNames());
     QCOMPARE(resets.size(), 1);
     QCOMPARE(model->data(model->index(0, 0), QueueListModel::FileNameRole).toString(),
              QStringLiteral("Primeira 日本語.mp3"));
@@ -1427,6 +1434,99 @@ void PlayerPresenterTests::shuffleQueueChangesTwoUpcomingItemsForEveryTestSeed()
     QVERIFY(!presenter.shuffleQueue());
     QVERIFY(presenter.requestExit());
     QVERIFY(!presenter.shuffleQueue());
+}
+
+namespace {
+using QueueArtworkEntries = std::vector<std::pair<std::uint64_t, std::filesystem::path>>;
+std::uint64_t occurrenceValue(const QString& occurrence_id) {
+    return occurrence_id.mid(QStringLiteral("local-").size()).toULongLong();
+}
+} // namespace
+
+void PlayerPresenterTests::queueArtworkSinkReceivesTheAvailableOccurrences() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector<std::filesystem::path> selections{localTestPath(u8"A.mp3"), localTestPath(u8"B.mp3"),
+                                                        localTestPath(u8"A.mp3")};
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
+    std::vector<QueueArtworkEntries> deliveries;
+    presenter.setQueueArtwork([&](QueueArtworkEntries entries) { deliveries.push_back(std::move(entries)); },
+                              QStringLiteral("image://queueart/"));
+    QVERIFY(!deliveries.empty());
+    QVERIFY(deliveries.back().empty());
+    QVERIFY(presenter.openAudio());
+    auto* model = presenter.queueModelObject();
+    QCOMPARE(model->rowCount(), 3);
+    QueueArtworkEntries expected;
+    for (int row = 0; row < 3; ++row)
+        expected.emplace_back(occurrenceValue(model->index(row, 0).data(QueueListModel::OccurrenceIdRole).toString()),
+                              selections[row]);
+    QCOMPARE(deliveries.back(), expected);
+    const QString removed = model->index(1, 0).data(QueueListModel::OccurrenceIdRole).toString();
+    QVERIFY(presenter.removeQueueOccurrence(removed));
+    expected.erase(expected.begin() + 1);
+    QCOMPARE(deliveries.back(), expected);
+    // An empty sink is accepted.
+    presenter.setQueueArtwork({}, {});
+    QVERIFY(presenter.removeQueueOccurrence(model->index(0, 0).data(QueueListModel::OccurrenceIdRole).toString()));
+}
+
+void PlayerPresenterTests::queueArtworkFollowsAvailabilityAndRelocation() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterFileLocator locator;
+    const auto source = localTestPath(u8"Duplicada.wav");
+    const auto replacement = std::filesystem::absolute(localTestPath(u8"Outra pasta/Duplicada.wav"));
+    PlayerPresenter presenter(platform, backend, metadata, [source] { return std::vector{source, source, source}; });
+    presenter.setAudioFileLocator(&locator);
+    QueueArtworkEntries last;
+    presenter.setQueueArtwork([&](QueueArtworkEntries entries) { last = std::move(entries); },
+                              QStringLiteral("image://queueart/"));
+    QVERIFY(presenter.openAudio());
+    const QString missing = presenter.currentOccurrenceId();
+    const auto missing_value = occurrenceValue(missing);
+    QCOMPARE(last.size(), std::size_t{3});
+    backend.publish({.status = PlaybackStatus::Error, .generation = 1, .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_COMPARE(presenter.currentQueueIndex(), 1);
+    auto* model = presenter.queueModelObject();
+    const auto row = model->index(0, 0);
+    QVERIFY(!row.data(QueueListModel::AvailableRole).toBool());
+    QVERIFY(row.data(LocalQueueListModel::ArtworkSourceRole).toString().isEmpty());
+    QCOMPARE(last.size(), std::size_t{2});
+    for (const auto& entry : last)
+        QVERIFY(entry.first != missing_value);
+    QVERIFY(presenter.locateQueueOccurrence(missing));
+    locator.complete({AudioFileLocationStatus::Selected, replacement});
+    QTRY_VERIFY(presenter.locatingOccurrenceId().isEmpty());
+    QVERIFY(presenter.retryQueueOccurrence(missing));
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 3});
+    QTRY_VERIFY(row.data(QueueListModel::AvailableRole).toBool());
+    QCOMPARE(row.data(LocalQueueListModel::ArtworkSourceRole).toString(),
+             QStringLiteral("image://queueart/%1").arg(missing_value));
+    QCOMPARE(last.size(), std::size_t{3});
+    const auto found = std::ranges::find(last, missing_value, &QueueArtworkEntries::value_type::first);
+    QVERIFY(found != last.end());
+    QCOMPARE(found->second, replacement);
+}
+
+void PlayerPresenterTests::queueModelExposesArtworkSourcePerOccurrence() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector<std::filesystem::path> selections{localTestPath(u8"A.mp3"), localTestPath(u8"B.mp3")};
+    PlayerPresenter presenter(platform, backend, metadata, [selections] { return selections; });
+    QVERIFY(presenter.openAudio());
+    auto* model = presenter.queueModelObject();
+    QVERIFY(model->roleNames().values().contains("artworkSource"));
+    QVERIFY(model->index(0, 0).data(LocalQueueListModel::ArtworkSourceRole).toString().isEmpty());
+    presenter.setQueueArtwork({}, QStringLiteral("image://queueart/"));
+    const auto value = occurrenceValue(model->index(0, 0).data(QueueListModel::OccurrenceIdRole).toString());
+    QCOMPARE(model->index(0, 0).data(LocalQueueListModel::ArtworkSourceRole).toString(),
+             QStringLiteral("image://queueart/") + QString::number(value));
+    presenter.setQueueArtwork({}, {});
+    QVERIFY(model->index(0, 0).data(LocalQueueListModel::ArtworkSourceRole).toString().isEmpty());
 }
 
 void PlayerPresenterTests::queueTotalDurationSumsKnownDurations() {

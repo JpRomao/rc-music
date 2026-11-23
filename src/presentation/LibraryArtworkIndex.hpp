@@ -7,6 +7,8 @@
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace music_player::m0 {
 // Record ID to file path for the cover reader. The library binding updates it
@@ -15,6 +17,8 @@ namespace music_player::m0 {
 class LibraryArtworkIndex final {
   public:
     void update(const LibrarySnapshot& snapshot);
+    // Swaps the whole content, for owners that already know the available paths (the queue).
+    void replace(std::vector<std::pair<std::uint64_t, std::filesystem::path>> entries);
     [[nodiscard]] std::optional<std::filesystem::path> find(std::uint64_t record_id) const;
 
   private:

@@ -111,6 +111,8 @@ LibraryArtworkProvider::~LibraryArtworkProvider() { state_->pool.waitForDone(); 
 
 QString LibraryArtworkProvider::providerId() { return QStringLiteral("libraryart"); }
 QString LibraryArtworkProvider::sourceBase() { return QStringLiteral("image://libraryart/"); }
+QString LibraryArtworkProvider::queueProviderId() { return QStringLiteral("queueart"); }
+QString LibraryArtworkProvider::queueSourceBase() { return QStringLiteral("image://queueart/"); }
 
 QQuickImageResponse* LibraryArtworkProvider::requestImageResponse(const QString& id, const QSize&) {
     auto* response = new CoverResponse(state_, id);

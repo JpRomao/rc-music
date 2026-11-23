@@ -42,6 +42,7 @@
 #include <optional>
 #include <random>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace music_player::m0 {
@@ -228,6 +229,7 @@ class PlayerPresenter final : public QObject {
 
   public:
     using AudioFilePicker = std::function<std::vector<std::filesystem::path>()>;
+    using QueueArtworkSink = std::function<void(std::vector<std::pair<std::uint64_t, std::filesystem::path>>)>;
 
     enum class PlaybackState { Unloaded, Loading, Ready, Paused, Playing, Error };
     Q_ENUM(PlaybackState)
@@ -316,6 +318,8 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QString retryingOccurrenceId() const;
     // The supplied locator must outlive the presenter, or be detached before it is destroyed.
     void setAudioFileLocator(AudioFileLocator* locator);
+    // Hands the available queue occurrences (value, path) to the cover reader now and after every queue change.
+    void setQueueArtwork(QueueArtworkSink sink, QString source_base);
     // The asynchronous picker must outlive the presenter, or be detached before destruction.
     void setAudioFilesPicker(AudioFilesPicker* picker);
     [[nodiscard]] bool selectingAudioFiles() const noexcept;
@@ -613,6 +617,7 @@ class PlayerPresenter final : public QObject {
     void pollMetadata();
     void pollSourceImport();
     void initializeLocalMode(const PlayerPresenterPreferences* preferences = nullptr);
+    void deliverQueueArtwork();
     [[nodiscard]] bool beginSourceImport(std::vector<std::filesystem::path> roots,
                                          std::optional<std::size_t> insertion_index, std::uint64_t boundary_issue_count,
                                          bool allow_during_source_exit_drain = false);
@@ -688,6 +693,7 @@ class PlayerPresenter final : public QObject {
     QueueListModel queue_model_{this};
 #endif
     LocalQueueListModel local_queue_model_;
+    QueueArtworkSink queue_artwork_sink_{};
     QTimer timer_;
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
     FixtureState state_;

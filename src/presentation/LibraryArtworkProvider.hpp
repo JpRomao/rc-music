@@ -21,6 +21,9 @@ class LibraryArtworkProvider final : public QQuickAsyncImageProvider {
     ~LibraryArtworkProvider() override;
     [[nodiscard]] static QString providerId();
     [[nodiscard]] static QString sourceBase();
+    // The queue gets a second instance over its own index: `image://queueart/<occurrence value>`.
+    [[nodiscard]] static QString queueProviderId();
+    [[nodiscard]] static QString queueSourceBase();
     QQuickImageResponse* requestImageResponse(const QString& id, const QSize& requested_size) override;
     // Shared with in-flight responses, which may outlive a request's caller.
     struct State;

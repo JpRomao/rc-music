@@ -97,6 +97,7 @@ TestCase {
 
     function init() {
         driver.resetLocalScenario();
+        driver.setLocalQueueArtworkBase("");
         driver.setHighContrast(false, false);
         driver.setSystemAppearance(false, false);
         presenter.setThemePreference(PlayerPresenter.SystemTheme);
@@ -582,6 +583,31 @@ TestCase {
         const second = list.itemAtIndex(1);
         compare(findChild(second, "queue-row-number").text, "2");
         verify(findChild(second, "queue-row-number").visible);
+    }
+
+    // Every queue occurrence shows its own cover; the playing one shows the player's.
+    function test_queueRowsShowEachOccurrenceCover() {
+        driver.setLocalQueueArtworkBase("image://queueart/");
+        driver.enqueueLocalSelection(["C:/Música/Primeira.mp3", "C:/Música/Segunda.mp3", "C:/Música/Terceira.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        verify(presenter.nextTrack());
+        tryCompare(presenter, "currentQueueIndex", 1);
+        driver.publishArtworkLocalMetadata();
+        tryVerify(() => presenter.currentArtworkSource.toString().length > 0);
+        shell.setQueueOpen(true);
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        const list = findChild(drawer, "queue-list");
+        tryCompare(list, "count", 3);
+        tryVerify(() => list.itemAtIndex(2) !== null);
+        const first = list.itemAtIndex(0);
+        const value = first.occurrenceId.substring(first.occurrenceId.indexOf("-") + 1);
+        compare(findChild(first, "queue-row-artwork").source.toString(), "image://queueart/" + value);
+        compare(findChild(list.itemAtIndex(1), "queue-row-artwork").source.toString(), presenter.currentArtworkSource.toString());
+        verify(findChild(list.itemAtIndex(2), "queue-row-artwork").source.toString().startsWith("image://queueart/"));
     }
 
     function openDrawerWithThreeTracks() {

@@ -692,6 +692,9 @@ FocusScope {
                 required property int orderIndex
                 required property bool available
                 required property var errorCode
+                // The role object, not a required role: the frozen fixture's queue has no cover role.
+                required property var model
+                readonly property string artworkSource: model.artworkSource ?? ""
                 readonly property bool retrying: occurrenceId === root.presenter.retryingOccurrenceId
                 readonly property bool locating: occurrenceId === root.presenter.locatingOccurrenceId
                 readonly property bool locationFailed: !available && occurrenceId === root.presenter.fileLocationErrorOccurrenceId
@@ -790,7 +793,7 @@ FocusScope {
                         implicitHeight: 40
                         radius: root.contract.radiusSmall
                         contract: root.contract
-                        source: row.isPlaying ? root.presenter.currentArtworkSource : ""
+                        source: row.isPlaying && root.presenter.currentArtworkSource.toString().length > 0 ? root.presenter.currentArtworkSource : row.artworkSource
                     }
                     ColumnLayout {
                         Layout.fillWidth: true

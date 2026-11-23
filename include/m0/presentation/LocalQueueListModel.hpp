@@ -35,12 +35,15 @@ class LocalQueueListModel final : public QAbstractListModel {
         DurationMsRole,
         AvailableRole,
         ErrorCodeRole,
+        ArtworkSourceRole,
     };
     Q_ENUM(Role)
 
     explicit LocalQueueListModel(QObject* parent = nullptr);
 
     [[nodiscard]] bool loaded() const noexcept;
+    // Cover source base (`image://queueart/`); empty hides every cover.
+    void setArtworkBase(const QString& base);
     [[nodiscard]] bool replace(const LocalFileQueue& queue);
     [[nodiscard]] bool append(std::span<const LocalFileQueueItem> source_items);
     // Trusted owner only: prepare/validate/reserve before the non-throwing commit,
@@ -86,6 +89,7 @@ class LocalQueueListModel final : public QAbstractListModel {
     [[nodiscard]] QList<Item>::iterator find(LocalQueueOccurrenceId occurrence_id);
 
     QList<Item> items_;
+    QString artwork_base_;
     bool loaded_{false};
 };
 

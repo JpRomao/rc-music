@@ -495,6 +495,16 @@ PlayerPresenter::PlayerPresenter(PlatformIntegration& platform, PlaybackBackend&
 }
 
 void PlayerPresenter::initializeLocalMode(const PlayerPresenterPreferences* preferences) {
+    // The cover reader follows the queue: any change in which occurrences are available is handed over again.
+    const auto deliver = [this] { deliverQueueArtwork(); };
+    connect(&local_queue_model_, &QAbstractItemModel::modelReset, this, deliver);
+    connect(&local_queue_model_, &QAbstractItemModel::rowsInserted, this, deliver);
+    connect(&local_queue_model_, &QAbstractItemModel::rowsRemoved, this, deliver);
+    connect(&local_queue_model_, &QAbstractItemModel::dataChanged, this,
+            [this](const QModelIndex&, const QModelIndex&, const QList<int>& roles) {
+                if (roles.isEmpty() || roles.contains(LocalQueueListModel::ArtworkSourceRole))
+                    deliverQueueArtwork();
+            });
     queue_shuffle_random_.seed(QRandomGenerator::global()->generate());
     if (!audio_file_picker_)
         throw std::invalid_argument{"audio file picker is required"};
@@ -1174,6 +1184,23 @@ void PlayerPresenter::finishAudioFileSelection(const std::uint64_t generation, A
     // A state observer may exit, delete us or start another selection before this notification.
     if (guard && !exiting_ && !selectingAudioFiles() && audio_file_selection_generation_ == generation)
         emit audioFileSelectionFinished(changed);
+}
+
+void PlayerPresenter::setQueueArtwork(QueueArtworkSink sink, QString source_base) {
+    queue_artwork_sink_ = std::move(sink);
+    local_queue_model_.setArtworkBase(source_base);
+    deliverQueueArtwork();
+}
+
+void PlayerPresenter::deliverQueueArtwork() {
+    if (!queue_artwork_sink_)
+        return;
+    std::vector<std::pair<std::uint64_t, std::filesystem::path>> entries;
+    entries.reserve(local_queue_.items().size());
+    for (const LocalFileQueueItem& item : local_queue_.items())
+        if (item.available)
+            entries.emplace_back(item.occurrence_id.value, item.source_path);
+    queue_artwork_sink_(std::move(entries));
 }
 
 void PlayerPresenter::setAudioFileLocator(AudioFileLocator* locator) {
