@@ -630,6 +630,56 @@ TestCase {
         }
     }
 
+    // The Aurora rows use the redesign's body typography, like the library rows: no fallback font.
+    function test_queueRowsUseTheBodyTypography() {
+        loadSyntheticQueue();
+        shell.setQueueOpen(true);
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        const list = findChild(drawer, "queue-list");
+        tryVerify(() => list.itemAtIndex(0) !== null);
+        const row = list.itemAtIndex(0);
+        const title = findChild(row, "queue-row-title");
+        compare(title.font.family, productContract.bodyFontFamily);
+        compare(title.font.pixelSize, productContract.typeBody);
+        for (const name of ["queue-row-artist", "queue-row-status"]) {
+            const text = findChild(row, name);
+            compare(text.font.family, productContract.bodyFontFamily, name);
+            compare(text.font.pixelSize, productContract.typeCaption, name);
+        }
+        const number = findChild(row, "queue-row-number");
+        compare(number.font.family, productContract.bodyFontFamily);
+        compare(number.font.pixelSize, productContract.typeCaption);
+    }
+
+    // The compact window gives the list little height while the drawer settles: row 1 must not stay scrolled out.
+    function test_queueOpensAtTheTopInTheCompactWindow() {
+        const names = [];
+        for (let index = 0; index < 8; ++index)
+            names.push("C:/Música/Faixa " + index + ".mp3");
+        driver.enqueueLocalSelection(names);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        // The first file is gone: the player moves on, so the current row is the second one.
+        const first = presenter.currentOccurrenceId;
+        driver.publishLocalSourceUnavailable();
+        tryVerify(() => presenter.currentOccurrenceId !== first);
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        presenter.setThemePreference(PlayerPresenter.LightTheme);
+        resize(720, 520);
+        shell.setQueueOpen(true);
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        const list = findChild(drawer, "queue-list");
+        tryVerify(() => list.itemAtIndex(0) !== null);
+        wait(500);
+        verify(waitForPolish(shell));
+        compare(list.currentIndex, 1);
+        compare(list.contentY, 0, "the whole list fits the top: row 1 is not scrolled out");
+        verify(list.itemAtIndex(0).y - list.contentY >= 0, "row 1 is not clipped by the top of the list");
+    }
+
     function test_unavailableRowShowsStatusInWarning() {
         driver.enqueueLocalSelection(["C:/Música/Arquivo movido.mp3"]);
         findChild(shell, "open-audio").Accessible.pressAction();

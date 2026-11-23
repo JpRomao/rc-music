@@ -640,6 +640,13 @@ TestCase {
         const audio = commands();
         if (data.scene === "verse-line") {
             tryVerify(() => findChild(shell, "lyrics-line").visible);
+            // Opening the audio left the focus on the page's lower action, and the home keeps a focused action
+            // visible by scrolling (the shorter page above the verse line makes that a few pixels). The capture
+            // shows the page from its top, with the focus on the header.
+            findChild(shell, "theme-toggle").forceActiveFocus(Qt.TabFocusReason);
+            const layer = findChild(shell, "state-layer");
+            layer.contentY = 0;
+            tryCompare(layer, "contentY", 0);
         } else if (lyricsScene) {
             const button = findChild(shell, "player-lyrics");
             tryVerify(() => button.enabled);

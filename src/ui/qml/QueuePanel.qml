@@ -152,6 +152,10 @@ FocusScope {
             parts.push(queueText.unavailableReason(errorCode));
         return parts.join(". ") + (parts[parts.length - 1].endsWith(".") ? "" : ".");
     }
+    Timer {
+        id: openSettle
+        interval: 300
+    }
     function syncCurrent() {
         // The open menu owns its occurrence, not the changing playback cursor.
         if (rowMenu.visible)
@@ -171,6 +175,7 @@ FocusScope {
         if (rowMenu.visible)
             return;
         syncCurrent();
+        openSettle.restart();
         if (emptyShown)
             emptyState.primaryButton.forceActiveFocus(Qt.TabFocusReason);
         else
@@ -614,6 +619,12 @@ FocusScope {
         ListView {
             id: queueList
             objectName: "queue-list"
+            // The drawer lays its header and toolbar out after it opens: the list grows to its final height and
+            // the current row is centered again, so the first rows are not left scrolled out by the short list.
+            onHeightChanged: {
+                if (openSettle.running && count > 0 && currentIndex >= 0)
+                    positionViewAtIndex(currentIndex, ListView.Center);
+            }
             readonly property bool focusIndicatorVisible: activeFocus && enabled
             // Hidden by the empty state only while the drawer shows; a closed drawer keeps building its rows.
             visible: !root.roomGuest && !(root.emptyShown && root.visible)
@@ -788,6 +799,10 @@ FocusScope {
                             text: row.title.length > 0 ? row.title : row.fileName
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
+                            font: root.overlayMode ? Qt.font({
+                                family: root.contract.bodyFontFamily,
+                                pixelSize: root.contract.typeBody
+                            }) : Qt.application.font
                             color: root.overlayMode && !root.contract.highContrast && row.isPlaying ? root.contract.accentColor : row.primaryColor
                             Layout.fillWidth: true
                             Accessible.ignored: true
@@ -799,6 +814,10 @@ FocusScope {
                             text: row.artist
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
+                            font: root.overlayMode ? Qt.font({
+                                family: root.contract.bodyFontFamily,
+                                pixelSize: root.contract.typeCaption
+                            }) : Qt.application.font
                             color: row.secondaryColor
                             Layout.fillWidth: true
                             Accessible.ignored: true
@@ -808,6 +827,10 @@ FocusScope {
                             text: row.locating ? queueText.locating : (row.locationFailed ? queueText.locationFailed : (row.retrying ? queueText.retrying : queueText.unavailableReason(row.errorCode)))
                             textFormat: Text.PlainText
                             elide: Text.ElideRight
+                            font: root.overlayMode ? Qt.font({
+                                family: root.contract.bodyFontFamily,
+                                pixelSize: root.contract.typeCaption
+                            }) : Qt.application.font
                             color: root.overlayMode && !row.contrastHighlighted ? root.contract.warningColor : row.secondaryColor
                             visible: row.statusShown
                             Layout.fillWidth: true
@@ -817,6 +840,10 @@ FocusScope {
                     Text {
                         text: root.formatDuration(row.durationMs)
                         color: row.secondaryColor
+                        font: root.overlayMode ? Qt.font({
+                            family: root.contract.bodyFontFamily,
+                            pixelSize: root.contract.typeCaption
+                        }) : Qt.application.font
                         Accessible.ignored: true
                     }
                 }
