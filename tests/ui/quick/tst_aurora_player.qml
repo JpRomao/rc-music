@@ -652,8 +652,7 @@ TestCase {
         compare(number.font.pixelSize, productContract.typeCaption);
     }
 
-    // The compact window gives the list little height while the drawer settles: row 1 must not stay scrolled out.
-    function test_queueOpensAtTheTopInTheCompactWindow() {
+    function openCompactQueueWithSecondCurrent() {
         const names = [];
         for (let index = 0; index < 8; ++index)
             names.push("C:/Música/Faixa " + index + ".mp3");
@@ -673,11 +672,46 @@ TestCase {
         tryVerify(() => drawer.visible);
         const list = findChild(drawer, "queue-list");
         tryVerify(() => list.itemAtIndex(0) !== null);
-        wait(500);
+        return list;
+    }
+    // The compact window gives the list little height while the drawer settles: row 1 must not stay scrolled out.
+    function test_queueOpensAtTheTopInTheCompactWindow() {
+        const list = openCompactQueueWithSecondCurrent();
         verify(waitForPolish(shell));
         compare(list.currentIndex, 1);
-        compare(list.contentY, 0, "the whole list fits the top: row 1 is not scrolled out");
+        tryCompare(list, "contentY", 0, 5000, "the whole list fits the top: row 1 is not scrolled out");
         verify(list.itemAtIndex(0).y - list.contentY >= 0, "row 1 is not clipped by the top of the list");
+    }
+    // What the user does right after opening is not undone by the centering that waits for the final height.
+    function test_queueCenteringDoesNotUndoTheUsersScroll() {
+        const list = openCompactQueueWithSecondCurrent();
+        verify(waitForPolish(shell));
+        tryCompare(list, "contentY", 0);
+        mouseWheel(list, list.width / 2, list.height / 2, 0, -240);
+        tryVerify(() => list.contentY > 0);
+        const scrolled = list.contentY;
+        tryVerify(() => !list.moving);
+        const settled = list.contentY;
+        resize(720, 560);
+        verify(waitForPolish(shell));
+        verify(list.contentY > settled / 2, "the list height changed and the scroll stayed near where the user left it: " + list.contentY + " of " + settled);
+        verify(settled >= scrolled);
+    }
+    function test_queueCenteringDoesNotUndoAnArrowKey() {
+        const list = openCompactQueueWithSecondCurrent();
+        verify(waitForPolish(shell));
+        tryCompare(list, "contentY", 0);
+        list.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(list, "activeFocus", true);
+        keyClick(Qt.Key_End);
+        tryCompare(list, "currentIndex", 7);
+        tryVerify(() => list.contentY > 0);
+        const settled = list.contentY;
+        resize(720, 560);
+        verify(waitForPolish(shell));
+        compare(list.currentIndex, 7);
+        verify(list.contentY > 0, "the last row stays in view after the list grows");
+        verify(list.itemAtIndex(7) !== null && list.itemAtIndex(7).y - list.contentY < list.height);
     }
 
     function test_unavailableRowShowsStatusInWarning() {

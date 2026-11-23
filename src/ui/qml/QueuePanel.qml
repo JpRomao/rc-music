@@ -152,10 +152,8 @@ FocusScope {
             parts.push(queueText.unavailableReason(errorCode));
         return parts.join(". ") + (parts[parts.length - 1].endsWith(".") ? "" : ".");
     }
-    Timer {
-        id: openSettle
-        interval: 300
-    }
+    // Set when the drawer opens, cleared by the first thing the user does in the list.
+    property bool centerPending: false
     function syncCurrent() {
         // The open menu owns its occurrence, not the changing playback cursor.
         if (rowMenu.visible)
@@ -175,7 +173,7 @@ FocusScope {
         if (rowMenu.visible)
             return;
         syncCurrent();
-        openSettle.restart();
+        centerPending = true;
         if (emptyShown)
             emptyState.primaryButton.forceActiveFocus(Qt.TabFocusReason);
         else
@@ -622,7 +620,7 @@ FocusScope {
             // The drawer lays its header and toolbar out after it opens: the list grows to its final height and
             // the current row is centered again, so the first rows are not left scrolled out by the short list.
             onHeightChanged: {
-                if (openSettle.running && count > 0 && currentIndex >= 0)
+                if (root.centerPending && count > 0 && currentIndex >= 0)
                     positionViewAtIndex(currentIndex, ListView.Center);
             }
             readonly property bool focusIndicatorVisible: activeFocus && enabled
@@ -647,7 +645,9 @@ FocusScope {
             Accessible.focusable: enabled
             Accessible.focused: activeFocus
             Keys.priority: Keys.BeforeItem
+            onMovementStarted: root.centerPending = false
             Keys.onPressed: event => {
+                root.centerPending = false;
                 if (event.modifiers === Qt.ControlModifier && (event.key === Qt.Key_Up || event.key === Qt.Key_Down)) {
                     const offset = event.key === Qt.Key_Up ? -1 : 1;
                     queueList.currentIndex = Math.max(0, Math.min(queueList.count - 1, queueList.currentIndex + offset));
@@ -731,6 +731,7 @@ FocusScope {
                 }
                 Accessible.onPressAction: root.playRow(row, Qt.TabFocusReason)
                 onClicked: {
+                    root.centerPending = false;
                     queueList.currentIndex = row.index;
                     queueList.forceActiveFocus(Qt.MouseFocusReason);
                 }
