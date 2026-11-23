@@ -168,7 +168,7 @@ Ids novos que os testes Quick usam no Aurora:
 
 Ordem de Tab com a linha do verso (`tst_aurora_navigation`): lateral, topo, página, `lyrics-line-open`, player. Sem linha, a página segue direto para o player. Na Atividade, o Tab também alcança a linha.
 
-Gavetas exclusivas: abrir uma fecha a outra, e Ctrl+L abre a Fila. A Fila prende o Tab. A Letra não prende: o Tab sai do último controle para o player, o Shift+Tab sai do primeiro para a linha do verso (ou para `player-lyrics`, sem linha), e o Tab de fora não entra nela. Enter em `lyrics-line-open` ou `player-lyrics` devolve o foco à gaveta; Esc fecha e devolve o foco a quem a abriu.
+Gavetas exclusivas: abrir uma fecha a outra, e Ctrl+L abre a Fila. A Fila prende o Tab. A Letra não prende: o Tab sai do último controle para o player, o Shift+Tab sai do primeiro para a linha do verso (ou para `player-lyrics`, sem linha), e o Tab de fora não entra nela. Enter em `lyrics-line-open` ou `player-lyrics` devolve o foco à gaveta; Esc fecha e devolve o foco a quem a abriu. O fechamento só move o foco quando a gaveta o tinha: com o foco fora dela (no filtro da Biblioteca, em `player-queue`), a troca de faixa ou a abertura da Fila deixam o foco onde está, e a Fila devolve o foco ao seu próprio opener. `player-lyrics` só fica habilitado com binding de letra e faixa atual; sem faixa, o aviso da linha do verso (`lyrics-line-review`) é o caminho até as Versões.
 
 F1/F2 chamam o presenter direto no Aurora: `queue-modes` fica oculto na gaveta, e `player-shuffle` e `player-repeat` são os controles marcáveis.
 
