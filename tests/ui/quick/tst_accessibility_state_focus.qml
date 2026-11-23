@@ -20,6 +20,21 @@ TestCase {
             presenter: testCase.presenter
         }
     }
+    QtObject {
+        id: fakeLyrics
+        property string title: "Cantiga"
+        property string artist: "Artista"
+        property string album: "Disco"
+        property int durationMs: 180000
+        property string statusText: ""
+        property string currentLine: "Primeiro verso"
+        property string nextLine: "Segundo verso"
+        property string plainText: ""
+        property bool hasSyncedLyrics: true
+        property bool busy: false
+        property bool canSearch: true
+        property bool lyricsCopyProtected: false
+    }
     Component {
         id: externalFocusComponent
         Item {
@@ -68,7 +83,7 @@ TestCase {
         focusItem(emptyAction);
 
         openLocalTrack("C:/Música/Foco entre estados.mp3");
-        const playingAction = findChild(shell, "open-another-audio");
+        const playingAction = findChild(shell, "open-audio");
         tryVerify(function () {
             return playingAction.activeFocus;
         });
@@ -76,6 +91,9 @@ TestCase {
         driver.publishLocalPlaying();
         tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
         verify(playingAction.activeFocus, "Loading and Playing share one focus scope");
+        // Abrir áudio sits in the header, outside every state scope, so it keeps the focus through the error;
+        // the proof of the focus leaving a disappearing state starts from a button of the playing state.
+        focusItem(findChild(shell, "track-details-playing"));
 
         driver.publishLocalError();
         tryCompare(presenter, "playbackState", PlayerPresenter.Error);
@@ -94,6 +112,35 @@ TestCase {
         tryCompare(presenter, "playbackState", PlayerPresenter.Unloaded);
         tryVerify(function () {
             return emptyAction.activeFocus;
+        });
+    }
+
+    function test_heroFocusMovesToOpenAudioWhenTheTrackGoes() {
+        openLocalTrack("C:/Música/Foco no destaque.mp3");
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        focusItem(findChild(shell, "track-details-playing"));
+        verify(presenter.clearQueue());
+        tryCompare(presenter, "playbackState", PlayerPresenter.Unloaded);
+        const openAudio = findChild(shell, "open-audio");
+        tryVerify(function () {
+            return openAudio.activeFocus;
+        });
+
+        openLocalTrack("C:/Música/Foco na letra.mp3");
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        shell.lyrics = fakeLyrics;
+        const lyricsButton = findChild(shell, "home-lyrics");
+        tryVerify(function () {
+            return lyricsButton.enabled;
+        });
+        focusItem(lyricsButton);
+        driver.publishLocalError();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Error);
+        const errorAction = findChild(shell, "error-open-audio");
+        tryVerify(function () {
+            return errorAction.activeFocus;
         });
     }
 

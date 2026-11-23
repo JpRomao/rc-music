@@ -413,7 +413,7 @@ TestCase {
     }
     function test_homeKeepsFocusedActionVisibleWhenResized() {
         loadQueue();
-        const action = findChild(shell, "open-another-audio");
+        const action = findChild(shell, "open-audio");
         action.forceActiveFocus(Qt.TabFocusReason);
         tryCompare(action, "activeFocus", true);
         shell.width = 720;
@@ -426,6 +426,114 @@ TestCase {
             return p.y >= 0 && p.y + action.height <= home.height + 1;
         }, 5000, "Resizing must reveal the already focused action, without refocusing it");
         assertControlInside(action);
+    }
+    function test_homeHeaderOffersOpenAudio() {
+        const header = findChild(shell, "home-header");
+        verify(header && header.visible);
+        compare(findChild(header, "page-eyebrow").text, "SEU ESPAÇO MUSICAL");
+        compare(findChild(header, "page-title").text, "Bom ter sua música por perto.");
+        compare(findChild(header, "page-description").text, "O que está tocando, sua fila e sua biblioteca.");
+        const open = findChild(header, "open-audio");
+        verify(open);
+        compare(open.kind, AuroraButton.Primary);
+        compare(open.iconName, "folder-open");
+        compare(open.height, 40);
+        verify(open.visible && open.enabled);
+        loadQueue();
+        verify(open.visible && open.enabled, "Abrir áudio stays available with a track playing");
+    }
+    function test_emptyHeroUsesTheEmptyStatePiece() {
+        const empty = findChild(shell, "home-empty");
+        verify(empty && empty.visible);
+        compare(findChild(empty, "empty-title").text, "Abra um áudio para começar");
+        compare(findChild(empty, "empty-hint").text, "ou arraste arquivos para esta janela");
+        verify(!findChild(shell, "home-empty-primary").visible);
+        verify(!findChild(shell, "home-empty-secondary").visible);
+        const hero = findChild(shell, "home-hero");
+        compare(hero.border.width, 0);
+        compare(hero.radius, 16);
+    }
+    function test_playingHeroMatchesTheMockup() {
+        loadQueue();
+        verify(waitForPolish(shell));
+        const cover = findChild(shell, "cover-track");
+        compare(cover.width, 168);
+        compare(cover.height, 168);
+        const title = findChild(shell, "current-title");
+        compare(title.font.family, contract.headingFontFamily);
+        compare(title.font.pixelSize, 36);
+        const artistAlbum = findChild(shell, "hero-artist-album");
+        compare(artistAlbum.text, "");
+        driver.publishCompleteLocalMetadata();
+        tryCompare(artistAlbum, "text", "Artista · Álbum");
+        driver.enqueueLocalSelection(["C:/Fixture/So artista.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "currentTitle", "So artista");
+        compare(artistAlbum.text, "");
+        driver.publishNamedLocalMetadata("So artista", "Artista", "");
+        tryCompare(artistAlbum, "text", "Artista");
+        const details = findChild(shell, "track-details-playing");
+        compare(details.text, "Detalhes da faixa");
+        // The lyrics button needs both lyrics and a current track.
+        const lyricsButton = findChild(shell, "home-lyrics");
+        compare(lyricsButton.text, "Letra");
+        verify(!lyricsButton.enabled);
+        mountShellBackends();
+        shell.lyrics = captureLyrics;
+        tryVerify(() => lyricsButton.enabled);
+        const reader = findChild(shell, "lyrics-reader");
+        mouseClick(lyricsButton);
+        tryCompare(reader, "opened", true);
+        keyClick(Qt.Key_Escape);
+        tryCompare(reader, "opened", false);
+        tryCompare(lyricsButton, "activeFocus", true);
+    }
+    function test_compactHeroAtMinimumWindow() {
+        mountShellBackends();
+        shell.lyrics = fakeLyrics;
+        loadQueue();
+        shell.width = 720;
+        shell.height = 520;
+        tryCompare(shell.contentItem, "width", 720);
+        tryCompare(shell.contentItem, "height", 520);
+        verify(waitForPolish(shell));
+        compare(findChild(shell, "cover-track").width, 96);
+        compare(findChild(shell, "current-title").font.pixelSize, 24);
+        const details = findChild(shell, "track-details-playing");
+        compare(details.text, "Detalhes");
+        compare(details.Accessible.name, "Detalhes da faixa");
+        // The verse line no longer makes the hero compact: only the window width does.
+        shell.width = 960;
+        shell.height = 640;
+        tryCompare(shell.contentItem, "width", 960);
+        tryCompare(shell.contentItem, "height", 640);
+        verify(waitForPolish(shell));
+        tryVerify(() => findChild(shell, "lyrics-line").visible);
+        compare(findChild(shell, "cover-track").width, 168);
+        compare(findChild(shell, "current-title").font.pixelSize, 36);
+    }
+    function test_heroElidesLongMetadataAtMinimumWindow() {
+        const longTitle = "T".repeat(200);
+        const longArtist = "A".repeat(200);
+        shell.width = 720;
+        shell.height = 520;
+        tryCompare(shell.contentItem, "height", 520);
+        loadQueue();
+        driver.publishNamedLocalMetadata(longTitle, longArtist, "");
+        const title = findChild(shell, "current-title");
+        tryCompare(title, "text", longTitle);
+        verify(waitForPolish(shell));
+        compare(title.elide, Text.ElideRight);
+        compare(title.Accessible.name, longTitle);
+        const hero = findChild(shell, "home-hero");
+        for (const name of ["track-details-playing", "home-lyrics"]) {
+            const button = findChild(shell, name);
+            compare(button.height, 40);
+            const inHero = button.mapToItem(hero, 0, 0);
+            verify(inHero.x >= 0 && inHero.y >= 0 && inHero.x + button.width <= hero.width && inHero.y + button.height <= hero.height, name + " stays inside the hero");
+            const inWindow = point(button);
+            verify(inWindow.x + button.width <= shell.width && inWindow.y + button.height <= shell.height, name + " stays inside the window");
+        }
     }
     function test_queueCardTabRevealsTheFocusedOccurrence() {
         driver.enqueueLocalSelection(["C:/Fixture/1.mp3", "C:/Fixture/2.mp3", "C:/Fixture/3.mp3", "C:/Fixture/4.mp3", "C:/Fixture/5.mp3", "C:/Fixture/6.mp3", "C:/Fixture/7.mp3"]);
@@ -698,7 +806,7 @@ TestCase {
         const list = findChild(shell, "home-queue-list");
         verify(list);
         compare(list.count, 0);
-        verify(findChild(shell, "emptyState").visible);
+        verify(findChild(shell, "home-empty").visible);
         verify(!findChild(shell, "home-queue-shelf").visible);
         assertControlInside(findChild(shell, "open-audio"));
         compare(findChild(shell, "library-results"), null);

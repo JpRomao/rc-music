@@ -549,6 +549,57 @@ TestCase {
         tryVerify(() => visibleIn(items[0]), 5000, "the first home item scrolls back into view");
     }
 
+    function test_openingAFileKeepsThePageTitleInView() {
+        shell.width = 720;
+        shell.height = 520;
+        tryCompare(shell.contentItem, "height", 520);
+        mountNavigationBackends();
+        shell.lyrics = fakeLyrics;
+        verify(waitForPolish(shell));
+        const open = findChild(shell, "open-audio");
+        open.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(open, "activeFocus", true);
+        driver.enqueueLocalSelection(["C:/Música/Primeira.mp3"]);
+        open.Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        tryVerify(() => findChild(shell, "lyrics-line").visible);
+        verify(waitForPolish(shell));
+        const layer = findChild(shell, "state-layer");
+        tryCompare(layer, "contentY", 0);
+        const title = findChild(shell, "page-title");
+        const p = title.mapToItem(layer, 0, 0);
+        verify(p.y >= 0 && p.y + title.height <= layer.height, "the page title is inside the viewport");
+        verify(p.x >= 0 && p.x + title.width <= layer.width + 1);
+    }
+
+    function test_revealKeepsThePageTopWhenTheTargetFitsTheFirstScreen() {
+        loadSyntheticQueue();
+        shell.width = productContract.minimumWidth;
+        shell.height = productContract.minimumHeight;
+        tryCompare(shell.contentItem, "height", productContract.minimumHeight);
+        const home = findChild(shell, "state-layer");
+        tryVerify(() => home.contentHeight > home.height + 1, 5000, "the minimum home has to scroll");
+        const items = homeFocusables(home.contentItem, []);
+        items[items.length - 1].forceActiveFocus(Qt.TabFocusReason);
+        tryVerify(() => home.contentY > 0, 5000, "the last home item scrolls into view");
+        for (let step = 0; step < 40 && focusName() !== "track-details-playing"; ++step)
+            keyClick(Qt.Key_Backtab);
+        compare(focusName(), "track-details-playing");
+        tryCompare(home, "contentY", 0);
+    }
+
+    function test_homeTabOrder() {
+        loadSyntheticQueue();
+        mountNavigationBackends();
+        shell.lyrics = fakeLyrics;
+        tryVerify(() => findChild(shell, "home-lyrics").enabled);
+        themeButton().forceActiveFocus(Qt.TabFocusReason);
+        const trail = tabTrail(Qt.Key_Tab, Qt.NoModifier, 3);
+        compare(trail.join(","), "open-audio,track-details-playing,home-lyrics");
+    }
+
     function isInside(item, ancestor) {
         for (let current = item; current; current = current.parent) {
             if (current === ancestor)

@@ -92,7 +92,7 @@ TestCase {
         driver.publishLocalPaused();
         tryCompare(presenter, "playbackState", PlayerPresenter.Paused);
         tryVerify(function () {
-            return findChild(shell, "open-another-audio").activeFocus;
+            return findChild(shell, "open-audio").activeFocus;
         });
     }
 

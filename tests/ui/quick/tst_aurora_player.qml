@@ -1253,7 +1253,7 @@ TestCase {
         verify(driver.followRoom("Primeira", "Artista", "Album", 600000));
         tryVerify(() => title.text.startsWith("Primeira"), 5000, title.text);
         compare(presenter.currentArtist, "Artista");
-        verify(!findChild(shell, "emptyState").visible);
+        verify(!findChild(shell, "home-empty").visible);
 
         driver.publishRoomPlayback(true, 1000, 600000);
         tryCompare(presenter, "playbackState", PlayerPresenter.Playing);

@@ -606,6 +606,24 @@ class ScenarioDriver final : public QObject {
     }
     Q_INVOKABLE void publishCompleteLocalMetadata() { publishLocalMetadata(false); }
     Q_INVOKABLE void publishArtworkLocalMetadata() { publishLocalMetadata(true); }
+    // Tags with only the given fields: an empty artist or album stays absent.
+    Q_INVOKABLE void publishNamedLocalMetadata(const QString& title, const QString& artist, const QString& album) {
+        if (local_metadata_reader_.requests.empty())
+            return;
+        const auto& request = local_metadata_reader_.requests.back();
+        music_player::m0::TrackMetadata track{
+            .source_path = request.source_path,
+            .tags = {.title = std::string{title.toStdString()}},
+            .display_title = title.toStdString(),
+        };
+        if (!artist.isEmpty())
+            track.tags.artist = artist.toStdString();
+        if (!album.isEmpty())
+            track.tags.album = album.toStdString();
+        local_metadata_reader_.poll_results.push_back(
+            {music_player::m0::MetadataPollStatus::Completed,
+             music_player::m0::MetadataReadCompletion{request.generation, request.source_path, std::move(track)}});
+    }
     Q_INVOKABLE void publishSanitizedLocalMetadata(const bool valid_numeric_fallback) {
         if (local_metadata_reader_.requests.empty())
             return;

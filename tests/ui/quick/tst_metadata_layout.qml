@@ -21,12 +21,12 @@ TestCase {
 
     function geometry(shell) {
         const rectangles = {};
-        for (const name of ["playing-state", "cover-track", "embedded-artwork", "current-title", "current-artist", "current-album", "open-another-audio", "track-details-playing", "transport-bar", "progress", "play-pause", "previous", "next", "player-identity", "player-artwork", "player-track-title", "player-time"]) {
+        for (const name of ["playing-state", "cover-track", "embedded-artwork", "current-title", "hero-artist-album", "open-audio", "track-details-playing", "transport-bar", "progress", "play-pause", "previous", "next", "player-identity", "player-artwork", "player-track-title", "player-time"]) {
             const item = findChild(shell, name);
             verify(item, name);
             const position = item.mapToItem(shell.contentItem, 0, 0);
             // Text width follows content, but its center, line slot and baseline area must not jump.
-            rectangles[name] = name.startsWith("current-") ? [position.x + item.width / 2, position.y, item.height] : [position.x, position.y, item.width, item.height];
+            rectangles[name] = name.startsWith("current-") || name === "hero-artist-album" ? [position.x + item.width / 2, position.y, item.height] : [position.x, position.y, item.width, item.height];
         }
         return rectangles;
     }
@@ -84,8 +84,7 @@ TestCase {
         mouseClick(findChild(shell, "open-audio"));
         tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Loading); // qmllint disable unqualified
         compare(findChild(shell, "current-title").text, "Track without tags");
-        compare(findChild(shell, "current-artist").text, "");
-        compare(findChild(shell, "current-album").text, "");
+        compare(findChild(shell, "hero-artist-album").text, "");
         const placeholder = findChild(shell, "cover-track");
         verify(placeholder.visible);
         compare(placeholder.source.toString(), "");
@@ -107,8 +106,7 @@ TestCase {
             testScenarioDriver.publishCompleteLocalMetadata(); // qmllint disable unqualified
         }
         tryCompare(findChild(shell, "current-title"), "text", "Título controlado");
-        compare(findChild(shell, "current-artist").text, "Artista");
-        compare(findChild(shell, "current-album").text, "Álbum");
+        compare(findChild(shell, "hero-artist-album").text, "Artista · Álbum");
         if (data.artwork) {
             const artwork = findChild(shell, "embedded-artwork");
             tryCompare(artwork, "status", Image.Ready);
@@ -119,11 +117,10 @@ TestCase {
         verifyGeometry(shell, initial, "Metadata");
 
         testScenarioDriver.enqueueLocalSelection(["C:/Synthetic/Another longer title without tags.mp3"]); // qmllint disable unqualified
-        mouseClick(findChild(shell, "open-another-audio"));
+        mouseClick(findChild(shell, "open-audio"));
         tryCompare(testLocalPlayerPresenter, "playbackState", PlayerPresenter.Loading); // qmllint disable unqualified
         compare(findChild(shell, "current-title").text, "Another longer title without tags");
-        compare(findChild(shell, "current-artist").text, "");
-        compare(findChild(shell, "current-album").text, "");
+        compare(findChild(shell, "hero-artist-album").text, "");
         compare(findChild(shell, "embedded-artwork").source.toString(), "");
         verify(waitForPolish(shell));
         verifyGeometry(shell, initial, "Next track");

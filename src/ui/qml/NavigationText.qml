@@ -3,10 +3,11 @@ import QtQml
 QtObject {
     readonly property string now: qsTr("Agora")
     readonly property string home: qsTr("Início")
-    readonly property string pageDescription: qsTr("Sua reprodução e suas listas, no mesmo lugar.")
+    readonly property string pageDescription: qsTr("O que está tocando, sua fila e sua biblioteca.")
     readonly property string queueShelf: qsTr("Na sua fila")
     readonly property string queueCount: qsTr("Fila atual: %1")
     readonly property string seeQueue: qsTr("Ver fila")
+    readonly property string detailsShort: qsTr("Detalhes")
     readonly property string localAudio: qsTr("Artista desconhecido")
     readonly property string playTrack: qsTr("Reproduzir %1")
     readonly property string loadingTrack: qsTr("PREPARANDO A FAIXA")

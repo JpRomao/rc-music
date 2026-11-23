@@ -222,6 +222,8 @@ TestCase {
         compare(openAnother.Accessible.name, "Abrir outro áudio");
         verify(details.enabled);
 
+        // Abrir áudio keeps the focus it had when the file was chosen, so the drawer's opener is set explicitly.
+        findChild(shell, "player-queue").forceActiveFocus(Qt.TabFocusReason);
         shell.setQueueOpen(true);
         const queue = findChild(shell, "queue-list");
         tryVerify(function () {
@@ -348,7 +350,7 @@ TestCase {
         retry.Accessible.pressAction();
         compare(testScenarioDriver.localLoadCount(), 2); // qmllint disable unqualified
         tryVerify(function () {
-            return findChild(shell, "open-another-audio").activeFocus;
+            return findChild(shell, "open-audio").activeFocus;
         });
 
         testScenarioDriver.publishLocalReady(); // qmllint disable unqualified

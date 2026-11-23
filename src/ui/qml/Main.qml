@@ -158,6 +158,11 @@ ApplicationWindow {
         if (!window.inlinePages || window.currentPage !== "home" || !item || !window.isInside(item, stateLayer))
             return;
         const point = item.mapToItem(stateLayer.contentItem, 0, 0);
+        // A target that fits the first screen shows the page from its top, so the title never scrolls away for it.
+        if (point.y + item.height <= stateLayer.height) {
+            stateLayer.contentY = 0;
+            return;
+        }
         if (point.y < stateLayer.contentY)
             stateLayer.contentY = Math.max(0, point.y);
         else if (point.y + item.height > stateLayer.contentY + stateLayer.height)
@@ -760,6 +765,7 @@ ApplicationWindow {
                 }
                 Loader {
                     id: homeLoader
+                    objectName: "home-page-loader"
                     active: window.inlinePages
                     sourceComponent: HomePage {
                         width: stateLayer.width
@@ -767,12 +773,13 @@ ApplicationWindow {
                         presenter: window.presenter
                         labels: errorText
                         library: window.library
-                        compact: stateLayer.height < 400
-                        lyricsAvailable: lyricsPanel.visible
+                        compact: window.width <= window.uiContract.compactWidth
+                        lyricsAvailable: lyricsPanel.readerAvailable
                         openingEnabled: !window.presenter.exiting && !window.presenter.selectingAudioFiles && window.presenter.locatingOccurrenceId.length === 0
                         locationFocusRestoreAllowed: window.active && window.windowShortcutsEnabled && !preferencesPanel.visible
                         onOpenAudioRequested: opener => window.openAudio(opener)
                         onDetailsRequested: opener => window.openTrackDetails(opener)
+                        onLyricsRequested: opener => lyricsPanel.showReader(opener)
                         onAudioFilesOpening: opener => window.prepareAudioSelection(opener)
                         onQueueRequested: window.setQueueOpen(true)
                         onPlayRequested: occurrenceId => window.presenter.playQueueOccurrence(occurrenceId)

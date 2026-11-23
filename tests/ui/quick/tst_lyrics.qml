@@ -605,7 +605,7 @@ TestCase {
             verify(layer.clip && layer.interactive, "The editorial home scrolls inside its clipped viewport");
             const panel = findChild(shell, "lyrics-panel");
             verify(layer.mapToItem(shell.contentItem, 0, layer.height).y <= panel.mapToItem(shell.contentItem, 0, 0).y, "The actual home viewport must not overlap lyrics");
-            for (const name of ["open-another-audio", "track-details-playing"]) {
+            for (const name of ["open-audio", "track-details-playing"]) {
                 const action = findChild(shell, name);
                 action.forceActiveFocus(Qt.TabFocusReason);
                 tryCompare(action, "activeFocus", true);

@@ -132,6 +132,7 @@ function(rc_music_add_ui target support qml_output)
             PageHeader.qml
             WorkspaceHeader.qml
             HomePage.qml
+            HomeHero.qml
             QueuePreview.qml
             SideNavigation.qml
             NavigationText.qml

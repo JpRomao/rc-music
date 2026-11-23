@@ -14,6 +14,7 @@ ColumnLayout {
     property bool openingEnabled: true
     property bool locationFocusRestoreAllowed: true
     readonly property int queueCount: queuePreview.count
+    readonly property Item openAudioControl: openAudioButton
     signal openAudioRequested(Item opener)
     signal detailsRequested(Item opener)
     signal lyricsRequested(Item opener)
@@ -29,84 +30,49 @@ ColumnLayout {
     // The focus scope that owns a playback state: its items vanish with the state.
     function scopeFor(state) {
         if (state === PlayerPresenter.Unloaded)
-            return emptyState;
+            return hero.emptyScope;
         if (state === PlayerPresenter.Error)
-            return errorState;
-        return nowPlayingState;
+            return hero.errorScope;
+        return hero.nowPlayingScope;
     }
+    // The open-audio action lives in the header, outside every state scope, so only the error has a primary of its own.
     function focusPrimary(state) {
-        scopeFor(state).focusPrimary();
+        if (state === PlayerPresenter.Error)
+            hero.errorState.focusPrimary();
+        else
+            openAudioButton.forceActiveFocus(Qt.TabFocusReason);
     }
 
-    ColumnLayout {
+    PageHeader {
+        objectName: "home-header"
         Layout.fillWidth: true
-        spacing: 10
-        Text {
-            objectName: "home-heading"
-            Layout.fillWidth: true
-            text: navigationText.heading
-            font.family: root.contract.headingFontFamily
-            font.pixelSize: root.contract.typeDisplay
-            color: root.contract.textPrimaryColor
-            textFormat: Text.PlainText
-            wrapMode: Text.WordWrap
-        }
-        Text {
-            Layout.fillWidth: true
-            text: navigationText.pageDescription
-            font.family: root.contract.bodyFontFamily
-            font.pixelSize: root.contract.typeBody
-            color: root.contract.textSecondaryColor
-            textFormat: Text.PlainText
-            wrapMode: Text.WordWrap
+        contract: root.contract
+        eyebrow: navigationText.space
+        title: navigationText.heading
+        description: navigationText.pageDescription
+        AuroraButton {
+            id: openAudioButton
+            contract: root.contract
+            controlId: "open-audio"
+            kind: AuroraButton.Primary
+            iconName: "folder-open"
+            text: root.contract.openAudioText
+            enabled: root.openingEnabled
+            onClicked: root.openAudioRequested(openAudioButton)
         }
     }
-    Rectangle {
-        id: heroRegion
-        objectName: "home-hero"
+    HomeHero {
+        id: hero
         Layout.fillWidth: true
-        implicitHeight: (root.presenter.playbackState === PlayerPresenter.Unloaded ? emptyState.implicitHeight : (root.presenter.playbackState === PlayerPresenter.Error ? errorState.implicitHeight : nowPlayingState.implicitHeight)) + 44
-        color: root.contract.surfaceColor
-        radius: root.contract.radiusMedium
-        border.width: 1
-        border.color: root.contract.borderColor
-        EmptyState {
-            id: emptyState
-            x: 22
-            y: 22
-            width: Math.max(0, parent.width - 44)
-            editorial: true
-            compact: root.compact
-            visible: root.presenter.playbackState === PlayerPresenter.Unloaded
-            contract: root.contract
-            openingEnabled: root.openingEnabled
-            onOpenAudioRequested: opener => root.openAudioRequested(opener)
-        }
-        NowPlayingState {
-            id: nowPlayingState
-            x: 22
-            y: 22
-            width: Math.max(0, parent.width - 44)
-            visible: root.presenter.playbackState !== PlayerPresenter.Unloaded && root.presenter.playbackState !== PlayerPresenter.Error
-            contract: root.contract
-            presenter: root.presenter
-            compact: root.lyricsAvailable || root.compact
-            onOpenAudioRequested: opener => root.openAudioRequested(opener)
-            onDetailsRequested: opener => root.detailsRequested(opener)
-        }
-        ErrorState {
-            id: errorState
-            x: 22
-            y: 22
-            width: Math.max(0, parent.width - 44)
-            visible: root.presenter.playbackState === PlayerPresenter.Error
-            contract: root.contract
-            presenter: root.presenter
-            labels: root.labels
-            locationFocusRestoreAllowed: root.locationFocusRestoreAllowed
-            onAudioFilesOpening: opener => root.audioFilesOpening(opener)
-            onDetailsRequested: opener => root.detailsRequested(opener)
-        }
+        contract: root.contract
+        presenter: root.presenter
+        labels: root.labels
+        compact: root.compact
+        lyricsAvailable: root.lyricsAvailable
+        locationFocusRestoreAllowed: root.locationFocusRestoreAllowed
+        onDetailsRequested: opener => root.detailsRequested(opener)
+        onLyricsRequested: opener => root.lyricsRequested(opener)
+        onAudioFilesOpening: opener => root.audioFilesOpening(opener)
     }
     QueuePreview {
         id: queuePreview

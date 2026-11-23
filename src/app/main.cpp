@@ -1457,7 +1457,7 @@ int main(int argc, char* argv[]) {
             QTimer::singleShot(
                 0, &application, [&application, root, window, &presenter, &combined_startup_smoke_completed] {
                     QObject* const empty_state =
-                        root != nullptr ? root->findChild<QObject*>(QStringLiteral("emptyState")) : nullptr;
+                        root != nullptr ? root->findChild<QObject*>(QStringLiteral("home-empty")) : nullptr;
                     combined_startup_smoke_completed = root != nullptr && window->isVisible() &&
                                                        !QGuiApplication::windowIcon().pixmap(32, 32).isNull() &&
                                                        !window->icon().pixmap(32, 32).isNull() &&

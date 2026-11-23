@@ -129,7 +129,7 @@ TestCase {
     function test_pendingSelectionKeepsBackendUpdatesAndDoesNotEnableWindowShortcuts() {
         selectInitialTrack();
         const occurrenceId = presenter.currentOccurrenceId;
-        const opener = findChild(shell, "open-another-audio");
+        const opener = findChild(shell, "open-audio");
         opener.forceActiveFocus(Qt.TabFocusReason);
         keyClick(Qt.Key_Return);
         tryCompare(presenter, "selectingAudioFiles", true);
