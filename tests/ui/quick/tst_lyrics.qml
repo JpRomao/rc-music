@@ -156,6 +156,13 @@ TestCase {
             }
         }
     }
+    Component {
+        id: bareShellComponent
+        Main {
+            uiContract: testProductUiContract // qmllint disable unqualified
+            presenter: testCase.presenter
+        }
+    }
     function init() {
         driver.resetLocalScenario();
         lyrics.title = "Original song";
@@ -1017,6 +1024,34 @@ TestCase {
         keyClick(Qt.Key_Escape);
         tryCompare(reader, "visible", false);
         tryVerify(() => sceneRect(findChild(shell, "lyrics-line")).x + findChild(shell, "lyrics-line").width > drawer.x);
+    }
+    // As at startup, the lyrics binding arrives after the window: the drawer gets its first layout only when it
+    // opens, after the opening revealed the current verse. Following playback, the verse is brought back into
+    // view once the list has its height, like the queue centers its current row.
+    function test_drawerOpensWithTheCurrentVerseInViewInTheMinimumWindow() {
+        shell.destroy();
+        shell = createTemporaryObject(bareShellComponent, null);
+        verify(shell);
+        shell.width = 720;
+        shell.height = 520;
+        shell.requestActivate();
+        tryCompare(shell, "active", true);
+        tryCompare(shell.contentItem, "width", 720);
+        tryCompare(shell.contentItem, "height", 520);
+        lyrics.readerVerses = ["A maré trouxe o vidro de volta", "E a areia guardou o teu nome", "Eu contei as ondas até a hora", "Em que o céu se acende e some", "Maré de vidro, leva devagar", "O que eu não soube te dizer", "Se a luz voltar pelo mar", "Eu ainda vou estar aqui pra ver", "A cidade dorme na janela", "E o rádio insiste na canção"].map((text, index) => ({
+                    text: text,
+                    timeMs: index * 20000
+                }));
+        lyrics.activeReaderVerse = 4;
+        shell.lyrics = lyrics;
+        verify(waitForPolish(shell.contentItem));
+        const reader = openDrawer();
+        const list = findChild(reader, "lyrics-reader-verses");
+        verify(reader.followingPlayback);
+        tryVerify(() => {
+            const verse = list.itemAtIndex(4);
+            return list.height > 0 && verse !== null && verse.y >= list.contentY && verse.y + verse.height <= list.contentY + list.height;
+        }, 5000, "the current verse is inside the visible list");
     }
     function test_lyricsDrawerShiftTabWithoutVerseLineLandsOnThePlayerButton() {
         // Without synchronized lyrics there is no verse line: the way out backwards is the player's button.

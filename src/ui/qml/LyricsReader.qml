@@ -370,6 +370,11 @@ Dialog {
                     positionViewAtIndex(currentIndex, ListView.Contain);
                 }
 
+                // The opening reveals the current verse before the list has its final height (the drawer's first
+                // layout, a resize): while following playback, the Aurora drawer reveals it again once the height is
+                // known. The M0 reader keeps its frozen behavior.
+                onHeightChanged: if (root.editorial && root.followingPlayback)
+                    root.revealCurrent()
                 onDraggingChanged: if (dragging)
                     root.followingPlayback = false
                 Keys.onPressed: event => {
