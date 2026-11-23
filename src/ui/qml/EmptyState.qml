@@ -11,28 +11,23 @@ GridLayout {
     property string actionText: contract.openAudioText
     property bool openingEnabled: true
     property bool compact: false
-    property bool editorial: false
-    readonly property bool spread: editorial && width >= 500
-    readonly property real coverExtent: editorial ? (width < 660 ? 130 : 204) : (compact && parent ? Math.max(0, Math.min(128, parent.height - titleLabel.implicitHeight - hintLabel.implicitHeight - openAudioButton.implicitHeight - rowSpacing * 3 - 4)) : 192)
+    readonly property real coverExtent: compact && parent ? Math.max(0, Math.min(128, parent.height - titleLabel.implicitHeight - hintLabel.implicitHeight - openAudioButton.implicitHeight - rowSpacing * 3 - 4)) : 192
     signal openAudioRequested(Item opener)
-    columns: spread ? 2 : 1
+    columns: 1
     rowSpacing: contract.spacingUnit * 4
-    columnSpacing: editorial ? 30 : 0
 
     function focusPrimary() {
         openAudioButton.forceActiveFocus(Qt.TabFocusReason);
     }
 
     TrackArtwork {
-        objectName: root.editorial ? "cover-placeholder" : ""
-        fallbackObjectName: root.editorial ? "" : "cover-placeholder"
+        fallbackObjectName: "cover-placeholder"
         Layout.row: 0
         Layout.column: 0
-        Layout.rowSpan: root.spread ? 3 : 1
         Layout.preferredWidth: root.coverExtent
         Layout.preferredHeight: root.coverExtent
         contract: root.contract
-        frozen: !root.editorial
+        frozen: true
         fallbackSource: root.contract.placeholderSource
         Layout.alignment: Qt.AlignHCenter
         Accessible.ignored: true
@@ -40,16 +35,13 @@ GridLayout {
     Text {
         id: titleLabel
         objectName: "empty-title"
-        Layout.row: root.spread ? 0 : 1
-        Layout.column: root.spread ? 1 : 0
+        Layout.row: 1
+        Layout.column: 0
         text: root.titleText
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
-        font: root.editorial ? Qt.font({
-            family: root.contract.headingFontFamily,
-            pixelSize: 30
-        }) : root.contract.applicationFont
-        horizontalAlignment: root.spread ? Text.AlignLeft : Text.AlignHCenter
+        font: root.contract.applicationFont
+        horizontalAlignment: Text.AlignHCenter
         color: root.contract.textPrimaryColor
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignHCenter
@@ -57,12 +49,12 @@ GridLayout {
     Text {
         id: hintLabel
         objectName: "empty-hint"
-        Layout.row: root.spread ? 1 : 2
-        Layout.column: root.spread ? 1 : 0
+        Layout.row: 2
+        Layout.column: 0
         text: root.hintText
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
-        horizontalAlignment: root.spread ? Text.AlignLeft : Text.AlignHCenter
+        horizontalAlignment: Text.AlignHCenter
         color: root.contract.textSecondaryColor
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignHCenter
@@ -70,13 +62,13 @@ GridLayout {
     AccessibleActionButton {
         id: openAudioButton
         controlId: "open-audio"
-        Layout.row: root.spread ? 2 : 3
-        Layout.column: root.spread ? 1 : 0
+        Layout.row: 3
+        Layout.column: 0
         contract: root.contract
         text: root.actionText
         enabled: root.openingEnabled
         Layout.maximumWidth: root.width
-        Layout.alignment: root.spread ? Qt.AlignLeft : Qt.AlignHCenter
+        Layout.alignment: Qt.AlignHCenter
         onClicked: root.openAudioRequested(openAudioButton)
     }
 }
