@@ -106,6 +106,7 @@ ApplicationWindow {
     // S10.1: a guest's transport keys send room intents; the binding refuses each one without its permission.
     readonly property bool roomKeysEnabled: room !== null && room.available && room.role === 2 && navigationShortcutsEnabled
     readonly property bool inlinePageClosingAllowed: inlinePages && currentPage !== "home" && currentPage !== "queue" && !playlistsPanel.blockingUiOpen && !libraryPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !lyricsPanel.queryOpen && !browserError.visible && !windowNotice.visible && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property int homeQueueCount: homeLoader.item ? homeLoader.item.queueCount : 0
     property int previousPlaybackState: -1
     property int playbackFocusRepairGeneration: 0
     property Item lastActiveFocusItem: null
@@ -177,11 +178,16 @@ ApplicationWindow {
     }
 
     function playbackFocusScope(state) {
+        if (window.inlinePages)
+            return homeLoader.item ? homeLoader.item.scopeFor(state) : null;
+        const states = fixtureStates.item;
+        if (!states)
+            return null;
         if (state === PlayerPresenter.Unloaded)
-            return emptyState;
+            return states.emptyState;
         if (state === PlayerPresenter.Error)
-            return errorState;
-        return nowPlayingState;
+            return states.errorState;
+        return states.nowPlayingState;
     }
 
     function isPassiveFocusFallback(item) {
@@ -203,12 +209,14 @@ ApplicationWindow {
             queuePanel.focusCurrent();
             return;
         }
-        if (state === PlayerPresenter.Unloaded)
-            emptyState.focusPrimary();
-        else if (state === PlayerPresenter.Error)
-            errorState.focusPrimary();
-        else
-            nowPlayingState.focusPrimary();
+        if (window.inlinePages) {
+            if (homeLoader.item)
+                homeLoader.item.focusPrimary(state);
+            return;
+        }
+        const scope = window.playbackFocusScope(state);
+        if (scope)
+            scope.focusPrimary();
     }
 
     function repairPlaybackStateFocus() {
@@ -520,7 +528,7 @@ ApplicationWindow {
             queueButton.forceActiveFocus(Qt.TabFocusReason);
             return;
         }
-        emptyState.focusPrimary();
+        window.focusPlaybackPrimary(window.presenter.playbackState);
     }
 
     SideNavigation {
@@ -713,6 +721,7 @@ ApplicationWindow {
         anchors.right: parent.right
         anchors.top: window.inlinePages ? workspaceHeader.bottom : parent.top
         anchors.bottom: playerFooter.top
+        spacing: window.inlinePages ? 0 : 5
         anchors.margins: window.inlinePages ? 30 : window.uiContract.spacingUnit * 6
         // The verse line carries its own 12 px below it.
         anchors.bottomMargin: window.inlinePages ? (lyricsPanel.visible && lyricsPanel.lineVisible ? 0 : 30) : window.uiContract.spacingUnit * 6
@@ -733,7 +742,7 @@ ApplicationWindow {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 contentWidth: width
-                contentHeight: window.inlinePages ? Math.max(height, homeLayout.implicitHeight) : height
+                contentHeight: window.inlinePages ? Math.max(height, homeLoader.implicitHeight) : height
                 interactive: window.inlinePages
                 boundsBehavior: Flickable.StopAtBounds
                 flickableDirection: Flickable.VerticalFlick
@@ -749,53 +758,22 @@ ApplicationWindow {
                 ScrollBar.vertical: AccessibleScrollBar {
                     contract: window.uiContract
                 }
-                ColumnLayout {
-                    id: homeLayout
-                    width: stateLayer.width
-                    spacing: 28
-                    visible: window.inlinePages
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 10
-                        Text {
-                            objectName: "home-heading"
-                            Layout.fillWidth: true
-                            text: navigationText.heading
-                            font.family: window.uiContract.headingFontFamily
-                            font.pixelSize: window.uiContract.typeDisplay
-                            color: window.uiContract.textPrimaryColor
-                            textFormat: Text.PlainText
-                            wrapMode: Text.WordWrap
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            text: navigationText.pageDescription
-                            font.family: window.uiContract.bodyFontFamily
-                            font.pixelSize: window.uiContract.typeBody
-                            color: window.uiContract.textSecondaryColor
-                            textFormat: Text.PlainText
-                            wrapMode: Text.WordWrap
-                        }
-                    }
-                    Rectangle {
-                        id: heroRegion
-                        objectName: "home-hero"
-                        Layout.fillWidth: true
-                        implicitHeight: (window.presenter.playbackState === PlayerPresenter.Unloaded ? emptyState.implicitHeight : (window.presenter.playbackState === PlayerPresenter.Error ? errorState.implicitHeight : nowPlayingState.implicitHeight)) + 44
-                        color: window.uiContract.surfaceColor
-                        radius: window.uiContract.radiusMedium
-                        border.width: 1
-                        border.color: window.uiContract.borderColor
-                    }
-                    QueuePreview {
-                        id: queuePreview
-                        Layout.fillWidth: true
-                        visible: count > 0
+                Loader {
+                    id: homeLoader
+                    active: window.inlinePages
+                    sourceComponent: HomePage {
+                        width: stateLayer.width
                         contract: window.uiContract
-                        model: window.inlinePages ? window.presenter.queueModel : null
-                        currentOccurrenceId: window.presenter.currentOccurrenceId
-                        currentArtworkSource: window.presenter.currentArtworkSource
-                        interactionAllowed: !window.presenter.exiting && !window.presenter.selectingAudioFiles && window.presenter.locatingOccurrenceId.length === 0
+                        presenter: window.presenter
+                        labels: errorText
+                        library: window.library
+                        compact: stateLayer.height < 400
+                        lyricsAvailable: lyricsPanel.visible
+                        openingEnabled: !window.presenter.exiting && !window.presenter.selectingAudioFiles && window.presenter.locatingOccurrenceId.length === 0
+                        locationFocusRestoreAllowed: window.active && window.windowShortcutsEnabled && !preferencesPanel.visible
+                        onOpenAudioRequested: opener => window.openAudio(opener)
+                        onDetailsRequested: opener => window.openTrackDetails(opener)
+                        onAudioFilesOpening: opener => window.prepareAudioSelection(opener)
                         onQueueRequested: window.setQueueOpen(true)
                         onPlayRequested: occurrenceId => window.presenter.playQueueOccurrence(occurrenceId)
                     }
@@ -812,48 +790,48 @@ ApplicationWindow {
                     color: window.uiContract.textPrimaryColor
                     elide: Text.ElideRight
                 }
-                EmptyState {
-                    id: emptyState
-                    parent: window.inlinePages ? heroRegion : stateLayer.contentItem
-                    anchors.centerIn: window.inlinePages ? undefined : parent
-                    x: window.inlinePages ? 22 : 0
-                    y: window.inlinePages ? 22 : 0
-                    width: window.inlinePages ? Math.max(0, parent.width - 44) : Math.min(parent.width > 0 ? parent.width : 560, 560)
-                    editorial: window.inlinePages
-                    compact: stateLayer.height < 400
-                    visible: window.presenter.playbackState === PlayerPresenter.Unloaded
-                    contract: window.uiContract
-                    openingEnabled: !window.presenter.exiting && !window.presenter.selectingAudioFiles && window.presenter.locatingOccurrenceId.length === 0
-                    onOpenAudioRequested: opener => window.openAudio(opener)
-                }
-                NowPlayingState {
-                    id: nowPlayingState
-                    parent: window.inlinePages ? heroRegion : stateLayer.contentItem
-                    anchors.centerIn: window.inlinePages ? undefined : parent
-                    x: window.inlinePages ? 22 : 0
-                    y: window.inlinePages ? 22 : 0
-                    width: window.inlinePages ? Math.max(0, parent.width - 44) : Math.min(parent.width, 560)
-                    visible: window.presenter.playbackState !== PlayerPresenter.Unloaded && window.presenter.playbackState !== PlayerPresenter.Error
-                    contract: window.uiContract
-                    presenter: window.presenter
-                    compact: lyricsPanel.visible || stateLayer.height < 400
-                    onOpenAudioRequested: opener => window.openAudio(opener)
-                    onDetailsRequested: opener => window.openTrackDetails(opener)
-                }
-                ErrorState {
-                    id: errorState
-                    parent: window.inlinePages ? heroRegion : stateLayer.contentItem
-                    anchors.centerIn: window.inlinePages ? undefined : parent
-                    x: window.inlinePages ? 22 : 0
-                    y: window.inlinePages ? 22 : 0
-                    width: window.inlinePages ? Math.max(0, parent.width - 44) : implicitWidth
-                    visible: window.presenter.playbackState === PlayerPresenter.Error
-                    contract: window.uiContract
-                    presenter: window.presenter
-                    labels: errorText
-                    locationFocusRestoreAllowed: window.active && window.windowShortcutsEnabled && !preferencesPanel.visible
-                    onAudioFilesOpening: opener => window.prepareAudioSelection(opener)
-                    onDetailsRequested: opener => window.openTrackDetails(opener)
+                Loader {
+                    id: fixtureStates
+                    anchors.fill: parent
+                    active: !window.inlinePages
+                    sourceComponent: Item {
+                        property alias emptyState: frozenEmptyState
+                        property alias nowPlayingState: frozenNowPlayingState
+                        property alias errorState: frozenErrorState
+                        EmptyState {
+                            id: frozenEmptyState
+                            anchors.centerIn: parent
+                            width: Math.min(parent.width > 0 ? parent.width : 560, 560)
+                            compact: stateLayer.height < 400
+                            visible: window.presenter.playbackState === PlayerPresenter.Unloaded
+                            contract: window.uiContract
+                            openingEnabled: !window.presenter.exiting && !window.presenter.selectingAudioFiles && window.presenter.locatingOccurrenceId.length === 0
+                            onOpenAudioRequested: opener => window.openAudio(opener)
+                        }
+                        NowPlayingState {
+                            id: frozenNowPlayingState
+                            anchors.centerIn: parent
+                            width: Math.min(parent.width, 560)
+                            visible: window.presenter.playbackState !== PlayerPresenter.Unloaded && window.presenter.playbackState !== PlayerPresenter.Error
+                            contract: window.uiContract
+                            presenter: window.presenter
+                            compact: lyricsPanel.visible || stateLayer.height < 400
+                            onOpenAudioRequested: opener => window.openAudio(opener)
+                            onDetailsRequested: opener => window.openTrackDetails(opener)
+                        }
+                        ErrorState {
+                            id: frozenErrorState
+                            anchors.centerIn: parent
+                            width: implicitWidth
+                            visible: window.presenter.playbackState === PlayerPresenter.Error
+                            contract: window.uiContract
+                            presenter: window.presenter
+                            labels: errorText
+                            locationFocusRestoreAllowed: window.active && window.windowShortcutsEnabled && !preferencesPanel.visible
+                            onAudioFilesOpening: opener => window.prepareAudioSelection(opener)
+                            onDetailsRequested: opener => window.openTrackDetails(opener)
+                        }
+                    }
                 }
             }
         }
@@ -861,6 +839,7 @@ ApplicationWindow {
             id: audioSelectionStatus
             objectName: "audio-file-selection-status"
             Layout.fillWidth: true
+            Layout.topMargin: window.inlinePages ? 8 : 0
             visible: window.presenter.selectingAudioFiles || window.presenter.audioFileSelectionFailed
             text: window.presenter.selectingAudioFiles ? sourceImportText.selectingFiles : sourceImportText.fileSelectionFailed
             textFormat: Text.PlainText
@@ -939,8 +918,8 @@ ApplicationWindow {
             presenter: window.presenter
             compact: window.width <= window.uiContract.compactWidth
             enabled: !window.presenter.exiting && (playbackEnabled || window.presenter.canGoPrevious || window.presenter.canGoNext || queueAvailable || lyricsAvailable)
-            queueCount: queuePreview.count
-            queueAvailable: (window.presenter.queueLoaded && queuePreview.count > 0 || window.roomGuest) && !window.presenter.exiting
+            queueCount: window.homeQueueCount
+            queueAvailable: (window.presenter.queueLoaded && window.homeQueueCount > 0 || window.roomGuest) && !window.presenter.exiting
             lyricsAvailable: lyricsPanel.readerAvailable
             room: window.room
             onQueueRequested: window.setQueueOpen(true)

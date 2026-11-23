@@ -566,6 +566,22 @@ TestCase {
         tryVerify(() => line.visible);
         compare(Math.round(footer.y - (point(line).y + line.height)), 12);
     }
+    // Plain-text lyrics show no verse line: the panel is visible with no height, and the layout spacing must not
+    // add a gap, so the page ends exactly 30 px above the player.
+    function test_hiddenVerseLineAddsNoGap() {
+        mountShellBackends();
+        captureLyrics.hasSyncedLyrics = false;
+        captureLyrics.plainText = "Letra em texto simples";
+        shell.lyrics = captureLyrics;
+        loadQueue();
+        const panel = findChild(shell, "lyrics-panel");
+        tryVerify(() => panel.visible);
+        verify(waitForPolish(shell));
+        compare(panel.implicitHeight, 0);
+        const layer = findChild(shell, "state-layer");
+        const footer = findChild(shell, "player-footer");
+        compare(Math.round(footer.y - (point(layer).y + layer.height)), 30);
+    }
     // Captures of the plan 3 scenes: the verse line, both drawers, the empty queue and the clear confirmation.
     // They are evidence for visual review and are saved only when RC_MUSIC_UI_ARTIFACT_DIR is set.
     readonly property var captureVerses: ["A maré trouxe o vidro de volta", "E a areia guardou o teu nome", "Eu contei as ondas até a hora", "Em que o céu se acende e some", "Maré de vidro, leva devagar", "O que eu não soube te dizer", "Se a luz voltar pelo mar", "Eu ainda vou estar aqui pra ver", "A cidade dorme na janela", "E o rádio insiste na canção"]

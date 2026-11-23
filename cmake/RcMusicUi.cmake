@@ -131,6 +131,7 @@ function(rc_music_add_ui target support qml_output)
             ShellIcon.qml
             PageHeader.qml
             WorkspaceHeader.qml
+            HomePage.qml
             QueuePreview.qml
             SideNavigation.qml
             NavigationText.qml
