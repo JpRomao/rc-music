@@ -110,6 +110,12 @@ class FakeLocator final : public AudioFileLocator {
             completion(std::move(result));
     }
 };
+LibraryBinding::Paths numberedTracks(int count) {
+    LibraryBinding::Paths paths;
+    for (int index = 1; index <= count; ++index)
+        paths.push_back(Path{std::string{"C:/Music/"} + (index < 10 ? "0" : "") + std::to_string(index) + ".mp3"});
+    return paths;
+}
 LibraryLoadResult twoRecords() {
     return {
         .snapshot = {{{1, track(1), "Sumida", "", "", 1000, false}, {2, track(2), "Presente", "", "", 2000, true}}, 3},
@@ -322,6 +328,39 @@ class LibraryBindingTests final : public QObject {
         QCOMPARE(h.binding.visibleCount(), matches);
         QCOMPARE(h.binding.model()->property("count").toInt(), matches);
         QCOMPARE(h.binding.count(), 2);
+    }
+    void recentModelIgnoresTheFilterAndListsTheNewestFirst() {
+        Harness h;
+        h.startAndWait();
+        h.binding.admit(numberedTracks(14));
+        QTRY_COMPARE(h.binding.count(), 14);
+        auto* recent = qobject_cast<LibraryListModel*>(h.binding.recentModel());
+        QVERIFY(recent);
+        QCOMPARE(LibraryBinding::recentLimit, 12);
+        QCOMPARE(recent->rowCount(), 12);
+        QCOMPARE(recent->data(recent->index(0, 0), LibraryListModel::TitleRole).toString(), QStringLiteral("14"));
+        QCOMPARE(recent->data(recent->index(11, 0), LibraryListModel::TitleRole).toString(), QStringLiteral("03"));
+        h.binding.setFilterText(QStringLiteral("nada"));
+        QCOMPARE(h.binding.visibleCount(), 0);
+        QCOMPARE(recent->rowCount(), 12);
+    }
+    void recentModelFollowsRemovals() {
+        Harness h;
+        h.startAndWait();
+        h.binding.admit(numberedTracks(14));
+        QTRY_COMPARE(h.binding.count(), 14);
+        auto* recent = qobject_cast<LibraryListModel*>(h.binding.recentModel());
+        QVERIFY(recent);
+        const auto newest = recent->data(recent->index(0, 0), LibraryListModel::RecordIdRole).toString();
+        QVERIFY(h.binding.remove(newest));
+        QTRY_COMPARE(h.binding.count(), 13);
+        QCOMPARE(recent->data(recent->index(0, 0), LibraryListModel::TitleRole).toString(), QStringLiteral("13"));
+    }
+    void recentModelIsEmptyBeforeLoading() {
+        Harness h;
+        auto* recent = qobject_cast<LibraryListModel*>(h.binding.recentModel());
+        QVERIFY(recent);
+        QCOMPARE(recent->rowCount(), 0);
     }
     void enqueueingSendsTheFileToTheQueueWithoutChangingTheLibrary() {
         Harness h;

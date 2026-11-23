@@ -31,6 +31,8 @@ class LibraryBinding final : public QObject {
     Q_PROPERTY(bool canRetrySave READ canRetrySave NOTIFY changed)
     Q_PROPERTY(QString statusText READ statusText NOTIFY changed)
     Q_PROPERTY(QObject* model READ model CONSTANT)
+    // The newest confirmed records (never filtered), for the Home shelf.
+    Q_PROPERTY(QObject* recentModel READ recentModel CONSTANT)
     Q_PROPERTY(QString filterText READ filterText WRITE setFilterText NOTIFY changed)
     Q_PROPERTY(int visibleCount READ visibleCount NOTIFY changed)
     Q_PROPERTY(bool canLocate READ canLocate NOTIFY changed)
@@ -39,6 +41,7 @@ class LibraryBinding final : public QObject {
     // Cover image URL prefix (append the record ID); empty without a cover reader.
     Q_PROPERTY(QString artworkBase READ artworkBase NOTIFY changed)
   public:
+    static constexpr int recentLimit = 12;
     using Paths = std::vector<std::filesystem::path>;
     // Appends to the queue without playback (the playlist path of the presenter).
     using QueueAppender = std::function<bool(Paths)>;
@@ -73,6 +76,8 @@ class LibraryBinding final : public QObject {
     [[nodiscard]] LibrarySnapshot confirmedSnapshot() const;
     // List view projection of the confirmed catalog (a LibraryListModel).
     [[nodiscard]] QObject* model() const;
+    // The recentLimit confirmed records with the highest IDs, newest first; ignores the filter.
+    [[nodiscard]] QObject* recentModel() const;
     [[nodiscard]] QString filterText() const;
     void setFilterText(const QString& text);
     [[nodiscard]] int visibleCount() const;

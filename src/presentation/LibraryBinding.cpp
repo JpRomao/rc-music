@@ -10,7 +10,9 @@
 #include <QPointer>
 #include <QtConcurrent/QtConcurrentRun>
 
+#include <algorithm>
 #include <atomic>
+#include <functional>
 #include <optional>
 #include <unordered_set>
 #include <utility>
@@ -101,6 +103,7 @@ struct LibraryBinding::Impl final {
     std::shared_ptr<LibraryStore> store;
     QueueAppender appender;
     LibraryListModel model;
+    LibraryListModel recent;
     QString filter;
     LocalLibrary confirmed;
     // Confirmed catalog plus admissions not yet acknowledged by the store.
@@ -252,6 +255,11 @@ struct LibraryBinding::Impl final {
             saved(result.saved, result.written);
         // The list shows confirmed records only.
         model.setRecords(confirmed.snapshot().records);
+        auto newest = confirmed.snapshot().records;
+        std::ranges::sort(newest, std::greater<>{}, &LibraryRecord::id);
+        if (newest.size() > static_cast<std::size_t>(LibraryBinding::recentLimit))
+            newest.resize(static_cast<std::size_t>(LibraryBinding::recentLimit));
+        recent.setRecords(newest);
         if (artwork_index)
             artwork_index->update(confirmed.snapshot());
         // A failure waits for new ingress or an explicit retry; it never loops.
@@ -441,6 +449,7 @@ bool LibraryBinding::retrySave() {
     return impl_->busy;
 }
 QObject* LibraryBinding::model() const { return &impl_->model; }
+QObject* LibraryBinding::recentModel() const { return &impl_->recent; }
 QString LibraryBinding::filterText() const { return impl_->filter; }
 void LibraryBinding::setFilterText(const QString& text) {
     if (text == impl_->filter)
