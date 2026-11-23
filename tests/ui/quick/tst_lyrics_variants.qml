@@ -1166,7 +1166,13 @@ TestCase {
         tryCompare(presenter, "hasCurrentTrack", false);
         tryCompare(findChild(shell, "lyrics-panel"), "visible", true);
         tryCompare(panel, "visible", false); // Changing the target revokes the old modal.
-        openPanel();
+        // Without a current track the drawer does not open: the verse line's notice leads to the pending change.
+        verify(!findChild(shell, "player-lyrics").enabled);
+        const review = findChild(shell, "lyrics-line-review");
+        tryVerify(() => review.visible && review.enabled);
+        mouseClick(review);
+        tryCompare(panel, "visible", true);
+        verify(waitForPolish(shell));
         mouseClick(findChild(shell, "lyrics-variant-retry"));
         lastCall("retry");
         const abandon = findChild(shell, "lyrics-variant-reload");

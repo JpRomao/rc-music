@@ -290,6 +290,34 @@ TestCase {
         tryVerify(() => !button.enabled);
         compare(button.disabledReason, "Esta faixa ainda não tem letra.");
     }
+    function test_playerLyricsButtonNeedsACurrentTrack_data() {
+        return [
+            {
+                tag: "queued save notice"
+            },
+            {
+                tag: "pending version change"
+            }
+        ];
+    }
+    // A notice keeps the panel shown without a current track, but there is no track for the drawer to show.
+    function test_playerLyricsButtonNeedsACurrentTrack(data) {
+        const button = findChild(shell, "player-lyrics");
+        tryVerify(() => button.enabled);
+        verify(presenter.clearQueue());
+        tryVerify(() => !presenter.hasCurrentTrack);
+        const panel = findChild(shell, "lyrics-panel");
+        if (data.tag === "queued save notice")
+            panel.queuedSaveFeedback = true;
+        else
+            lyrics.variantsHasPendingChange = true;
+        tryVerify(() => panel.visible, 5000, "the notice keeps the panel shown");
+        verify(waitForRendering(shell.contentItem));
+        verify(!button.enabled, "no current track, no drawer");
+        verify(!panel.readerAvailable);
+        panel.showReader(button);
+        verify(!findChild(shell, "lyrics-reader").visible);
+    }
     function test_verseLineShowsCurrentAndNextVerse() {
         const line = findChild(shell, "lyrics-line");
         verify(line && line.visible);

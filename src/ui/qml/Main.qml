@@ -894,6 +894,7 @@ ApplicationWindow {
             contract: window.uiContract
             lyrics: window.lyrics
             trackIdentity: window.presenter.currentOccurrenceId
+            hasCurrentTrack: window.presenter.hasCurrentTrack
             readerCanSeek: window.presenter.seekable && !transport.roomGuest
             readerBottomInset: playerFooter.height
             readerTextSize: window.presenter.lyricsTextSize

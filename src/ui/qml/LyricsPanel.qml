@@ -78,8 +78,9 @@ Item {
     property Item dialogOpener: null
     readonly property bool readerOpen: reader.visible
     // The persistent player opens the same reader as the panel's own action. The Aurora drawer opens even
-    // without lyrics, on its empty state.
-    readonly property bool readerAvailable: enabled && (editorial ? (lyrics !== null && visible) : (synchronizedLyrics || plainLyrics))
+    // without lyrics, on its empty state, but only for a current track: a notice alone shows no track.
+    property bool hasCurrentTrack: false
+    readonly property bool readerAvailable: enabled && (editorial ? (lyrics !== null && hasCurrentTrack) : (synchronizedLyrics || plainLyrics))
     function showReader(opener) {
         if (!readerAvailable)
             return;
