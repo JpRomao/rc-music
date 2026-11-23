@@ -158,6 +158,22 @@ Ordem de Tab fixada por `tst_aurora_navigation::test_tabFollowsSidebarHeaderPage
 
 Capturas da fatia, em `out/product/ui-redesign-captures/casca` (via `RC_MUSIC_UI_ARTIFACT_DIR`): `aurora-redesign-{wide,medium,minimum}-{light,dark}.png` (`tst_aurora_composition`) e `aurora-native-{light,dark}.png` (`tst_aurora_navigation`). Os dois testes montam os backends falsos e o perfil antes de capturar, então a lateral mostra as contagens de Biblioteca e Playlists, o ícone de janela externa de Navegar e o chip do perfil (na lateral compacta, só os ícones).
 
+## Gavetas e linha do verso (fatia 3)
+
+Ids novos que os testes Quick usam no Aurora:
+
+- Fila (`queue-panel`): cabeçalho `queue-header` com `queue-header-close` ("Fechar fila"); barra com `queue-add`, `queue-move-up`, `queue-move-down`, `queue-remove`, `queue-room-upload` e `queue-clear` ("Limpar fila…", botão discreto em `errorColor`); linhas de 56 px, com o ícone de onda na faixa tocando e o aviso em `queue-row-status`; estado vazio `queue-empty` com `queue-empty-primary` ("Abrir áudio"); confirmação `queue-clear-confirmation` (diálogo de perigo, com `-cancel` e `-confirm`). A gaveta continua aberta quando a fila esvazia, mas nunca abre vazia. O Tab fica preso na gaveta por `queue-focus-wrap-start` e `queue-focus-wrap-end`.
+- Linha do verso: `lyrics-line` (48 px; 40 px na janela compacta), com `lyrics-line-current`, `lyrics-line-next`, `lyrics-line-open`, `lyrics-line-status` e `lyrics-line-review`. Tem o modo verso e o modo aviso.
+- Gaveta da Letra: `lyrics-drawer` com `lyrics-drawer-close` ("Fechar letra"), `lyrics-drawer-versions`, `lyrics-drawer-search`, `lyrics-drawer-more` (que abre `lyrics-drawer-romaji`), `lyrics-drawer-smaller` e `lyrics-drawer-larger`, `lyrics-drawer-status` e o estado vazio `lyrics-drawer-empty` (`-primary` "Buscar letra", `-secondary` "Adicionar versão").
+
+Ordem de Tab com a linha do verso (`tst_aurora_navigation`): lateral, topo, página, `lyrics-line-open`, player. Sem linha, a página segue direto para o player. Na Atividade, o Tab também alcança a linha.
+
+Gavetas exclusivas: abrir uma fecha a outra, e Ctrl+L abre a Fila. A Fila prende o Tab. A Letra não prende: o Tab sai do último controle para o player, o Shift+Tab sai do primeiro para a linha do verso (ou para `player-lyrics`, sem linha), e o Tab de fora não entra nela. Enter em `lyrics-line-open` ou `player-lyrics` devolve o foco à gaveta; Esc fecha e devolve o foco a quem a abriu.
+
+F1/F2 chamam o presenter direto no Aurora: `queue-modes` fica oculto na gaveta, e `player-shuffle` e `player-repeat` são os controles marcáveis.
+
+Capturas da fatia, em `out/product/ui-redesign-captures/gavetas` (via `RC_MUSIC_UI_ARTIFACT_DIR`, `tst_aurora_composition::test_drawerCaptures`): `aurora-gavetas-<cena>-<largura>-<tema>.png`, com cena em `verse-line`, `lyrics-drawer`, `lyrics-empty`, `queue` (8 faixas, a primeira indisponível), `queue-empty` e `queue-clear`, largura 1440 (1440×900) ou 720 (720×520) e tema `light` ou `dark`. Usam só backends falsos e não tocam som.
+
 ## Limites
 
 ### Geometria durante metadata e capa

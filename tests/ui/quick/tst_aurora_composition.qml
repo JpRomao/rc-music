@@ -36,6 +36,59 @@ TestCase {
         property bool lyricsCopyProtected: false
     }
     QtObject {
+        id: captureLyrics
+        property string title: "Maré de Vidro"
+        property string artist: "Lia Campos"
+        property string album: "Depois da Chuva"
+        property int durationMs: 217000
+        property string statusText: "Letra sincronizada"
+        property string currentLine: "Maré de vidro, leva devagar"
+        property string previousLine: "Em que o céu se acende e some"
+        property string nextLine: "O que eu não soube te dizer"
+        property string plainText: ""
+        property bool hasSyncedLyrics: true
+        property bool busy: false
+        property bool canSearch: true
+        property bool lyricsCopyProtected: false
+        property bool lyricFindConfigured: false
+        property var variants: []
+        property bool variantsReady: true
+        property bool variantsCanEdit: true
+        property bool variantsBusy: false
+        property string variantsStatusText: ""
+        property bool variantsCanRetrySave: false
+        property bool variantsHasPendingChange: false
+        property string selectedVariantId: ""
+        property var readerVerses: []
+        property int activeReaderVerse: -1
+        property string romajiSourceRevision: ""
+        property string romajiStatusText: ""
+        property bool canGenerateRomaji: false
+        property string lyricsAttribution: ""
+        property bool recordingSearchBusy: false
+        property string recordingSearchStatus: ""
+        property string recordingSearchRevision: ""
+        property var recordingCandidates: []
+        property bool canSaveRecording: false
+        signal romajiDraftReady(string token, string content)
+        function generateRomaji() {
+            return "";
+        }
+        function discardRomaji(token) {
+        }
+        function searchRecordings(title, artist, album, duration) {
+            return true;
+        }
+        function previewRecording(index, format, revision) {
+            return "";
+        }
+        function useRecording(index, format, revision) {
+            return false;
+        }
+        function cancelRecordingSearch() {
+        }
+    }
+    QtObject {
         id: fakeLibrary
         property bool ready: true
         property bool busy: false
@@ -512,6 +565,111 @@ TestCase {
         const line = findChild(shell, "lyrics-line");
         tryVerify(() => line.visible);
         compare(Math.round(footer.y - (point(line).y + line.height)), 12);
+    }
+    // Captures of the plan 3 scenes: the verse line, both drawers, the empty queue and the clear confirmation.
+    // They are evidence for visual review and are saved only when RC_MUSIC_UI_ARTIFACT_DIR is set.
+    readonly property var captureVerses: ["A maré trouxe o vidro de volta", "E a areia guardou o teu nome", "Eu contei as ondas até a hora", "Em que o céu se acende e some", "Maré de vidro, leva devagar", "O que eu não soube te dizer", "Se a luz voltar pelo mar", "Eu ainda vou estar aqui pra ver", "A cidade dorme na janela", "E o rádio insiste na canção"]
+    // With missingFirst the first file is gone: the player moves on to the second and the first row shows the status.
+    function loadEightTracks(missingFirst) {
+        const names = ["Maré de Vidro", "Luz de Inverno", "Cais", "Papel de Seda", "Arquivo movido", "Estação Norte", "Janela", "Rádio Distante"];
+        driver.enqueueLocalSelection(names.map(name => "C:/Música/" + name + ".mp3"));
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        if (missingFirst) {
+            // The presenter itself moves on to the next occurrence after the failed load.
+            const first = presenter.currentOccurrenceId;
+            driver.publishLocalSourceUnavailable();
+            tryVerify(() => presenter.currentOccurrenceId !== first);
+            tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        }
+        driver.publishLocalPlaying();
+        driver.publishLocalPosition(41000, 217000);
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+    }
+    function saveCapture(scene, data) {
+        shell.update();
+        verify(waitForRendering(shell.contentItem));
+        const image = grabImage(shell.contentItem);
+        compare(image.width, data.width);
+        compare(image.height, data.height);
+        const artifact = driver.artifactPath("aurora-gavetas-" + scene + "-" + data.width + "-" + (data.dark ? "dark" : "light") + ".png");
+        if (artifact.length > 0)
+            image.save(artifact);
+    }
+    function test_drawerCaptures_data() {
+        const rows = [];
+        for (const scene of ["verse-line", "lyrics-drawer", "lyrics-empty", "queue", "queue-empty", "queue-clear"]) {
+            for (const size of [[1440, 900], [720, 520]]) {
+                for (const dark of [false, true]) {
+                    rows.push({
+                        tag: scene + "-" + size[0] + "-" + (dark ? "dark" : "light"),
+                        scene: scene,
+                        width: size[0],
+                        height: size[1],
+                        dark: dark
+                    });
+                }
+            }
+        }
+        return rows;
+    }
+    function test_drawerCaptures(data) {
+        const lyricsScene = data.scene.startsWith("lyrics") || data.scene === "verse-line";
+        if (lyricsScene) {
+            const empty = data.scene === "lyrics-empty";
+            captureLyrics.hasSyncedLyrics = !empty;
+            captureLyrics.readerVerses = empty ? [] : testCase.captureVerses.map((text, index) => ({
+                        text: text,
+                        timeMs: index * 20000
+                    }));
+            captureLyrics.activeReaderVerse = empty ? -1 : 4;
+            captureLyrics.title = empty ? "Luz de Inverno" : "Maré de Vidro";
+            captureLyrics.statusText = empty ? "" : "Letra sincronizada";
+        }
+        mountShellBackends();
+        if (lyricsScene)
+            shell.lyrics = captureLyrics;
+        shell.width = data.width;
+        shell.height = data.height;
+        presenter.setThemePreference(data.dark ? PlayerPresenter.DarkTheme : PlayerPresenter.LightTheme);
+        tryCompare(contract, "darkTheme", data.dark);
+        tryCompare(shell.contentItem, "width", data.width);
+        tryCompare(shell.contentItem, "height", data.height);
+        loadEightTracks(data.scene === "queue");
+        verify(waitForPolish(shell));
+        const audio = commands();
+        if (data.scene === "verse-line") {
+            tryVerify(() => findChild(shell, "lyrics-line").visible);
+        } else if (lyricsScene) {
+            const button = findChild(shell, "player-lyrics");
+            tryVerify(() => button.enabled);
+            mouseClick(button);
+            tryCompare(findChild(shell, "lyrics-reader"), "opened", true);
+            tryVerify(() => findChild(shell, "lyrics-drawer").visible);
+            if (data.scene === "lyrics-empty")
+                tryVerify(() => findChild(shell, "lyrics-drawer-empty").visible);
+        } else {
+            shell.setQueueOpen(true);
+            const drawer = findChild(shell, "queue-panel");
+            tryVerify(() => drawer.visible);
+            const list = findChild(drawer, "queue-list");
+            tryVerify(() => list.itemAtIndex(0) !== null);
+            if (data.scene === "queue") {
+                tryVerify(() => findChild(list.itemAtIndex(0), "queue-row-status").visible);
+            } else if (data.scene === "queue-empty") {
+                verify(presenter.clearQueue());
+                tryVerify(() => findChild(drawer, "queue-empty").visible);
+            } else if (data.scene === "queue-clear") {
+                const clear = findChild(drawer, "queue-clear");
+                tryVerify(() => clear.visible && clear.enabled);
+                clear.Accessible.pressAction();
+                tryVerify(() => findChild(shell, "queue-clear-confirmation").visible);
+            }
+        }
+        wait(300);
+        verify(waitForPolish(shell));
+        saveCapture(data.scene, data);
+        compare(commands().slice(2), audio.slice(2), "the captures never start or stop the audio");
     }
     function test_emptyHomeDoesNotInventACollection() {
         const list = findChild(shell, "home-queue-list");
