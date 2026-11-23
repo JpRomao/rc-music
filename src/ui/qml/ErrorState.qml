@@ -113,7 +113,7 @@ ColumnLayout {
         text: root.presenter.contextTitle
         textFormat: Text.PlainText
         elide: Text.ElideRight
-        horizontalAlignment: Text.AlignHCenter
+        horizontalAlignment: root.editorial ? Text.AlignHCenter : Text.AlignLeft
         font: root.editorial ? Qt.font({
             family: root.contract.bodyFontFamily,
             pixelSize: root.contract.typeCaption

@@ -56,6 +56,14 @@ TestCase {
         }
     }
 
+    Component {
+        id: fixtureShellComponent
+        Main {
+            uiContract: testShellUiContract // qmllint disable unqualified
+            presenter: testPlayerPresenter // qmllint disable unqualified
+        }
+    }
+
     property var shell
 
     function init() {
@@ -129,6 +137,22 @@ TestCase {
         compare(testScenarioDriver.localLoadCount(), 2); // qmllint disable unqualified
         compare(testLocalPlayerPresenter.currentTitle, "Recuperada pela ação ☕"); // qmllint disable unqualified
         verify(!testLocalPlayerPresenter.hasError); // qmllint disable unqualified
+    }
+
+    function test_fixtureErrorKeepsItsContextLineAlignment() {
+        shell.destroy();
+        shell = createTemporaryObject(fixtureShellComponent, null);
+        verify(shell);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(testPlayerPresenter, "playbackState", PlayerPresenter.Playing); // qmllint disable unqualified
+        verify(testScenarioDriver.enterUnavailable()); // qmllint disable unqualified
+        tryCompare(testPlayerPresenter, "playbackState", PlayerPresenter.Error); // qmllint disable unqualified
+        const context = findChild(shell, "error-context-title");
+        verify(context && context.visible);
+        compare(context.horizontalAlignment, Text.AlignLeft);
+        compare(findChild(shell, "error-title").horizontalAlignment, Text.AlignHCenter);
+        compare(findChild(shell, "error-body").horizontalAlignment, Text.AlignHCenter);
+        verify(!findChild(shell, "error-icon-circle").visible);
     }
 
     function test_auroraErrorUsesTheEmptyStateLook() {
