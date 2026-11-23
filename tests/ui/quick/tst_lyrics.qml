@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtTest
 import MusicPlayer.M0
 
@@ -92,6 +93,20 @@ TestCase {
             uiContract: testProductUiContract // qmllint disable unqualified
             presenter: testCase.presenter
             lyrics: testCase.lyricsBackend
+        }
+    }
+    // The M0 reader on its own, as the fixture mounts it: no editorial drawer around it.
+    Component {
+        id: frozenPanelHost
+        ApplicationWindow {
+            width: 720
+            height: 520
+            visible: true
+            LyricsPanel {
+                width: parent.width
+                contract: testShellUiContract // qmllint disable unqualified
+                lyrics: testCase.lyricsBackend
+            }
         }
     }
     function init() {
@@ -612,6 +627,33 @@ TestCase {
         tryCompare(shell.presenter, "lyricsTextSize", size + 2);
         clickDrawer("lyrics-drawer-smaller");
         tryCompare(shell.presenter, "lyricsTextSize", size);
+    }
+    // Qt's Basic Dialog draws a bold title band from Dialog.title: the drawer has its own header, so the track
+    // title must not reach that band.
+    function test_drawerShowsTheTitleOnlyInItsOwnHeader() {
+        const reader = openDrawer();
+        compare(drawerPart("lyrics-drawer", "drawer-title").text, "Original song");
+        verify(!reader.header || !reader.header.visible, "no second title band above the drawer header");
+    }
+    function test_frozenReaderKeepsNoTitleBandWithATitledTrack() {
+        lyrics.readerVerses = [
+            {
+                text: "One",
+                timeMs: 1000
+            }
+        ];
+        const host = createTemporaryObject(frozenPanelHost, null);
+        verify(host);
+        host.requestActivate();
+        tryCompare(host, "active", true);
+        const button = findChild(host, "lyrics-open-reader");
+        tryVerify(() => button.visible && button.enabled);
+        mouseClick(button);
+        const reader = findChild(host, "lyrics-reader");
+        tryCompare(reader, "opened", true);
+        compare(lyrics.title, "Original song");
+        verify(!reader.header || !reader.header.visible, "the M0 reader has no title band");
+        compare(reader.implicitHeaderHeight, 0);
     }
     function test_reviewReplacesVersionsInTheToolbarAndStillFits() {
         lyrics.variantsHasPendingChange = true;

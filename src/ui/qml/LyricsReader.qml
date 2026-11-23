@@ -33,6 +33,8 @@ Dialog {
     property bool editorial: false
     property int drawerWidth: 400
     property string eyebrow
+    // Not Dialog.title: the Basic style draws that one as a second, unstyled band above the drawer header.
+    property string drawerTitle
     property string subtitle
     property string statusText
     property bool versionsAvailable: false
@@ -191,7 +193,7 @@ Dialog {
                     controlId: "lyrics-drawer"
                     closeText: lyricsText.closeDrawer
                     eyebrow: root.eyebrow
-                    title: root.title
+                    title: root.drawerTitle
                     subtitle: root.subtitle
                     onCloseRequested: root.close()
                 }

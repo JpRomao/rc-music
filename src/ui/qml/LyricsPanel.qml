@@ -421,7 +421,7 @@ Item {
         editorial: root.editorial
         drawerWidth: root.drawerWidth
         eyebrow: root.synchronizedLyrics ? lyricsText.synchronizedEyebrow : lyricsText.lyricsEyebrow
-        title: root.lyrics ? (root.lyrics.title ?? "") : ""
+        drawerTitle: root.lyrics ? (root.lyrics.title ?? "") : ""
         subtitle: root.drawerSubtitle
         statusText: root.drawerStatus
         versionsAvailable: root.variantsAvailable
