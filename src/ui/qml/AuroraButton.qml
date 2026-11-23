@@ -139,8 +139,8 @@ Button {
         enabled: control.enabled
         hovered: control.hovered
         pressed: control.down
-        // O texto em errorColor sobre Seleção cairia abaixo de 4,5:1 com a camada inteira.
-        layerScale: control.kind === AuroraButton.Danger ? 0.5 : 1
+        // O texto em errorColor sobre Seleção ou Hover cairia abaixo de 4,5:1 com a camada inteira.
+        layerScale: control.kind === AuroraButton.Danger || control.errorInk ? 0.5 : 1
     }
 
     AuroraFocusRing {

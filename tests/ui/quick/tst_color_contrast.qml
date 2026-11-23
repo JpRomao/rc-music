@@ -29,6 +29,102 @@ TestCase {
         }
     }
 
+    // Just enough of a lyrics binding for the Aurora shell to offer the verse line and the lyrics drawer.
+    QtObject {
+        id: fakeLyrics
+        property string title: "Cantiga"
+        property string artist: "Artista"
+        property string album: "Disco"
+        property int durationMs: 180000
+        property string statusText: ""
+        property string currentLine: "Primeiro verso"
+        property string previousLine: ""
+        property string nextLine: "Segundo verso"
+        property string plainText: ""
+        property bool hasSyncedLyrics: true
+        property bool busy: false
+        property bool canSearch: true
+        property bool lyricsCopyProtected: false
+        property bool lyricFindConfigured: false
+        property var variants: []
+        property bool variantsReady: true
+        property bool variantsCanEdit: true
+        property bool variantsBusy: false
+        property string variantsStatusText: ""
+        property bool variantsCanRetrySave: false
+        property bool variantsHasPendingChange: false
+        property string selectedVariantId: ""
+        property var readerVerses: [
+            {
+                text: "Verso passado",
+                timeMs: 1000
+            },
+            {
+                text: "Verso atual",
+                timeMs: 2000
+            },
+            {
+                text: "Verso seguinte",
+                timeMs: 3000
+            }
+        ]
+        property int activeReaderVerse: 1
+        property string romajiSourceRevision: ""
+        property string romajiStatusText: ""
+        property bool canGenerateRomaji: false
+        property string lyricsAttribution: ""
+        property bool recordingSearchBusy: false
+        property string recordingSearchStatus: ""
+        property string recordingSearchRevision: ""
+        property var recordingCandidates: []
+        property bool canSaveRecording: false
+        signal romajiDraftReady(string token, string content)
+    }
+
+    Component {
+        id: auroraShellComponent
+        Main {
+            uiContract: testProductUiContract // qmllint disable unqualified
+            presenter: testLocalPlayerPresenter // qmllint disable unqualified
+            lyrics: fakeLyrics
+        }
+    }
+
+    // Replaces the fixture shell with the Aurora one, playing the second of three tracks.
+    function openAurora(dark) {
+        shell.destroy();
+        shell = null;
+        driver.resetLocalScenario();
+        driver.setSystemAppearance(dark, true);
+        shell = createTemporaryObject(auroraShellComponent, null);
+        verify(shell);
+        shell.requestActivate();
+        tryVerify(function () {
+            return testCase.shell.active;
+        });
+        compare(shell.uiContract.darkTheme, dark);
+        driver.enqueueLocalSelection(["C:/Contrast/Primeira.mp3", "C:/Contrast/Segunda.mp3", "C:/Contrast/Terceira.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        verify(presenter.nextTrack());
+        tryCompare(presenter, "currentQueueIndex", 1);
+        verify(waitForPolish(shell));
+        return shell.uiContract;
+    }
+
+    function openQueueDrawer() {
+        shell.setQueueOpen(true);
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        const list = findChild(drawer, "queue-list");
+        tryCompare(list, "count", 3);
+        tryVerify(() => list.itemAtIndex(2) !== null);
+        verify(waitForPolish(shell));
+        return drawer;
+    }
+
     function luminance(color) {
         function linear(value) {
             return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
@@ -186,5 +282,157 @@ TestCase {
         verify(bar.enabled && bar.opacity === 1);
         const background = Qt.darker(contract.surfaceColor, 1);
         verifyContrast(composite(thumb.color, background, thumb.opacity), background, 3, "active queue thumb including opacity");
+    }
+
+    function test_verseLineTextContrast_data() {
+        return themes();
+    }
+    function test_verseLineTextContrast(data) {
+        const aurora = openAurora(data.dark);
+        const line = findChild(shell, "lyrics-line");
+        verify(line && line.visible);
+        const surface = Qt.darker(aurora.surfaceColor, 1);
+        const background = composite(Qt.color(line.color), surface, 1);
+        verify(Qt.colorEqual(background, surface), "the line sits on the surface");
+        for (const name of ["lyrics-line-current", "lyrics-line-next"]) {
+            const text = findChild(line, name);
+            verify(text && text.visible, name);
+            verifyContrast(Qt.color(text.color), background, 4.5, name + " on the verse line, " + data.tag);
+        }
+        const icon = findChild(line, "lyrics-line-icon");
+        verify(icon && icon.visible);
+        verifyContrast(Qt.color(icon.color), background, 3, "verse line icon, " + data.tag);
+    }
+
+    function test_drawerCurrentVerseContrast_data() {
+        return themes();
+    }
+    function test_drawerCurrentVerseContrast(data) {
+        const aurora = openAurora(data.dark);
+        mouseClick(findChild(shell, "player-lyrics"));
+        const reader = findChild(shell, "lyrics-reader");
+        tryCompare(reader, "opened", true);
+        const list = findChild(reader, "lyrics-reader-verses");
+        tryVerify(() => list.itemAtIndex(0) && list.itemAtIndex(1) && list.itemAtIndex(2));
+        findChild(shell, "lyrics-drawer-close").forceActiveFocus(Qt.TabFocusReason);
+        const surface = Qt.darker(aurora.surfaceColor, 1);
+        const current = list.itemAtIndex(1);
+        verify(Qt.colorEqual(current.contentItem.color, aurora.accentColor));
+        const background = composite(Qt.color(current.background.color), surface, 1);
+        verifyContrast(Qt.color(current.contentItem.color), background, 4.5, "current verse on the lyrics drawer, " + data.tag);
+        verifyContrast(Qt.color(list.itemAtIndex(0).contentItem.color), surface, 4.5, "past verse on the lyrics drawer, " + data.tag);
+        verifyContrast(Qt.color(list.itemAtIndex(2).contentItem.color), surface, 4.5, "next verse on the lyrics drawer, " + data.tag);
+    }
+
+    function test_queueStatusAndNowContrast_data() {
+        return themes();
+    }
+    function test_queueStatusAndNowContrast(data) {
+        const aurora = openAurora(data.dark);
+        const drawer = openQueueDrawer();
+        const list = findChild(drawer, "queue-list");
+        const surface = Qt.darker(aurora.surfaceColor, 1);
+        const row = list.itemAtIndex(1);
+        verify(row.ListView.isCurrentItem && row.isPlaying);
+        const rowBackground = composite(Qt.color(row.background.color), surface, 1);
+        const title = findChild(row, "queue-row-title");
+        verify(Qt.colorEqual(title.color, aurora.accentColor));
+        verifyContrast(Qt.color(title.color), rowBackground, 4.5, "current row title on its row, " + data.tag);
+        const icon = findChild(row, "queue-row-now-icon");
+        verify(icon && icon.visible && icon.iconName === "waveform");
+        verifyContrast(Qt.color(icon.color), rowBackground, 3, "waveform icon on the current row, " + data.tag);
+        // The warning text on the plain drawer surface, where an ordinary row sits.
+        verifyContrast(Qt.darker(aurora.warningColor, 1), surface, 4.5, "warning status on the drawer surface, " + data.tag);
+        // A hovered ordinary row: the status must also hold on the hover layer.
+        const other = list.itemAtIndex(0);
+        mouseMove(other, other.width / 2, other.height / 2);
+        tryVerify(() => other.hovered);
+        const hoverBackground = composite(Qt.color(other.background.color), surface, 1);
+        verifyContrast(Qt.darker(aurora.warningColor, 1), hoverBackground, 4.5, "warning status on a hovered row, " + data.tag);
+    }
+
+    function test_unavailableCurrentRowStatusContrast_data() {
+        return themes();
+    }
+    function test_unavailableCurrentRowStatusContrast(data) {
+        shell.destroy();
+        shell = null;
+        driver.resetLocalScenario();
+        driver.setSystemAppearance(data.dark, true);
+        shell = createTemporaryObject(auroraShellComponent, null);
+        verify(shell);
+        shell.requestActivate();
+        tryVerify(() => testCase.shell.active);
+        const aurora = shell.uiContract;
+        compare(aurora.darkTheme, data.dark);
+        driver.enqueueLocalSelection(["C:/Contrast/Arquivo movido.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalSourceUnavailable();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Error);
+        shell.setQueueOpen(true);
+        const drawer = findChild(shell, "queue-panel");
+        tryVerify(() => drawer.visible);
+        const list = findChild(drawer, "queue-list");
+        tryVerify(() => list.itemAtIndex(0) !== null);
+        const surface = Qt.darker(aurora.surfaceColor, 1);
+        const failing = list.itemAtIndex(0);
+        const status = findChild(failing, "queue-row-status");
+        tryVerify(() => status.visible);
+        verify(Qt.colorEqual(status.color, aurora.warningColor));
+        list.currentIndex = 0;
+        tryVerify(() => failing.ListView.isCurrentItem);
+        const background = composite(Qt.color(failing.background.color), surface, 1);
+        verifyContrast(Qt.color(status.color), background, 4.5, "warning status on the selected row, " + data.tag);
+        verifyContrast(Qt.color(findChild(failing, "queue-row-title").color), background, 4.5, "unavailable selected title, " + data.tag);
+    }
+
+    function test_clearQueueInkContrast_data() {
+        return themes();
+    }
+    function test_clearQueueInkContrast(data) {
+        const aurora = openAurora(data.dark);
+        const drawer = openQueueDrawer();
+        const surface = Qt.darker(aurora.surfaceColor, 1);
+        const clear = findChild(drawer, "queue-clear");
+        verify(clear && clear.visible && clear.enabled && clear.errorInk);
+        const label = findChild(clear, "button-label");
+        const icon = findChild(clear, "button-icon");
+        mouseMove(shell.contentItem, shell.width - 2, 2);
+        tryVerify(() => !clear.hovered && !clear.down);
+        function check(state) {
+            const background = composite(Qt.color(clear.background.color), surface, 1);
+            verifyContrast(Qt.color(label.color), background, 4.5, "Limpar fila " + state + ", " + data.tag);
+            verifyContrast(Qt.color(icon.color), background, 3, "trash icon " + state + ", " + data.tag);
+        }
+        check("at rest");
+        mouseMove(clear, clear.width / 2, clear.height / 2);
+        tryVerify(() => clear.hovered);
+        check("hovered");
+        mousePress(clear, clear.width / 2, clear.height / 2);
+        try {
+            verify(clear.down);
+            check("pressed");
+        } finally {
+            mouseRelease(clear, clear.width / 2, clear.height / 2);
+        }
+    }
+
+    function test_clearQueueInkUsesSystemColorsInHighContrast() {
+        openAurora(false);
+        const drawer = openQueueDrawer();
+        driver.setHighContrast(true, false);
+        const hc = shell.uiContract;
+        tryVerify(() => hc.highContrast);
+        const clear = findChild(drawer, "queue-clear");
+        const label = findChild(clear, "button-label");
+        verify(Qt.colorEqual(label.color, hc.textPrimaryColor), "the ink is the system text color, not a custom red");
+        verify(Qt.colorEqual(findChild(clear, "button-icon").color, hc.textPrimaryColor));
+        const surface = Qt.darker(hc.surfaceColor, 1);
+        verifyContrast(Qt.color(label.color), surface, 4.5, "Limpar fila in high contrast");
+        mouseMove(clear, clear.width / 2, clear.height / 2);
+        tryVerify(() => clear.hovered);
+        compare(clear.background.border.width, 2);
+        verifyContrast(Qt.color(clear.background.border.color), composite(Qt.color(clear.background.color), surface, 1), 3, "hover outline in high contrast");
     }
 }

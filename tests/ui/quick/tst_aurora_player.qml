@@ -875,6 +875,54 @@ TestCase {
         tryCompare(lyricsButton, "activeFocus", true);
     }
 
+    function visibleShadows(item) {
+        const found = [];
+        const stack = [item];
+        while (stack.length > 0) {
+            const current = stack.pop();
+            if (current.objectName === "surface-shadow" && current.visible)
+                found.push(current);
+            for (const child of current.children || [])
+                stack.push(child);
+        }
+        return found;
+    }
+
+    function test_drawersHighContrast() {
+        loadSyntheticQueue();
+        shell.lyrics = fakeLyrics;
+        const line = findChild(shell, "lyrics-line");
+        tryVerify(() => line.visible);
+        const reader = findChild(shell, "lyrics-reader");
+        const queue = findChild(shell, "queue-panel");
+        driver.setHighContrast(true, false);
+        tryVerify(() => productContract.highContrast);
+        // The verse line is outlined and carries no shadow.
+        compare(line.border.width, 2);
+        verify(Qt.colorEqual(line.border.color, productContract.textPrimaryColor));
+        compare(visibleShadows(line).length, 0, "the verse line has no shadow");
+        // The queue drawer carries no shadow.
+        shell.setQueueOpen(true);
+        tryVerify(() => queue.visible);
+        verify(waitForPolish(shell));
+        compare(visibleShadows(queue).length, 0, "the queue drawer has no shadow");
+        // The lyrics drawer: no shadow, and the tonal toolbar buttons keep a 2 px outline in the text color.
+        mouseClick(findChild(shell, "player-lyrics"));
+        tryCompare(reader, "opened", true);
+        tryVerify(() => !queue.visible);
+        verify(waitForPolish(shell));
+        compare(visibleShadows(reader).length, 0, "the lyrics drawer has no shadow");
+        for (const name of ["lyrics-drawer-versions", "lyrics-drawer-search"]) {
+            const button = findChild(reader, name);
+            verify(button && (button.visible || name === "lyrics-drawer-versions"), name);
+            if (!button.visible)
+                continue;
+            compare(button.kind, AuroraButton.Tonal, name);
+            compare(button.background.border.width, 2, name);
+            verify(Qt.colorEqual(button.background.border.color, productContract.textPrimaryColor), name);
+        }
+    }
+
     function test_lyricsButtonIsDisabledWithAReasonWithoutLyrics() {
         loadSyntheticQueue();
         const button = findChild(shell, "player-lyrics");
