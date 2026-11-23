@@ -191,14 +191,15 @@ TestCase {
         tryVerify(function () {
             return !confirmation.visible && !presenter.queueLoaded;
         });
-        // The drawer stays open on its empty state and the focus moves to its action; closing it leaves a usable item focused.
+        // The drawer stays open on its empty state and the focus moves to its action. Closing it hands the focus to
+        // the empty home's open action: the queue's opener, the queue button and play are gone or disabled.
         const emptyPanel = findChild(shell, "queue-panel");
         tryVerify(function () {
             return emptyPanel.visible && findChild(emptyPanel, "queue-empty-primary").activeFocus;
         });
         keyClick(Qt.Key_Escape);
         tryVerify(function () {
-            return !emptyPanel.visible && shell.activeFocusItem !== null && shell.activeFocusItem.visible && shell.activeFocusItem.enabled;
+            return !emptyPanel.visible && findChild(shell, "open-audio").activeFocus;
         });
     }
 }

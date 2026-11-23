@@ -767,8 +767,8 @@ TestCase {
         verify(!shell.queueOpen);
         wait(100);
         verify(!drawer.visible, "the empty drawer does not reopen");
-        const focused = shell.activeFocusItem;
-        verify(focused && focused.visible && focused.enabled, "the focus rests on a visible, enabled item");
+        // The queue's opener, the queue button and play are gone or disabled: the empty home's open action takes it.
+        compare(shell.activeFocusItem, findChild(shell, "open-audio"));
     }
 
     // Opens a queue with one file per duration (null leaves the duration unknown).

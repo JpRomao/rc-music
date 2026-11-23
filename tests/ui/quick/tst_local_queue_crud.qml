@@ -249,6 +249,14 @@ TestCase {
         compare(testLocalPlayerPresenter.currentOccurrenceId, currentBeforeClear); // qmllint disable unqualified
         compare(testScenarioDriver.localUnloadCount(), unloadsBeforeClear); // qmllint disable unqualified
         compare(findChild(confirmation, "dialog-title").text, "Limpar a fila?");
+        // The Aurora dialog is a Dialog in the native accessibility tree; as in every Aurora dialog, its question is
+        // the heading that names it.
+        const dialogAccessible = testScenarioDriver.accessibleSnapshot(confirmation.contentItem.parent); // qmllint disable unqualified
+        verify(dialogAccessible.valid);
+        compare(dialogAccessible.role, Accessible.Dialog);
+        const dialogTitle = findChild(confirmation, "dialog-title");
+        compare(dialogTitle.Accessible.role, Accessible.Heading);
+        compare(dialogTitle.Accessible.name, "Limpar a fila?");
         tryCompare(findChild(confirmation, "confirm-consequence"), "text", "As " + countBeforeClear + " faixas saem da fila. Os arquivos, a biblioteca e as playlists não mudam. Isso não pode ser desfeito.");
         const cancelClear = findChild(shell, "queue-clear-confirmation-cancel");
         const confirmClear = findChild(shell, "queue-clear-confirmation-confirm");
@@ -301,13 +309,14 @@ TestCase {
         compare(testScenarioDriver.localUnloadCount(), unloadsBeforeClear + 1); // qmllint disable unqualified
         wait(50);
         compare(testScenarioDriver.localUnloadCount(), unloadsBeforeClear + 1); // qmllint disable unqualified
-        // The drawer stays open on its empty state and the focus moves to its action; closing it leaves a usable item focused.
+        // The drawer stays open on its empty state and the focus moves to its action. Closing it hands the focus to
+        // the empty home's open action: the queue's opener, the queue button and play are gone or disabled.
         tryVerify(function () {
             return queuePanel.visible && findChild(queuePanel, "queue-empty-primary").activeFocus;
         });
         keyClick(Qt.Key_Escape);
         tryVerify(function () {
-            return !queuePanel.visible && shell.activeFocusItem !== null && shell.activeFocusItem.visible && shell.activeFocusItem.enabled;
+            return !queuePanel.visible && openAudio.activeFocus;
         });
     }
 
