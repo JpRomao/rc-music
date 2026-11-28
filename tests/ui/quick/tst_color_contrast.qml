@@ -90,8 +90,8 @@ TestCase {
         }
     }
 
-    // Replaces the fixture shell with the Aurora one, playing the second of three tracks.
-    function openAurora(dark) {
+    // Replaces the fixture shell with the Aurora one, with nothing opened yet.
+    function startAurora(dark) {
         shell.destroy();
         shell = null;
         driver.resetLocalScenario();
@@ -103,6 +103,12 @@ TestCase {
             return testCase.shell.active;
         });
         compare(shell.uiContract.darkTheme, dark);
+        return shell.uiContract;
+    }
+
+    // The Aurora shell playing the second of three tracks.
+    function openAurora(dark) {
+        startAurora(dark);
         driver.enqueueLocalSelection(["C:/Contrast/Primeira.mp3", "C:/Contrast/Segunda.mp3", "C:/Contrast/Terceira.mp3"]);
         findChild(shell, "open-audio").Accessible.pressAction();
         tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
@@ -434,5 +440,89 @@ TestCase {
         tryVerify(() => clear.hovered);
         compare(clear.background.border.width, 2);
         verifyContrast(Qt.color(clear.background.border.color), composite(Qt.color(clear.background.color), surface, 1), 3, "hover outline in high contrast");
+    }
+
+    function test_heroTextContrast_data() {
+        return themes();
+    }
+    function test_heroTextContrast(data) {
+        const aurora = openAurora(data.dark);
+        const hero = findChild(shell, "home-hero");
+        verify(Qt.colorEqual(hero.color, aurora.surfaceColor), "the hero is painted on the surface");
+        const surface = Qt.darker(aurora.surfaceColor, 1);
+        for (const name of ["hero-eyebrow", "hero-artist-album"]) {
+            const text = findChild(hero, name);
+            verify(text && text.visible, name);
+            verifyContrast(Qt.color(text.color), surface, 4.5, name + " on the hero, " + data.tag);
+        }
+    }
+
+    function test_shelfTextContrast_data() {
+        return themes();
+    }
+    function test_shelfTextContrast(data) {
+        // The first of three files is gone, so the queue shelf also has a warning subtitle.
+        const aurora = startAurora(data.dark);
+        driver.enqueueLocalSelection(["C:/Contrast/Movida.mp3", "C:/Contrast/Segunda.mp3", "C:/Contrast/Terceira.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        const first = presenter.currentOccurrenceId;
+        driver.publishLocalSourceUnavailable();
+        tryVerify(() => presenter.currentOccurrenceId !== first);
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        verify(waitForPolish(shell));
+        const canvas = Qt.darker(aurora.canvasColor, 1);
+        const shelf = findChild(shell, "home-queue-shelf");
+        tryVerify(() => shelf.visible);
+        const subtitle = findChild(shelf, "shelf-subtitle");
+        verify(subtitle.visible && subtitle.text.length > 0);
+        verifyContrast(Qt.color(subtitle.color), canvas, 4.5, "shelf subtitle, " + data.tag);
+        const list = findChild(shelf, "home-queue-list");
+        tryCompare(list, "count", 3);
+        tryVerify(() => list.itemAtIndex(0) !== null && list.itemAtIndex(1) !== null);
+        const available = findChild(list.itemAtIndex(1), "shelf-card-subtitle");
+        verifyContrast(Qt.color(available.color), canvas, 4.5, "card subtitle, " + data.tag);
+        const unavailable = findChild(list.itemAtIndex(0), "shelf-card-subtitle");
+        verify(Qt.colorEqual(unavailable.color, aurora.warningColor), "the missing file warns");
+        verifyContrast(Qt.color(unavailable.color), canvas, 4.5, "warning card subtitle, " + data.tag);
+    }
+
+    function test_playingBadgeContrast_data() {
+        return themes();
+    }
+    function test_playingBadgeContrast(data) {
+        openAurora(data.dark);
+        const list = findChild(shell, "home-queue-list");
+        tryCompare(list, "count", 3);
+        tryVerify(() => list.itemAtIndex(1) !== null);
+        const badge = findChild(list.itemAtIndex(1), "shelf-card-playing");
+        verify(badge && badge.visible);
+        // The chip sits over the cover; its own background is opaque enough to be the ground of its label.
+        const background = findChild(badge, "chip-background");
+        const ground = composite(Qt.color(background.color), Qt.darker(shell.uiContract.canvasColor, 1), 1);
+        verifyContrast(Qt.color(findChild(badge, "chip-label").color), ground, 4.5, "playing badge, " + data.tag);
+    }
+
+    function test_stateIconsContrast_data() {
+        return themes();
+    }
+    function test_stateIconsContrast(data) {
+        const aurora = startAurora(data.dark);
+        const surface = Qt.darker(aurora.surfaceColor, 1);
+        const empty = findChild(shell, "home-empty");
+        verify(empty && empty.visible);
+        const emptyCircle = findChild(empty, "empty-icon-circle");
+        verifyContrast(Qt.color(findChild(emptyCircle, "empty-icon").color), composite(Qt.color(emptyCircle.color), surface, 1), 3, "empty icon, " + data.tag);
+        driver.enqueueLocalSelection(["C:/Contrast/Arquivo movido.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalSourceUnavailable();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Error);
+        verify(waitForPolish(shell));
+        const errorCircle = findChild(shell, "error-icon-circle");
+        verify(errorCircle && errorCircle.visible);
+        verifyContrast(Qt.color(findChild(errorCircle, "empty-icon").color), composite(Qt.color(errorCircle.color), surface, 1), 3, "error icon, " + data.tag);
     }
 }

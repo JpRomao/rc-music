@@ -651,6 +651,48 @@ TestCase {
         compare(hero.border.width, 0);
         compare(hero.radius, 16);
     }
+    function test_homeHighContrast() {
+        driver.setHighContrast(true, false);
+        tryVerify(() => contract.highContrast);
+        loadEightTracks(true);
+        verify(waitForPolish(shell));
+        const hero = findChild(shell, "home-hero");
+        compare(hero.border.width, 2);
+        verify(Qt.colorEqual(hero.border.color, contract.textPrimaryColor), "the hero outline is the system text color");
+        compare(findChild(hero, "surface-shadow"), null, "no shadow under the hero");
+        for (const id of ["track-details-playing", "home-lyrics"]) {
+            const button = findChild(hero, id);
+            verify(button && button.visible, id);
+            compare(button.background.border.width, 2, id + " is outlined");
+        }
+        verify(Qt.colorEqual(findChild(hero, "hero-eyebrow").color, contract.textSecondaryColor));
+        verify(Qt.colorEqual(findChild(hero, "hero-artist-album").color, contract.textSecondaryColor));
+        verify(Qt.colorEqual(findChild(hero, "current-title").color, contract.textPrimaryColor));
+        const shelf = findChild(shell, "home-queue-shelf");
+        tryVerify(() => shelf.visible);
+        verify(Qt.colorEqual(findChild(shelf, "shelf-title").color, contract.textPrimaryColor));
+        verify(Qt.colorEqual(findChild(shelf, "shelf-subtitle").color, contract.textSecondaryColor));
+        const list = findChild(shelf, "home-queue-list");
+        tryCompare(list, "count", 8);
+        const missing = findChild(shelfCard(list, 0), "shelf-card-subtitle");
+        verify(Qt.colorEqual(missing.color, contract.warningColor));
+        verify(Qt.colorEqual(findChild(shelfCard(list, 2), "shelf-card-subtitle").color, contract.textSecondaryColor));
+        verify(Qt.colorEqual(findChild(shelfCard(list, 2), "shelf-card-title").color, contract.textPrimaryColor));
+        // The error state: the same outline on the hero and on its tonal button.
+        verify(presenter.clearQueue());
+        driver.enqueueLocalSelection(["C:/Música/Arquivo movido.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalSourceUnavailable();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Error);
+        verify(waitForPolish(shell));
+        compare(hero.border.width, 2);
+        const details = findChild(hero, "track-details-error");
+        verify(details && details.visible);
+        compare(details.background.border.width, 2);
+        compare(findChild(hero, "error-icon-circle").border.width, 2);
+        verify(Qt.colorEqual(findChild(findChild(hero, "error-icon-circle"), "empty-icon").color, contract.textPrimaryColor));
+    }
     function test_playingHeroMatchesTheMockup() {
         loadQueue();
         verify(waitForPolish(shell));
