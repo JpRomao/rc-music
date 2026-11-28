@@ -56,6 +56,20 @@ QtObject {
         const named = navigation.fillTwo(navigation.titleAndArtist, title, artist.length > 0 ? artist : unknownArtist);
         return available ? named : navigation.fillTwo(navigation.titleAndArtist, named, unavailable);
     }
+    // The line after Tocar agora: nothing when it played (the player and the wave say so), the failure otherwise.
+    function playNowNotice(played) {
+        if (played)
+            return "";
+        return playNowFailed;
+    }
+    // The action of the library error notice: save again, load again, or none while a load is running.
+    function retryAction(canRetrySave, canRetryLoad) {
+        if (canRetrySave)
+            return retrySave;
+        if (canRetryLoad)
+            return retryLoad;
+        return "";
+    }
     // The description of a menu action that a missing file turns off: the reason, or nothing while it works.
     function unavailableDescription(available) {
         if (available)

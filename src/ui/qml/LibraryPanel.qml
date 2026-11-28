@@ -93,7 +93,7 @@ PageSurface {
         showStatus = false;
         seeQueueShown = false;
         const played = library.playNow(recordId);
-        notice = played ? "" : libraryText.playNowFailed;
+        notice = libraryText.playNowNotice(played);
         noticeProblem = !played;
     }
     function enqueue(recordId, title) {
@@ -328,7 +328,7 @@ PageSurface {
             controlId: "library-status-notice"
             tone: AuroraNotice.Error
             text: root.library !== null ? root.library.statusText : ""
-            primaryActionText: root.library !== null && root.library.canRetrySave ? libraryText.retrySave : (root.library !== null && !root.library.busy ? libraryText.retryLoad : "")
+            primaryActionText: libraryText.retryAction(root.library !== null && root.library.canRetrySave, root.library !== null && !root.library.busy)
             onPrimaryTriggered: root.retryFromNotice()
         }
         // The empty states exist only with a library: the frozen fixture shows its own and shares the ids inside.
