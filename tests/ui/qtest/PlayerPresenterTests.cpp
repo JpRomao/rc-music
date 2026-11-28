@@ -572,6 +572,8 @@ class PlayerPresenterTests final : public QObject {
     void queueModelExposesArtworkSourcePerOccurrence();
     void queueTotalDurationIsUnknownWhenAnyTrackHasNoDuration();
     void queueTotalDurationIsUnknownForAnEmptyQueue();
+    void nextQueueTitleNamesTheFollowingOccurrence();
+    void nextQueueTitleIsEmptyWithShuffleOrAtTheEnd();
     void shuffleQueueWithNoCurrentShufflesAllRemainingOccurrences();
     void repeatQueueTogglePublishesAndPersistsWithoutTransport();
     void repeatQueueRotatesCompletedOccurrence_data();
@@ -1568,6 +1570,66 @@ void PlayerPresenterTests::queueTotalDurationIsUnknownForAnEmptyQueue() {
     PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
 
     QVERIFY(!presenter.queueTotalDurationMs().isValid());
+}
+
+void PlayerPresenterTests::nextQueueTitleNamesTheFollowingOccurrence() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector sources{localTestPath(u8"Primeira.wav"), localTestPath(u8"Segunda.wav"),
+                              localTestPath(u8"Terceira.wav")};
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.nextQueueTitle().isEmpty());
+    QVERIFY(presenter.openAudio());
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+    QCOMPARE(presenter.nextQueueTitle(), QStringLiteral("Segunda"));
+    auto* const model = qobject_cast<LocalQueueListModel*>(presenter.queueModelObject());
+    QVERIFY(model);
+    QVERIFY(model->updateMetadata({2}, QStringLiteral("Título da segunda"), {}, {}, {}));
+    QCOMPARE(presenter.nextQueueTitle(), QStringLiteral("Título da segunda"));
+    QVERIFY(presenter.playQueueOccurrence(queueOccurrenceIds(*model)[1]));
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.nextQueueTitle(), QStringLiteral("Terceira"));
+}
+
+void PlayerPresenterTests::nextQueueTitleIsEmptyWithShuffleOrAtTheEnd() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    PresenterPreferencesWriter writer;
+    PreferencesAutosave autosave{writer, {}};
+    const std::vector sources{localTestPath(u8"A.wav"), localTestPath(u8"B.wav"), localTestPath(u8"C.wav")};
+    PlayerPresenter presenter(
+        platform, backend, metadata, [sources] { return sources; }, PlayerPresenterPreferences{.autosave = &autosave});
+    QVERIFY(presenter.openAudio());
+    QCOMPARE(presenter.nextQueueTitle(), QStringLiteral("B"));
+    const auto property = presenter.metaObject()->property(presenter.metaObject()->indexOfProperty("nextQueueTitle"));
+    QVERIFY(property.isValid());
+    QVERIFY(property.hasNotifySignal());
+    QSignalSpy notified(&presenter, property.notifySignal());
+
+    // Shuffle decides the next occurrence later, so no title is promised.
+    QVERIFY(presenter.toggleShuffleQueue());
+    QVERIFY(presenter.shuffleQueueEnabled());
+    QVERIFY(presenter.nextQueueTitle().isEmpty());
+    // Turning shuffle off keeps the order and only changes the preference: the title must still be notified.
+    notified.clear();
+    QVERIFY(presenter.toggleShuffleQueue());
+    QVERIFY(!presenter.shuffleQueueEnabled());
+    QVERIFY(!notified.isEmpty());
+    QVERIFY(!presenter.nextQueueTitle().isEmpty());
+
+    const auto ids = queueOccurrenceIds(*presenter.queueModelObject());
+    QVERIFY(presenter.playQueueOccurrence(ids.back()));
+    QCOMPARE(presenter.currentQueueIndex(), 2);
+    QVERIFY(presenter.nextQueueTitle().isEmpty());
+    QVERIFY(presenter.toggleRepeatQueue());
+    QVERIFY(presenter.repeatQueueEnabled());
+    QVERIFY(presenter.nextQueueTitle().isEmpty());
+
+    QVERIFY(presenter.clearQueue());
+    QVERIFY(!presenter.queueLoaded());
+    QVERIFY(presenter.nextQueueTitle().isEmpty());
 }
 
 void PlayerPresenterTests::shuffleQueueWithNoCurrentShufflesAllRemainingOccurrences() {

@@ -121,6 +121,9 @@ class PlayerPresenter final : public QObject {
     Q_PROPERTY(int currentQueueIndex READ currentQueueIndex NOTIFY stateChanged)
     // Sum of the local queue durations; null with an empty queue or while any track has no duration.
     Q_PROPERTY(QVariant queueTotalDurationMs READ queueTotalDurationMs NOTIFY stateChanged)
+    // The title of the occurrence after the current one; empty when the next one is not known: with shuffle on,
+    // without a current occurrence, at the last one (even with repeat), for a room guest and in the fixture.
+    Q_PROPERTY(QString nextQueueTitle READ nextQueueTitle NOTIFY nextQueueTitleChanged)
     Q_PROPERTY(bool hasContextOccurrence READ hasContextOccurrence NOTIFY stateChanged)
     Q_PROPERTY(QString contextOccurrenceId READ contextOccurrenceId NOTIFY stateChanged)
     Q_PROPERTY(bool hasPosition READ hasPosition NOTIFY stateChanged)
@@ -295,6 +298,7 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] QString currentOccurrenceId() const;
     [[nodiscard]] int currentQueueIndex() const noexcept;
     [[nodiscard]] QVariant queueTotalDurationMs() const;
+    [[nodiscard]] QString nextQueueTitle() const;
     [[nodiscard]] bool hasContextOccurrence() const noexcept;
     [[nodiscard]] QString contextOccurrenceId() const;
     [[nodiscard]] bool hasPosition() const noexcept;
@@ -543,6 +547,8 @@ class PlayerPresenter final : public QObject {
   signals:
     void stateChanged();
     void preferencesChanged();
+    // Follows both: the queue and its current occurrence (stateChanged) and shuffle (preferencesChanged).
+    void nextQueueTitleChanged();
     void audioOutputsChanged();
     void preferencePersistenceChanged();
     void playbackChanged();

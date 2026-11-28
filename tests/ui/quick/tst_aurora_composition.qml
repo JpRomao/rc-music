@@ -20,6 +20,9 @@ TestCase {
     ListModel {
         id: fakeRecords
     }
+    ListModel {
+        id: fakeRecent
+    }
     QtObject {
         id: fakeLyrics
         property string title: "Cantiga"
@@ -99,6 +102,7 @@ TestCase {
         property string statusText: ""
         property string filterText: ""
         property var model: fakeRecords
+        property var recentModel: fakeRecent
         property bool canLocate: false
         property string artworkBase: ""
         function retryLoad() {
@@ -216,6 +220,10 @@ TestCase {
     }
     function init() {
         driver.resetLocalScenario();
+        driver.setLocalQueueArtworkBase("");
+        fakeLibrary.ready = true;
+        fakeLibrary.count = 128;
+        fakeRecent.clear();
         driver.setHighContrast(false, false);
         driver.setSystemAppearance(false, false);
         presenter.setThemePreference(PlayerPresenter.LightTheme);
@@ -231,6 +239,7 @@ TestCase {
             shell.destroy();
         shell = null;
         driver.resetLocalScenario();
+        driver.setLocalQueueArtworkBase("");
         driver.setHighContrast(false, false);
         presenter.setThemePreference(PlayerPresenter.SystemTheme);
     }
@@ -282,6 +291,7 @@ TestCase {
         compare(commands(), audio);
     }
     function test_queueCardsKeepExactOccurrenceIdentity() {
+        driver.setLocalQueueArtworkBase("image://queueart/");
         loadQueue();
         const list = findChild(shell, "home-queue-list");
         verify(list);
@@ -298,7 +308,9 @@ TestCase {
         driver.publishArtworkLocalMetadata();
         tryVerify(() => presenter.currentArtworkSource.toString().length > 0);
         tryCompare(list.itemAtIndex(0), "displayTitle", "Título controlado");
-        compare(findChild(second, "queue-card-artwork").source.toString(), "", "Do not attribute the playing track's cover to another occurrence");
+        const secondCover = findChild(second, "shelf-card-artwork").source.toString();
+        compare(secondCover, "image://queueart/" + occurrenceValue(second.occurrenceId), "Each card shows its own occurrence's cover");
+        verify(secondCover !== presenter.currentArtworkSource.toString(), "Do not attribute the playing track's cover to another occurrence");
         compare(commands(), audio);
         const loads = driver.localLoadCount();
         third.Accessible.pressAction();
@@ -309,6 +321,142 @@ TestCase {
         list.forceLayout();
         tryVerify(() => list.itemAtIndex(1) !== null);
         compare(list.itemAtIndex(1).occurrenceId, thirdId);
+    }
+    function occurrenceValue(occurrenceId) {
+        return occurrenceId.substring(occurrenceId.indexOf("-") + 1);
+    }
+    function shelfCard(list, index) {
+        list.positionViewAtIndex(index, ListView.Contain);
+        list.forceLayout();
+        tryVerify(() => list.itemAtIndex(index) !== null);
+        return list.itemAtIndex(index);
+    }
+    function test_queueShelfMatchesTheMockup() {
+        driver.setLocalQueueArtworkBase("image://queueart/");
+        loadEightTracks(true);
+        verify(waitForPolish(shell));
+        const shelf = findChild(shell, "home-queue-shelf");
+        tryVerify(() => shelf.visible);
+        compare(findChild(shelf, "shelf-title").text, "Na sua fila");
+        const see = findChild(shelf, "home-see-queue");
+        compare(see.text, "Ver fila");
+        const list = findChild(shelf, "home-queue-list");
+        tryCompare(list, "count", 8);
+        tryCompare(presenter, "currentQueueIndex", 1);
+        for (let index = 0; index < 3; ++index) {
+            const card = shelfCard(list, index);
+            compare(card.width, 150);
+            const artwork = findChild(card, "shelf-card-artwork");
+            compare(artwork.width, 150);
+            compare(artwork.height, 150);
+            compare(findChild(card, "shelf-card-playing").visible, index === 1, "only the current card says it is playing");
+        }
+        compare(findChild(findChild(shelfCard(list, 1), "shelf-card-playing"), "chip-label").text, "Tocando");
+        const third = shelfCard(list, 2);
+        compare(third.Accessible.name, "Tocar Cais");
+        compare(findChild(third, "shelf-card-artwork").source.toString(), "image://queueart/" + occurrenceValue(third.occurrenceId));
+        see.Accessible.pressAction();
+        tryCompare(shell, "currentPage", "queue");
+    }
+    function test_queueSubtitleNamesTheNextOnlyWhenKnown() {
+        loadEightTracks(true);
+        const subtitle = findChild(findChild(shell, "home-queue-shelf"), "shelf-subtitle");
+        tryCompare(subtitle, "text", "8 faixas, a próxima é “Cais”");
+        verify(presenter.toggleShuffleQueue());
+        tryCompare(subtitle, "text", "8 faixas");
+        verify(presenter.toggleShuffleQueue());
+        verify(!presenter.shuffleQueueEnabled);
+        tryVerify(() => subtitle.text.startsWith("8 faixas, a próxima é “"));
+        const list = findChild(shell, "home-queue-list");
+        verify(presenter.playQueueOccurrence(shelfCard(list, 7).occurrenceId));
+        tryCompare(presenter, "currentQueueIndex", 7);
+        tryCompare(subtitle, "text", "8 faixas");
+        verify(presenter.clearQueue());
+        driver.enqueueLocalSelection(["C:/Música/Sozinha.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        tryCompare(subtitle, "text", "1 faixa");
+    }
+    function test_cardTitleWrapsToTwoLinesAndKeepsTheFullName() {
+        loadQueue();
+        const longTitle = "Palavra longa ".repeat(9).substring(0, 120);
+        compare(longTitle.length, 120);
+        driver.publishNamedLocalMetadata(longTitle, "Artista", "");
+        const list = findChild(shell, "home-queue-list");
+        const card = shelfCard(list, 0);
+        const title = findChild(card, "shelf-card-title");
+        tryCompare(title, "text", longTitle);
+        verify(waitForPolish(shell));
+        compare(title.elide, Text.ElideRight);
+        verify(title.lineCount <= 2, "the title takes at most two lines, got " + title.lineCount);
+        compare(title.lineCount, 2, "a long title wraps instead of being cut on one line");
+        verify(title.truncated);
+        compare(card.Accessible.name, "Tocar " + longTitle);
+    }
+    function test_unavailableQueueCardSaysSoAndIsSkipped() {
+        driver.setLocalQueueArtworkBase("image://queueart/");
+        loadEightTracks(true);
+        verify(waitForPolish(shell));
+        const list = findChild(shell, "home-queue-list");
+        tryCompare(list, "count", 8);
+        const first = shelfCard(list, 0);
+        tryCompare(first, "enabled", false);
+        const subtitle = findChild(first, "shelf-card-subtitle");
+        compare(subtitle.text, "Arquivo não disponível.");
+        verify(Qt.colorEqual(subtitle.color, contract.warningColor), "the unavailable file is a warning");
+        compare(findChild(first, "shelf-card-artwork").source.toString(), "", "no cover is read for a missing file");
+        const see = findChild(shell, "home-see-queue");
+        see.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(see, "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        tryVerify(() => shelfCard(list, 1).activeFocus, 5000, "Tab skips the unavailable card");
+        verify(!first.activeFocus);
+    }
+    function test_libraryShelfShowsTheNewestTracksReadOnly() {
+        for (let index = 0; index < 12; ++index)
+            fakeRecent.append({
+                recordId: String(200 - index),
+                title: "Faixa " + index,
+                artist: "Artista " + index,
+                available: index !== 3
+            });
+        mountShellBackends();
+        const shelf = findChild(shell, "home-library-shelf");
+        tryVerify(() => shelf.visible);
+        compare(findChild(shelf, "shelf-title").text, "Da sua biblioteca");
+        compare(findChild(shelf, "shelf-subtitle").text, "128 faixas");
+        const list = findChild(shelf, "home-library-list");
+        tryCompare(list, "count", 12);
+        compare(list.activeFocusOnTab, false);
+        const card = shelfCard(list, 0);
+        compare(card.activeFocusOnTab, false);
+        compare(card.Accessible.role, Accessible.StaticText);
+        compare(card.Accessible.name, "Faixa 0, Artista 0");
+        compare(findChild(card, "shelf-card-title").text, "Faixa 0");
+        compare(findChild(card, "shelf-card-subtitle").text, "Artista 0");
+        const unavailable = findChild(shelfCard(list, 3), "shelf-card-subtitle");
+        compare(unavailable.text, "Indisponível");
+        verify(Qt.colorEqual(unavailable.color, contract.warningColor));
+        const see = findChild(shelf, "home-see-library");
+        compare(see.text, "Ver toda a biblioteca");
+        see.Accessible.pressAction();
+        tryCompare(shell, "currentPage", "library");
+    }
+    function test_libraryShelfHidesWithoutTracks() {
+        fakeRecent.append({
+            recordId: "1",
+            title: "Faixa",
+            artist: "Artista",
+            available: true
+        });
+        const shelf = findChild(shell, "home-library-shelf");
+        verify(shelf);
+        compare(shell.library, null);
+        verify(!shelf.visible, "no library, no shelf");
+        mountShellBackends();
+        tryVerify(() => shelf.visible);
+        fakeLibrary.count = 0;
+        tryVerify(() => !shelf.visible, 5000, "an empty library shows no shelf");
     }
     function test_headerHeroAndFooterUseSeparateResponsiveRegions_data() {
         return [

@@ -100,6 +100,10 @@ TestCase {
             fileName: "Song.mp3"
         }
     }
+    // The home's library shelf reads it; these tests need no recent tracks.
+    ListModel {
+        id: recentRecords
+    }
     QtObject {
         id: catalog
         property bool ready: true
@@ -111,6 +115,7 @@ TestCase {
         property string statusText: ""
         property string filterText: ""
         property var model: records
+        property var recentModel: recentRecords
         property bool canLocate: false
         property string artworkBase: ""
         function enqueue(id) {

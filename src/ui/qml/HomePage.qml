@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import MusicPlayer.M0
@@ -13,7 +15,8 @@ ColumnLayout {
     property bool lyricsAvailable: false
     property bool openingEnabled: true
     property bool locationFocusRestoreAllowed: true
-    readonly property int queueCount: queuePreview.count
+    readonly property int queueCount: queueShelf.count
+    readonly property bool libraryShown: library !== null && library.ready && library.count > 0
     readonly property Item openAudioControl: openAudioButton
     signal openAudioRequested(Item opener)
     signal detailsRequested(Item opener)
@@ -22,10 +25,16 @@ ColumnLayout {
     signal queueRequested
     signal libraryRequested
     signal playRequested(string occurrenceId)
-    spacing: 28
+    spacing: 26
 
     NavigationText {
         id: navigationText
+    }
+    QueueText {
+        id: queueText
+    }
+    LibraryText {
+        id: libraryText
     }
     // The focus scope that owns a playback state: its items vanish with the state.
     function scopeFor(state) {
@@ -74,16 +83,67 @@ ColumnLayout {
         onLyricsRequested: opener => root.lyricsRequested(opener)
         onAudioFilesOpening: opener => root.audioFilesOpening(opener)
     }
-    QueuePreview {
-        id: queuePreview
+    HomeShelf {
+        id: queueShelf
         Layout.fillWidth: true
-        visible: count > 0
+        visible: root.presenter.queueLoaded && count > 0
         contract: root.contract
+        controlId: "home-queue-shelf"
+        listObjectName: "home-queue-list"
+        linkObjectName: "home-see-queue"
+        title: navigationText.queueShelf
+        subtitle: root.presenter.nextQueueTitle.length > 0 ? navigationText.queueNext.arg(queueText.trackCount(count)).arg(root.presenter.nextQueueTitle) : queueText.trackCount(count)
+        linkText: navigationText.seeQueue
+        linkEnabled: root.openingEnabled && count > 0
+        cardsFocusable: root.openingEnabled
         model: root.presenter.queueModel
-        currentOccurrenceId: root.presenter.currentOccurrenceId
-        currentArtworkSource: root.presenter.currentArtworkSource
-        interactionAllowed: root.openingEnabled
-        onQueueRequested: root.queueRequested()
-        onPlayRequested: occurrenceId => root.playRequested(occurrenceId)
+        onLinkTriggered: root.queueRequested()
+        // The model object, not required roles: the card has its own title, and the fixture's queue has no cover role.
+        delegate: HomeShelfCard {
+            required property var model
+            readonly property string occurrenceId: model.occurrenceId
+            readonly property string displayTitle: model.title.length > 0 ? model.title : model.fileName
+            readonly property bool available: model.available
+            readonly property bool current: occurrenceId === root.presenter.currentOccurrenceId
+            contract: root.contract
+            title: displayTitle
+            subtitle: available ? (model.artist.length > 0 ? model.artist : navigationText.localAudio) : queueText.sourceUnavailable
+            subtitleWarning: !available
+            artworkSource: current && root.presenter.currentArtworkSource.toString().length > 0 ? root.presenter.currentArtworkSource : (model.artworkSource ?? "")
+            playing: current
+            enabled: root.openingEnabled && available
+            accessibleName: navigationText.playTrack.arg(displayTitle)
+            onActivated: root.playRequested(occurrenceId)
+        }
+    }
+    HomeShelf {
+        id: libraryShelf
+        Layout.fillWidth: true
+        visible: root.libraryShown
+        contract: root.contract
+        controlId: "home-library-shelf"
+        listObjectName: "home-library-list"
+        linkObjectName: "home-see-library"
+        title: navigationText.libraryShelf
+        subtitle: navigationText.trackCount(root.libraryShown ? root.library.count : 0)
+        linkText: navigationText.seeLibrary
+        linkEnabled: root.openingEnabled
+        model: root.libraryShown ? root.library.recentModel : null
+        onLinkTriggered: root.libraryRequested()
+        delegate: HomeShelfCard {
+            required property var model
+            required property string recordId
+            required property string artist
+            required property bool available
+            readonly property string artistText: artist.length > 0 ? artist : navigationText.localAudio
+            readonly property string artworkBase: root.library !== null ? root.library.artworkBase : ""
+            contract: root.contract
+            interactive: false
+            title: model.title
+            subtitle: available ? artistText : libraryText.unavailable
+            subtitleWarning: !available
+            artworkSource: artworkBase.length > 0 ? artworkBase + recordId : ""
+            accessibleName: navigationText.titleAndArtist.arg(model.title).arg(artistText)
+        }
     }
 }

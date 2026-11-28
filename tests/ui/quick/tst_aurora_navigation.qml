@@ -22,6 +22,22 @@ TestCase {
     ListModel {
         id: fakeRecords
     }
+    // The home's library shelf: read-only cards, outside the Tab order.
+    ListModel {
+        id: fakeRecent
+        ListElement {
+            recordId: "2"
+            title: "Recente"
+            artist: "Artista"
+            available: true
+        }
+        ListElement {
+            recordId: "1"
+            title: "Anterior"
+            artist: "Artista"
+            available: true
+        }
+    }
     QtObject {
         id: fakeLyrics
         property string title: "Cantiga"
@@ -48,6 +64,7 @@ TestCase {
         property string statusText: ""
         property string filterText: ""
         property var model: fakeRecords
+        property var recentModel: fakeRecent
         property bool canLocate: false
         property string artworkBase: ""
         function retryLoad() {
@@ -596,8 +613,30 @@ TestCase {
         shell.lyrics = fakeLyrics;
         tryVerify(() => findChild(shell, "home-lyrics").enabled);
         themeButton().forceActiveFocus(Qt.TabFocusReason);
-        const trail = tabTrail(Qt.Key_Tab, Qt.NoModifier, 3);
-        compare(trail.join(","), "open-audio,track-details-playing,home-lyrics");
+        const trail = tabTrail(Qt.Key_Tab, Qt.NoModifier, 4);
+        compare(trail.join(","), "open-audio,track-details-playing,home-lyrics,home-see-queue");
+        // The queue cards, in model order; the library cards are read-only and stay out of the order.
+        const list = findChild(shell, "home-queue-list");
+        compare(list.count, 2);
+        for (let index = 0; index < list.count; ++index) {
+            keyClick(Qt.Key_Tab);
+            tryVerify(() => list.itemAtIndex(index) !== null && list.itemAtIndex(index).activeFocus, 5000, "queue card " + index + "; focus: " + focusName());
+        }
+        keyClick(Qt.Key_Tab);
+        compare(focusName(), "home-see-library");
+        tryVerify(() => findChild(shell, "lyrics-line").visible);
+        keyClick(Qt.Key_Tab);
+        compare(focusName(), "lyrics-line-open");
+        keyClick(Qt.Key_Backtab);
+        compare(focusName(), "home-see-library");
+        keyClick(Qt.Key_Backtab);
+        tryVerify(() => list.itemAtIndex(1).activeFocus, 5000, "Backtab returns to the last queue card; focus: " + focusName());
+        // Without a verse line the library link leads to the player.
+        fakeLyrics.hasSyncedLyrics = false;
+        tryVerify(() => !findChild(shell, "lyrics-line").visible);
+        findChild(shell, "home-see-library").forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        compare(focusName(), "progress");
     }
 
     function isInside(item, ancestor) {

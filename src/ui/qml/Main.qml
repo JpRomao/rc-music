@@ -782,6 +782,7 @@ ApplicationWindow {
                         onLyricsRequested: opener => lyricsPanel.showReader(opener)
                         onAudioFilesOpening: opener => window.prepareAudioSelection(opener)
                         onQueueRequested: window.setQueueOpen(true)
+                        onLibraryRequested: window.openLibrary()
                         onPlayRequested: occurrenceId => window.presenter.playQueueOccurrence(occurrenceId)
                     }
                 }

@@ -33,6 +33,10 @@ TestCase {
             fileName: "faixa sem nome.flac"
         }
     }
+    // The home's library shelf reads it; these tests need no recent tracks.
+    ListModel {
+        id: recentRecords
+    }
     QtObject {
         id: catalog
         property bool ready: true
@@ -44,6 +48,7 @@ TestCase {
         property string statusText: "Sua biblioteca está pronta."
         property string filterText: ""
         property var model: records
+        property var recentModel: recentRecords
         property var enqueued: []
         property var removed: []
         property var located: []

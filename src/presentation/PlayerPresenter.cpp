@@ -505,6 +505,8 @@ void PlayerPresenter::initializeLocalMode(const PlayerPresenterPreferences* pref
                 if (roles.isEmpty() || roles.contains(LocalQueueListModel::ArtworkSourceRole))
                     deliverQueueArtwork();
             });
+    connect(this, &PlayerPresenter::stateChanged, this, &PlayerPresenter::nextQueueTitleChanged);
+    connect(this, &PlayerPresenter::preferencesChanged, this, &PlayerPresenter::nextQueueTitleChanged);
     queue_shuffle_random_.seed(QRandomGenerator::global()->generate());
     if (!audio_file_picker_)
         throw std::invalid_argument{"audio file picker is required"};
@@ -893,6 +895,17 @@ QVariant PlayerPresenter::queueTotalDurationMs() const {
         total += duration.toLongLong();
     }
     return QVariant::fromValue(total);
+}
+QString PlayerPresenter::nextQueueTitle() const {
+    if (uses_frozen_fixture_ || shuffleQueueEnabled() || showsRoomPlayback())
+        return {};
+    const auto current = local_queue_.currentIndex();
+    if (!current.has_value())
+        return {};
+    const int next = static_cast<int>(*current) + 1;
+    if (next >= local_queue_model_.rowCount())
+        return {};
+    return local_queue_model_.index(next, 0).data(LocalQueueListModel::TitleRole).toString();
 }
 bool PlayerPresenter::hasCurrentOccurrence() const noexcept {
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
