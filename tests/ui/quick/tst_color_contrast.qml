@@ -736,6 +736,26 @@ TestCase {
         verifyContrast(Qt.color(title.color), hover, 4.5, "unavailable title on the hover row, " + data.tag);
     }
 
+    // The unavailable cover card dims its cover and texts to 60%, as in the mockup (content that is unavailable is
+    // exempt from the text contrast); the chip is not dimmed and keeps the full ratio on its own ground.
+    function test_libraryUnavailableCardContrast_data() {
+        return themes();
+    }
+    function test_libraryUnavailableCardContrast(data) {
+        const panel = openLibraryPage(data.dark, false);
+        mouseClick(findChild(panel, "library-view-1"));
+        tryVerify(() => findChild(panel, "library-grid").visible);
+        restRows();
+        const gone = libraryCard(panel, "4");
+        const badge = findChild(gone, "shelf-card-unavailable");
+        verify(badge.visible);
+        compare(gone.opacity * badge.opacity, 1, "nothing dims the chip");
+        const chip = findChild(badge, "chip-background");
+        compare(chip.color.a, 1, "the chip ground is opaque");
+        const label = findChild(badge, "chip-label");
+        verifyContrast(Qt.color(label.color), Qt.color(chip.color), 4.5, "unavailable chip label, " + data.tag);
+    }
+
     function test_libraryIconsContrast_data() {
         return themes();
     }

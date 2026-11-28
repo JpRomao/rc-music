@@ -522,8 +522,7 @@ PageSurface {
                     objectName: "library-card-" + cell.model.recordId
                     contract: root.contract
                     title: cell.model.title
-                    subtitle: cell.model.available ? (cell.model.artist.length > 0 ? cell.model.artist : libraryText.unknownArtist) : libraryText.unavailable
-                    subtitleWarning: !cell.model.available
+                    subtitle: cell.model.artist.length > 0 ? cell.model.artist : libraryText.unknownArtist
                     artworkSource: root.artworkBase.length > 0 ? root.artworkBase + cell.model.recordId : ""
                     playing: cell.isPlayingRecord && root.playbackPlaying
                     unavailableBadge: !cell.model.available
@@ -532,6 +531,7 @@ PageSurface {
                     focusPolicy: Qt.NoFocus
                     highlighted: cell.GridView.isCurrentItem && grid.activeFocus
                     accessibleName: libraryText.rowName(cell.model.title, cell.model.artist, cell.model.available)
+                    Accessible.description: libraryText.cardDescription(playing, cell.model.available)
                     onSelected: root.selectItem(grid, cell.index)
                     playEnabled: root.openingEnabled
                     onActivated: root.playNow(cell.model.recordId, cell.model.available)

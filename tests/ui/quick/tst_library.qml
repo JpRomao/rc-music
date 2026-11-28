@@ -665,6 +665,52 @@ TestCase {
         verify(!crossing, "the playing badge crosses the enqueue button");
         mouseMove(first, 1000, 1000);
         tryVerify(() => findChild(first, "shelf-card-playing").visible);
+        // The keyboard highlight shows the actions too, so the badge steps aside the same way.
+        const grid = findChild(panel, "library-grid");
+        grid.currentIndex = 0;
+        grid.forceActiveFocus(Qt.TabFocusReason);
+        tryVerify(() => first.highlighted);
+        tryVerify(() => findChild(first, "shelf-card-enqueue").visible);
+        verify(!findChild(first, "shelf-card-playing").visible, "the badge shows under the keyboard highlight");
+    }
+    // The badge is not read, and hides while the actions show: the description keeps "Tocando" and the reason reachable.
+    function test_coverCardDescribesPlayingAndUnavailableStates() {
+        loadPlayingQueue();
+        catalog.playingRecordId = "3";
+        const panel = openLibrary();
+        mouseClick(findChild(panel, "library-view-1"));
+        tryVerify(() => findChild(panel, "library-grid").visible);
+        const first = card(panel, "3");
+        compare(first.Accessible.description, "Tocando");
+        hover(first);
+        tryVerify(() => findChild(first, "shelf-card-enqueue").visible);
+        verify(!findChild(first, "shelf-card-playing").visible);
+        compare(first.Accessible.description, "Tocando");
+        mouseMove(first, 1000, 1000);
+        const grid = findChild(panel, "library-grid");
+        grid.currentIndex = 0;
+        grid.forceActiveFocus(Qt.TabFocusReason);
+        tryVerify(() => first.highlighted);
+        compare(first.Accessible.description, "Tocando");
+        const other = card(panel, "5");
+        compare(other.Accessible.description, "");
+        const gone = card(panel, "4");
+        compare(gone.Accessible.description, "Arquivo não encontrado. Localize o arquivo para tocar a faixa.");
+    }
+    // As in the mockup: the artist stays in the subtitle, the chip says it, and the whole card is dimmed.
+    function test_unavailableCoverKeepsTheArtistAndIsDimmed() {
+        records.setProperty(1, "artist", "Rui Alves");
+        const panel = openLibrary();
+        mouseClick(findChild(panel, "library-view-1"));
+        tryVerify(() => findChild(panel, "library-grid").visible);
+        const gone = card(panel, "4");
+        compare(findChild(gone, "shelf-card-subtitle").text, "Rui Alves");
+        verify(findChild(gone, "shelf-card-unavailable").visible);
+        for (const name of ["shelf-card-artwork", "shelf-card-title", "shelf-card-subtitle"]) {
+            compare(findChild(gone, name).opacity, 0.6, name);
+            compare(findChild(card(panel, "3"), name).opacity, 1, name);
+        }
+        compare(findChild(gone, "shelf-card-unavailable").opacity, 1);
     }
     function test_typingFiltersThroughTheBinding() {
         const panel = openLibrary();
@@ -1271,9 +1317,16 @@ TestCase {
             showRowActions(first);
             mouseClick(findChild(first, "track-row-enqueue"));
             tryVerify(() => findChild(panel, "library-see-queue").visible);
+            // The confirmation moves the list: hover only once the layout has settled, then check what is under the pointer.
+            verify(waitForPolish(shell));
             const hovered = row(panel, data.width > 720 ? "5" : "2");
+            const playingRow = row(panel, "1");
             showRowActions(hovered);
-            tryVerify(() => findChild(hovered, "track-row-play").visible);
+            verify(waitForPolish(shell));
+            tryVerify(() => hovered.actionsShown);
+            verify(findChild(hovered, "track-row-play").visible, "the intended row shows its actions");
+            verify(findChild(playingRow, "track-row-wave").visible, "the playing row shows the wave");
+            verify(!findChild(playingRow, "track-row-play").visible, "the playing row is not the hovered one");
             verify(findChild(row(panel, "3"), "track-row-locate").visible);
         } else if (data.scene === "library-menu") {
             const menu = openRowMenu(panel, data.width > 720 ? "5" : "4");
@@ -1295,7 +1348,6 @@ TestCase {
             mouseMove(shell.contentItem, data.width / 2, 120);
             primary.forceActiveFocus(Qt.TabFocusReason);
         }
-        wait(300);
         verify(waitForPolish(shell));
         shell.update();
         verify(waitForRendering(shell.contentItem));

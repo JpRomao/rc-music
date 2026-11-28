@@ -31,13 +31,16 @@ ItemDelegate {
     readonly property int coverSize: 150
     readonly property int titleGap: 10
     readonly property int subtitleGap: 4
-    // Room for two title lines, so every card of a shelf has the same height.
+    // Room for two title lines, so every card of a shelf has the same height; the subtitle follows the rendered title and the free room stays below it.
     readonly property real titleSlot: Math.ceil(titleMetrics.height * 2)
 
     width: coverSize
     implicitWidth: coverSize
     implicitHeight: coverSize + titleGap + titleSlot + subtitleGap + Math.ceil(captionMetrics.height)
     padding: 0
+    // An unavailable card is dimmed as in the mockup (60%): the cover and the texts, not the chip, which keeps its
+    // contrast; the reason is in the accessible description.
+    readonly property real dimmedOpacity: unavailableBadge ? 0.6 : 1
     hoverEnabled: interactive
     focusPolicy: interactive ? Qt.ClickFocus : Qt.NoFocus
     Accessible.role: interactive ? Accessible.Button : Accessible.StaticText
@@ -105,6 +108,7 @@ ItemDelegate {
             width: root.coverSize
             height: root.coverSize
             radius: root.contract.radiusMedium
+            opacity: root.dimmedOpacity
             contract: root.contract
             source: root.artworkSource
         }
@@ -206,6 +210,7 @@ ItemDelegate {
             font.pixelSize: root.contract.typeBody
             font.weight: Font.DemiBold
             color: root.contract.textPrimaryColor
+            opacity: root.dimmedOpacity
             wrapMode: Text.Wrap
             maximumLineCount: 2
             elide: Text.ElideRight
@@ -214,12 +219,13 @@ ItemDelegate {
         }
         Text {
             objectName: "shelf-card-subtitle"
-            y: titleText.y + root.titleSlot + root.subtitleGap
+            y: titleText.y + titleText.height + root.subtitleGap
             width: parent.width
             text: root.subtitle
             font.family: root.contract.bodyFontFamily
             font.pixelSize: root.contract.typeCaption
             color: root.subtitleWarning ? root.contract.warningColor : root.contract.textSecondaryColor
+            opacity: root.dimmedOpacity
             maximumLineCount: 1
             elide: Text.ElideRight
             textFormat: Text.PlainText

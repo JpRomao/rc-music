@@ -147,8 +147,7 @@ ColumnLayout {
             readonly property bool current: root.library !== null && root.library.playingRecordId === recordId
             contract: root.contract
             title: model.title
-            subtitle: available ? artistText : libraryText.unavailable
-            subtitleWarning: !available
+            subtitle: artistText
             unavailableBadge: !available
             artworkSource: artworkBase.length > 0 ? artworkBase + recordId : ""
             playing: current && root.presenter.playbackState === PlayerPresenter.Playing

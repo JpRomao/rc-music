@@ -464,9 +464,13 @@ TestCase {
         compare(findChild(card, "shelf-card-title").text, "Faixa 0");
         compare(findChild(card, "shelf-card-subtitle").text, "Artista 0");
         const unavailableCard = shelfCard(list, 3);
-        const unavailable = findChild(unavailableCard, "shelf-card-subtitle");
-        compare(unavailable.text, "Indisponível");
-        verify(Qt.colorEqual(unavailable.color, contract.warningColor));
+        // As in the mockup: the artist stays in the subtitle, the chip says it, the card is dimmed, the reason is read.
+        compare(findChild(unavailableCard, "shelf-card-subtitle").text, "Artista 3");
+        verify(findChild(unavailableCard, "shelf-card-unavailable").visible);
+        compare(findChild(unavailableCard, "shelf-card-unavailable").text, "Indisponível");
+        for (const name of ["shelf-card-artwork", "shelf-card-title", "shelf-card-subtitle"])
+            compare(findChild(unavailableCard, name).opacity, 0.6, name);
+        compare(findChild(unavailableCard, "shelf-card-unavailable").opacity, 1);
         compare(unavailableCard.enabled, false);
         compare(unavailableCard.Accessible.description, "Arquivo não encontrado. Localize o arquivo para tocar a faixa.");
         verify(!findChild(card, "shelf-card-playing").visible);
