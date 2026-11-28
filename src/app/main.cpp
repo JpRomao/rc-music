@@ -910,6 +910,13 @@ int main(int argc, char* argv[]) {
         library_binding->setPlaylistAppender([&](const QString& playlist_id, auto paths) {
             return playlists_binding && playlists_binding->appendToPlaylist(playlist_id, std::move(paths));
         });
+        // Play now: the file enters right after the current track and starts.
+        library_binding->setQueuePlayer([&](auto paths) { return presenter.playSourcesNow(paths); });
+        // The library marks the record of the file that is playing.
+        const auto sync_library_now_playing = [&] { library_binding->setNowPlaying(presenter.currentLocalSource()); };
+        QObject::connect(&presenter, &PlayerPresenter::stateChanged, library_binding.get(), sync_library_now_playing);
+        QObject::connect(&presenter, &PlayerPresenter::playbackChanged, library_binding.get(),
+                         sync_library_now_playing);
         static_cast<void>(library_binding->start());
         presenter.setPlaylistExitPreparationProbe([&] {
             if (!playlists_binding->hasPendingChange())

@@ -125,10 +125,18 @@ LibraryLoadResult twoRecords() {
 struct Harness final {
     std::shared_ptr<FakeLibraryStore> store = std::make_shared<FakeLibraryStore>();
     std::vector<LibraryBinding::Paths> enqueued;
+    std::vector<LibraryBinding::Paths> played;
+    bool player_accepts{true};
     LibraryBinding binding{store, [this](LibraryBinding::Paths paths) {
                                enqueued.push_back(std::move(paths));
                                return true;
                            }};
+    void wirePlayer() {
+        binding.setQueuePlayer([this](LibraryBinding::Paths paths) {
+            played.push_back(std::move(paths));
+            return player_accepts;
+        });
+    }
     void startAndWait() {
         QVERIFY(binding.start());
         QTRY_VERIFY(!binding.busy());
@@ -420,6 +428,212 @@ class LibraryBindingTests final : public QObject {
         QVERIFY(!h.binding.enqueue(QStringLiteral("999")));
         QVERIFY(!h.binding.enqueue(QStringLiteral("not-a-number")));
         QCOMPARE(h.binding.count(), 1);
+    }
+    void playingNowSendsTheFileToThePlayer() {
+        Harness h;
+        h.wirePlayer();
+        h.store->setLoaded(twoRecords());
+        h.startAndWait();
+        QVERIFY(h.binding.playNow(QStringLiteral("2")));
+        QCOMPARE(h.played.size(), std::size_t{1});
+        QCOMPARE(h.played.front(), LibraryBinding::Paths{track(2)});
+        QVERIFY(h.enqueued.empty());
+        QCOMPARE(h.binding.count(), 2);
+    }
+    void playNowRefusesUnknownUnavailableOrUnwiredRecords() {
+        Harness h;
+        h.store->setLoaded(twoRecords());
+        h.startAndWait();
+        QVERIFY(!h.binding.playNow(QStringLiteral("2"))); // No player wired.
+        h.wirePlayer();
+        QVERIFY(!h.binding.playNow(QStringLiteral("999")));
+        QVERIFY(!h.binding.playNow(QStringLiteral("not-a-number")));
+        QVERIFY(!h.binding.playNow(QStringLiteral("1"))); // Record 1 is unavailable.
+        QVERIFY(h.played.empty());
+        h.player_accepts = false;
+        const auto before = h.binding.statusText();
+        QVERIFY(!h.binding.playNow(QStringLiteral("2")));
+        QCOMPARE(h.played.size(), std::size_t{1});
+        QCOMPARE(h.binding.statusText(), before);
+    }
+    void nowPlayingNamesTheRecordOfTheCurrentFile() {
+        Harness h;
+        h.store->setLoaded(twoRecords());
+        h.startAndWait();
+        QCOMPARE(h.binding.playingRecordId(), QString{});
+        QSignalSpy spy(&h.binding, &LibraryBinding::playingRecordIdChanged);
+        h.binding.setNowPlaying(track(2));
+        QCOMPARE(h.binding.playingRecordId(), QStringLiteral("2"));
+        QCOMPARE(spy.count(), 1);
+        h.binding.setNowPlaying(track(2)); // Same file: no new signal.
+        QCOMPARE(spy.count(), 1);
+        h.binding.setNowPlaying(Path{"C:/Elsewhere/outside.mp3"});
+        QCOMPARE(h.binding.playingRecordId(), QString{});
+        h.binding.setNowPlaying(track(1));
+        QCOMPARE(h.binding.playingRecordId(), QStringLiteral("1"));
+        h.binding.setNowPlaying(std::nullopt);
+        QCOMPARE(h.binding.playingRecordId(), QString{});
+        h.binding.setNowPlaying(track(1));
+        QVERIFY(h.binding.remove(QStringLiteral("1")));
+        QTRY_COMPARE(h.binding.count(), 1);
+        QCOMPARE(h.binding.playingRecordId(), QString{});
+    }
+    void nowPlayingFollowsTheLibraryWhenTheFileIsAdmittedLater() {
+        Harness h;
+        h.startAndWait();
+        h.binding.setNowPlaying(track(1));
+        QCOMPARE(h.binding.playingRecordId(), QString{});
+        h.binding.admit({track(1)});
+        QTRY_COMPARE(h.binding.playingRecordId(), QStringLiteral("1"));
+    }
+    void statusProblemMarksOnlyFailures() {
+        {
+            Harness h; // Ready, then saved, then an admission failure (an empty path is invalid).
+            h.startAndWait();
+            QVERIFY(!h.binding.statusProblem());
+            h.binding.admit({track(1)});
+            QTRY_COMPARE(h.binding.statusText(), QStringLiteral("Biblioteca salva."));
+            QVERIFY(!h.binding.statusProblem());
+            h.binding.admit({Path{}});
+            QVERIFY(h.binding.statusProblem());
+        }
+        {
+            Harness h; // Failed load; a retry that works clears it.
+            h.store->setLoaded({.status = LibraryLoadStatus::Invalid});
+            h.startAndWait();
+            QVERIFY(h.binding.statusProblem());
+            h.store->setLoaded(twoRecords());
+            QVERIFY(h.binding.retryLoad());
+            QTRY_VERIFY(h.binding.ready());
+            QVERIFY(!h.binding.statusProblem());
+        }
+        {
+            Harness h; // Newer version on load.
+            h.store->setLoaded({.status = LibraryLoadStatus::FutureVersion});
+            h.startAndWait();
+            QVERIFY(h.binding.statusProblem());
+        }
+        {
+            Harness h; // Recovered from the backup.
+            auto loaded = twoRecords();
+            loaded.status = LibraryLoadStatus::RecoveredFromBackup;
+            h.store->setLoaded(loaded);
+            h.startAndWait();
+            QVERIFY(!h.binding.statusProblem());
+        }
+        {
+            Harness h; // Failed save; a retry that works clears it.
+            h.store->setNextSave(LibrarySaveStatus::Failed);
+            h.startAndWait();
+            h.binding.admit({track(1)});
+            QTRY_VERIFY(h.binding.canRetrySave());
+            QVERIFY(h.binding.statusProblem());
+            h.store->setNextSave(LibrarySaveStatus::Saved);
+            QVERIFY(h.binding.retrySave());
+            QTRY_COMPARE(h.binding.count(), 1);
+            QVERIFY(!h.binding.statusProblem());
+        }
+        {
+            Harness h; // Newer version on save.
+            h.store->setNextSave(LibrarySaveStatus::BlockedByFutureVersion);
+            h.startAndWait();
+            h.binding.admit({track(1)});
+            QTRY_VERIFY(h.binding.canRetrySave());
+            QVERIFY(h.binding.statusProblem());
+        }
+        {
+            Harness h; // Locate: conflict, invalid file, dialog failure, then success.
+            FakeLocator locator;
+            h.store->setLoaded(twoRecords());
+            h.binding.setFileLocator(&locator);
+            h.startAndWait();
+            QVERIFY(!h.binding.statusProblem());
+            QVERIFY(h.binding.locate(QStringLiteral("1")));
+            locator.finish({.status = AudioFileLocationStatus::Selected, .source_path = track(2)});
+            QVERIFY(h.binding.statusProblem());
+            QVERIFY(h.binding.locate(QStringLiteral("1")));
+            locator.finish({.status = AudioFileLocationStatus::Selected, .source_path = Path{}});
+            QVERIFY(h.binding.statusProblem());
+            QVERIFY(h.binding.locate(QStringLiteral("1")));
+            locator.finish({.status = AudioFileLocationStatus::Failed});
+            QVERIFY(h.binding.statusProblem());
+            QVERIFY(h.binding.locate(QStringLiteral("1")));
+            locator.finish({.status = AudioFileLocationStatus::Selected, .source_path = track(9)});
+            QVERIFY(!h.binding.statusProblem());
+        }
+    }
+    void statusTextsAreTheRevisedOnes() {
+        {
+            Harness h; // Admission failure.
+            h.startAndWait();
+            h.binding.admit({Path{}});
+            QCOMPARE(h.binding.statusText(),
+                     QStringLiteral("Não foi possível adicionar à biblioteca. Ela chegou ao limite ou o caminho do "
+                                    "arquivo é inválido."));
+        }
+        {
+            Harness h; // Located.
+            FakeLocator locator;
+            h.store->setLoaded(twoRecords());
+            h.binding.setFileLocator(&locator);
+            h.startAndWait();
+            QVERIFY(h.binding.locate(QStringLiteral("1")));
+            locator.finish({.status = AudioFileLocationStatus::Selected, .source_path = track(9)});
+            QCOMPARE(h.binding.statusText(),
+                     QStringLiteral("Arquivo localizado. A faixa continua no mesmo lugar da biblioteca."));
+        }
+        {
+            Harness h; // File dialog failure.
+            FakeLocator locator;
+            h.store->setLoaded(twoRecords());
+            h.binding.setFileLocator(&locator);
+            h.startAndWait();
+            QVERIFY(h.binding.locate(QStringLiteral("1")));
+            locator.finish({.status = AudioFileLocationStatus::Failed});
+            QCOMPARE(h.binding.statusText(),
+                     QStringLiteral("Não foi possível abrir a janela de arquivos. Tente novamente."));
+        }
+        {
+            Harness h; // Newer version on load.
+            h.store->setLoaded({.status = LibraryLoadStatus::FutureVersion});
+            h.startAndWait();
+            QCOMPARE(h.binding.statusText(),
+                     QStringLiteral("A biblioteca foi salva por uma versão mais nova do RC Music. Nada foi "
+                                    "alterado."));
+        }
+        {
+            Harness h; // Failed load.
+            h.store->setLoaded({.status = LibraryLoadStatus::Invalid});
+            h.startAndWait();
+            QCOMPARE(h.binding.statusText(),
+                     QStringLiteral("Não foi possível carregar a biblioteca. Nada foi alterado. Tente novamente."));
+        }
+        {
+            Harness h; // Recovered from the backup.
+            auto loaded = twoRecords();
+            loaded.status = LibraryLoadStatus::RecoveredFromBackup;
+            h.store->setLoaded(loaded);
+            h.startAndWait();
+            QCOMPARE(h.binding.statusText(), QStringLiteral("Biblioteca recuperada da cópia de segurança."));
+        }
+        {
+            Harness h; // Newer version on save.
+            h.store->setNextSave(LibrarySaveStatus::BlockedByFutureVersion);
+            h.startAndWait();
+            h.binding.admit({track(1)});
+            QTRY_VERIFY(h.binding.canRetrySave());
+            QCOMPARE(h.binding.statusText(),
+                     QStringLiteral("A biblioteca foi salva por uma versão mais nova do RC Music. Ela não foi "
+                                    "alterada, e as faixas novas não foram salvas."));
+        }
+        {
+            Harness h; // A failed save keeps its text.
+            h.store->setNextSave(LibrarySaveStatus::Failed);
+            h.startAndWait();
+            h.binding.admit({track(1)});
+            QTRY_VERIFY(h.binding.canRetrySave());
+            QCOMPARE(h.binding.statusText(), QStringLiteral("Não foi possível salvar a biblioteca. Tente novamente."));
+        }
     }
     void removingDropsOnlyTheRecordOnceSaved() {
         Harness h;

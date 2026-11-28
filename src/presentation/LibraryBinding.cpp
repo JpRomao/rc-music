@@ -112,6 +112,10 @@ struct LibraryBinding::Impl final {
     std::size_t buffered_paths{};
     QFutureWatcher<Job> watcher;
     QString notice;
+    bool notice_problem{};
+    QueuePlayer queue_player;
+    std::optional<std::filesystem::path> now_playing;
+    QString playing_id;
     bool busy{}, ready{}, seed_allowed{}, save_failed{}, stopping{};
     std::shared_ptr<const MetadataExtractor> extractor;
     QFutureWatcher<std::vector<MetadataUpdate>> metadata_watcher;
@@ -176,14 +180,33 @@ struct LibraryBinding::Impl final {
         enrich();
         emit owner.changed();
     }
+    void say(QString text, const bool problem = false) {
+        notice = std::move(text);
+        notice_problem = problem;
+    }
+    // The record of the file now playing, by exact native path (confirmed catalog only).
+    void refreshPlaying() {
+        QString id;
+        if (now_playing)
+            for (const auto& record : confirmed.snapshot().records)
+                if (record.source_path.native() == now_playing->native()) {
+                    id = QString::number(record.id);
+                    break;
+                }
+        if (id == playing_id)
+            return;
+        playing_id = std::move(id);
+        emit owner.playingRecordIdChanged();
+    }
     bool unsaved() const { return working && !(working->snapshot() == confirmed.snapshot()); }
 
     void apply(const Paths& paths, const std::string& job_id = {}) {
         auto candidate = working ? *working : confirmed;
         const auto admitted = job_id.empty() ? candidate.admit(paths) : candidate.admitDownload(paths.front(), job_id);
         if (!admitted) {
-            notice =
-                LibraryBinding::tr("Não foi possível adicionar à biblioteca: limite atingido ou caminho inválido.");
+            say(LibraryBinding::tr("Não foi possível adicionar à biblioteca. Ela chegou ao limite ou o caminho do "
+                                   "arquivo é inválido."),
+                true);
             return;
         }
         working = std::move(candidate);
@@ -232,7 +255,7 @@ struct LibraryBinding::Impl final {
             return false;
         const auto retained = store;
         busy = true;
-        notice = LibraryBinding::tr("Carregando a biblioteca…");
+        say(LibraryBinding::tr("Carregando a biblioteca…"));
         watcher.setFuture(QtConcurrent::run([retained] {
             Job result;
             result.loading = true;
@@ -260,6 +283,7 @@ struct LibraryBinding::Impl final {
         if (newest.size() > static_cast<std::size_t>(LibraryBinding::recentLimit))
             newest.resize(static_cast<std::size_t>(LibraryBinding::recentLimit));
         recent.setRecords(newest);
+        refreshPlaying();
         if (artwork_index)
             artwork_index->update(confirmed.snapshot());
         // A failure waits for new ingress or an explicit retry; it never loops.
@@ -287,20 +311,20 @@ struct LibraryBinding::Impl final {
                         working.reset();
                     save_failed = false;
                     save();
-                    notice =
-                        LibraryBinding::tr("Arquivo localizado. A faixa continua com o mesmo lugar na biblioteca.");
+                    say(LibraryBinding::tr("Arquivo localizado. A faixa continua no mesmo lugar da biblioteca."));
                     break;
                 case LibraryRelocation::Conflict:
-                    notice = LibraryBinding::tr("Esse arquivo já está na biblioteca como outra faixa. Nada foi "
-                                                "alterado.");
+                    say(LibraryBinding::tr("Esse arquivo já está na biblioteca como outra faixa. Nada foi "
+                                           "alterado."),
+                        true);
                     break;
                 default:
-                    notice = LibraryBinding::tr("Esse arquivo não pode ser usado. Escolha outro.");
+                    say(LibraryBinding::tr("Esse arquivo não pode ser usado. Escolha outro."), true);
                     break;
                 }
             }
         } else if (result.status == AudioFileLocationStatus::Failed) {
-            notice = LibraryBinding::tr("Não foi possível abrir a escolha de arquivo. Tente novamente.");
+            say(LibraryBinding::tr("Não foi possível abrir a janela de arquivos. Tente novamente."), true);
         }
         emit owner.changed();
     }
@@ -310,19 +334,20 @@ struct LibraryBinding::Impl final {
                              status == LibraryLoadStatus::Missing) &&
                             confirmed.restore(std::move(result.snapshot));
         if (!usable) {
-            notice = status == LibraryLoadStatus::FutureVersion
-                         ? LibraryBinding::tr("A biblioteca foi salva por uma versão mais recente do RC Music. "
-                                              "O arquivo foi preservado.")
-                         : LibraryBinding::tr("Não foi possível carregar a biblioteca. Confira library.json e "
-                                              "library.json.bak na pasta de configuração e tente novamente.");
+            say(status == LibraryLoadStatus::FutureVersion
+                    ? LibraryBinding::tr("A biblioteca foi salva por uma versão mais nova do RC Music. "
+                                         "Nada foi alterado.")
+                    : LibraryBinding::tr("Não foi possível carregar a biblioteca. Nada foi alterado. "
+                                         "Tente novamente."),
+                true);
             return;
         }
         ready = true;
         // Only the very first use may adopt the existing queue and playlists.
         seed_allowed = status == LibraryLoadStatus::Missing;
-        notice = status == LibraryLoadStatus::RecoveredFromBackup
-                     ? LibraryBinding::tr("Biblioteca recuperada do backup.")
-                     : LibraryBinding::tr("Sua biblioteca está pronta.");
+        say(status == LibraryLoadStatus::RecoveredFromBackup
+                ? LibraryBinding::tr("Biblioteca recuperada da cópia de segurança.")
+                : LibraryBinding::tr("Sua biblioteca está pronta."));
         auto pending = std::move(buffered);
         buffered.clear();
         buffered_paths = 0;
@@ -335,14 +360,15 @@ struct LibraryBinding::Impl final {
             static_cast<void>(confirmed.restore(std::move(written)));
             if (!unsaved())
                 working.reset();
-            notice = LibraryBinding::tr("Biblioteca salva.");
+            say(LibraryBinding::tr("Biblioteca salva."));
             return;
         }
         save_failed = true;
-        notice = status == LibrarySaveStatus::BlockedByFutureVersion
-                     ? LibraryBinding::tr("Uma versão mais recente da biblioteca foi encontrada. O arquivo foi "
-                                          "preservado e as músicas novas não foram salvas.")
-                     : LibraryBinding::tr("Não foi possível salvar a biblioteca. Tente novamente.");
+        say(status == LibrarySaveStatus::BlockedByFutureVersion
+                ? LibraryBinding::tr("A biblioteca foi salva por uma versão mais nova do RC Music. Ela não "
+                                     "foi alterada, e as faixas novas não foram salvas.")
+                : LibraryBinding::tr("Não foi possível salvar a biblioteca. Tente novamente."),
+            true);
     }
 };
 
@@ -459,6 +485,24 @@ void LibraryBinding::setFilterText(const QString& text) {
     emit changed();
 }
 int LibraryBinding::visibleCount() const { return impl_->model.count(); }
+bool LibraryBinding::playNow(const QString& record_id) {
+    const auto id = recordId(record_id);
+    const auto* record = id ? impl_->confirmed.find(*id) : nullptr;
+    if (!record || !record->available || !impl_->queue_player || impl_->stopping)
+        return false;
+    try {
+        return impl_->queue_player({record->source_path});
+    } catch (...) {
+        return false;
+    }
+}
+void LibraryBinding::setQueuePlayer(QueuePlayer player) { impl_->queue_player = std::move(player); }
+void LibraryBinding::setNowPlaying(std::optional<std::filesystem::path> path) {
+    impl_->now_playing = std::move(path);
+    impl_->refreshPlaying();
+}
+QString LibraryBinding::playingRecordId() const { return impl_->playing_id; }
+bool LibraryBinding::statusProblem() const { return impl_->notice_problem; }
 bool LibraryBinding::enqueue(const QString& record_id) {
     const auto id = recordId(record_id);
     const auto* record = id ? impl_->confirmed.find(*id) : nullptr;

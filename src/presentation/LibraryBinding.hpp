@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace music_player::m0 {
@@ -30,6 +31,10 @@ class LibraryBinding final : public QObject {
     Q_PROPERTY(bool hasPendingChange READ hasPendingChange NOTIFY changed)
     Q_PROPERTY(bool canRetrySave READ canRetrySave NOTIFY changed)
     Q_PROPERTY(QString statusText READ statusText NOTIFY changed)
+    // True while statusText reports a failure (the page picks the Error tone).
+    Q_PROPERTY(bool statusProblem READ statusProblem NOTIFY changed)
+    // The library record of the file now playing; empty when none or not catalogued.
+    Q_PROPERTY(QString playingRecordId READ playingRecordId NOTIFY playingRecordIdChanged)
     Q_PROPERTY(QObject* model READ model CONSTANT)
     // The newest confirmed records (never filtered), for the Home shelf.
     Q_PROPERTY(QObject* recentModel READ recentModel CONSTANT)
@@ -47,6 +52,8 @@ class LibraryBinding final : public QObject {
     using QueueAppender = std::function<bool(Paths)>;
     // Appends to a saved playlist by its ID (the playlists binding).
     using PlaylistAppender = std::function<bool(const QString&, Paths)>;
+    // Plays the files right after the current track (PlayerPresenter::playSourcesNow).
+    using QueuePlayer = std::function<bool(Paths)>;
     // Passive construction; start() begins loading.
     explicit LibraryBinding(std::shared_ptr<LibraryStore> store, QueueAppender append_queue = {},
                             QObject* parent = nullptr);
@@ -59,6 +66,9 @@ class LibraryBinding final : public QObject {
     // Optional, borrowed for the binding's lifetime: the dialog used to locate a moved file.
     void setFileLocator(AudioFileLocator* locator);
     void setPlaylistAppender(PlaylistAppender appender);
+    void setQueuePlayer(QueuePlayer player);
+    // The file now playing (the presenter's local source), or none.
+    void setNowPlaying(std::optional<std::filesystem::path> path);
     // Explicit local ingress (open, add, drop, forwarding, playlist). Idempotent by exact path.
     void admit(Paths paths);
     // First-use seed from existing queue and playlist references. Ignored once
@@ -73,6 +83,8 @@ class LibraryBinding final : public QObject {
     [[nodiscard]] bool hasPendingChange() const;
     [[nodiscard]] bool canRetrySave() const;
     [[nodiscard]] QString statusText() const;
+    [[nodiscard]] bool statusProblem() const;
+    [[nodiscard]] QString playingRecordId() const;
     [[nodiscard]] LibrarySnapshot confirmedSnapshot() const;
     // List view projection of the confirmed catalog (a LibraryListModel).
     [[nodiscard]] QObject* model() const;
@@ -83,6 +95,9 @@ class LibraryBinding final : public QObject {
     [[nodiscard]] int visibleCount() const;
     // Adds the record's file to the end of the queue without playback.
     Q_INVOKABLE bool enqueue(const QString& record_id);
+    // Plays the record's file right after the current track; false when the record is
+    // unknown or unavailable, no player is wired, or the player refuses.
+    Q_INVOKABLE bool playNow(const QString& record_id);
     // Removes only the catalog record; the audio file, queue, playlists and
     // playback are untouched.
     Q_INVOKABLE bool remove(const QString& record_id);
@@ -105,6 +120,7 @@ class LibraryBinding final : public QObject {
     void beginShutdown();
   signals:
     void changed();
+    void playingRecordIdChanged();
 
   private:
     struct Impl;
