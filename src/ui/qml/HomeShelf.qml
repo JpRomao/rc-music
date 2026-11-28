@@ -7,7 +7,8 @@ import MusicPlayer.M0
 
 // A home shelf: a heading with its link, then a horizontal list of cards. With cardsFocusable, Tab enters the
 // list at its current card, walks the enabled cards in model order and leaves after the last one; Backtab from
-// the first card returns to the link. Without it the cards are skipped and the list stays out of the Tab order.
+// the first card returns to the link. Without it (the page turns it off while nothing can be opened) the cards are
+// skipped and the list stays out of the Tab order.
 // When the shelf hides while the focus is inside it (link or card), it says so and the page chooses the next place.
 Item {
     id: root

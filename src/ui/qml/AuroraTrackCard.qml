@@ -2,9 +2,9 @@ import QtQuick
 import QtQuick.Controls
 import MusicPlayer.M0
 
-// A card of a home shelf: the cover, a title of up to two lines and one subtitle line. An interactive card
-// is a button (click, Enter and the screen reader play it); a read-only one is static text and takes no focus.
-// The shelf walks the cards with Tab; the card only keeps the list's current index on itself.
+// A track card of a home shelf or of the library grid: the cover, a title of up to two lines and one subtitle
+// line. The card is a button (click, Enter and the screen reader play it). The shelf walks the cards with Tab;
+// the card only keeps the list's current index on itself.
 ItemDelegate {
     id: root
     required property ShellUiContract contract
@@ -13,7 +13,6 @@ ItemDelegate {
     property bool subtitleWarning: false
     property url artworkSource
     property bool playing: false
-    property bool interactive: true
     property string accessibleName
     // Shows the play, enqueue and more actions over the cover: on hover or highlight, or when the host says so.
     property bool actionsShown: cardHover.hovered || highlighted
@@ -43,28 +42,27 @@ ItemDelegate {
     // An unavailable card is dimmed as in the mockup (60%): the cover and the texts, not the chip, which keeps its
     // contrast; the reason is in the accessible description.
     readonly property real dimmedOpacity: unavailableBadge ? 0.6 : 1
-    hoverEnabled: interactive
-    focusPolicy: interactive ? Qt.ClickFocus : Qt.NoFocus
-    Accessible.role: interactive ? Accessible.Button : Accessible.StaticText
+    hoverEnabled: true
+    focusPolicy: Qt.ClickFocus
+    Accessible.role: Accessible.Button
     Accessible.name: accessibleName
-    Accessible.focusable: interactive && enabled
+    Accessible.focusable: enabled
     Accessible.focused: activeFocus || cursorFocused
     Accessible.onPressAction: root.activate()
 
     function activate() {
-        if (root.interactive && root.enabled && !root.unavailableBadge && root.playEnabled)
+        if (root.enabled && !root.unavailableBadge && root.playEnabled)
             root.activated();
     }
 
     HoverHandler {
         id: cardHover
-        enabled: root.interactive
     }
 
     onClicked: {
         if (root.activateOnClick)
             activate();
-        else if (root.interactive && root.enabled)
+        else if (root.enabled)
             root.selected();
     }
     onDoubleClicked: {
