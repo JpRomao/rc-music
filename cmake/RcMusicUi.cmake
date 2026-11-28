@@ -134,7 +134,7 @@ function(rc_music_add_ui target support qml_output)
             HomePage.qml
             HomeHero.qml
             HomeShelf.qml
-            HomeShelfCard.qml
+            AuroraTrackCard.qml
             SideNavigation.qml
             NavigationText.qml
             EmptyState.qml

@@ -99,7 +99,7 @@ ColumnLayout {
         model: root.presenter.queueModel
         onLinkTriggered: root.queueRequested()
         // The model object, not required roles: the card has its own title, and the fixture's queue has no cover role.
-        delegate: HomeShelfCard {
+        delegate: AuroraTrackCard {
             required property var model
             readonly property string occurrenceId: model.occurrenceId
             readonly property string displayTitle: model.title.length > 0 ? model.title : model.fileName
@@ -130,7 +130,7 @@ ColumnLayout {
         linkEnabled: root.openingEnabled
         model: root.libraryShown ? root.library.recentModel : null
         onLinkTriggered: root.libraryRequested()
-        delegate: HomeShelfCard {
+        delegate: AuroraTrackCard {
             required property var model
             required property string recordId
             required property string artist
