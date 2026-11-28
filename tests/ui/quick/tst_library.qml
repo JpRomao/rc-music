@@ -239,6 +239,24 @@ TestCase {
         tryCompare(menu, "opened", true);
         return menu;
     }
+    // The header of a column starts where the row's own column does: number, title, album and duration.
+    function columnsLineUp(panel) {
+        const columns = findChild(panel, "library-columns");
+        const first = row(panel, "3");
+        const pairs = [["library-column-0", "track-row-number"], ["library-column-1", "track-row-artwork"], ["library-column-2", "track-row-album"], ["library-column-3", "track-row-duration"]];
+        for (const pair of pairs) {
+            const header = findChild(columns, pair[0]);
+            const cell = findChild(first, pair[1]);
+            if (Math.round(header.mapToItem(null, 0, 0).x) !== Math.round(cell.mapToItem(null, 0, 0).x))
+                return false;
+            if (pair[1] !== "track-row-artwork" && Math.round(header.width) !== Math.round(cell.width))
+                return false;
+        }
+        return true;
+    }
+    function verifyColumnsLineUp(panel) {
+        verify(columnsLineUp(panel), "the column header and the rows do not line up");
+    }
     function feedbackText(panel) {
         return findChild(findChild(panel, "library-feedback"), "feedback-text").text;
     }
@@ -278,10 +296,12 @@ TestCase {
         verify(!findChild(panel, "library-no-matches").visible);
         verify(!findChild(panel, "library-see-queue").visible);
         verify(!findChild(panel, "library-feedback").visible);
-        // The header of a column starts where the row's own column does.
-        const album = findChild(first, "track-row-album");
-        const header = findChild(columns, "library-column-2");
-        compare(Math.round(header.mapToItem(null, 0, 0).x), Math.round(album.mapToItem(null, 0, 0).x));
+        verifyColumnsLineUp(panel);
+        shell.width = 1100;
+        tryCompare(shell.contentItem, "width", 1100);
+        tryVerify(() => Math.round(first.width) !== 1140 && first.width > 0);
+        tryVerify(() => columnsLineUp(panel));
+        verifyColumnsLineUp(panel);
     }
     function test_compactLibraryShowsTitleAndListOnly() {
         addRecords(8);
@@ -467,6 +487,9 @@ TestCase {
         verify(!findChild(available, "track-row-locate").visible);
         const gone = row(panel, "4");
         verify(gone.Accessible.name.indexOf("Indisponível") >= 0);
+        compare(findChild(panel, "library-list").count, 3);
+        hover(gone);
+        verify(!findChild(gone, "track-row-enqueue").visible);
         const locate = findChild(gone, "track-row-locate");
         verify(locate.visible);
         mouseClick(locate);
@@ -559,7 +582,10 @@ TestCase {
         compare(catalog.played, ["3"]);
         mouseDoubleClickSequence(last, 20, 20);
         compare(catalog.played, ["3", "5"]);
-        // The unavailable card can neither play nor be enqueued.
+        // The unavailable card can neither play nor be enqueued: it does not even try, and says nothing.
+        mouseDoubleClickSequence(gone, 20, 20);
+        compare(catalog.played, ["3", "5"]);
+        verify(!findChild(panel, "library-feedback").visible);
         hover(gone);
         tryVerify(() => findChild(gone, "shelf-card-play").visible);
         verify(!findChild(gone, "shelf-card-play").enabled);
@@ -642,5 +668,35 @@ TestCase {
         compare(retry.text, "Tentar salvar novamente");
         mouseClick(retry);
         compare(catalog.saveRetries, 1);
+    }
+    function test_playIsDisabledWhileAFileChooserIsOpen() {
+        const panel = openLibrary();
+        // Main drives it from the open file chooser, which the fake driver closes on its own: set it directly.
+        panel.openingEnabled = false;
+        const first = row(panel, "3");
+        showRowActions(first);
+        verify(!findChild(first, "track-row-play").enabled);
+        mouseDoubleClickSequence(first, first.width / 2, first.height / 2);
+        compare(catalog.played, []);
+        verify(!findChild(panel, "library-feedback").visible);
+        const menu = openRowMenu(panel, "3");
+        verify(!findChild(menu, "library-menu-play").enabled);
+        verify(findChild(menu, "library-menu-enqueue").enabled);
+        menu.close();
+        mouseClick(findChild(panel, "library-view-1"));
+        const cover = card(panel, "3");
+        hover(cover);
+        tryVerify(() => findChild(cover, "shelf-card-play").visible);
+        verify(!findChild(cover, "shelf-card-play").enabled);
+        mouseDoubleClickSequence(cover, 20, 20);
+        compare(catalog.played, []);
+    }
+    function test_openingAfterAFailedLoadFocusesTheRetryButton() {
+        catalog.ready = false;
+        catalog.statusProblem = true;
+        catalog.statusText = "Não foi possível carregar a biblioteca. Nada foi alterado. Tente novamente.";
+        const panel = openLibrary();
+        const retry = findChild(findChild(panel, "library-status-notice"), "library-status-notice-primary");
+        tryCompare(retry, "activeFocus", true);
     }
 }

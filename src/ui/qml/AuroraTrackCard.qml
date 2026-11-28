@@ -18,6 +18,8 @@ ItemDelegate {
     // Shows the play, enqueue and more actions over the cover: on hover or highlight, or when the host says so.
     property bool actionsShown: cardHover.hovered || highlighted
     property bool unavailableBadge: false
+    // False while the player cannot open anything: the play button and the activation do nothing.
+    property bool playEnabled: true
     // A click plays at once (shelves); otherwise it only selects and the double click plays (grid).
     property bool activateOnClick: true
     signal activated
@@ -45,7 +47,7 @@ ItemDelegate {
     Accessible.onPressAction: root.activate()
 
     function activate() {
-        if (root.interactive && root.enabled)
+        if (root.interactive && root.enabled && !root.unavailableBadge && root.playEnabled)
             root.activated();
     }
 
@@ -144,7 +146,7 @@ ItemDelegate {
             x: artwork.width - 8 - drawnSize - (width - drawnSize) / 2
             y: artwork.height - 8 - drawnSize - (height - drawnSize) / 2
             visible: root.actionsShown
-            enabled: !root.unavailableBadge
+            enabled: !root.unavailableBadge && root.playEnabled
             contract: root.contract
             controlId: "shelf-card-play"
             iconName: "play"

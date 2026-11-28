@@ -1595,10 +1595,15 @@ TestCase {
         property bool canLocate: false
         property string artworkBase: ""
         property string statusText: ""
+        property bool statusProblem: false
         property string filterText: ""
+        property string playingRecordId: ""
         property var model: null
         property var downloadJobs: ["in-library"]
         function cancelLocate() {
+        }
+        function playNow(id) {
+            return false;
         }
     }
     ListModel {

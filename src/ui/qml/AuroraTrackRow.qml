@@ -15,6 +15,8 @@ ItemDelegate {
     property string durationText
     property url artworkSource
     property bool available: true
+    // False while the player cannot open anything: the play button and the double click do nothing.
+    property bool playEnabled: true
     // The track the player has loaded; `playing` adds the wave in place of the number.
     property bool current: false
     property bool playing: false
@@ -30,21 +32,19 @@ ItemDelegate {
     signal locateRequested
     signal contextMenuRequested(Item opener)
 
-    readonly property int columnSpacing: 12
-    readonly property int sidePadding: 10
-    readonly property int numberWidth: 44
-    readonly property int durationWidth: 56
-    readonly property int actionsWidth: 96
+    readonly property int columnSpacing: columns.spacing
+    readonly property int sidePadding: columns.sidePadding
+    readonly property int numberWidth: columns.numberWidth
+    readonly property int durationWidth: columns.durationWidth
+    readonly property int actionsWidth: columns.actionsWidth
     readonly property int coverSize: compact ? 36 : 40
     readonly property bool actionsShown: rowHover.hovered || highlighted
-    // Free width shared by the title column (1.4 fr) and the album column (1 fr; none when compact).
-    readonly property real flexibleWidth: width - 2 * sidePadding - numberWidth - durationWidth - actionsWidth - columnSpacing * (compact ? 3 : 4)
-    readonly property real titleColumnWidth: compact ? flexibleWidth : flexibleWidth * 1.4 / 2.4
-    readonly property real albumColumnWidth: compact ? 0 : flexibleWidth / 2.4
-    readonly property real titleColumnX: sidePadding + numberWidth + columnSpacing
-    readonly property real albumColumnX: titleColumnX + titleColumnWidth + columnSpacing
-    readonly property real durationColumnX: compact ? albumColumnX : albumColumnX + albumColumnWidth + columnSpacing
-    readonly property real actionsColumnX: durationColumnX + durationWidth + columnSpacing
+    readonly property real titleColumnWidth: columns.titleWidth
+    readonly property real albumColumnWidth: columns.albumWidth
+    readonly property real titleColumnX: columns.titleX
+    readonly property real albumColumnX: columns.albumX
+    readonly property real durationColumnX: columns.durationX
+    readonly property real actionsColumnX: columns.actionsX
     readonly property color secondaryInk: actionsShown ? contract.textPrimaryColor : contract.textSecondaryColor
     readonly property color titleInk: {
         if (current)
@@ -61,9 +61,15 @@ ItemDelegate {
     Accessible.name: accessibleName
     Accessible.description: description
     Accessible.focusable: false
-    Accessible.onPressAction: root.activated()
+    Accessible.onPressAction: {
+        if (root.available && root.playEnabled)
+            root.activated();
+    }
 
-    onDoubleClicked: root.activated()
+    onDoubleClicked: {
+        if (root.available && root.playEnabled)
+            root.activated();
+    }
 
     HoverHandler {
         id: rowHover
@@ -110,7 +116,7 @@ ItemDelegate {
                 objectName: "track-row-play"
                 anchors.centerIn: parent
                 visible: root.actionsShown
-                enabled: root.available
+                enabled: root.available && root.playEnabled
                 contract: root.contract
                 controlId: "track-row-play"
                 iconName: "play"
@@ -291,6 +297,11 @@ ItemDelegate {
         shown: root.highlighted
     }
 
+    AuroraTrackColumns {
+        id: columns
+        width: root.width
+        compact: root.compact
+    }
     LibraryText {
         id: labels
     }

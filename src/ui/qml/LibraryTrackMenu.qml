@@ -11,6 +11,8 @@ AuroraMenu {
     property string recordTitle
     property bool available: true
     property bool canLocate: false
+    // False while the player cannot open anything (a file chooser is open).
+    property bool playEnabled: true
     // Saved playlists, each with `id` and `name`.
     property var playlists: []
 
@@ -35,7 +37,7 @@ AuroraMenu {
         iconName: "play"
         text: labels.playNow
         shortcutText: labels.playNowShortcut
-        enabled: root.available
+        enabled: root.available && root.playEnabled
         Accessible.description: root.available ? labels.playNowDescription : labels.unavailableReason
         onTriggered: root.playRequested()
     }

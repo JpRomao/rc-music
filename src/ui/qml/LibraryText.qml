@@ -2,8 +2,6 @@ import QtQml
 
 // Strings of the permanent library page (ADR-0019).
 QtObject {
-    id: root
-
     readonly property string filterPlaceholder: qsTr("Filtrar a biblioteca…")
     readonly property string filterName: qsTr("Filtrar a biblioteca")
     readonly property string coversView: qsTr("Capas")

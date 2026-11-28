@@ -67,6 +67,7 @@ PageSurface {
     onClosed: {
         removeConfirmation.close();
         trackMenu.close();
+        removePending = false;
         notice = "";
         seeQueueShown = false;
         if (library !== null)
@@ -77,8 +78,9 @@ PageSurface {
         view.currentIndex = index;
         view.forceActiveFocus(Qt.MouseFocusReason);
     }
-    function playNow(recordId) {
-        if (!openingEnabled)
+    // A missing file or a busy file chooser cannot play: nothing happens and no failure is shown for it.
+    function playNow(recordId, available) {
+        if (!openingEnabled || !available)
             return;
         showStatus = false;
         seeQueueShown = false;
@@ -283,47 +285,43 @@ PageSurface {
                 }
             }
         }
-        // The header of the columns, laid out with the same widths as AuroraTrackRow: side padding 10, number 44,
-        // title 1.4 fr, album 1 fr (none when compact), duration 56 and the 96 of the actions, 12 apart.
+        // The header of the columns reads the same measures as the rows (AuroraTrackColumns).
         Item {
             id: columns
             objectName: "library-columns"
-            readonly property int sidePadding: 10
-            readonly property int spacing: 12
-            readonly property real flexibleWidth: width - 2 * sidePadding - 44 - 56 - 96 - spacing * (root.compact ? 3 : 4)
-            readonly property real titleWidth: root.compact ? flexibleWidth : flexibleWidth * 1.4 / 2.4
-            readonly property real albumWidth: root.compact ? 0 : flexibleWidth / 2.4
-            readonly property real titleX: sidePadding + 44 + spacing
-            readonly property real albumX: titleX + titleWidth + spacing
-            readonly property real durationX: root.compact ? albumX : albumX + albumWidth + spacing
+            AuroraTrackColumns {
+                id: measures
+                width: columns.width
+                compact: root.compact
+            }
             Layout.fillWidth: true
             Layout.preferredHeight: numberHeader.implicitHeight
             visible: root.ready && root.visibleTotal > 0 && !root.showCovers && !root.compact
             HeaderText {
                 id: numberHeader
                 objectName: "library-column-0"
-                x: columns.sidePadding
-                width: 44
+                x: measures.sidePadding
+                width: measures.numberWidth
                 horizontalAlignment: Text.AlignHCenter
                 text: libraryText.numberHeader
             }
             HeaderText {
                 objectName: "library-column-1"
-                x: columns.titleX
-                width: columns.titleWidth
+                x: measures.titleX
+                width: measures.titleWidth
                 text: libraryText.trackHeader
             }
             HeaderText {
                 objectName: "library-column-2"
-                x: columns.albumX
-                width: columns.albumWidth
+                x: measures.albumX
+                width: measures.albumWidth
                 visible: !root.compact
                 text: libraryText.albumHeader
             }
             HeaderText {
                 objectName: "library-column-3"
-                x: columns.durationX
-                width: 56
+                x: measures.durationX
+                width: measures.durationWidth
                 horizontalAlignment: Text.AlignRight
                 text: libraryText.timeHeader
             }
@@ -371,11 +369,9 @@ PageSurface {
                 accessibleName: libraryText.rowName(model.title, model.artist, model.available)
                 description: libraryText.rowDescription(model.available)
                 onClicked: root.selectItem(list, index)
-                onActivated: {
-                    if (model.available)
-                        root.playNow(model.recordId);
-                }
-                onPlayRequested: root.playNow(model.recordId)
+                playEnabled: root.openingEnabled
+                onActivated: root.playNow(model.recordId, model.available)
+                onPlayRequested: root.playNow(model.recordId, model.available)
                 onEnqueueRequested: root.enqueue(model.recordId, model.title)
                 onLocateRequested: root.locate(model.recordId)
                 onMoreRequested: opener => root.showMenuFromButton(list, index, model.recordId, model.title, model.available, opener)
@@ -442,8 +438,9 @@ PageSurface {
                     highlighted: cell.GridView.isCurrentItem && grid.activeFocus
                     accessibleName: libraryText.rowName(cell.model.title, cell.model.artist, cell.model.available)
                     onSelected: root.selectItem(grid, cell.index)
-                    onActivated: root.playNow(cell.model.recordId)
-                    onPlayRequested: root.playNow(cell.model.recordId)
+                    playEnabled: root.openingEnabled
+                    onActivated: root.playNow(cell.model.recordId, cell.model.available)
+                    onPlayRequested: root.playNow(cell.model.recordId, cell.model.available)
                     onEnqueueRequested: root.enqueue(cell.model.recordId, cell.model.title)
                     onMoreRequested: opener => root.showMenuFromButton(grid, cell.index, cell.model.recordId, cell.model.title, cell.model.available, opener)
                 }
@@ -464,8 +461,9 @@ PageSurface {
         objectName: "library-track-menu"
         contract: root.contract
         playlists: root.playlistChoices
+        playEnabled: root.openingEnabled
         canLocate: root.library !== null && root.library.canLocate
-        onPlayRequested: root.playNow(recordId)
+        onPlayRequested: root.playNow(recordId, available)
         onEnqueueRequested: root.enqueue(recordId, recordTitle)
         onPlaylistChosen: (id, name) => root.addToPlaylist(recordId, recordTitle, id, name)
         onLocateRequested: root.locate(recordId)
