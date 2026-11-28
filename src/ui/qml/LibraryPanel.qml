@@ -42,6 +42,9 @@ PageSurface {
     property bool showCovers: false
     // The menu closes before the removal dialog opens, so the focus goes back to the page first.
     property bool removePending: false
+    // After a confirmed removal the focus goes where the row's place went; it waits for the catalog's own change.
+    property bool removeFocusArmed: false
+    property int removeFocusTotal: 0
     readonly property bool ready: library !== null && library.ready
     readonly property int total: library !== null ? library.count : 0
     readonly property int visibleTotal: library !== null ? library.visibleCount : 0
@@ -57,6 +60,10 @@ PageSurface {
     embedded: true
     padding: 0
     focus: true
+    onTotalChanged: {
+        if (removeFocusArmed && !removeConfirmation.visible)
+            Qt.callLater(root.settleFocusAfterRemove);
+    }
     blockingUiOpen: removeConfirmation.visible || trackMenu.visible || trackMenu.submenuOpen
     onSurfaceOpened: {
         if (ready && total > 0)
@@ -68,6 +75,7 @@ PageSurface {
         removeConfirmation.close();
         trackMenu.close();
         removePending = false;
+        removeFocusArmed = false;
         notice = "";
         seeQueueShown = false;
         if (library !== null)
@@ -117,6 +125,71 @@ PageSurface {
     // A menu opened from a button hangs from the button's right edge, so it stays inside the window.
     function showMenuFromButton(view, index, recordId, title, available, opener) {
         showTrackMenu(view, index, recordId, title, available, opener, opener.width - trackMenu.implicitWidth, opener.height);
+    }
+    // The current row of the list or the grid: the keyboard acts on it.
+    function currentEntry() {
+        const item = showCovers ? grid.currentItem : list.currentItem;
+        // The delegates declare `model` themselves; the view only knows them as items.
+        // qmllint disable missing-property
+        return item !== null && item.model !== undefined && item.model.recordId !== undefined ? item : null;
+        // qmllint enable missing-property
+    }
+    function playCurrent(event) {
+        event.accepted = true;
+        const item = currentEntry();
+        if (item !== null)
+            playNow(item.model.recordId, item.model.available);
+    }
+    function openMenuForCurrent(event) {
+        event.accepted = true;
+        const item = currentEntry();
+        if (item === null)
+            return;
+        trackMenu.keyboardOpened = true;
+        const entry = item.model;
+        if (activeView === list)
+            showTrackMenu(list, list.currentIndex, entry.recordId, entry.title, entry.available, item, item.actionsColumnX + item.actionsWidth - trackMenu.implicitWidth, item.height);
+        else
+            showTrackMenu(grid, grid.currentIndex, entry.recordId, entry.title, entry.available, item, item.width / 2, item.height / 2);
+    }
+    function moveCurrent(view, index) {
+        view.currentIndex = Math.max(0, Math.min(view.count - 1, index));
+        view.positionViewAtIndex(view.currentIndex, view === list ? ListView.Contain : GridView.Contain);
+    }
+    // What the views do not do by themselves: the ends, whole screens and the keyboard form of the context menu.
+    function viewKeyPressed(view, event) {
+        const entry = view.currentItem;
+        const rowHeight = entry !== null ? entry.height : 1;
+        const columns = view === grid ? Math.max(1, Math.floor((grid.width - grid.leftMargin) / grid.cellWidth)) : 1;
+        const screen = Math.max(1, Math.floor(view.height / (view === grid ? grid.cellHeight : rowHeight))) * columns;
+        event.accepted = true;
+        if (event.key === Qt.Key_Home)
+            moveCurrent(view, 0);
+        else if (event.key === Qt.Key_End)
+            moveCurrent(view, view.count - 1);
+        else if (event.key === Qt.Key_PageDown)
+            moveCurrent(view, view.currentIndex + screen);
+        else if (event.key === Qt.Key_PageUp)
+            moveCurrent(view, view.currentIndex - screen);
+        else if (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))
+            openMenuForCurrent(event);
+        else
+            event.accepted = false;
+    }
+    // Where the focus goes once the confirmation closes: the row that took the removed row's place, the filter when
+    // the filtered list emptied, or the empty state's action when the catalog did.
+    function settleFocusAfterRemove() {
+        if (removeFocusArmed && total !== removeFocusTotal)
+            removeFocusArmed = false;
+        if (!visible)
+            return;
+        const emptyState = libraryEmpty.item as AuroraEmptyState;
+        if (ready && total === 0 && emptyState !== null)
+            emptyState.primaryButton.forceActiveFocus(Qt.OtherFocusReason);
+        else if (ready && total > 0 && visibleTotal === 0)
+            filterField.input.forceActiveFocus(Qt.OtherFocusReason);
+        else
+            activeView.forceActiveFocus(Qt.OtherFocusReason);
     }
     function requestRemove() {
         removeId = trackMenu.recordId;
@@ -344,6 +417,10 @@ PageSurface {
             ScrollBar.vertical: AccessibleScrollBar {
                 contract: root.contract
             }
+            Keys.onReturnPressed: event => root.playCurrent(event)
+            Keys.onEnterPressed: event => root.playCurrent(event)
+            Keys.onMenuPressed: event => root.openMenuForCurrent(event)
+            Keys.onPressed: event => root.viewKeyPressed(list, event)
             Accessible.role: Accessible.List
             Accessible.name: navigationLabels.library
             delegate: AuroraTrackRow {
@@ -402,6 +479,10 @@ PageSurface {
             ScrollBar.vertical: AccessibleScrollBar {
                 contract: root.contract
             }
+            Keys.onReturnPressed: event => root.playCurrent(event)
+            Keys.onEnterPressed: event => root.playCurrent(event)
+            Keys.onMenuPressed: event => root.openMenuForCurrent(event)
+            Keys.onPressed: event => root.viewKeyPressed(grid, event)
             Accessible.role: Accessible.List
             Accessible.name: navigationLabels.library
             FontMetrics {
@@ -485,6 +566,10 @@ PageSurface {
         question: libraryText.removeTitle.arg(root.removeTitle)
         consequence: libraryText.removeAdvice
         confirmText: libraryText.removeConfirm
-        onConfirmed: root.library.remove(root.removeId)
+        onConfirmed: {
+            root.removeFocusTotal = root.total;
+            root.removeFocusArmed = root.library.remove(root.removeId);
+        }
+        onClosed: root.settleFocusAfterRemove()
     }
 }

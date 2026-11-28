@@ -16,6 +16,9 @@ AuroraMenu {
     // Saved playlists, each with `id` and `name`.
     property var playlists: []
 
+    // Opened from the keyboard: the focus starts on the first usable item.
+    property bool keyboardOpened: false
+
     signal playRequested
     signal enqueueRequested
     signal playlistChosen(string id, string name)
@@ -26,6 +29,20 @@ AuroraMenu {
     readonly property bool submenuOpen: playlistMenu.visible
 
     implicitWidth: 248
+
+    onOpened: {
+        if (!keyboardOpened)
+            return;
+        for (let i = 0; i < count; ++i) {
+            const entry = itemAt(i);
+            if (entry && entry.enabled && entry.visible && entry.height > 0 && entry.focusPolicy !== Qt.NoFocus) {
+                currentIndex = i;
+                entry.forceActiveFocus(Qt.TabFocusReason);
+                break;
+            }
+        }
+    }
+    onClosed: keyboardOpened = false
 
     LibraryText {
         id: labels

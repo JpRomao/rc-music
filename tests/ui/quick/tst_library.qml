@@ -12,35 +12,39 @@ TestCase {
     readonly property ShellUiContract contract: testProductUiContract // qmllint disable unqualified
     property var shell
 
-    ListModel {
-        id: records
-        ListElement {
-            recordId: "3"
-            title: "Canção do Mar"
-            artist: "Lia Campos"
-            album: "Depois da Chuva"
-            durationText: "3:37"
-            available: true
+    // The catalog's full list; `records` shows the part that matches the filter, as the binding's model does.
+    property var source: []
+    readonly property var baseRecords: [
+        {
+            recordId: "3",
+            title: "Canção do Mar",
+            artist: "Lia Campos",
+            album: "Depois da Chuva",
+            durationText: "3:37",
+            available: true,
             fileName: "Canção do Mar.mp3"
-        }
-        ListElement {
-            recordId: "4"
-            title: "faixa sem nome"
-            artist: ""
-            album: ""
-            durationText: ""
-            available: false
+        },
+        {
+            recordId: "4",
+            title: "faixa sem nome",
+            artist: "",
+            album: "",
+            durationText: "",
+            available: false,
             fileName: "faixa sem nome.flac"
-        }
-        ListElement {
-            recordId: "5"
-            title: "Faixa %2 ao vivo"
-            artist: "Rui Alves"
-            album: "Ao Vivo"
-            durationText: "4:01"
-            available: true
+        },
+        {
+            recordId: "5",
+            title: "Faixa %2 ao vivo",
+            artist: "Rui Alves",
+            album: "Ao Vivo",
+            durationText: "4:01",
+            available: true,
             fileName: "ao vivo.mp3"
         }
+    ]
+    ListModel {
+        id: records
     }
     ListModel {
         id: recentRecords
@@ -56,6 +60,7 @@ TestCase {
         property string statusText: "Sua biblioteca está pronta."
         property bool statusProblem: false
         property string filterText: ""
+        onFilterTextChanged: testCase.applyFilter()
         property string playingRecordId: ""
         property var model: records
         property var recentModel: recentRecords
@@ -79,6 +84,17 @@ TestCase {
         }
         function remove(id) {
             removed = removed.concat([id]);
+            testCase.source = testCase.source.filter(entry => entry.recordId !== id);
+            for (let i = 0; i < records.count; ++i) {
+                if (records.get(i).recordId === id) {
+                    records.remove(i);
+                    break;
+                }
+            }
+            count = testCase.source.length;
+            visibleCount = records.count;
+            if (playingRecordId === id)
+                playingRecordId = "";
             return true;
         }
         function locate(id) {
@@ -142,8 +158,11 @@ TestCase {
     }
     function init() {
         driver.resetLocalScenario();
-        if (records.count > 3)
-            records.remove(3, records.count - 3);
+        catalog.filterText = "";
+        source = baseRecords.slice();
+        records.clear();
+        for (const entry of source)
+            records.append(entry);
         catalog.ready = true;
         catalog.busy = false;
         catalog.count = 3;
@@ -199,9 +218,25 @@ TestCase {
         driver.publishLocalPlaying();
         tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
     }
+    // The binding's model follows the filter by removing and inserting rows, never by a reset.
+    function applyFilter() {
+        const needle = catalog.filterText.trim().toLowerCase();
+        let at = 0;
+        for (const entry of source) {
+            const matches = needle.length === 0 || entry.title.toLowerCase().indexOf(needle) >= 0;
+            const shown = at < records.count && records.get(at).recordId === entry.recordId;
+            if (matches && shown)
+                ++at;
+            else if (matches)
+                records.insert(at++, entry);
+            else if (shown)
+                records.remove(at);
+        }
+        catalog.visibleCount = records.count;
+    }
     function addRecords(extra) {
         for (let i = 0; i < extra; ++i) {
-            records.append({
+            const entry = {
                 recordId: String(100 + i),
                 title: "Faixa " + i,
                 artist: "Artista",
@@ -209,9 +244,11 @@ TestCase {
                 durationText: "3:00",
                 available: true,
                 fileName: "faixa" + i + ".mp3"
-            });
+            };
+            source = source.concat([entry]);
+            records.append(entry);
         }
-        catalog.count = records.count;
+        catalog.count = source.length;
         catalog.visibleCount = records.count;
     }
     function row(panel, id) {
@@ -698,5 +735,293 @@ TestCase {
         const panel = openLibrary();
         const retry = findChild(findChild(panel, "library-status-notice"), "library-status-notice-primary");
         tryCompare(retry, "activeFocus", true);
+    }
+
+    // The name of the focused control; a row of the list that holds the focus counts as the list.
+    function focusName() {
+        for (let item = shell.activeFocusItem; item; item = item.parent) {
+            if (item.objectName === "library-list" || item.objectName === "library-grid")
+                return String(item.objectName);
+        }
+        const focused = shell.activeFocusItem;
+        return focused ? String(focused.objectName) : "";
+    }
+    function tabNames(key, count) {
+        const names = [];
+        for (let i = 0; i < count; ++i) {
+            keyClick(key);
+            names.push(focusName());
+        }
+        return names;
+    }
+    function focusList(panel) {
+        const list = findChild(panel, "library-list");
+        list.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(list, "activeFocus", true);
+        return list;
+    }
+    // The current row is wholly inside the list's window.
+    function wholeRowShown(list) {
+        const item = list.currentItem;
+        return item !== null && item.y >= list.contentY && item.y + item.height <= list.contentY + list.height;
+    }
+    function confirmRemoval() {
+        const confirmation = findChild(shell, "library-remove-confirmation");
+        tryCompare(confirmation, "visible", true);
+        mouseClick(findChild(confirmation, "library-remove-confirmation-confirm"));
+        tryCompare(confirmation, "visible", false);
+    }
+    function removeCurrentFromTheKeyboard(panel) {
+        const menu = findChild(panel, "library-track-menu");
+        keyClick(Qt.Key_Menu);
+        tryCompare(menu, "opened", true);
+        mouseClick(findChild(menu, "library-menu-remove"));
+        confirmRemoval();
+    }
+
+    function test_tabOrderThroughTheLibrary() {
+        loadPlayingQueue();
+        const panel = openLibrary();
+        const theme = findChild(shell, "theme-toggle");
+        theme.forceActiveFocus(Qt.TabFocusReason);
+        compare(focusName(), "theme-toggle");
+        compare(tabNames(Qt.Key_Tab, 3), ["library-filter", "library-view-0", "library-list"]);
+        const list = findChild(panel, "library-list");
+        // The current row wears the focus outline and shows its actions.
+        verify(row(panel, "3").highlighted);
+        compare(tabNames(Qt.Key_Tab, 1), ["progress"]);
+        verify(!row(panel, "3").highlighted);
+        compare(tabNames(Qt.Key_Backtab, 4), ["library-list", "library-view-0", "library-filter", "theme-toggle"]);
+        // The confirmation line adds one stop between the view choice and the list.
+        const first = row(panel, "3");
+        showRowActions(first);
+        mouseClick(findChild(first, "track-row-enqueue"));
+        const seeQueue = findChild(panel, "library-see-queue");
+        tryVerify(() => seeQueue.visible);
+        theme.forceActiveFocus(Qt.TabFocusReason);
+        compare(tabNames(Qt.Key_Tab, 5), ["library-filter", "library-view-0", "library-see-queue", "library-list", "progress"]);
+        compare(tabNames(Qt.Key_Backtab, 5), ["library-list", "library-see-queue", "library-view-0", "library-filter", "theme-toggle"]);
+        // The list is one stop: none of the row's buttons takes the Tab.
+        compare(list.activeFocusOnTab, true);
+        for (const name of ["track-row-play", "track-row-enqueue", "track-row-more", "track-row-locate"])
+            compare(findChild(first, name).activeFocusOnTab, false);
+    }
+    function test_arrowsMoveTheCurrentRowAndEnterPlaysIt() {
+        addRecords(30);
+        const panel = openLibrary();
+        const list = focusList(panel);
+        compare(list.currentIndex, 0);
+        verify(row(panel, "3").highlighted);
+        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Down);
+        compare(list.currentIndex, 2);
+        keyClick(Qt.Key_Return);
+        compare(catalog.played, ["5"]);
+        keyClick(Qt.Key_End);
+        compare(list.currentIndex, list.count - 1);
+        tryVerify(() => wholeRowShown(list), 5000, "the last row is not wholly shown");
+        keyClick(Qt.Key_Home);
+        compare(list.currentIndex, 0);
+        tryVerify(() => wholeRowShown(list) && list.contentY === 0);
+        keyClick(Qt.Key_PageDown);
+        verify(list.currentIndex > 3, "PageDown moved to " + list.currentIndex);
+        keyClick(Qt.Key_PageUp);
+        compare(list.currentIndex, 0);
+        keyClick(Qt.Key_Enter);
+        compare(catalog.played, ["5", "3"]);
+    }
+    function test_menuKeysOpenTheRowMenu() {
+        const panel = openLibrary();
+        const list = focusList(panel);
+        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Down);
+        const menu = findChild(panel, "library-track-menu");
+        for (const press of [[Qt.Key_Menu, Qt.NoModifier], [Qt.Key_F10, Qt.ShiftModifier]]) {
+            keyClick(press[0], press[1]);
+            tryCompare(menu, "opened", true);
+            compare(menu.recordId, "5");
+            compare(list.currentIndex, 2);
+            tryCompare(findChild(menu, "library-menu-play"), "activeFocus", true);
+            keyClick(Qt.Key_Escape);
+            tryCompare(menu, "visible", false);
+            tryCompare(list, "activeFocus", true);
+            compare(panel.opened, true);
+            compare(shell.currentPage, "library");
+        }
+        // Enter on the first item plays the row and sends the focus back to the list.
+        keyClick(Qt.Key_Menu);
+        tryCompare(menu, "opened", true);
+        tryCompare(findChild(menu, "library-menu-play"), "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        compare(catalog.played, ["5"]);
+        tryCompare(menu, "visible", false);
+        tryCompare(list, "activeFocus", true);
+        // On a missing file the first item is disabled: the focus starts on the first usable one.
+        keyClick(Qt.Key_Up);
+        compare(list.currentIndex, 1);
+        keyClick(Qt.Key_Menu);
+        tryCompare(menu, "opened", true);
+        compare(menu.recordId, "4");
+        verify(!findChild(menu, "library-menu-play").enabled);
+        tryCompare(findChild(menu, "library-menu-locate"), "activeFocus", true);
+        keyClick(Qt.Key_Escape);
+        tryCompare(menu, "visible", false);
+        tryCompare(list, "activeFocus", true);
+    }
+    function test_rightClickOpensTheMenuOnTheClickedRow() {
+        addRecords(8);
+        const panel = openLibrary();
+        const list = findChild(panel, "library-list");
+        const target = row(panel, "5");
+        mouseClick(target, target.width / 2, target.height / 2, Qt.RightButton);
+        const menu = findChild(panel, "library-track-menu");
+        tryCompare(menu, "opened", true);
+        compare(menu.recordId, "5");
+        compare(list.currentIndex, 2);
+        compare(list.currentItem.objectName, "library-row-5");
+        keyClick(Qt.Key_Escape);
+        tryCompare(menu, "visible", false);
+        tryCompare(list, "activeFocus", true);
+    }
+    function test_unavailableRowEnterDoesNothingButSaysWhy() {
+        const panel = openLibrary();
+        const list = focusList(panel);
+        keyClick(Qt.Key_Down);
+        compare(list.currentItem.objectName, "library-row-4");
+        keyClick(Qt.Key_Return);
+        keyClick(Qt.Key_Enter);
+        compare(catalog.played, []);
+        verify(!findChild(panel, "library-feedback").visible);
+        compare(list.currentItem.Accessible.description, "Arquivo não encontrado. Localize o arquivo para tocar a faixa.");
+        verify(list.currentItem.Accessible.name.indexOf("Indisponível") >= 0);
+    }
+    function test_removingTheFocusedRowKeepsTheFocusInTheList() {
+        addRecords(2);
+        const panel = openLibrary();
+        const list = focusList(panel);
+        // The middle: the next row takes the place and the focus stays in the list.
+        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Down);
+        removeCurrentFromTheKeyboard(panel);
+        compare(catalog.removed, ["5"]);
+        tryCompare(list, "activeFocus", true);
+        compare(list.currentIndex, 2);
+        compare(list.currentItem.objectName, "library-row-100");
+        // The last: the previous row becomes the current one.
+        keyClick(Qt.Key_End);
+        compare(list.currentItem.objectName, "library-row-101");
+        removeCurrentFromTheKeyboard(panel);
+        compare(catalog.removed, ["5", "101"]);
+        tryCompare(list, "activeFocus", true);
+        compare(list.currentItem.objectName, "library-row-100");
+        // The filtered list empties while the catalog still has tracks: the focus goes to the filter.
+        const field = findChild(panel, "library-filter");
+        field.forceActiveFocus();
+        for (const key of [Qt.Key_M, Qt.Key_A, Qt.Key_R])
+            keyClick(key);
+        compare(catalog.filterText, "mar");
+        tryCompare(list, "count", 1);
+        tryVerify(() => list.currentItem !== null && list.currentItem.objectName === "library-row-3");
+        list.forceActiveFocus(Qt.TabFocusReason);
+        removeCurrentFromTheKeyboard(panel);
+        compare(catalog.removed, ["5", "101", "3"]);
+        tryCompare(catalog, "visibleCount", 0);
+        verify(catalog.count > 0);
+        tryCompare(field, "activeFocus", true);
+        // The catalog empties: the toolbar is hidden, so the focus goes to the empty state's action.
+        catalog.filterText = "";
+        tryCompare(list, "count", 2);
+        catalog.remove("100");
+        tryCompare(list, "count", 1);
+        tryVerify(() => list.currentItem !== null && list.currentItem.objectName === "library-row-4");
+        list.forceActiveFocus(Qt.TabFocusReason);
+        removeCurrentFromTheKeyboard(panel);
+        compare(catalog.count, 0);
+        verify(!field.visible);
+        tryCompare(findChild(panel, "library-empty-primary"), "activeFocus", true);
+    }
+    function test_removingThePlayingRecordKeepsPlaying() {
+        loadPlayingQueue();
+        catalog.playingRecordId = "3";
+        const panel = openLibrary();
+        const first = row(panel, "3");
+        verify(findChild(first, "track-row-wave").visible);
+        const commands = () => [driver.localLoadCount(), driver.localUnloadCount(), driver.localPlayCount(), driver.localPauseCount(), driver.localSeekCount()];
+        const before = commands();
+        const playing = presenter.currentTitle;
+        const queued = presenter.queueModel.count;
+        const playingIndex = presenter.currentQueueIndex;
+        const menu = openRowMenu(panel, "3");
+        mouseClick(findChild(menu, "library-menu-remove"));
+        confirmRemoval();
+        compare(catalog.removed, ["3"]);
+        compare(catalog.playingRecordId, "");
+        compare(presenter.playbackState, PlayerPresenter.Playing);
+        compare(presenter.currentTitle, playing);
+        compare(presenter.queueModel.count, queued);
+        compare(presenter.currentQueueIndex, playingIndex);
+        compare(commands(), before);
+        compare(catalog.played, []);
+        tryCompare(findChild(panel, "library-list"), "count", 2);
+        verify(!findChild(row(panel, "5"), "track-row-wave").visible);
+    }
+    function test_gridKeyboard() {
+        addRecords(16);
+        const panel = openLibrary();
+        mouseClick(findChild(panel, "library-view-1"));
+        const grid = findChild(panel, "library-grid");
+        tryVerify(() => grid.visible && grid.width > 0 && grid.height > 0);
+        card(panel, "3");
+        grid.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(grid, "activeFocus", true);
+        let columns = 0;
+        tryVerify(() => {
+            columns = 0;
+            const top = grid.itemAtIndex(0);
+            for (let i = 0; top && i < 12; ++i) {
+                const item = grid.itemAtIndex(i);
+                if (item && item.y === top.y)
+                    ++columns;
+            }
+            return columns > 1;
+        });
+        keyClick(Qt.Key_Right);
+        keyClick(Qt.Key_Right);
+        compare(grid.currentIndex, 2);
+        keyClick(Qt.Key_Down);
+        compare(grid.currentIndex, 2 + columns);
+        keyClick(Qt.Key_Up);
+        compare(grid.currentIndex, 2);
+        compare(grid.currentItem.model.recordId, "5");
+        keyClick(Qt.Key_Return);
+        compare(catalog.played, ["5"]);
+        keyClick(Qt.Key_Menu);
+        const menu = findChild(panel, "library-track-menu");
+        tryCompare(menu, "opened", true);
+        compare(menu.recordId, "5");
+        tryCompare(findChild(menu, "library-menu-play"), "activeFocus", true);
+        keyClick(Qt.Key_Escape);
+        tryCompare(menu, "visible", false);
+        tryCompare(grid, "activeFocus", true);
+        compare(panel.opened, true);
+        keyClick(Qt.Key_End);
+        compare(grid.currentIndex, grid.count - 1);
+        keyClick(Qt.Key_Home);
+        compare(grid.currentIndex, 0);
+    }
+    function test_filterKeepsTheCurrentRowWhenItStillMatches() {
+        const panel = openLibrary();
+        const list = focusList(panel);
+        keyClick(Qt.Key_Down);
+        keyClick(Qt.Key_Down);
+        compare(list.currentItem.objectName, "library-row-5");
+        const field = findChild(panel, "library-filter");
+        field.forceActiveFocus();
+        for (const key of [Qt.Key_F, Qt.Key_A, Qt.Key_I, Qt.Key_X, Qt.Key_A])
+            keyClick(key);
+        compare(catalog.filterText, "faixa");
+        tryCompare(list, "count", 2);
+        tryCompare(list, "currentIndex", 1);
+        compare(list.currentItem.objectName, "library-row-5");
     }
 }

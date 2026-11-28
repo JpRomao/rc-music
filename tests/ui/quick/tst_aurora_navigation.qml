@@ -202,6 +202,8 @@ TestCase {
         if (shell)
             shell.destroy();
         shell = null;
+        fakeRecords.clear();
+        fakeLibrary.visibleCount = 0;
         driver.resetLocalScenario();
         driver.setHighContrast(false, false);
         driver.setSystemAppearance(false, false);
@@ -687,7 +689,9 @@ TestCase {
             {
                 tag: "library",
                 button: "library",
-                page: "library-panel"
+                page: "library-panel",
+                // The filter, the view choice and the list, which is one stop: the focus rests on its current row.
+                stops: ["library-filter", "library-view-0", "library-list"]
             },
             {
                 tag: "playlists",
@@ -723,6 +727,18 @@ TestCase {
         fakeProfile.needsSetup = false;
         shell.profile = fakeProfile;
         mountNavigationBackends();
+        if (data.stops !== undefined) {
+            // The library page needs rows to have a list stop.
+            fakeRecords.append({
+                recordId: "1",
+                title: "Primeira",
+                artist: "Artista",
+                album: "",
+                durationText: "3:00",
+                available: true
+            });
+            fakeLibrary.visibleCount = 1;
+        }
         const page = findChild(shell, data.page);
         findChild(shell, data.button).Accessible.pressAction();
         tryVerify(() => page.visible);
@@ -747,6 +763,10 @@ TestCase {
         verify(progressAt >= head.length + (data.pageless ? 0 : 1), "the page comes before the player; trail: " + names.join(", "));
         for (let i = head.length; i < progressAt; ++i)
             verify(isInside(cycle[i], page), names[i] + " belongs to the open page; trail: " + names.join(", "));
+        if (data.stops !== undefined) {
+            const stops = names.slice(head.length, progressAt).map(name => name.indexOf("library-row-") === 0 ? "library-list" : name);
+            compare(stops, data.stops, "the page's own stops; trail: " + names.join(", "));
+        }
         compare(names.slice(progressAt), player, "the player closes the cycle; trail: " + names.join(", "));
 
         // Shift+Tab walks the very same cycle backwards.
