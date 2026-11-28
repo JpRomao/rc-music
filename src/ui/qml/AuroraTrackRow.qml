@@ -119,6 +119,7 @@ ItemDelegate {
                 round: true
                 drawnSize: 32
                 activeFocusOnTab: false
+                focusPolicy: Qt.NoFocus
                 text: labels.playNowName.arg(root.title)
                 onClicked: root.playRequested()
             }
@@ -242,6 +243,7 @@ ItemDelegate {
                 iconName: "plus"
                 drawnSize: 36
                 activeFocusOnTab: false
+                focusPolicy: Qt.NoFocus
                 text: labels.enqueue.arg(root.title)
                 onClicked: root.enqueueRequested()
             }
@@ -257,6 +259,7 @@ ItemDelegate {
                 drawnSize: 36
                 tonal: true
                 activeFocusOnTab: false
+                focusPolicy: Qt.NoFocus
                 text: controlsLabels.moreActionsFor.arg(root.title)
                 onClicked: root.moreRequested(moreButton)
             }
@@ -273,6 +276,7 @@ ItemDelegate {
                 leftPadding: 8
                 iconName: "folder-open"
                 activeFocusOnTab: false
+                focusPolicy: Qt.NoFocus
                 text: labels.locateShort
                 onClicked: root.locateRequested()
             }

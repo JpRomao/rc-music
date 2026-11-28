@@ -15,8 +15,8 @@ ItemDelegate {
     property bool playing: false
     property bool interactive: true
     property string accessibleName
-    // Hover or focus decided by the host: shows the play, enqueue and more actions over the cover.
-    property bool actionsShown: false
+    // Shows the play, enqueue and more actions over the cover: on hover or highlight, or when the host says so.
+    property bool actionsShown: cardHover.hovered || highlighted
     property bool unavailableBadge: false
     // A click plays at once (shelves); otherwise it only selects and the double click plays (grid).
     property bool activateOnClick: true
@@ -47,6 +47,11 @@ ItemDelegate {
     function activate() {
         if (root.interactive && root.enabled)
             root.activated();
+    }
+
+    HoverHandler {
+        id: cardHover
+        enabled: root.interactive
     }
 
     onClicked: {
@@ -146,6 +151,7 @@ ItemDelegate {
             accent: true
             round: true
             activeFocusOnTab: false
+            focusPolicy: Qt.NoFocus
             text: libraryLabels.playNowName.arg(root.title)
             onClicked: root.playRequested()
         }
@@ -160,6 +166,7 @@ ItemDelegate {
             raised: true
             round: true
             activeFocusOnTab: false
+            focusPolicy: Qt.NoFocus
             text: libraryLabels.enqueue.arg(root.title)
             onClicked: root.enqueueRequested()
         }
@@ -176,6 +183,7 @@ ItemDelegate {
             round: true
             drawnSize: 32
             activeFocusOnTab: false
+            focusPolicy: Qt.NoFocus
             text: controlsLabels.moreActionsFor.arg(root.title)
             onClicked: root.moreRequested(moreButton)
         }

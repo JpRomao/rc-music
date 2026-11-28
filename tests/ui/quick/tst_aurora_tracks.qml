@@ -39,10 +39,16 @@ TestCase {
             id: window
             property var props: ({})
             property alias row: hosted
+            property alias holder: focusHolder
             width: 900
             height: 200
             visible: true
             color: testCase.contract.canvasColor
+            Item {
+                id: focusHolder
+                objectName: "focus-holder"
+                focus: true
+            }
             AuroraTrackRow {
                 id: hosted
                 contract: testCase.contract
@@ -67,10 +73,16 @@ TestCase {
             id: window
             property var props: ({})
             property alias card: hosted
+            property alias holder: focusHolder
             width: 300
             height: 300
             visible: true
             color: testCase.contract.canvasColor
+            Item {
+                id: focusHolder
+                objectName: "focus-holder"
+                focus: true
+            }
             AuroraTrackCard {
                 id: hosted
                 contract: testCase.contract
@@ -346,5 +358,68 @@ TestCase {
             compare(bg.border.width, 2, name);
         }
         verify(!child(child(card, "shelf-card-enqueue"), "surface-shadow").visible);
+    }
+    function test_rowButtonsKeepTheListFocus() {
+        const row = makeRow({
+            available: true
+        });
+        const holder = row.Window.window.contentItem.children.find(c => c.objectName === "focus-holder");
+        verify(holder);
+        mouseMove(row, 300, 28);
+        tryVerify(() => child(row, "track-row-play").visible);
+        const root = row.Window.window.contentItem;
+        for (const name of ["track-row-play", "track-row-enqueue", "track-row-more"]) {
+            holder.forceActiveFocus();
+            verify(holder.activeFocus, "holder sem foco antes de " + name);
+            const p = center(child(row, name));
+            mouseClick(root, p.x, p.y);
+            verify(holder.activeFocus, name + " roubou o foco");
+        }
+        row.available = false;
+        holder.forceActiveFocus();
+        const p = center(child(row, "track-row-locate"));
+        mouseClick(root, p.x, p.y);
+        verify(holder.activeFocus, "track-row-locate roubou o foco");
+    }
+    function test_cardButtonsKeepTheListFocus() {
+        const card = makeCard({
+            actionsShown: true
+        });
+        const root = card.Window.window.contentItem;
+        const holder = root.children.find(c => c.objectName === "focus-holder");
+        verify(holder);
+        for (const name of ["shelf-card-play", "shelf-card-enqueue", "shelf-card-more"]) {
+            holder.forceActiveFocus();
+            verify(holder.activeFocus, "holder sem foco antes de " + name);
+            const p = center(child(card, name));
+            mouseClick(root, p.x, p.y);
+            verify(holder.activeFocus, name + " roubou o foco");
+        }
+    }
+    function test_cardShowsItsOwnActionsOnHover() {
+        const card = makeCard();
+        const play = child(card, "shelf-card-play");
+        verify(!play.visible);
+        mouseMove(card, 75, 75);
+        tryVerify(() => play.visible);
+        verify(child(card, "shelf-card-enqueue").visible);
+        verify(child(card, "shelf-card-more").visible);
+        mouseMove(card.Window.window.contentItem, 290, 290);
+        tryVerify(() => !play.visible);
+        card.highlighted = true;
+        verify(play.visible);
+    }
+    function test_unavailableCardHidesEnqueueAndMore() {
+        const card = makeCard({
+            actionsShown: true
+        });
+        verify(child(card, "shelf-card-enqueue").visible);
+        verify(child(card, "shelf-card-play").enabled);
+        card.unavailableBadge = true;
+        verify(child(card, "shelf-card-unavailable").visible);
+        verify(child(card, "shelf-card-play").visible);
+        verify(!child(card, "shelf-card-play").enabled);
+        verify(!child(card, "shelf-card-enqueue").visible);
+        verify(!child(card, "shelf-card-more").visible);
     }
 }
