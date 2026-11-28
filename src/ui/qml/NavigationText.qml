@@ -22,6 +22,11 @@ QtObject {
     function trackCount(count) {
         return qsTr("%n faixa", "Contagem da Biblioteca na lateral", count);
     }
+    // Fills %1 and %2 in one pass: a placeholder inside the first value (a title) is never replaced by the second.
+    function fillTwo(pattern, first, second) {
+        const values = [String(first), String(second)];
+        return pattern.replace(/%([12])/g, (match, slot) => values[Number(slot) - 1]);
+    }
     function playlistCount(count) {
         return qsTr("%n playlist", "Contagem de Playlists na lateral", count);
     }

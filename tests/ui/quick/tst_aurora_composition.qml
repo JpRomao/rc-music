@@ -458,6 +458,56 @@ TestCase {
         fakeLibrary.count = 0;
         tryVerify(() => !shelf.visible, 5000, "an empty library shows no shelf");
     }
+    // The user's text is substituted once: a title with a placeholder keeps it literally.
+    function test_shelfTextsKeepPlaceholdersInTitles() {
+        fakeRecent.append({
+            recordId: "1",
+            title: "Faixa %2 ao vivo",
+            artist: "Artista",
+            available: true
+        });
+        mountShellBackends();
+        const list = findChild(shell, "home-library-list");
+        tryCompare(list, "count", 1);
+        compare(shelfCard(list, 0).Accessible.name, "Faixa %2 ao vivo, Artista");
+        driver.enqueueLocalSelection(["C:/Música/Primeira.mp3", "C:/Música/Cem %1 por cento.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        const subtitle = findChild(findChild(shell, "home-queue-shelf"), "shelf-subtitle");
+        tryCompare(subtitle, "text", "2 faixas, a próxima é “Cem %1 por cento”");
+    }
+    // A queue whose every file is gone has no card to focus: Tab and Backtab cross the shelf both ways.
+    function test_allUnavailableQueueShelfDoesNotTrapFocus() {
+        fakeRecent.append({
+            recordId: "1",
+            title: "Faixa",
+            artist: "Artista",
+            available: true
+        });
+        mountShellBackends();
+        driver.enqueueLocalSelection(["C:/Música/Ausente 1.mp3", "C:/Música/Ausente 2.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        const first = presenter.currentOccurrenceId;
+        driver.publishLocalSourceUnavailable();
+        tryVerify(() => presenter.currentOccurrenceId !== first);
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalSourceUnavailable();
+        const list = findChild(shell, "home-queue-list");
+        tryCompare(list, "count", 2);
+        tryVerify(() => !shelfCard(list, 0).enabled && !shelfCard(list, 1).enabled, 5000, "every queue card is unavailable");
+        const seeQueue = findChild(shell, "home-see-queue");
+        const seeLibrary = findChild(shell, "home-see-library");
+        tryVerify(() => findChild(shell, "home-queue-shelf").visible && seeQueue.enabled && seeLibrary.visible);
+        seeLibrary.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(seeLibrary, "activeFocus", true);
+        keyClick(Qt.Key_Backtab);
+        tryCompare(seeQueue, "activeFocus", true);
+        keyClick(Qt.Key_Tab);
+        tryCompare(seeLibrary, "activeFocus", true);
+        keyClick(Qt.Key_Backtab);
+        tryCompare(seeQueue, "activeFocus", true);
+    }
     function test_headerHeroAndFooterUseSeparateResponsiveRegions_data() {
         return [
             {

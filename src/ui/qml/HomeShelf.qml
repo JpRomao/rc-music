@@ -24,6 +24,8 @@ Item {
     readonly property int count: cards.count
     // Room around the list for the focus ring of a card, which is drawn outside the cover.
     readonly property real ringBleed: 2 + contract.focusRingWidth
+    // The last item focused outside the list: it tells whether Tab (from the link) or Backtab entered the list.
+    property Item focusOrigin: null
     signal linkTriggered
 
     objectName: controlId
@@ -63,8 +65,13 @@ Item {
         if (!cards || !cards.activeFocus || !root.visible || !root.cardsFocusable || (cards.currentItem && cards.currentItem.activeFocus))
             return;
         const row = Math.max(0, cards.currentIndex);
-        if (!focusCard(row, 1) && !focusCard(row - 1, -1))
+        if (focusCard(row, 1) || focusCard(row - 1, -1))
+            return;
+        // No card can take the focus: pass the list in the direction it was entered.
+        if (root.focusOrigin === link || !link.enabled)
             leaveCardsForward();
+        else
+            link.forceActiveFocus(Qt.BacktabFocusReason);
     }
     // The model row of the focused card (each card makes itself the current item when focused). It is read from
     // the card's place, because a reorder of other rows can leave the current index behind its item.
@@ -74,6 +81,15 @@ Item {
             return -1;
         cards.forceLayout();
         return cards.indexAt(item.x + item.width / 2, item.y + item.height / 2);
+    }
+
+    Connections {
+        target: root.Window
+        function onActiveFocusItemChanged() {
+            const item = root.Window.activeFocusItem;
+            if (item && !root.insideCards(item))
+                root.focusOrigin = item;
+        }
     }
 
     RowLayout {

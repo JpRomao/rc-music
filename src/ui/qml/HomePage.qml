@@ -92,7 +92,7 @@ ColumnLayout {
         listObjectName: "home-queue-list"
         linkObjectName: "home-see-queue"
         title: navigationText.queueShelf
-        subtitle: root.presenter.nextQueueTitle.length > 0 ? navigationText.queueNext.arg(queueText.trackCount(count)).arg(root.presenter.nextQueueTitle) : queueText.trackCount(count)
+        subtitle: root.presenter.nextQueueTitle.length > 0 ? navigationText.fillTwo(navigationText.queueNext, queueText.trackCount(count), root.presenter.nextQueueTitle) : queueText.trackCount(count)
         linkText: navigationText.seeQueue
         linkEnabled: root.openingEnabled && count > 0
         cardsFocusable: root.openingEnabled
@@ -143,7 +143,7 @@ ColumnLayout {
             subtitle: available ? artistText : libraryText.unavailable
             subtitleWarning: !available
             artworkSource: artworkBase.length > 0 ? artworkBase + recordId : ""
-            accessibleName: navigationText.titleAndArtist.arg(model.title).arg(artistText)
+            accessibleName: navigationText.fillTwo(navigationText.titleAndArtist, model.title, artistText)
         }
     }
 }
