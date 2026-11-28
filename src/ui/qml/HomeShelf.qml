@@ -154,6 +154,9 @@ Item {
             orientation: ListView.Horizontal
             spacing: 18
             boundsBehavior: Flickable.StopAtBounds
+            // Only the visible cards are built: a cache buffer builds more asynchronously, and clearing the rows
+            // while that is pending makes the ListView warn "DelegateModel::cancel: index out range".
+            cacheBuffer: 0
             activeFocusOnTab: root.cardsFocusable
             onActiveFocusChanged: {
                 if (activeFocus)

@@ -1004,8 +1004,7 @@ TestCase {
         }
         tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
     }
-    // The loop above leaves the shelf scrolled to its end. The captures show it from the first card. Not before
-    // clearing the queue: that makes the ListView warn about a cancelled delegate (a fatal warning in the suite).
+    // The loop above leaves the shelf scrolled to its end. The captures show it from the first card.
     function showQueueShelfStart() {
         const list = findChild(shell, "home-queue-list");
         list.positionViewAtIndex(0, ListView.Beginning);
@@ -1065,8 +1064,7 @@ TestCase {
         // The empty lyrics drawer names the track the player has, not a fixed title.
         if (data.scene === "lyrics-empty")
             captureLyrics.title = presenter.currentTitle;
-        if (data.scene !== "queue-empty")
-            showQueueShelfStart();
+        showQueueShelfStart();
         verify(waitForPolish(shell));
         const audio = commands();
         if (data.scene === "verse-line") {
@@ -1180,6 +1178,34 @@ TestCase {
         if (artifact.length > 0)
             image.save(artifact);
         compare(commands(), audio, "the captures never start or stop the audio");
+    }
+    // Clearing the queue with the shelf scrolled back to its first card made the ListView warn "DelegateModel::cancel:
+    // index out range" (a fatal warning in the suite) about half of the time: the cards beyond the view were still
+    // being built asynchronously, by the cache buffer, when the rows went away. The shelves build only what shows.
+    function test_shelvesBuildOnlyTheVisibleCards() {
+        mountShellBackends();
+        for (const name of ["home-queue-list", "home-library-list"])
+            compare(findChild(shell, name).cacheBuffer, 0, name);
+    }
+    function test_clearingAScrolledQueueShelfDoesNotWarn() {
+        mountShellBackends();
+        shell.width = 720;
+        shell.height = 520;
+        tryCompare(shell.contentItem, "width", 720);
+        for (let round = 0; round < 4; ++round) {
+            loadEightTracks(false);
+            showQueueShelfStart();
+            verify(waitForPolish(shell));
+            shell.setQueueOpen(true);
+            const drawer = findChild(shell, "queue-panel");
+            tryVerify(() => drawer.visible);
+            tryVerify(() => findChild(drawer, "queue-list").itemAtIndex(0) !== null);
+            verify(presenter.clearQueue());
+            tryVerify(() => findChild(drawer, "queue-empty").visible);
+            wait(300);
+            shell.setQueueOpen(false);
+            tryVerify(() => !drawer.visible);
+        }
     }
     function test_emptyHomeDoesNotInventACollection() {
         const list = findChild(shell, "home-queue-list");
