@@ -56,6 +56,12 @@ QtObject {
         const named = navigation.fillTwo(navigation.titleAndArtist, title, artist.length > 0 ? artist : unknownArtist);
         return available ? named : navigation.fillTwo(navigation.titleAndArtist, named, unavailable);
     }
+    // The description of a menu action that a missing file turns off: the reason, or nothing while it works.
+    function unavailableDescription(available) {
+        if (available)
+            return "";
+        return unavailableReason;
+    }
     function rowDescription(available) {
         return available ? rowHint : unavailableReason;
     }

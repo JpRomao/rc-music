@@ -64,7 +64,7 @@ AuroraMenu {
         iconName: "plus"
         text: labels.enqueueAction
         enabled: root.available
-        Accessible.description: labels.enqueueDescription
+        Accessible.description: root.available ? labels.enqueueDescription : labels.unavailableReason
         onTriggered: root.enqueueRequested()
     }
     AuroraMenu {
@@ -73,6 +73,7 @@ AuroraMenu {
         contract: root.contract
         iconName: "playlist"
         title: labels.addToPlaylistAction
+        itemDescription: labels.unavailableDescription(root.available)
         enabled: root.available
 
         Instantiator {

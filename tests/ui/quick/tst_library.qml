@@ -470,9 +470,11 @@ TestCase {
         compare(play.iconName, "play");
         verify(play.enabled);
         compare(menu.itemAt(1).text, "Adicionar à fila");
+        compare(menu.itemAt(1).Accessible.description, "Entra no fim da fila.");
         const playlists = menu.itemAt(2);
         compare(playlists.text, "Adicionar à playlist");
         verify(playlists.hasSubMenu);
+        compare(playlists.Accessible.description, "");
         const locate = findChild(menu, "library-menu-locate");
         verify(!locate.visible);
         verify(!locate.enabled);
@@ -492,6 +494,11 @@ TestCase {
         const blocked = findChild(menu, "library-menu-play");
         verify(!blocked.enabled);
         compare(blocked.Accessible.description, "Arquivo não encontrado. Localize o arquivo para tocar a faixa.");
+        // Every action that a missing file turns off says why.
+        for (const off of [findChild(menu, "library-menu-enqueue"), menu.itemAt(2)]) {
+            verify(!off.enabled, off.text);
+            compare(off.Accessible.description, "Arquivo não encontrado. Localize o arquivo para tocar a faixa.", off.text);
+        }
         const locating = findChild(menu, "library-menu-locate");
         verify(locating.visible);
         verify(locating.enabled);

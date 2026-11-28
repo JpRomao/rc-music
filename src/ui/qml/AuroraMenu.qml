@@ -9,6 +9,8 @@ Menu {
     required property ShellUiContract contract
     // Ícone do item que abre este menu, quando ele é um submenu.
     property string iconName
+    // Accessible description of the item that opens this menu, when it is a submenu (for example, why it is off).
+    property string itemDescription
     // Largura do item mais largo; cada item tem no mínimo 200.
     readonly property real widestItem: {
         let widest = 200;
@@ -18,6 +20,13 @@ Menu {
                 widest = Math.max(widest, entry.implicitWidth);
         }
         return widest;
+    }
+
+    // The accessible description of an item the delegate builds: its submenu's, when it opens one.
+    function submenuDescription(subMenu) {
+        if (subMenu)
+            return subMenu.itemDescription;
+        return "";
     }
 
     padding: 6
@@ -31,6 +40,7 @@ Menu {
         // Item criado de uma Action leva o objectName dela como controlId; o de um submenu, o do submenu.
         controlId: action ? action.objectName : (subMenu ? subMenu.objectName : "") // qmllint disable missing-property
         iconName: subMenu ? subMenu.iconName : "" // qmllint disable missing-property
+        Accessible.description: menu.submenuDescription(subMenu) // qmllint disable missing-property
     }
 
     enter: Transition {
