@@ -1205,26 +1205,6 @@ void PlayerPresenterTests::playSourcesNowRefusesInvalidInputAndGuestRooms() {
     }
 }
 
-void PlayerPresenterTests::playSourcesNowFollowsTheRoomPlayOrderForTheHost() {
-    AvailableTrayPlatform platform;
-    PresenterPlaybackBackend backend;
-    PresenterMetadataReader metadata;
-    const std::vector<std::filesystem::path> sources{localTestPath(u8"Sala A.wav"), localTestPath(u8"Sala B.wav"),
-                                                     localTestPath(u8"Sala C.wav")};
-    const auto x = localTestPath(u8"X.mp3");
-    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
-    QVERIFY(presenter.openAudio());
-    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
-    QTRY_COMPARE(backend.play_calls, 1);
-    presenter.setRoomPlayOrder(true);
-
-    QVERIFY(presenter.playSourcesNow({x}));
-
-    QCOMPARE(queuePaths(presenter), (std::vector<std::filesystem::path>{sources[0], x, sources[1], sources[2]}));
-    QCOMPARE(backend.loaded_paths.back(), x);
-    QCOMPARE(presenter.currentQueueIndex(), 1);
-}
-
 void PlayerPresenterTests::playSourcesNowAdmitsTheFilesToTheLibrary() {
     AvailableTrayPlatform platform;
     PresenterPlaybackBackend backend;
@@ -10429,6 +10409,7 @@ void PlayerPresenterTests::aGuestFollowingTheRoomShowsTheRoomTrackAndItsTime() {
     QSignalSpy playback_changes(&presenter, &PlayerPresenter::playbackChanged);
     presenter.showRoomPlayback(RoomTrackSummary{"Primeira", "Artista", "Album", 600'000});
     QVERIFY(!state_changes.isEmpty());
+    QVERIFY(!presenter.currentLocalSource().has_value());
     QVERIFY(presenter.hasCurrentTrack());
     QCOMPARE(presenter.currentTitle(), QStringLiteral("Primeira"));
     QCOMPARE(presenter.currentArtist(), QStringLiteral("Artista"));
@@ -10711,6 +10692,84 @@ void PlayerPresenterTests::roomHostLeadsEachStartOnceOverQueuedConfirmations() {
     requireLedStart(
         [&] { return guest_side->sendControl(RoomIntentMessage{2, RoomIntent{.kind = RoomIntentKind::Resume}}); }, 1,
         5'600);
+    host.reset();
+}
+
+void PlayerPresenterTests::playSourcesNowFollowsTheRoomPlayOrderForTheHost() {
+    AvailableTrayPlatform platform;
+    DeterministicPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto sources = roomSources(3);
+    const auto x = localTestPath(u8"Sala X.wav");
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Playing);
+    presenter.setRoomPlayOrder(true);
+
+    PresenterRoomHostPlayer player{presenter};
+    testing::InMemoryRoomRosterStore roster;
+    roster.stored.listeners.push_back(KnownListener{"fp-dj", "Dj", 2, {}, false});
+    roster.status = RoomRosterLoadStatus::Loaded;
+    testing::FakeRoomHostEndpoint endpoint;
+    testing::FakeRoomTrackCatalog catalog;
+    QObject context;
+    std::int64_t now = 10'000;
+    std::uint8_t next_random = 1;
+    auto host = std::make_unique<ListeningRoomHost>(ListeningRoomHostDependencies{
+        .roster_store = roster,
+        .player = player,
+        .endpoint = endpoint,
+        .catalog = catalog,
+        .host_clock_ms = [&now] { return now; },
+        .random_bytes =
+            [&next_random](std::span<std::uint8_t> bytes) {
+                for (auto& byte : bytes)
+                    byte = next_random++;
+            },
+        .host_fingerprint = {0xab},
+        .host_profile = ListenerProfile{"Joao", AvatarChoice{}},
+        .schedule =
+            [&context](const std::int64_t delay_ms, std::function<void()> task) {
+                QTimer::singleShot(std::chrono::milliseconds{delay_ms}, &context, std::move(task));
+            },
+    });
+    QVERIFY(host->open({}).has_value());
+    auto [host_side, guest_side] = testing::FakeRoomLink::pair("ab" + std::string(62, '0'), "fp-dj");
+    std::vector<RoomPlayback> states;
+    guest_side->onControl = [&states](RoomControlMessage message) {
+        if (const auto* state = std::get_if<RoomStateMessage>(&message))
+            states.push_back(state->snapshot.playback);
+    };
+    endpoint.admit(host_side);
+    QVERIFY(guest_side->sendControl(RoomHello{room_protocol_version, "Dj", AvatarChoice{}}));
+    QTest::qWait(50);
+    QVERIFY(!states.empty());
+    QVERIFY(states.back().playing);
+    const auto loads = backend.snapshot().generation;
+    const auto before = states.size();
+    const auto started_at = now;
+
+    QVERIFY(presenter.playSourcesNow({x}));
+
+    // The queue the room sees: x right after the current item, not at the end.
+    const auto items = presenter.playlistQueueSnapshot().items;
+    QCOMPARE(items.size(), std::size_t{4});
+    QCOMPARE(items[1].source_path, x);
+    QCOMPARE(items[0].source_path, sources[0]);
+    QCOMPARE(items[2].source_path, sources[1]);
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+    // The host leads the start: held before control goes back to the event loop, then anchored once.
+    QVERIFY(backend.snapshot().status != PlaybackStatus::Playing);
+    deliverQueued();
+    QCOMPARE(states.size(), before + 1);
+    const auto led = states.back();
+    QVERIFY(led.playing);
+    QCOMPARE(led.current_item, std::optional{items[1].occurrence_id.value});
+    QCOMPARE(led.anchor_host_ms, started_at + room_play_lead_ms);
+    QCOMPARE(led.anchor_position_ms, std::int64_t{0});
+    QVERIFY(backend.snapshot().generation > loads);
+    QTRY_COMPARE(backend.snapshot().status, PlaybackStatus::Playing);
+    QCOMPARE(presenter.currentOccurrenceId(), LocalQueueListModel::occurrenceId(items[1].occurrence_id));
     host.reset();
 }
 
