@@ -174,6 +174,25 @@ F1/F2 chamam o presenter direto no Aurora: `queue-modes` fica oculto na gaveta, 
 
 Capturas da fatia, em `out/product/ui-redesign-captures/gavetas` (via `RC_MUSIC_UI_ARTIFACT_DIR`, `tst_aurora_composition::test_drawerCaptures`): `aurora-gavetas-<cena>-<largura>-<tema>.png`, com cena em `verse-line`, `lyrics-drawer`, `lyrics-empty`, `queue` (8 faixas, a primeira indisponível), `queue-empty` e `queue-clear`, largura 1440 (1440×900) ou 720 (720×520) e tema `light` ou `dark`. Usam só backends falsos e não tocam som.
 
+## Início (fatia 4)
+
+Ids novos ou trocados que os testes Quick usam no Aurora:
+
+- Topo da página: `home-header` (`PageHeader` com eyebrow, título e descrição) e, à direita, `open-audio` ("Abrir áudio", primário, ícone `folder-open`). O botão fica fora de todos os estados do herói, então existe em qualquer estado.
+- Herói (`home-hero`, `HomeHero.qml`): `home-empty` (sem faixa; `home-empty-primary` e `home-empty-secondary` ficam ocultos no Aurora, porque a ação é o `open-audio` do topo), `playing-state` com `cover-track`, `hero-eyebrow` ("Agora tocando"), `current-title`, `hero-artist-album` (vazio sem artista e álbum), `track-details-playing` e `home-lyrics`. O estado de erro usa `error-icon-circle` (`AuroraIconCircle`), `error-title`, `error-body`, `error-open-another-audio`, `error-retry-occurrence`, `error-locate-occurrence` e `track-details-error`.
+- Estantes (`HomeShelf.qml`, cartões `HomeShelfCard.qml`): `home-queue-shelf` com `home-queue-list` e `home-see-queue` ("Ver fila"), e `home-library-shelf` com `home-library-list` e `home-see-library` ("Ver toda a biblioteca"). Dentro de cada estante: `shelf-title`, `shelf-subtitle` e, em cada cartão, `shelf-card-artwork`, `shelf-card-title`, `shelf-card-subtitle` e `shelf-card-playing` (chip "Tocando"). `HomeShelf.linkObjectName` nomeia o link; o `linkControlId` do plano não existe.
+- Saem do Aurora: `open-another-audio`, `current-artist`, `current-album` e `queue-card-artwork`. `QueuePreview.qml` foi removido.
+
+Ordem de Tab, a 1440×900 e a 720×520: `theme-toggle`, `open-audio`, os controles do herói do estado (`track-details-playing` e `home-lyrics`; no erro, as ações do `ErrorState`), `home-see-queue`, os cartões da fila (um por Tab, pulando os indisponíveis; sem nenhum disponível, o Tab e o Shift+Tab atravessam a estante), `home-see-library`, a linha do verso (`lyrics-line-open`, se houver) e o player. Os cartões da biblioteca não entram na ordem: são só leitura (`interactive: false`, `activeFocusOnTab: false`).
+
+Foco principal por estado: sem faixa e tocando, `open-audio`; com erro, o botão primário do `ErrorState`. Com a gaveta da Fila aberta, a Início fica `enabled: false`.
+
+Regra de rolagem: a página rola dentro de `state-layer`. Um alvo de foco que cabe na primeira tela mostra a página pelo topo (`contentY` 0), para o título nunca sair de vista; um alvo mais abaixo rola só o necessário. Abrir o áudio deixa o foco em `open-audio`, no topo, e a 720×520 o título da página continua inteiro.
+
+Capas da fila: o `LibraryArtworkProvider` ganhou uma segunda instância, `image://queueart/<valor da ocorrência>`, registrada em `src/app/main.cpp`; o cartão da faixa tocando usa a capa atual. A biblioteca expõe até 12 registros recentes em `LibraryBinding.recentModel`. No harness, `driver.setLocalQueueArtworkBase("image://queueart/")` liga a base e o provider de teste responde com um pixel transparente, então as capas aparecem vazias nas capturas (o ícone de disco é o que se vê): as capturas não provam pixels de capa.
+
+Capturas da fatia, em `out/product/ui-redesign-captures/inicio` (via `RC_MUSIC_UI_ARTIFACT_DIR`, `tst_aurora_composition::test_homeCaptures`): `aurora-inicio-<cena>-<largura>-<tema>.png`, com cena em `home-empty` (com a estante da biblioteca), `home-playing` (8 faixas, a primeira indisponível e a segunda tocando), `home-playing-lyrics` (a mesma cena com a linha do verso) e `home-error` (arquivo ausente, com Localizar), largura 1440 (1440×900) ou 720 (720×520) e tema `light` ou `dark`. O foco fica em `theme-toggle` e `contentY` em 0. As capturas da gaveta (`gavetas`) passam a conhecer as durações de todas as faixas, então a Fila mostra "8 faixas · 28 min", e a gaveta da Letra vazia nomeia a faixa do player.
+
 ## Limites
 
 ### Geometria durante metadata e capa

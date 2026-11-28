@@ -622,7 +622,12 @@ class ScenarioDriver final : public QObject {
     // The queue rows read `<base><occurrence value>`; the test provider answers with a transparent pixel.
     Q_INVOKABLE void setLocalQueueArtworkBase(const QString& base) { local_presenter_.setQueueArtwork({}, base); }
     // Tags with only the given fields: an empty artist or album stays absent.
-    Q_INVOKABLE void publishNamedLocalMetadata(const QString& title, const QString& artist, const QString& album) {
+    // A positive duration also fills the audio properties, which is how the queue rows learn their length.
+    Q_INVOKABLE int localMetadataPollsPending() const noexcept {
+        return static_cast<int>(local_metadata_reader_.poll_results.size());
+    }
+    Q_INVOKABLE void publishNamedLocalMetadata(const QString& title, const QString& artist, const QString& album,
+                                               const qlonglong duration_ms = 0) {
         if (local_metadata_reader_.requests.empty())
             return;
         const auto& request = local_metadata_reader_.requests.back();
@@ -631,6 +636,8 @@ class ScenarioDriver final : public QObject {
             .tags = {.title = std::string{title.toStdString()}},
             .display_title = title.toStdString(),
         };
+        if (duration_ms > 0)
+            track.audio.duration_ms = static_cast<std::uint64_t>(duration_ms);
         if (!artist.isEmpty())
             track.tags.artist = artist.toStdString();
         if (!album.isEmpty())

@@ -958,22 +958,59 @@ TestCase {
     // Captures of the plan 3 scenes: the verse line, both drawers, the empty queue and the clear confirmation.
     // They are evidence for visual review and are saved only when RC_MUSIC_UI_ARTIFACT_DIR is set.
     readonly property var captureVerses: ["A maré trouxe o vidro de volta", "E a areia guardou o teu nome", "Eu contei as ondas até a hora", "Em que o céu se acende e some", "Maré de vidro, leva devagar", "O que eu não soube te dizer", "Se a luz voltar pelo mar", "Eu ainda vou estar aqui pra ver", "A cidade dorme na janela", "E o rádio insiste na canção"]
-    // With missingFirst the first file is gone: the player moves on to the second and the first row shows the status.
+    // Every track gets its duration (2:41 to 4:12) by being played once, so the queue knows its total. With
+    // missingFirst the first file is then gone: the player moves on to the second and the first row shows the status.
     function loadEightTracks(missingFirst) {
         const names = ["Maré de Vidro", "Luz de Inverno", "Cais", "Papel de Seda", "Arquivo movido", "Estação Norte", "Janela", "Rádio Distante"];
+        const durations = [217000, 192000, 161000, 205000, 252000, 233000, 178000, 199000];
         driver.enqueueLocalSelection(names.map(name => "C:/Música/" + name + ".mp3"));
         findChild(shell, "open-audio").Accessible.pressAction();
         tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
-        if (missingFirst) {
-            // The presenter itself moves on to the next occurrence after the failed load.
-            const first = presenter.currentOccurrenceId;
-            driver.publishLocalSourceUnavailable();
-            tryVerify(() => presenter.currentOccurrenceId !== first);
-            tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        const list = findChild(shell, "home-queue-list");
+        tryCompare(list, "count", names.length);
+        const ids = [];
+        for (let index = 0; index < names.length; ++index) {
+            list.positionViewAtIndex(index, ListView.Contain);
+            list.forceLayout();
+            tryVerify(() => list.itemAtIndex(index) !== null);
+            ids.push(list.itemAtIndex(index).occurrenceId);
         }
-        driver.publishLocalPlaying();
-        driver.publishLocalPosition(41000, 217000);
+        function playOnce(index, position) {
+            if (index > 0 || presenter.currentOccurrenceId !== ids[0])
+                verify(presenter.playQueueOccurrence(ids[index]));
+            tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+            driver.publishLocalPlaying();
+            driver.publishLocalPosition(position, durations[index]);
+            tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+            // The queue row learns its length from the track's metadata.
+            driver.publishNamedLocalMetadata(names[index], "", "", durations[index]);
+            tryVerify(() => driver.localMetadataPollsPending() === 0);
+        }
+        for (let index = 0; index < names.length; ++index)
+            playOnce(index, 0);
+        // Back to the scene's track: the first one, or the second after the first fails to load.
+        verify(presenter.playQueueOccurrence(ids[0]));
+        tryCompare(presenter, "currentOccurrenceId", ids[0]);
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        if (missingFirst) {
+            driver.publishLocalSourceUnavailable();
+            tryVerify(() => presenter.currentOccurrenceId !== ids[0]);
+            tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+            driver.publishLocalPlaying();
+            driver.publishLocalPosition(41000, durations[1]);
+        } else {
+            driver.publishLocalPlaying();
+            driver.publishLocalPosition(41000, durations[0]);
+        }
         tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+    }
+    // The loop above leaves the shelf scrolled to its end. The captures show it from the first card. Not before
+    // clearing the queue: that makes the ListView warn about a cancelled delegate (a fatal warning in the suite).
+    function showQueueShelfStart() {
+        const list = findChild(shell, "home-queue-list");
+        list.positionViewAtIndex(0, ListView.Beginning);
+        list.forceLayout();
+        tryVerify(() => list.itemAtIndex(0) !== null);
     }
     function saveCapture(scene, data) {
         shell.update();
@@ -1012,7 +1049,7 @@ TestCase {
                         timeMs: index * 20000
                     }));
             captureLyrics.activeReaderVerse = empty ? -1 : 4;
-            captureLyrics.title = empty ? "Luz de Inverno" : "Maré de Vidro";
+            captureLyrics.title = "Maré de Vidro";
             captureLyrics.statusText = empty ? "" : "Letra sincronizada";
         }
         mountShellBackends();
@@ -1025,6 +1062,11 @@ TestCase {
         tryCompare(shell.contentItem, "width", data.width);
         tryCompare(shell.contentItem, "height", data.height);
         loadEightTracks(data.scene === "queue");
+        // The empty lyrics drawer names the track the player has, not a fixed title.
+        if (data.scene === "lyrics-empty")
+            captureLyrics.title = presenter.currentTitle;
+        if (data.scene !== "queue-empty")
+            showQueueShelfStart();
         verify(waitForPolish(shell));
         const audio = commands();
         if (data.scene === "verse-line") {
@@ -1066,6 +1108,78 @@ TestCase {
         verify(waitForPolish(shell));
         saveCapture(data.scene, data);
         compare(commands().slice(2), audio.slice(2), "the captures never start or stop the audio");
+    }
+    // Captures of the home (slice 4): empty, playing, playing with the verse line, and the missing-file error.
+    // They are evidence for visual review and are saved only when RC_MUSIC_UI_ARTIFACT_DIR is set.
+    function test_homeCaptures_data() {
+        const rows = [];
+        for (const scene of ["home-empty", "home-playing", "home-playing-lyrics", "home-error"]) {
+            for (const size of [[1440, 900], [720, 520]]) {
+                for (const dark of [false, true]) {
+                    rows.push({
+                        tag: scene + "-" + size[0] + "-" + (dark ? "dark" : "light"),
+                        scene: scene,
+                        width: size[0],
+                        height: size[1],
+                        dark: dark
+                    });
+                }
+            }
+        }
+        return rows;
+    }
+    function test_homeCaptures(data) {
+        const recent = [["Maré de Vidro", "Lia Campos"], ["Luz de Inverno", "Coral do Sul"], ["Cais", "Rui Amaral"], ["Papel de Seda", "Lia Campos"], ["Estação Norte", "Orquestra de Câmara"], ["Janela", "Dani Ferraz"], ["Rádio Distante", "Coral do Sul"], ["Areia", "Mar Aberto"], ["Farol", "Rui Amaral"], ["Fio de Prata", "Dani Ferraz"], ["Ventania", "Mar Aberto"], ["Última Estação", "Lia Campos"]];
+        recent.forEach((row, index) => fakeRecent.append({
+                recordId: String(300 - index),
+                title: row[0],
+                artist: row[1],
+                available: true
+            }));
+        mountShellBackends();
+        shell.width = data.width;
+        shell.height = data.height;
+        presenter.setThemePreference(data.dark ? PlayerPresenter.DarkTheme : PlayerPresenter.LightTheme);
+        tryCompare(contract, "darkTheme", data.dark);
+        tryCompare(shell.contentItem, "width", data.width);
+        tryCompare(shell.contentItem, "height", data.height);
+        driver.setLocalQueueArtworkBase("image://queueart/");
+        if (data.scene === "home-playing" || data.scene === "home-playing-lyrics") {
+            loadEightTracks(true);
+            showQueueShelfStart();
+            if (data.scene === "home-playing-lyrics") {
+                shell.lyrics = captureLyrics;
+                captureLyrics.title = presenter.currentTitle;
+                tryVerify(() => findChild(shell, "home-lyrics").visible);
+            }
+        } else if (data.scene === "home-error") {
+            driver.enqueueLocalSelection(["C:/Música/Arquivo movido.mp3"]);
+            findChild(shell, "open-audio").Accessible.pressAction();
+            tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+            driver.publishLocalSourceUnavailable();
+            tryCompare(presenter, "playbackState", PlayerPresenter.Error);
+            tryVerify(() => presenter.canLocateCurrentOccurrence);
+        } else {
+            tryVerify(() => findChild(shell, "home-empty").visible);
+            tryVerify(() => findChild(shell, "home-library-shelf").visible);
+        }
+        verify(waitForPolish(shell));
+        const audio = commands();
+        findChild(shell, "theme-toggle").forceActiveFocus(Qt.TabFocusReason);
+        const layer = findChild(shell, "state-layer");
+        layer.contentY = 0;
+        tryCompare(layer, "contentY", 0);
+        wait(300);
+        verify(waitForPolish(shell));
+        shell.update();
+        verify(waitForRendering(shell.contentItem));
+        const image = grabImage(shell.contentItem);
+        compare(image.width, data.width);
+        compare(image.height, data.height);
+        const artifact = driver.artifactPath("aurora-inicio-" + data.scene + "-" + data.width + "-" + (data.dark ? "dark" : "light") + ".png");
+        if (artifact.length > 0)
+            image.save(artifact);
+        compare(commands(), audio, "the captures never start or stop the audio");
     }
     function test_emptyHomeDoesNotInventACollection() {
         const list = findChild(shell, "home-queue-list");
