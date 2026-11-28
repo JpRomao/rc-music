@@ -10746,9 +10746,7 @@ void PlayerPresenterTests::playSourcesNowFollowsTheRoomPlayOrderForTheHost() {
     };
     endpoint.admit(host_side);
     QVERIFY(guest_side->sendControl(RoomHello{room_protocol_version, "Dj", AvatarChoice{}}));
-    QTest::qWait(50);
-    QVERIFY(!states.empty());
-    QVERIFY(states.back().playing);
+    QTRY_VERIFY(!states.empty() && states.back().playing);
     const auto loads = backend.snapshot().generation;
     const auto before = states.size();
     const auto started_at = now;

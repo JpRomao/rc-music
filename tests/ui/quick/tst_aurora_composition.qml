@@ -592,7 +592,11 @@ TestCase {
         const panel = findChild(shell, "library-panel");
         tryVerify(() => focusInside(panel), 5000, "focus: " + shell.activeFocusItem);
         verify(!findChild(shell, "open-audio").activeFocus);
-        wait(0);
+        // The calls the hide deferred run before this marker, and the layout settles: then the focus is checked again.
+        let settled = false;
+        Qt.callLater(() => settled = true);
+        tryVerify(() => settled);
+        verify(waitForPolish(shell));
         verify(focusInside(panel), "the focus stays in the library; now: " + shell.activeFocusItem);
     }
     // A click on a card starts playback and leaves the home shown: the focus stays on the home.
