@@ -640,6 +640,32 @@ TestCase {
         verify(!findChild(gone, "shelf-card-play").enabled);
         verify(!findChild(gone, "shelf-card-enqueue").visible);
     }
+    // The playing badge sits at the lower left of the 150 px cover and the actions at the lower right: together they
+    // cross, so the badge steps aside while the actions show.
+    function test_coverBadgeDoesNotCrossTheActions() {
+        loadPlayingQueue();
+        catalog.playingRecordId = "3";
+        const panel = openLibrary();
+        mouseClick(findChild(panel, "library-view-1"));
+        tryVerify(() => findChild(panel, "library-grid").visible);
+        const first = card(panel, "3");
+        verify(findChild(first, "shelf-card-playing").visible);
+        hover(first);
+        tryVerify(() => findChild(first, "shelf-card-enqueue").visible);
+        const badge = findChild(first, "shelf-card-playing");
+        const enqueue = findChild(first, "shelf-card-enqueue");
+        const box = item => {
+            const at = item.mapToItem(first, 0, 0);
+            return {
+                left: at.x,
+                right: at.x + item.width
+            };
+        };
+        const crossing = badge.visible && box(badge).right > box(enqueue).left;
+        verify(!crossing, "the playing badge crosses the enqueue button");
+        mouseMove(first, 1000, 1000);
+        tryVerify(() => findChild(first, "shelf-card-playing").visible);
+    }
     function test_typingFiltersThroughTheBinding() {
         const panel = openLibrary();
         const field = findChild(panel, "library-filter");
@@ -1163,6 +1189,9 @@ TestCase {
             compare(findChild(button, "icon-button-background").border.width, 2, name);
             verify(!findChild(button, "surface-shadow").visible, name);
         }
+        // The playing badge steps aside while the actions show: look at it with the pointer away.
+        mouseMove(first, 1000, 1000);
+        tryVerify(() => !findChild(first, "shelf-card-play").visible);
         const badges = [[findChild(first, "shelf-card-playing"), hc.accentColor], [findChild(gone, "shelf-card-unavailable"), hc.warningColor]];
         for (const entry of badges) {
             const badge = entry[0];

@@ -112,7 +112,7 @@ ItemDelegate {
             objectName: "shelf-card-playing"
             x: 8
             y: artwork.height - height - 8
-            visible: root.playing
+            visible: root.playing && !root.actionsShown
             contract: root.contract
             tone: AuroraChip.Accent
             iconName: "waveform"
