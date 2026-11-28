@@ -22,7 +22,7 @@ TestCase {
     ListModel {
         id: fakeRecords
     }
-    // The home's library shelf: read-only cards, outside the Tab order.
+    // The home's library shelf: cards that play now, inside the Tab order.
     ListModel {
         id: fakeRecent
         ListElement {
@@ -657,8 +657,19 @@ TestCase {
         keyClick(Qt.Key_Tab);
         compare(focusName(), "home-see-library");
         tryVerify(() => findChild(shell, "lyrics-line").visible);
+        // The library cards, one Tab each, then the verse line.
+        const library = findChild(shell, "home-library-list");
+        compare(library.count, 2);
+        for (let index = 0; index < library.count; ++index) {
+            keyClick(Qt.Key_Tab);
+            tryVerify(() => library.itemAtIndex(index) !== null && library.itemAtIndex(index).activeFocus, 5000, "library card " + index + "; focus: " + focusName());
+        }
         keyClick(Qt.Key_Tab);
         compare(focusName(), "lyrics-line-open");
+        keyClick(Qt.Key_Backtab);
+        tryVerify(() => library.itemAtIndex(1).activeFocus, 5000, "Backtab returns to the last library card; focus: " + focusName());
+        keyClick(Qt.Key_Backtab);
+        tryVerify(() => library.itemAtIndex(0).activeFocus, 5000, "focus: " + focusName());
         keyClick(Qt.Key_Backtab);
         compare(focusName(), "home-see-library");
         keyClick(Qt.Key_Backtab);
@@ -667,6 +678,8 @@ TestCase {
         fakeLyrics.hasSyncedLyrics = false;
         tryVerify(() => !findChild(shell, "lyrics-line").visible);
         findChild(shell, "home-see-library").forceActiveFocus(Qt.TabFocusReason);
+        for (let index = 0; index < library.count; ++index)
+            keyClick(Qt.Key_Tab);
         keyClick(Qt.Key_Tab);
         compare(focusName(), "progress");
     }

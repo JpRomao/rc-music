@@ -128,8 +128,11 @@ ColumnLayout {
         subtitle: navigationText.trackCount(root.libraryShown ? root.library.count : 0)
         linkText: navigationText.seeLibrary
         linkEnabled: root.openingEnabled
+        cardsFocusable: root.openingEnabled
         model: root.libraryShown ? root.library.recentModel : null
         onLinkTriggered: root.libraryRequested()
+        onFocusLost: openAudioButton.forceActiveFocus(Qt.TabFocusReason)
+        // A click or Enter plays the track now; a failure shows on the hero, which has the track's error.
         delegate: AuroraTrackCard {
             required property var model
             required property string recordId
@@ -137,13 +140,18 @@ ColumnLayout {
             required property bool available
             readonly property string artistText: artist.length > 0 ? artist : navigationText.localAudio
             readonly property string artworkBase: root.library !== null ? root.library.artworkBase : ""
+            readonly property bool current: root.library !== null && root.library.playingRecordId === recordId
             contract: root.contract
-            interactive: false
             title: model.title
             subtitle: available ? artistText : libraryText.unavailable
             subtitleWarning: !available
+            unavailableBadge: !available
             artworkSource: artworkBase.length > 0 ? artworkBase + recordId : ""
-            accessibleName: navigationText.fillTwo(navigationText.titleAndArtist, model.title, artistText)
+            playing: current && root.presenter.playbackState === PlayerPresenter.Playing
+            enabled: root.openingEnabled && available
+            accessibleName: libraryText.playNowName.arg(model.title)
+            Accessible.description: playing ? navigationText.playingBadge : (available ? "" : libraryText.unavailableReason)
+            onActivated: root.library.playNow(recordId)
         }
     }
 }

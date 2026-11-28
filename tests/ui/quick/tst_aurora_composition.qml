@@ -107,8 +107,10 @@ TestCase {
         property var recentModel: fakeRecent
         property bool canLocate: false
         property string artworkBase: ""
+        property var played: []
         function playNow(id) {
-            return false;
+            played = played.concat([id]);
+            return true;
         }
         function retryLoad() {
             return true;
@@ -228,6 +230,8 @@ TestCase {
         driver.setLocalQueueArtworkBase("");
         fakeLibrary.ready = true;
         fakeLibrary.count = 128;
+        fakeLibrary.played = [];
+        fakeLibrary.playingRecordId = "";
         fakeRecent.clear();
         driver.setHighContrast(false, false);
         driver.setSystemAppearance(false, false);
@@ -436,14 +440,17 @@ TestCase {
         tryVerify(() => shelfCard(list, 1).activeFocus, 5000, "Tab skips the unavailable card");
         verify(!first.activeFocus);
     }
-    function test_libraryShelfShowsTheNewestTracksReadOnly() {
-        for (let index = 0; index < 12; ++index)
+    function fillRecent(total) {
+        for (let index = 0; index < total; ++index)
             fakeRecent.append({
                 recordId: String(200 - index),
                 title: "Faixa " + index,
                 artist: "Artista " + index,
                 available: index !== 3
             });
+    }
+    function test_libraryShelfCardsPlayNow() {
+        fillRecent(12);
         mountShellBackends();
         const shelf = findChild(shell, "home-library-shelf");
         tryVerify(() => shelf.visible);
@@ -451,20 +458,105 @@ TestCase {
         compare(findChild(shelf, "shelf-subtitle").text, "128 faixas");
         const list = findChild(shelf, "home-library-list");
         tryCompare(list, "count", 12);
-        compare(list.activeFocusOnTab, false);
         const card = shelfCard(list, 0);
-        compare(card.activeFocusOnTab, false);
-        compare(card.Accessible.role, Accessible.StaticText);
-        compare(card.Accessible.name, "Faixa 0, Artista 0");
+        compare(card.Accessible.role, Accessible.Button);
+        compare(card.Accessible.name, "Tocar Faixa 0 agora");
         compare(findChild(card, "shelf-card-title").text, "Faixa 0");
         compare(findChild(card, "shelf-card-subtitle").text, "Artista 0");
-        const unavailable = findChild(shelfCard(list, 3), "shelf-card-subtitle");
+        const unavailableCard = shelfCard(list, 3);
+        const unavailable = findChild(unavailableCard, "shelf-card-subtitle");
         compare(unavailable.text, "Indisponível");
         verify(Qt.colorEqual(unavailable.color, contract.warningColor));
+        compare(unavailableCard.enabled, false);
+        compare(unavailableCard.Accessible.description, "Arquivo não encontrado. Localize o arquivo para tocar a faixa.");
+        verify(!findChild(card, "shelf-card-playing").visible);
+        mouseClick(card);
+        tryCompare(fakeLibrary, "played", ["200"]);
+        const second = shelfCard(list, 1);
+        second.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(second, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        tryCompare(fakeLibrary, "played", ["200", "199"]);
+        mouseClick(unavailableCard);
+        compare(fakeLibrary.played.length, 2, "an unavailable card plays nothing");
+        // The wave badge follows the track that plays, and only while it plays.
+        loadQueue();
+        fakeLibrary.playingRecordId = "200";
+        tryVerify(() => findChild(shelfCard(list, 0), "shelf-card-playing").visible);
+        compare(shelfCard(list, 0).Accessible.description, "Tocando");
+        verify(!findChild(shelfCard(list, 1), "shelf-card-playing").visible);
+        driver.publishLocalPaused();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Paused);
+        tryVerify(() => !findChild(shelfCard(list, 0), "shelf-card-playing").visible);
         const see = findChild(shelf, "home-see-library");
         compare(see.text, "Ver toda a biblioteca");
         see.Accessible.pressAction();
         tryCompare(shell, "currentPage", "library");
+    }
+    // The open file chooser is a real reason to refuse opening; the room guest is refused by the presenter itself.
+    function test_libraryShelfCardsAreDisabledWithoutOpening() {
+        fillRecent(3);
+        mountShellBackends();
+        const list = findChild(shell, "home-library-list");
+        tryCompare(list, "count", 3);
+        verify(shelfCard(list, 0).enabled);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "selectingAudioFiles", true);
+        tryCompare(shelfCard(list, 0), "enabled", false);
+        tryCompare(shelfCard(list, 1), "enabled", false);
+        const see = findChild(shell, "home-see-library");
+        see.forceActiveFocus(Qt.TabFocusReason);
+        keyClick(Qt.Key_Tab);
+        verify(!focusIsInside(list), "the disabled cards are out of the Tab order");
+        driver.cancelLocalAudioSelection();
+        tryCompare(presenter, "selectingAudioFiles", false);
+        tryCompare(shelfCard(list, 0), "enabled", true);
+    }
+    function focusIsInside(list) {
+        for (let item = shell.activeFocusItem; item; item = item.parent) {
+            if (item === list)
+                return true;
+        }
+        return false;
+    }
+    // A guard on the page: a save that only changes another record leaves the shelf where it was. The real
+    // fix, the model without a reset, is C++ work with its own test; the fake model never resets.
+    function test_libraryShelfKeepsItsPlaceOnSave() {
+        fillRecent(12);
+        mountShellBackends();
+        const list = findChild(shell, "home-library-list");
+        tryCompare(list, "count", 12);
+        const card = shelfCard(list, 8);
+        card.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(card, "activeFocus", true);
+        waitForPolish(shell);
+        const before = list.contentX;
+        verify(before > 0, "the list is scrolled to the eighth card");
+        fakeRecent.setProperty(2, "artist", "Outro artista");
+        // The changed card is only looked at: asking for it by index would scroll the list to it.
+        tryVerify(() => list.itemAtIndex(2) !== null && findChild(list.itemAtIndex(2), "shelf-card-subtitle").text === "Outro artista");
+        compare(list.contentX, before);
+        verify(list.itemAtIndex(8).activeFocus, "the focus stays on the eighth card");
+    }
+    function test_focusLeavesAHidingLibraryShelfForOpenAudio() {
+        fillRecent(3);
+        mountShellBackends();
+        const shelf = findChild(shell, "home-library-shelf");
+        tryVerify(() => shelf.visible);
+        const see = findChild(shell, "home-see-library");
+        see.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(see, "activeFocus", true);
+        fakeLibrary.ready = false;
+        tryVerify(() => !shelf.visible);
+        tryVerify(() => findChild(shell, "open-audio").activeFocus, 5000, "focus: " + shell.activeFocusItem);
+        fakeLibrary.ready = true;
+        tryVerify(() => shelf.visible);
+        const card = shelfCard(findChild(shell, "home-library-list"), 1);
+        card.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(card, "activeFocus", true);
+        fakeLibrary.ready = false;
+        tryVerify(() => !shelf.visible);
+        tryVerify(() => findChild(shell, "open-audio").activeFocus, 5000, "focus: " + shell.activeFocusItem);
     }
     function test_libraryShelfHidesWithoutTracks() {
         fakeRecent.append({
@@ -493,7 +585,7 @@ TestCase {
         mountShellBackends();
         const list = findChild(shell, "home-library-list");
         tryCompare(list, "count", 1);
-        compare(shelfCard(list, 0).Accessible.name, "Faixa %2 ao vivo, Artista");
+        compare(shelfCard(list, 0).Accessible.name, "Tocar Faixa %2 ao vivo agora");
         driver.enqueueLocalSelection(["C:/Música/Primeira.mp3", "C:/Música/Cem %1 por cento.mp3"]);
         findChild(shell, "open-audio").Accessible.pressAction();
         tryCompare(presenter, "playbackState", PlayerPresenter.Loading);

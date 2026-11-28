@@ -7,7 +7,8 @@ import MusicPlayer.M0
 
 // A home shelf: a heading with its link, then a horizontal list of cards. With cardsFocusable, Tab enters the
 // list at its current card, walks the enabled cards in model order and leaves after the last one; Backtab from
-// the first card returns to the link. Without it the cards are read-only and the list stays out of the Tab order.
+// the first card returns to the link. Without it the cards are skipped and the list stays out of the Tab order.
+// When the shelf hides while the focus is inside it (link or card), it says so and the page chooses the next place.
 Item {
     id: root
     required property ShellUiContract contract
@@ -26,7 +27,10 @@ Item {
     readonly property real ringBleed: 2 + contract.focusRingWidth
     // The last item focused outside the list: it tells whether Tab (from the link) or Backtab entered the list.
     property Item focusOrigin: null
+    // True while the focus rests on the link or on a card; it is read when the shelf hides.
+    property bool focusHeld: false
     signal linkTriggered
+    signal focusLost
 
     objectName: controlId
     implicitHeight: header.implicitHeight + 12 + cards.height
@@ -83,12 +87,27 @@ Item {
         return cards.indexAt(item.x + item.width / 2, item.y + item.height / 2);
     }
 
+    function insideShelf(item) {
+        while (item && item !== root)
+            item = item.parent;
+        return item === root;
+    }
+    onVisibleChanged: {
+        if (!visible && focusHeld) {
+            focusHeld = false;
+            focusLost();
+        }
+    }
+
     Connections {
         target: root.Window
         function onActiveFocusItemChanged() {
             const item = root.Window.activeFocusItem;
             if (item && !root.insideCards(item))
                 root.focusOrigin = item;
+            // A hide clears the focus first: only an item taking it somewhere else ends the hold.
+            if (item && root.visible)
+                root.focusHeld = root.insideShelf(item);
         }
     }
 
