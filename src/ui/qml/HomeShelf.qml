@@ -27,8 +27,9 @@ Item {
     readonly property real ringBleed: 2 + contract.focusRingWidth
     // The last item focused outside the list: it tells whether Tab (from the link) or Backtab entered the list.
     property Item focusOrigin: null
-    // True while the focus rests on the link or on a card; it is read when the shelf hides.
-    property bool focusHeld: false
+    // Internal: true while the focus rests on the link or on a card; it is read when the shelf hides. That a
+    // hide clears the focus before visibleChanged is Qt behavior, pinned by test_focusLeavesAHidingLibraryShelfForOpenAudio.
+    property bool _focusHeld: false
     signal linkTriggered
     signal focusLost
 
@@ -93,8 +94,8 @@ Item {
         return item === root;
     }
     onVisibleChanged: {
-        if (!visible && focusHeld) {
-            focusHeld = false;
+        if (!visible && _focusHeld) {
+            _focusHeld = false;
             focusLost();
         }
     }
@@ -107,7 +108,7 @@ Item {
                 root.focusOrigin = item;
             // A hide clears the focus first: only an item taking it somewhere else ends the hold.
             if (item && root.visible)
-                root.focusHeld = root.insideShelf(item);
+                root._focusHeld = root.insideShelf(item);
         }
     }
 

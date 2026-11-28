@@ -131,7 +131,11 @@ ColumnLayout {
         cardsFocusable: root.openingEnabled
         model: root.libraryShown ? root.library.recentModel : null
         onLinkTriggered: root.libraryRequested()
-        onFocusLost: openAudioButton.forceActiveFocus(Qt.TabFocusReason)
+        // Only a shelf that hides inside a shown home moves the focus: leaving the whole home is the new page's to settle.
+        onFocusLost: {
+            if (root.visible)
+                openAudioButton.forceActiveFocus(Qt.TabFocusReason);
+        }
         // A click or Enter plays the track now; a failure shows on the hero, which has the track's error.
         delegate: AuroraTrackCard {
             required property var model
@@ -150,7 +154,7 @@ ColumnLayout {
             playing: current && root.presenter.playbackState === PlayerPresenter.Playing
             enabled: root.openingEnabled && available
             accessibleName: libraryText.playNowName.arg(model.title)
-            Accessible.description: playing ? navigationText.playingBadge : (available ? "" : libraryText.unavailableReason)
+            Accessible.description: libraryText.cardDescription(playing, available)
             onActivated: root.library.playNow(recordId)
         }
     }

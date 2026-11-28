@@ -529,7 +529,7 @@ TestCase {
         const card = shelfCard(list, 8);
         card.forceActiveFocus(Qt.TabFocusReason);
         tryCompare(card, "activeFocus", true);
-        waitForPolish(shell);
+        verify(waitForPolish(shell));
         const before = list.contentX;
         verify(before > 0, "the list is scrolled to the eighth card");
         fakeRecent.setProperty(2, "artist", "Outro artista");
@@ -537,6 +537,41 @@ TestCase {
         tryVerify(() => list.itemAtIndex(2) !== null && findChild(list.itemAtIndex(2), "shelf-card-subtitle").text === "Outro artista");
         compare(list.contentX, before);
         verify(list.itemAtIndex(8).activeFocus, "the focus stays on the eighth card");
+    }
+    // Opening the library from the shelf link hides the whole home: the focus goes to the library, not to open-audio.
+    function test_openingTheLibraryFromTheShelfLinkKeepsTheFocusThere() {
+        fillRecent(3);
+        mountShellBackends();
+        const see = findChild(shell, "home-see-library");
+        tryVerify(() => see.visible);
+        see.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(see, "activeFocus", true);
+        keyClick(Qt.Key_Return);
+        tryCompare(shell, "currentPage", "library");
+        const panel = findChild(shell, "library-panel");
+        tryVerify(() => focusInside(panel), 5000, "focus: " + shell.activeFocusItem);
+        verify(!findChild(shell, "open-audio").activeFocus);
+        wait(0);
+        verify(focusInside(panel), "the focus stays in the library; now: " + shell.activeFocusItem);
+    }
+    // A click on a card starts playback and leaves the home shown: the focus stays on the home.
+    function test_clickingAShelfCardKeepsTheFocusOnTheHome() {
+        fillRecent(3);
+        mountShellBackends();
+        const list = findChild(shell, "home-library-list");
+        tryCompare(list, "count", 3);
+        const card = shelfCard(list, 0);
+        mouseClick(card);
+        tryCompare(fakeLibrary, "played", ["200"]);
+        tryCompare(card, "activeFocus", true);
+        verify(!findChild(shell, "open-audio").activeFocus);
+    }
+    function focusInside(root) {
+        for (let item = shell.activeFocusItem; item; item = item.parent) {
+            if (item === root)
+                return true;
+        }
+        return false;
     }
     function test_focusLeavesAHidingLibraryShelfForOpenAudio() {
         fillRecent(3);

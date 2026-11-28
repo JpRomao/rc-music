@@ -61,6 +61,14 @@ QtObject {
     function rowDescription(available) {
         return available ? rowHint : unavailableReason;
     }
+    // The description of a home shelf card: the playing mark, the reason it is unavailable, or nothing.
+    function cardDescription(playing, available) {
+        if (playing)
+            return navigation.playingBadge;
+        if (!available)
+            return unavailableReason;
+        return "";
+    }
 
     property NavigationText navigation: NavigationText {}
 }
