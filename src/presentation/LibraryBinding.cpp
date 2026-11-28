@@ -278,19 +278,20 @@ struct LibraryBinding::Impl final {
             loaded(std::move(result.loaded));
         else
             saved(result.saved, result.written);
-        // The list shows confirmed records only.
-        model.setRecords(confirmed.snapshot().records);
-        auto newest = confirmed.snapshot().records;
-        std::ranges::sort(newest, std::greater<>{}, &LibraryRecord::id);
-        if (newest.size() > static_cast<std::size_t>(LibraryBinding::recentLimit))
-            newest.resize(static_cast<std::size_t>(LibraryBinding::recentLimit));
+        // The list shows confirmed records only. One copy of the catalog serves every projection below.
+        const auto snapshot = confirmed.snapshot();
+        model.setRecords(snapshot.records);
+        std::vector<LibraryRecord> newest(
+            std::min(snapshot.records.size(), static_cast<std::size_t>(LibraryBinding::recentLimit)));
+        std::ranges::partial_sort_copy(snapshot.records, newest, std::greater<>{}, &LibraryRecord::id,
+                                       &LibraryRecord::id);
         recent.setRecords(newest);
         id_by_path.clear();
-        for (const auto& record : confirmed.snapshot().records)
+        for (const auto& record : snapshot.records)
             id_by_path.emplace(record.source_path.native(), record.id);
         refreshPlaying();
         if (artwork_index)
-            artwork_index->update(confirmed.snapshot());
+            artwork_index->update(snapshot);
         // A failure waits for new ingress or an explicit retry; it never loops.
         if (!stopping && !save_failed)
             save();
