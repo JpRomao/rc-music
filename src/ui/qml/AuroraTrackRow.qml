@@ -297,6 +297,7 @@ ItemDelegate {
                 activeFocusOnTab: false
                 focusPolicy: Qt.NoFocus
                 text: labels.locateShort
+                Accessible.name: labels.locate.arg(root.title)
                 onClicked: root.locateRequested()
             }
         }

@@ -541,6 +541,8 @@ TestCase {
         verify(!findChild(gone, "track-row-enqueue").visible);
         const locate = findChild(gone, "track-row-locate");
         verify(locate.visible);
+        // As its siblings, the button names the track it acts on.
+        compare(locate.Accessible.name, "Localizar faixa sem nome");
         mouseClick(locate);
         compare(catalog.located, ["4"]);
         const feedback = findChild(panel, "library-feedback");
