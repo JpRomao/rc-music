@@ -90,6 +90,91 @@ TestCase {
         }
     }
 
+    // Just enough of a library catalog for the Aurora library page: three records (one gone).
+    ListModel {
+        id: libraryRecords
+        ListElement {
+            recordId: "3"
+            title: "Canção do Mar"
+            artist: "Lia Campos"
+            album: "Depois da Chuva"
+            durationText: "3:37"
+            available: true
+            fileName: "Canção do Mar.mp3"
+        }
+        ListElement {
+            recordId: "4"
+            title: "faixa sem nome"
+            artist: ""
+            album: ""
+            durationText: ""
+            available: false
+            fileName: "faixa sem nome.flac"
+        }
+        ListElement {
+            recordId: "5"
+            title: "Faixa ao vivo"
+            artist: "Rui Alves"
+            album: "Ao Vivo"
+            durationText: "4:01"
+            available: true
+            fileName: "ao vivo.mp3"
+        }
+    }
+    ListModel {
+        id: libraryRecent
+    }
+    QtObject {
+        id: libraryFake
+        property bool ready: true
+        property bool busy: false
+        property int count: 3
+        property int visibleCount: 3
+        property bool hasPendingChange: false
+        property bool canRetrySave: false
+        property string statusText: "Sua biblioteca está pronta."
+        property bool statusProblem: false
+        property string filterText: ""
+        property string playingRecordId: ""
+        property var model: libraryRecords
+        property var recentModel: libraryRecent
+        property bool canLocate: true
+        property string artworkBase: ""
+        function enqueue(id) {
+            return true;
+        }
+        function playNow(id) {
+            return true;
+        }
+        function remove(id) {
+            return true;
+        }
+        function locate(id) {
+            return true;
+        }
+        function cancelLocate() {
+        }
+        function addToPlaylist(id, playlist) {
+            return true;
+        }
+        function retryLoad() {
+            return true;
+        }
+        function retrySave() {
+            return true;
+        }
+    }
+
+    Component {
+        id: libraryShellComponent
+        Main {
+            uiContract: testProductUiContract // qmllint disable unqualified
+            presenter: testLocalPlayerPresenter // qmllint disable unqualified
+            lyrics: fakeLyrics
+            library: libraryFake
+        }
+    }
+
     // Replaces the fixture shell with the Aurora one, with nothing opened yet.
     function startAurora(dark) {
         shell.destroy();
@@ -118,6 +203,65 @@ TestCase {
         tryCompare(presenter, "currentQueueIndex", 1);
         verify(waitForPolish(shell));
         return shell.uiContract;
+    }
+
+    // The Aurora shell on the library page. With `playing`, record 3 is the track that plays, as the player reports it.
+    function openLibraryPage(dark, playing) {
+        shell.destroy();
+        shell = null;
+        driver.resetLocalScenario();
+        driver.setSystemAppearance(dark, true);
+        libraryFake.playingRecordId = "";
+        libraryFake.statusProblem = false;
+        libraryFake.statusText = "Sua biblioteca está pronta.";
+        shell = createTemporaryObject(libraryShellComponent, null);
+        verify(shell);
+        shell.width = 1440;
+        shell.height = 900;
+        shell.requestActivate();
+        tryVerify(() => testCase.shell.active);
+        compare(shell.uiContract.darkTheme, dark);
+        if (playing) {
+            driver.enqueueLocalSelection(["C:/Contrast/Primeira.mp3"]);
+            findChild(shell, "open-audio").Accessible.pressAction();
+            tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+            driver.publishLocalPlaying();
+            tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+            libraryFake.playingRecordId = "3";
+        }
+        mouseClick(findChild(shell, "library"));
+        const panel = findChild(shell, "library-panel");
+        tryCompare(panel, "opened", true);
+        verify(waitForPolish(shell));
+        return panel;
+    }
+
+    function libraryRow(panel, id) {
+        const list = findChild(panel, "library-list");
+        tryVerify(() => findChild(list, "library-row-" + id) !== null);
+        return findChild(list, "library-row-" + id);
+    }
+
+    function libraryCard(panel, id) {
+        const grid = findChild(panel, "library-grid");
+        tryVerify(() => findChild(grid, "library-card-" + id) !== null);
+        return findChild(grid, "library-card-" + id);
+    }
+
+    // The rendered ground of a row: its own background laid over the page canvas.
+    function rowGround(row, canvas) {
+        const background = findChild(row, "track-row-background");
+        verify(background && background.visible);
+        return composite(Qt.color(background.color), canvas, 1);
+    }
+
+    function hoverRow(row) {
+        mouseMove(row, row.width / 2, row.height / 2);
+        tryVerify(() => row.actionsShown);
+    }
+
+    function restRows() {
+        mouseMove(shell.contentItem, shell.width - 2, 2);
     }
 
     function openQueueDrawer() {
@@ -527,5 +671,154 @@ TestCase {
         const errorCircle = findChild(shell, "error-icon-circle");
         verify(errorCircle && errorCircle.visible);
         verifyContrast(Qt.color(findChild(errorCircle, "empty-icon").color), composite(Qt.color(errorCircle.color), surface, 1), 3, "error icon, " + data.tag);
+    }
+
+    function test_libraryRowTextContrast_data() {
+        return themes();
+    }
+    function test_libraryRowTextContrast(data) {
+        const panel = openLibraryPage(data.dark, true);
+        const aurora = shell.uiContract;
+        const canvas = Qt.darker(aurora.canvasColor, 1);
+        const hover = composite(Qt.color(aurora.hoverColor), canvas, 1);
+        restRows();
+        const quiet = libraryRow(panel, "5");
+        tryVerify(() => !quiet.actionsShown);
+        verify(Qt.colorEqual(rowGround(quiet, canvas), canvas), "a resting row sits on the canvas");
+        for (const name of ["track-row-number", "track-row-subtitle", "track-row-album", "track-row-duration"]) {
+            const text = findChild(quiet, name);
+            verify(text && text.visible && text.text.length > 0, name);
+            verifyContrast(Qt.color(text.color), canvas, 4.5, name + " on the canvas, " + data.tag);
+        }
+        const playingRow = libraryRow(panel, "3");
+        verify(playingRow.current && playingRow.playing);
+        const title = findChild(playingRow, "track-row-title");
+        verify(title.visible && Qt.colorEqual(title.color, aurora.accentColor), "the playing title is the accent");
+        verifyContrast(Qt.color(title.color), canvas, 4.5, "playing title on the canvas, " + data.tag);
+        // The hovered row: the secondary texts turn primary and the number gives way to the play button.
+        hoverRow(quiet);
+        verify(Qt.colorEqual(rowGround(quiet, canvas), hover), "a hovered row sits on the hover color");
+        verify(!findChild(quiet, "track-row-number").visible);
+        for (const name of ["track-row-subtitle", "track-row-album", "track-row-duration"]) {
+            const text = findChild(quiet, name);
+            verify(text.visible && text.text.length > 0, name);
+            verifyContrast(Qt.color(text.color), hover, 4.5, name + " on the hover row, " + data.tag);
+        }
+        verifyContrast(Qt.color(findChild(quiet, "track-row-title").color), hover, 4.5, "title on the hover row, " + data.tag);
+        hoverRow(playingRow);
+        verify(Qt.colorEqual(rowGround(playingRow, canvas), hover));
+        verify(Qt.colorEqual(findChild(playingRow, "track-row-title").color, aurora.accentColor));
+        verifyContrast(Qt.color(findChild(playingRow, "track-row-title").color), hover, 4.5, "playing title on the hover row, " + data.tag);
+    }
+
+    function test_libraryUnavailableContrast_data() {
+        return themes();
+    }
+    function test_libraryUnavailableContrast(data) {
+        const panel = openLibraryPage(data.dark, false);
+        const aurora = shell.uiContract;
+        const canvas = Qt.darker(aurora.canvasColor, 1);
+        const hover = composite(Qt.color(aurora.hoverColor), canvas, 1);
+        restRows();
+        const gone = libraryRow(panel, "4");
+        verify(!gone.available);
+        tryVerify(() => !gone.actionsShown);
+        const warning = findChild(gone, "track-row-unavailable");
+        verify(warning && warning.visible);
+        verify(Qt.colorEqual(warning.color, aurora.warningColor), "the warning is the warning color");
+        const title = findChild(gone, "track-row-title");
+        verify(title.visible);
+        verifyContrast(Qt.color(warning.color), canvas, 4.5, "unavailable warning on the canvas, " + data.tag);
+        verifyContrast(Qt.color(title.color), canvas, 4.5, "unavailable title on the canvas, " + data.tag);
+        hoverRow(gone);
+        verify(Qt.colorEqual(rowGround(gone, canvas), hover));
+        verifyContrast(Qt.color(warning.color), hover, 4.5, "unavailable warning on the hover row, " + data.tag);
+        verifyContrast(Qt.color(title.color), hover, 4.5, "unavailable title on the hover row, " + data.tag);
+    }
+
+    function test_libraryIconsContrast_data() {
+        return themes();
+    }
+    function test_libraryIconsContrast(data) {
+        const panel = openLibraryPage(data.dark, true);
+        const aurora = shell.uiContract;
+        const canvas = Qt.darker(aurora.canvasColor, 1);
+        const hover = composite(Qt.color(aurora.hoverColor), canvas, 1);
+        restRows();
+        const playingRow = libraryRow(panel, "3");
+        tryVerify(() => !playingRow.actionsShown);
+        const wave = findChild(playingRow, "track-row-wave");
+        verify(wave && wave.visible);
+        verifyContrast(Qt.color(wave.color), canvas, 3, "playing wave on the canvas, " + data.tag);
+        // The play button: a filled circle over the hover row, with the icon in the accent's text color.
+        const quiet = libraryRow(panel, "5");
+        hoverRow(quiet);
+        const play = findChild(quiet, "track-row-play");
+        verify(play && play.visible && play.enabled);
+        const circle = findChild(play, "icon-button-background");
+        const disc = composite(Qt.color(circle.color), hover, 1);
+        const icon = play.contentItem.children[0];
+        verify(icon && icon.visible);
+        verifyContrast(Qt.color(icon.color), disc, 3, "play icon on its circle, " + data.tag);
+        // The focus ring of the current row of a focused list, over the row's own ground.
+        restRows();
+        const list = findChild(panel, "library-list");
+        list.currentIndex = 2;
+        list.forceActiveFocus(Qt.TabFocusReason);
+        tryVerify(() => quiet.highlighted);
+        const ring = quiet.children.find(child => child.objectName === "focus-ring");
+        verify(ring && ring.visible && ring.border.width >= 1);
+        verifyContrast(Qt.color(ring.border.color), rowGround(quiet, canvas), 3, "row focus ring, " + data.tag);
+    }
+
+    function test_libraryBadgesContrast_data() {
+        return themes();
+    }
+    function test_libraryBadgesContrast(data) {
+        const panel = openLibraryPage(data.dark, true);
+        const canvas = Qt.darker(shell.uiContract.canvasColor, 1);
+        mouseClick(findChild(panel, "library-view-1"));
+        tryVerify(() => findChild(panel, "library-grid").visible);
+        const cards = {
+            "shelf-card-playing": libraryCard(panel, "3"),
+            "shelf-card-unavailable": libraryCard(panel, "4")
+        };
+        for (const name of Object.keys(cards)) {
+            const badge = findChild(cards[name], name);
+            verify(badge && badge.visible, name);
+            const background = findChild(badge, "chip-background");
+            const label = findChild(badge, "chip-label");
+            verify(label.visible && label.text.length > 0, name);
+            // The chip sits over the cover; its own background is the ground of its label.
+            const ground = composite(Qt.color(background.color), canvas, 1);
+            verifyContrast(Qt.color(label.color), ground, 4.5, name + " label, " + data.tag);
+            verifyContrast(Qt.color(findChild(badge, "chip-icon").color), ground, 3, name + " icon, " + data.tag);
+        }
+    }
+
+    function test_libraryFeedbackContrast_data() {
+        return themes();
+    }
+    function test_libraryFeedbackContrast(data) {
+        const panel = openLibraryPage(data.dark, false);
+        const aurora = shell.uiContract;
+        const canvas = Qt.darker(aurora.canvasColor, 1);
+        // Locating a missing file is the library's own status line: the catalog's text, as success or as error.
+        restRows();
+        const locate = findChild(libraryRow(panel, "4"), "track-row-locate");
+        tryVerify(() => locate.visible && locate.enabled);
+        mouseClick(locate);
+        const feedback = findChild(panel, "library-feedback");
+        const text = findChild(feedback, "feedback-text");
+        tryVerify(() => feedback.visible && text.text.length > 0);
+        verify(Qt.colorEqual(text.color, aurora.successColor), "a plain status is a success");
+        verifyContrast(Qt.color(text.color), canvas, 4.5, "success feedback, " + data.tag);
+        verifyContrast(Qt.color(findChild(feedback, "feedback-icon").color), canvas, 3, "success icon, " + data.tag);
+        libraryFake.statusText = "Não foi possível salvar a biblioteca.";
+        libraryFake.statusProblem = true;
+        tryVerify(() => Qt.colorEqual(text.color, aurora.errorColor));
+        verify(feedback.visible);
+        verifyContrast(Qt.color(text.color), canvas, 4.5, "error feedback, " + data.tag);
+        verifyContrast(Qt.color(findChild(feedback, "feedback-icon").color), canvas, 3, "error icon, " + data.tag);
     }
 }
