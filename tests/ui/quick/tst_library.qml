@@ -1173,6 +1173,63 @@ TestCase {
         tryCompare(list, "currentIndex", 1);
         compare(list.currentItem.objectName, "library-row-5");
     }
+    function test_currentCardWearsTheFocusRing_data() {
+        return [
+            {
+                tag: "light",
+                dark: false,
+                highContrast: false
+            },
+            {
+                tag: "dark",
+                dark: true,
+                highContrast: false
+            },
+            {
+                tag: "high-contrast-light",
+                dark: false,
+                highContrast: true
+            },
+            {
+                tag: "high-contrast-dark",
+                dark: true,
+                highContrast: true
+            }
+        ];
+    }
+    // The current card of a focused grid wears the same 3 px focus ring as the current row of the list.
+    function test_currentCardWearsTheFocusRing(data) {
+        try {
+            if (data.highContrast) {
+                driver.setHighContrast(true, !data.dark);
+                tryVerify(() => testCase.contract.highContrast);
+            } else {
+                presenter.setThemePreference(data.dark ? PlayerPresenter.DarkTheme : PlayerPresenter.LightTheme);
+                tryCompare(testCase.contract, "darkTheme", data.dark);
+            }
+            const panel = openLibrary();
+            mouseClick(findChild(panel, "library-view-1"));
+            const grid = findChild(panel, "library-grid");
+            tryVerify(() => grid.visible && grid.width > 0 && grid.height > 0);
+            const current = card(panel, "3");
+            const next = card(panel, "4");
+            verify(!findChild(current, "focus-ring").visible, "no ring before the grid has the focus");
+            grid.forceActiveFocus(Qt.TabFocusReason);
+            tryCompare(grid, "activeFocus", true);
+            const ring = findChild(current, "focus-ring");
+            tryVerify(() => ring.visible);
+            compare(ring.border.width, 3);
+            compare(ring.border.width, testCase.contract.focusRingWidth);
+            verify(Qt.colorEqual(ring.border.color, testCase.contract.focusColor), "ring color, " + data.tag);
+            verify(!findChild(next, "focus-ring").visible);
+            compare(findChild(current, "shelf-card-highlight"), null, "the card has one focus mark, the ring");
+            keyClick(Qt.Key_Right);
+            tryVerify(() => findChild(next, "focus-ring").visible);
+            verify(!ring.visible);
+        } finally {
+            presenter.setThemePreference(PlayerPresenter.SystemTheme);
+        }
+    }
     function test_libraryHighContrast_data() {
         return [
             {

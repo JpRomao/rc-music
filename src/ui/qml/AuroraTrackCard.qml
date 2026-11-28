@@ -136,16 +136,6 @@ ItemDelegate {
             text: libraryLabels.unavailable
             Accessible.ignored: true
         }
-        Rectangle {
-            objectName: "shelf-card-highlight"
-            width: artwork.width
-            height: artwork.height
-            radius: root.contract.radiusMedium
-            color: "transparent"
-            border.width: 2
-            border.color: root.contract.accentColor
-            visible: root.highlighted
-        }
         AuroraIconButton {
             id: playButton
             objectName: "shelf-card-play"
@@ -195,12 +185,14 @@ ItemDelegate {
             text: controlsLabels.moreActionsFor.arg(root.title)
             onClicked: root.moreRequested(moreButton)
         }
+        // The focused card, or the current card of a view that keeps the focus itself (the grid), as the list row.
         AuroraFocusRing {
             target: root
             contract: root.contract
             areaWidth: artwork.width
             areaHeight: artwork.height
             targetRadius: root.contract.radiusMedium
+            shown: root.activeFocus || root.highlighted
         }
         Text {
             id: titleText
