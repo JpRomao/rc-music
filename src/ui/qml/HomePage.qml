@@ -112,6 +112,8 @@ ColumnLayout {
             artworkSource: current && root.presenter.currentArtworkSource.toString().length > 0 ? root.presenter.currentArtworkSource : (model.artworkSource ?? "")
             playing: current && root.presenter.playbackState === PlayerPresenter.Playing
             enabled: root.openingEnabled && available
+            // A home card has one gesture, the click that plays; its menu and buttons come with the common track menu.
+            actionsShown: false
             accessibleName: navigationText.playTrack.arg(displayTitle)
             onActivated: root.playRequested(occurrenceId)
         }
@@ -152,6 +154,7 @@ ColumnLayout {
             artworkSource: artworkBase.length > 0 ? artworkBase + recordId : ""
             playing: current && root.presenter.playbackState === PlayerPresenter.Playing
             enabled: root.openingEnabled && available
+            actionsShown: false
             accessibleName: libraryText.playNowName.arg(model.title)
             Accessible.description: libraryText.cardDescription(playing, available)
             onActivated: root.library.playNow(recordId)

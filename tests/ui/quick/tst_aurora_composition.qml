@@ -497,6 +497,43 @@ TestCase {
         see.Accessible.pressAction();
         tryCompare(shell, "currentPage", "library");
     }
+    // A home card has one gesture, the click that plays: hovering it shows no play, enqueue or more button, the
+    // playing chip stays, and a click where the play button would be still plays the card.
+    function verifyHoverShowsNoActions(card, playing) {
+        const spot = card.coverSize - 28;
+        // The focus scrolls the home to the card, so the pointer lands on it.
+        card.forceActiveFocus(Qt.TabFocusReason);
+        verify(waitForPolish(shell));
+        mouseMove(card, spot, spot);
+        tryCompare(card, "hovered", true, 5000, card.title);
+        for (const name of ["shelf-card-play", "shelf-card-enqueue", "shelf-card-more"])
+            verify(!findChild(card, name).visible, name + " shows on a home card");
+        compare(findChild(card, "shelf-card-playing").visible, playing, "the playing chip ignores the hover");
+        return spot;
+    }
+    function test_hoveringAHomeCardShowsNoActions() {
+        fillRecent(3);
+        mountShellBackends();
+        loadQueue();
+        fakeLibrary.playingRecordId = "200";
+        const queueList = findChild(shell, "home-queue-list");
+        tryCompare(queueList, "count", 3);
+        verifyHoverShowsNoActions(shelfCard(queueList, 0), true);
+        const next = shelfCard(queueList, 1);
+        const nextId = next.occurrenceId;
+        const queueSpot = verifyHoverShowsNoActions(next, false);
+        mouseClick(next, queueSpot, queueSpot);
+        tryCompare(presenter, "currentOccurrenceId", nextId);
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        const libraryList = findChild(shell, "home-library-list");
+        tryCompare(libraryList, "count", 3);
+        verifyHoverShowsNoActions(shelfCard(libraryList, 0), true);
+        const second = shelfCard(libraryList, 1);
+        const librarySpot = verifyHoverShowsNoActions(second, false);
+        mouseClick(second, librarySpot, librarySpot);
+        tryCompare(fakeLibrary, "played", ["199"]);
+    }
     // The open file chooser is a real reason to refuse opening; the room guest is refused by the presenter itself.
     function test_libraryShelfCardsAreDisabledWithoutOpening() {
         fillRecent(3);
