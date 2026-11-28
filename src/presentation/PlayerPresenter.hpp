@@ -459,8 +459,10 @@ class PlayerPresenter final : public QObject {
     [[nodiscard]] LocalFileQueueSnapshot playlistQueueSnapshot() const;
     [[nodiscard]] bool appendPlaylistSources(std::vector<std::filesystem::path> source_paths);
     // "Play now": inserts the files right after the current track (at the end when there is none) and starts
-    // the first of them. A trusted C++ call, not a QML entry point. False, with the queue untouched, when
-    // refused; false with the file kept in the queue as unavailable when the player rejects it.
+    // the first of them. A trusted C++ call, not a QML entry point. False, with the queue untouched, when a
+    // guard refuses it. False, with the inserted file kept in the queue, when the backend refuses the open at
+    // once (InvalidArgument also marks it unavailable). A file that only fails while it loads, such as one that
+    // vanished, is accepted: the call is true and the player's own error marks the occurrence unavailable later.
     [[nodiscard]] bool playSourcesNow(const std::vector<std::filesystem::path>& source_paths);
     // The source of the current local occurrence; empty on the fixture, while following a room and with no track.
     [[nodiscard]] std::optional<std::filesystem::path> currentLocalSource() const;
