@@ -752,6 +752,12 @@ TestCase {
         keyClick(Qt.Key_Escape);
         tryCompare(reader, "opened", false);
         tryCompare(lyricsButton, "activeFocus", true);
+        // A placeholder inside the tags stays text: the album keeps its own slot.
+        driver.enqueueLocalSelection(["C:/Fixture/Marcadores.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "currentTitle", "Marcadores");
+        driver.publishNamedLocalMetadata("Marcadores", "AC%2DC %1", "Álbum");
+        tryCompare(artistAlbum, "text", "AC%2DC %1 · Álbum");
     }
     function test_compactHeroAtMinimumWindow() {
         mountShellBackends();

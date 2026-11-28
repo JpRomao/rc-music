@@ -20,7 +20,7 @@ Rectangle {
     readonly property int padding: compact ? 14 : 22
     readonly property bool emptyShown: presenter.playbackState === PlayerPresenter.Unloaded
     readonly property bool errorShown: presenter.playbackState === PlayerPresenter.Error
-    readonly property string artistAlbumText: presenter.currentArtist.length > 0 && presenter.currentAlbum.length > 0 ? transportText.artistAlbum.arg(presenter.currentArtist).arg(presenter.currentAlbum) : (presenter.currentArtist.length > 0 ? presenter.currentArtist : presenter.currentAlbum)
+    readonly property string artistAlbumText: presenter.currentArtist.length > 0 && presenter.currentAlbum.length > 0 ? navigationText.fillTwo(transportText.artistAlbum, presenter.currentArtist, presenter.currentAlbum) : (presenter.currentArtist.length > 0 ? presenter.currentArtist : presenter.currentAlbum)
     signal detailsRequested(Item opener)
     signal lyricsRequested(Item opener)
     signal audioFilesOpening(Item opener)
