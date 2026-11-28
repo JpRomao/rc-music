@@ -25,6 +25,8 @@ ItemDelegate {
     property bool locateEnabled: true
     property string accessibleName
     property string description
+    // The current row of the focused list: the view keeps the keyboard focus, so the screen reader follows this.
+    property bool cursorFocused: false
     signal activated
     signal playRequested
     signal enqueueRequested
@@ -69,7 +71,8 @@ ItemDelegate {
     Accessible.role: Accessible.ListItem
     Accessible.name: accessibleName
     Accessible.description: description
-    Accessible.focusable: false
+    Accessible.focusable: true
+    Accessible.focused: cursorFocused
     Accessible.onPressAction: {
         if (root.available && root.playEnabled)
             root.activated();

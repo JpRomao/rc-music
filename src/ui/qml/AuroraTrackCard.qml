@@ -22,6 +22,8 @@ ItemDelegate {
     property bool playEnabled: true
     // A click plays at once (shelves); otherwise it only selects and the double click plays (grid).
     property bool activateOnClick: true
+    // The current card of a focused view that keeps the keyboard focus itself: the screen reader follows this.
+    property bool cursorFocused: false
     signal activated
     signal selected
     signal playRequested
@@ -46,7 +48,7 @@ ItemDelegate {
     Accessible.role: interactive ? Accessible.Button : Accessible.StaticText
     Accessible.name: accessibleName
     Accessible.focusable: interactive && enabled
-    Accessible.focused: activeFocus
+    Accessible.focused: activeFocus || cursorFocused
     Accessible.onPressAction: root.activate()
 
     function activate() {

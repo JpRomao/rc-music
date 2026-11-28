@@ -456,6 +456,7 @@ PageSurface {
                 current: isPlayingRecord
                 playing: isPlayingRecord && root.playbackPlaying
                 highlighted: ListView.isCurrentItem && list.activeFocus
+                cursorFocused: highlighted
                 locateEnabled: root.library !== null && root.library.canLocate
                 accessibleName: libraryText.rowName(model.title, model.artist, model.available)
                 description: libraryText.rowDescription(model.available)
@@ -530,6 +531,7 @@ PageSurface {
                     // The grid keeps the focus: a click only makes the card the current one.
                     focusPolicy: Qt.NoFocus
                     highlighted: cell.GridView.isCurrentItem && grid.activeFocus
+                    cursorFocused: highlighted
                     accessibleName: libraryText.rowName(cell.model.title, cell.model.artist, cell.model.available)
                     Accessible.description: libraryText.cardDescription(playing, cell.model.available)
                     onSelected: root.selectItem(grid, cell.index)

@@ -1133,6 +1133,31 @@ TestCase {
         waitForPolish(shell);
         verify(field.activeFocus, "the focus moved to " + focusName());
     }
+    // The view keeps the keyboard focus, so the screen reader follows the current row or card as its focus.
+    function test_screenReaderFollowsTheCurrentRowAndCard() {
+        const panel = openLibrary();
+        const list = focusList(panel);
+        compare(row(panel, "3").Accessible.focusable, true);
+        compare(row(panel, "3").Accessible.focused, true);
+        compare(row(panel, "4").Accessible.focused, false);
+        keyClick(Qt.Key_Down);
+        compare(row(panel, "3").Accessible.focused, false);
+        compare(row(panel, "4").Accessible.focused, true);
+        findChild(panel, "library-filter").forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(list, "activeFocus", false);
+        compare(row(panel, "4").Accessible.focused, false, "only a focused list has a screen-reader cursor");
+        mouseClick(findChild(panel, "library-view-1"));
+        const grid = findChild(panel, "library-grid");
+        tryVerify(() => grid.visible && grid.width > 0 && grid.height > 0);
+        compare(card(panel, "3").Accessible.focused, false);
+        grid.forceActiveFocus(Qt.TabFocusReason);
+        tryCompare(grid, "activeFocus", true);
+        compare(card(panel, "3").Accessible.focusable, true);
+        compare(card(panel, "3").Accessible.focused, true);
+        keyClick(Qt.Key_Right);
+        compare(card(panel, "3").Accessible.focused, false);
+        compare(card(panel, "4").Accessible.focused, true);
+    }
     function test_filterKeepsTheCurrentRowWhenItStillMatches() {
         const panel = openLibrary();
         const list = focusList(panel);
