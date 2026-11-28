@@ -130,11 +130,12 @@ ColumnLayout {
     }
     // One Loader picks the buttons: the two of the fixture, or the Aurora row.
     // Both items expose the buttons the code here needs: recovery and locate.
+    // The Aurora row may use the hero's whole width; the fixture keeps its 560.
     Loader {
         id: actions
         sourceComponent: root.editorial ? auroraActions : fixtureActions
         Layout.fillWidth: true
-        Layout.maximumWidth: 560
+        Layout.maximumWidth: root.editorial ? Number.POSITIVE_INFINITY : 560
         Layout.alignment: Qt.AlignHCenter
     }
     Text {
@@ -187,83 +188,118 @@ ColumnLayout {
         }
     }
 
-    // The Aurora look: every recovery action in one centered row that wraps.
+    // The Aurora look: every recovery action in centered lines. A line takes as many buttons as fit,
+    // in order, and each line is centered on its own, so a wrap never leaves one to the left.
     Component {
         id: auroraActions
         Item {
             id: auroraRow
             readonly property Item recovery: recoveryAction
             readonly property Item locate: locateAction
-            readonly property real naturalWidth: {
-                let total = 0;
-                let count = 0;
-                for (const button of [recoveryAction, openAnotherAction, retryAction, locateAction, detailsAction]) {
+            readonly property real spacing: 8
+            readonly property var buttons: [recoveryAction, openAnotherAction, retryAction, locateAction, detailsAction]
+            // The place of each button, in the order above, and the height of all the lines.
+            readonly property var placement: {
+                const lines = [];
+                let line = null;
+                for (let index = 0; index < buttons.length; ++index) {
+                    const button = buttons[index];
                     if (!button.visible)
                         continue;
-                    total += button.implicitWidth;
-                    count += 1;
+                    if (line && line.width + spacing + button.implicitWidth > width) {
+                        lines.push(line);
+                        line = null;
+                    }
+                    if (!line)
+                        line = {
+                            indexes: [],
+                            width: -spacing,
+                            height: 0
+                        };
+                    line.indexes.push(index);
+                    line.width += spacing + button.implicitWidth;
+                    line.height = Math.max(line.height, button.implicitHeight);
                 }
-                return total + Math.max(0, count - 1) * flow.spacing;
+                if (line)
+                    lines.push(line);
+                const points = buttons.map(() => Qt.point(0, 0));
+                let top = 0;
+                for (const current of lines) {
+                    let left = Math.max(0, Math.round((width - current.width) / 2));
+                    for (const index of current.indexes) {
+                        points[index] = Qt.point(left, top);
+                        left += buttons[index].implicitWidth + spacing;
+                    }
+                    top += current.height + spacing;
+                }
+                return {
+                    points: points,
+                    height: Math.max(0, top - spacing)
+                };
             }
-            implicitHeight: flow.implicitHeight
-            Flow {
-                id: flow
-                width: Math.min(auroraRow.width, auroraRow.naturalWidth)
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: 8
-                AuroraButton {
-                    id: recoveryAction
-                    contract: root.contract
-                    controlId: root.controlId
-                    kind: AuroraButton.Primary
-                    text: root.actionText
-                    description: root.recoveryDescription
-                    enabled: root.recoveryEnabled
-                    onClicked: root.activateRecovery(recoveryAction)
-                }
-                AuroraButton {
-                    id: openAnotherAction
-                    contract: root.contract
-                    controlId: "error-open-another-audio"
-                    kind: AuroraButton.Tonal
-                    text: root.labels.openAudioAction
-                    visible: root.openAnotherVisible
-                    enabled: root.openAnotherEnabled
-                    onClicked: root.openAnotherAudio(openAnotherAction)
-                }
-                AuroraButton {
-                    id: retryAction
-                    contract: root.contract
-                    controlId: "error-retry-occurrence"
-                    kind: AuroraButton.Tonal
-                    text: root.labels.retryAction
-                    description: root.labels.retryDescription
-                    visible: root.retryVisible
-                    enabled: root.retryEnabled
-                    onClicked: root.retryCurrent()
-                }
-                AuroraButton {
-                    id: locateAction
-                    contract: root.contract
-                    controlId: "error-locate-occurrence"
-                    kind: AuroraButton.Tonal
-                    text: root.labels.locateAction
-                    description: root.labels.locateDescription
-                    visible: root.locateVisible
-                    enabled: root.locateEnabled
-                    onClicked: root.locateCurrent()
-                }
-                AuroraButton {
-                    id: detailsAction
-                    contract: root.contract
-                    controlId: "track-details-error"
-                    kind: AuroraButton.Tonal
-                    iconName: "info"
-                    text: root.contract.detailsTitle
-                    Accessible.name: root.contract.detailsTitle
-                    enabled: root.presenter.detailsAvailable
-                    onClicked: root.detailsRequested(detailsAction)
-                }
+            implicitHeight: placement.height
+            AuroraButton {
+                id: recoveryAction
+                x: auroraRow.placement.points[0].x
+                y: auroraRow.placement.points[0].y
+                contract: root.contract
+                controlId: root.controlId
+                kind: AuroraButton.Primary
+                text: root.actionText
+                description: root.recoveryDescription
+                enabled: root.recoveryEnabled
+                onClicked: root.activateRecovery(recoveryAction)
+            }
+            AuroraButton {
+                id: openAnotherAction
+                x: auroraRow.placement.points[1].x
+                y: auroraRow.placement.points[1].y
+                contract: root.contract
+                controlId: "error-open-another-audio"
+                kind: AuroraButton.Tonal
+                text: root.labels.openAudioAction
+                visible: root.openAnotherVisible
+                enabled: root.openAnotherEnabled
+                onClicked: root.openAnotherAudio(openAnotherAction)
+            }
+            AuroraButton {
+                id: retryAction
+                x: auroraRow.placement.points[2].x
+                y: auroraRow.placement.points[2].y
+                contract: root.contract
+                controlId: "error-retry-occurrence"
+                kind: AuroraButton.Tonal
+                text: root.labels.retryAction
+                description: root.labels.retryDescription
+                visible: root.retryVisible
+                enabled: root.retryEnabled
+                onClicked: root.retryCurrent()
+            }
+            AuroraButton {
+                id: locateAction
+                x: auroraRow.placement.points[3].x
+                y: auroraRow.placement.points[3].y
+                contract: root.contract
+                controlId: "error-locate-occurrence"
+                kind: AuroraButton.Tonal
+                text: root.labels.locateAction
+                description: root.labels.locateDescription
+                visible: root.locateVisible
+                enabled: root.locateEnabled
+                onClicked: root.locateCurrent()
+            }
+            AuroraButton {
+                id: detailsAction
+                x: auroraRow.placement.points[4].x
+                y: auroraRow.placement.points[4].y
+                contract: root.contract
+                controlId: "track-details-error"
+                kind: AuroraButton.Tonal
+                iconName: "info"
+                text: root.contract.detailsTitle
+                Accessible.name: root.contract.detailsTitle
+                enabled: root.presenter.detailsAvailable
+                onClicked: root.detailsRequested(detailsAction)
             }
         }
     }

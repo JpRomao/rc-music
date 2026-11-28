@@ -778,6 +778,60 @@ TestCase {
         driver.publishNamedLocalMetadata("Marcadores", "AC%2DC %1", "Álbum");
         tryCompare(artistAlbum, "text", "AC%2DC %1 · Álbum");
     }
+    // The error's recovery actions use the hero's width: one centered line when they fit, and every
+    // wrapped line centered on its own when they do not.
+    function test_errorActionsLinesAreCentered_data() {
+        return [
+            {
+                tag: "wide",
+                width: 1440,
+                height: 900,
+                oneLine: true
+            },
+            {
+                tag: "minimum",
+                width: 720,
+                height: 520,
+                oneLine: false
+            }
+        ];
+    }
+    function test_errorActionsLinesAreCentered(data) {
+        shell.width = data.width;
+        shell.height = data.height;
+        tryCompare(shell.contentItem, "width", data.width);
+        tryCompare(shell.contentItem, "height", data.height);
+        driver.enqueueLocalSelection(["C:/Música/Arquivo movido.mp3"]);
+        findChild(shell, "open-audio").Accessible.pressAction();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Loading);
+        driver.publishLocalSourceUnavailable();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Error);
+        tryVerify(() => presenter.canRetryCurrentOccurrence && presenter.canLocateCurrentOccurrence);
+        verify(waitForPolish(shell));
+        const state = findChild(shell, "error-state");
+        const lines = {};
+        for (const name of ["error-open-audio", "error-retry-occurrence", "error-locate-occurrence", "track-details-error"]) {
+            const action = findChild(state, name);
+            verify(action && action.visible, name);
+            const p = action.mapToItem(state, 0, 0);
+            const key = Math.round(p.y);
+            if (!lines[key])
+                lines[key] = {
+                    left: p.x,
+                    right: p.x + action.width
+                };
+            lines[key].left = Math.min(lines[key].left, p.x);
+            lines[key].right = Math.max(lines[key].right, p.x + action.width);
+        }
+        const keys = Object.keys(lines);
+        if (data.oneLine)
+            compare(keys.length, 1, "the hero has room for every action in one line");
+        for (const key of keys) {
+            const line = lines[key];
+            const middle = (line.left + line.right) / 2;
+            verify(Math.abs(middle - state.width / 2) <= 1, "line at " + key + " is centered: " + middle + " vs " + state.width / 2);
+        }
+    }
     function test_compactHeroAtMinimumWindow() {
         mountShellBackends();
         shell.lyrics = fakeLyrics;
