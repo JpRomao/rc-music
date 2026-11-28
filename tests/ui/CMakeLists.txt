@@ -374,9 +374,10 @@ target_compile_definitions(rc_music_ui_quick_tests PRIVATE RC_MUSIC_TEST_UI_VARI
 rc_music_configure_cpp(rc_music_ui_quick_tests)
 add_test(NAME rc_music.ui.quick COMMAND rc_music_ui_quick_tests
     -input "${CMAKE_CURRENT_SOURCE_DIR}/quick" -import "${QT_QML_OUTPUT_DIRECTORY}" -o -,txt)
-# The whole Quick suite runs in one process: about 110 s idle, 160 s inside develop.ps1 validate and up to
-# 310 s on a busy host (2026-11-22). The limit only catches a hung process; each tryCompare keeps its own deadline.
-set_tests_properties(rc_music.ui.quick PROPERTIES LABELS "ui;qt;quick" TIMEOUT 360
+# The whole Quick suite runs in one process: about 110 s idle with 205 tests (2026-11-22), 570 s with 1048 tests
+# (2026-11-28, slice 5, one process, idle host) and slower on a busy one. The limit only catches a hung process;
+# each tryCompare keeps its own deadline.
+set_tests_properties(rc_music.ui.quick PROPERTIES LABELS "ui;qt;quick" TIMEOUT 1200
     ENVIRONMENT "${ui_environment}"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
