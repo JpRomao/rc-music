@@ -33,6 +33,19 @@ QString durationText(const std::optional<std::uint64_t>& milliseconds) {
     return hours > 0 ? QStringLiteral("%1:%2:%3").arg(hours).arg(pad(minutes), pad(rest))
                      : QStringLiteral("%1:%2").arg(minutes).arg(pad(rest));
 }
+// Past this many removal blocks and insertion runs together, one reset is cheaper than the row signals: each
+// block shifts the rows after it and adds a change that the views merge into their pending set, so a scattered
+// filter on a large library costs blocks x rows. Measured on 20 000 rows (docs/ui-tests.md, Biblioteca).
+constexpr int max_incremental_blocks = 1024;
+// The number of contiguous removal blocks plus insertion runs that the row signals would need.
+int changeBlocks(const std::vector<bool>& kept, const std::vector<int>& origin) {
+    int blocks = 0;
+    for (std::size_t index = 0; index < kept.size(); ++index)
+        blocks += !kept[index] && (index == 0 || kept[index - 1]) ? 1 : 0;
+    for (std::size_t index = 0; index < origin.size(); ++index)
+        blocks += origin[index] < 0 && (index == 0 || origin[index - 1] >= 0) ? 1 : 0;
+    return blocks;
+}
 } // namespace
 
 LibraryListModel::LibraryListModel(QObject* parent) : QAbstractListModel(parent) {}
@@ -118,6 +131,8 @@ void LibraryListModel::applyVisible(std::vector<RowPtr> next) {
         kept[static_cast<std::size_t>(*found)] = true;
     }
 
+    if (ordered && changeBlocks(kept, origin) > max_incremental_blocks)
+        ordered = false;
     if (!ordered) {
         beginResetModel();
         visible_ = std::move(next);
@@ -163,6 +178,10 @@ void LibraryListModel::applyVisible(std::vector<RowPtr> next) {
 }
 
 int LibraryListModel::count() const { return static_cast<int>(visible_.size()); }
+int LibraryListModel::rowOf(const QString& recordId) const {
+    const auto found = std::ranges::find(visible_, recordId, [](const RowPtr& row) { return row->id; });
+    return found == visible_.end() ? -1 : static_cast<int>(found - visible_.begin());
+}
 int LibraryListModel::rowCount(const QModelIndex& parent) const { return parent.isValid() ? 0 : count(); }
 
 QVariant LibraryListModel::data(const QModelIndex& index, const int role) const {

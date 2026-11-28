@@ -8,6 +8,7 @@
 #include "m0/ports/PlaybackBackend.hpp"
 #include "m0/ports/PlaylistStore.hpp"
 #include "presentation/ArtworkImageProvider.hpp"
+#include "presentation/LibraryListModel.hpp"
 #include "presentation/PlayerPresenter.hpp"
 #include "presentation/PlayerPresenterScenarioControl.hpp"
 #include "presentation/PlayerPresenterTestAccess.hpp"
@@ -471,6 +472,30 @@ class ScenarioDriver final : public QObject {
     Q_INVOKABLE bool releaseDownloadsScenario(QObject* scenario);
     Q_INVOKABLE QObject* createPlaylistsScenario();
     Q_INVOKABLE bool releasePlaylistsScenario(QObject* scenario);
+    // A real library list model of `count` records "Faixa <id>"; every `matchEvery`-th has the artist "Mar Azul",
+    // so the filter "mar" keeps scattered rows. The driver owns it until it is released.
+    Q_INVOKABLE QObject* createLibraryListModel(const int count, const int matchEvery) {
+        std::vector<music_player::m0::LibraryRecord> records;
+        records.reserve(static_cast<std::size_t>(std::max(0, count)));
+        for (int id = 1; id <= count; ++id) {
+            const auto number = std::to_string(id);
+            records.push_back({.id = static_cast<std::uint64_t>(id),
+                               .source_path = std::filesystem::path{"C:/Fixture/faixa-" + number + ".mp3"},
+                               .title = "Faixa " + number,
+                               .artist = matchEvery > 0 && id % matchEvery == 0 ? "Mar Azul" : "Rio"});
+        }
+        auto* const model = new music_player::m0::LibraryListModel(this);
+        model->setRecords(records);
+        return model;
+    }
+    Q_INVOKABLE void filterLibraryListModel(QObject* model, const QString& text) {
+        if (auto* const list = qobject_cast<music_player::m0::LibraryListModel*>(model); list && list->parent() == this)
+            list->setFilter(text);
+    }
+    Q_INVOKABLE void releaseLibraryListModel(QObject* model) {
+        if (auto* const list = qobject_cast<music_player::m0::LibraryListModel*>(model); list && list->parent() == this)
+            list->deleteLater();
+    }
     Q_INVOKABLE void setTrayAvailable(const bool available) {
         platform_.tray_available = available;
         presenter_.refreshPlatformAvailability();

@@ -14,7 +14,8 @@ namespace music_player::m0 {
 // Read-only projection of the confirmed library for the List view, with a local
 // filter that ignores case and accents across title, artist, album and file name.
 // Changes arrive as row removals, insertions and dataChanged, so views keep their
-// place; a reset happens only when the records both lists share change order.
+// place; a reset happens when the records both lists share change order, or when
+// the change would split into so many blocks that one reset is cheaper.
 // Never touches files or the network.
 class LibraryListModel final : public QAbstractListModel {
     Q_OBJECT
@@ -36,6 +37,8 @@ class LibraryListModel final : public QAbstractListModel {
     [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role) const override;
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
+    // The row that shows the record, or -1: a view finds its current record again after a reset.
+    Q_INVOKABLE int rowOf(const QString& recordId) const;
     // Accent- and case-insensitive comparison key, shared with tests.
     [[nodiscard]] static QString searchKey(const QString& text);
   signals:

@@ -368,7 +368,7 @@ target_compile_definitions(rc_music_ui_contract_tests PRIVATE
 add_executable(rc_music_ui_quick_tests quick/quick_main.cpp)
 target_link_libraries(rc_music_ui_quick_tests PRIVATE
     rc_music_ui_scenario_support rc_music_test_ui rc_music_test_uiplugin
-    m0_qt_fixture_data m0_qt_system_appearance rc_music_playlists Qt6::QuickControls2 Qt6::QuickTest)
+    m0_qt_fixture_data m0_qt_system_appearance rc_music_playlists rc_music_library Qt6::QuickControls2 Qt6::QuickTest)
 target_compile_definitions(rc_music_ui_quick_tests PRIVATE RC_MUSIC_TEST_UI_VARIANT
     QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/quick")
 rc_music_configure_cpp(rc_music_ui_quick_tests)

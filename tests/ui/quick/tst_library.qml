@@ -1167,6 +1167,51 @@ TestCase {
         compare(card(panel, "3").Accessible.focused, false);
         compare(card(panel, "4").Accessible.focused, true);
     }
+    // With the real model: a first letter that matches one row in four of 20 000 resets the model, and so does
+    // clearing it. The view finds its current record again, shows it and keeps the focus.
+    function resetKeepsTheCurrentEntry(panel, view) {
+        const model = catalog.model;
+        view.currentIndex = 3999;
+        view.positionViewAtIndex(3999, ListView.Contain);
+        tryVerify(() => view.currentItem !== null && view.currentItem.model.recordId === "4000");
+        const resets = spyComponent.createObject(testCase, {
+            target: model,
+            signalName: "modelReset"
+        });
+        driver.filterLibraryListModel(model, "mar");
+        compare(resets.count, 1);
+        tryCompare(view, "count", 5000);
+        tryCompare(view, "currentIndex", 999);
+        compare(view.currentItem.model.recordId, "4000");
+        tryVerify(() => wholeRowShown(view), 5000, "the current entry is not shown");
+        verify(view.activeFocus);
+        driver.filterLibraryListModel(model, "");
+        compare(resets.count, 2);
+        tryCompare(view, "count", 20000);
+        tryCompare(view, "currentIndex", 3999);
+        compare(view.currentItem.model.recordId, "4000");
+        tryVerify(() => wholeRowShown(view), 5000, "the current entry is not shown");
+        resets.destroy();
+    }
+    function test_aModelResetKeepsTheCurrentEntry() {
+        const model = driver.createLibraryListModel(20000, 4);
+        try {
+            catalog.model = model;
+            catalog.count = 20000;
+            catalog.visibleCount = 20000;
+            const panel = openLibrary();
+            resetKeepsTheCurrentEntry(panel, focusList(panel));
+            mouseClick(findChild(panel, "library-view-1"));
+            const grid = findChild(panel, "library-grid");
+            tryVerify(() => grid.visible && grid.width > 0 && grid.height > 0);
+            grid.forceActiveFocus(Qt.TabFocusReason);
+            tryCompare(grid, "activeFocus", true);
+            resetKeepsTheCurrentEntry(panel, grid);
+        } finally {
+            catalog.model = records;
+            driver.releaseLibraryListModel(model);
+        }
+    }
     function test_filterKeepsTheCurrentRowWhenItStillMatches() {
         const panel = openLibrary();
         const list = focusList(panel);

@@ -209,10 +209,47 @@ PageSurface {
             library.retryLoad();
     }
 
+    // The record of a view's current entry, or none.
+    function currentRecordId(view) {
+        const item = view.currentItem;
+        // The delegates declare `model` themselves; the view only knows them as items.
+        // qmllint disable missing-property
+        if (item === null || item.model === undefined || item.model.recordId === undefined)
+            return "";
+        return item.model.recordId;
+        // qmllint enable missing-property
+    }
+    // Makes the entry of a record current again, and shows it.
+    function restoreCurrent(view, recordId) {
+        if (recordId.length === 0 || library === null)
+            return;
+        const row = library.model.rowOf(recordId);
+        if (row < 0)
+            return;
+        view.currentIndex = row;
+        view.positionViewAtIndex(row, view === list ? ListView.Contain : GridView.Contain);
+    }
+    // The current record of each view while the model resets.
+    property string listResetId: ""
+    property string gridResetId: ""
+
     Connections {
         target: root.library
         function onHasPendingChangeChanged() {
             Qt.callLater(root.disarmWhenNothingLanded);
+        }
+    }
+    // A filter change that splits into too many blocks resets the model (LibraryListModel): each view finds its
+    // current record again by id, so the list does not jump while that record still matches.
+    Connections {
+        target: root.library !== null ? root.library.model : null
+        function onModelAboutToBeReset() {
+            root.listResetId = root.currentRecordId(list);
+            root.gridResetId = root.currentRecordId(grid);
+        }
+        function onModelReset() {
+            root.restoreCurrent(list, root.listResetId);
+            root.restoreCurrent(grid, root.gridResetId);
         }
     }
 
