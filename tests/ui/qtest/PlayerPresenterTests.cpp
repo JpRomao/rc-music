@@ -1182,6 +1182,10 @@ void PlayerPresenterTests::playSourcesNowRefusesInvalidInputAndGuestRooms() {
         QVERIFY(!presenter.playSourcesNow({}));
         QVERIFY(!presenter.playSourcesNow({std::filesystem::path{"relative.mp3"}}));
         QVERIFY(!presenter.playSourcesNow({x, std::filesystem::path{"relative.mp3"}}));
+        // Inside a download import call, as the playlist and room appends.
+        PlayerPresenterTestAccess::setDownloadImportCallInProgress(presenter, true);
+        QVERIFY(!presenter.playSourcesNow({x}));
+        PlayerPresenterTestAccess::setDownloadImportCallInProgress(presenter, false);
         presenter.setRoomSessionGate({.blocks_local_sources = [] { return true; }});
         QVERIFY(!presenter.playSourcesNow({x}));
         QCOMPARE(queuePaths(presenter), queue);

@@ -2197,9 +2197,10 @@ namespace {
 } // namespace
 
 bool PlayerPresenter::playSourcesNow(const std::vector<std::filesystem::path>& source_paths) {
-    if (QThread::currentThread() != thread() || uses_frozen_fixture_ || exiting_ || download_append_in_progress_ ||
-        localSourcesBlocked() || file_dialog_cancellation_active_ || sourceImportActive() || selectingAudioFiles() ||
-        file_location_request_.has_value() || source_paths.empty() || !allAbsoluteSourcePaths(source_paths))
+    if (QThread::currentThread() != thread() || download_import_call_in_progress_ || uses_frozen_fixture_ || exiting_ ||
+        download_append_in_progress_ || localSourcesBlocked() || file_dialog_cancellation_active_ ||
+        sourceImportActive() || selectingAudioFiles() || file_location_request_.has_value() || source_paths.empty() ||
+        !allAbsoluteSourcePaths(source_paths))
         return false;
     // After the current track, whatever its state; at the end when the queue has no current track.
     const auto current = local_queue_.currentIndex();
