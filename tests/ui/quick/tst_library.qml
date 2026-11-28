@@ -1203,4 +1203,108 @@ TestCase {
             verify(Qt.colorEqual(findChild(badge, "chip-label").color, entry[1]), badge.objectName);
         }
     }
+
+    // Captures of the library (slice 5): list, row menu, covers and empty. They are evidence for visual review and are
+    // saved only when RC_MUSIC_UI_ARTIFACT_DIR is set. 128 records: the third one is unavailable, the first one plays.
+    function test_libraryCaptures_data() {
+        const rows = [];
+        for (const scene of ["library-list", "library-menu", "library-covers", "library-empty"]) {
+            for (const size of [[1440, 900], [720, 520]]) {
+                for (const dark of [false, true]) {
+                    rows.push({
+                        tag: scene + "-" + size[0] + "-" + (dark ? "dark" : "light"),
+                        scene: scene,
+                        width: size[0],
+                        height: size[1],
+                        dark: dark
+                    });
+                }
+            }
+        }
+        return rows;
+    }
+    function fillCaptureLibrary() {
+        const names = ["Maré de Vidro", "Luz de Inverno", "Cais", "Papel de Seda", "Estação Norte", "Janela", "Rádio Distante", "Areia", "Farol", "Fio de Prata", "Ventania", "Última Estação"];
+        const artists = ["Lia Campos", "Coral do Sul", "Rui Amaral", "Dani Ferraz", "Mar Aberto"];
+        const albums = ["Depois da Chuva", "Ao Vivo", "Cartas de Maré", "Inverno Claro"];
+        source = [];
+        records.clear();
+        for (let i = 0; i < 128; ++i) {
+            const entry = {
+                recordId: String(i + 1),
+                title: names[i % names.length] + (i < names.length ? "" : " " + (Math.floor(i / names.length) + 1)),
+                artist: artists[i % artists.length],
+                album: albums[i % albums.length],
+                durationText: (2 + i % 4) + ":" + (10 + (i * 7) % 50),
+                available: i !== 2,
+                fileName: "faixa" + i + ".mp3"
+            };
+            source.push(entry);
+            records.append(entry);
+        }
+        catalog.count = 128;
+        catalog.visibleCount = 128;
+    }
+    function test_libraryCaptures(data) {
+        shell.width = data.width;
+        shell.height = data.height;
+        presenter.setThemePreference(data.dark ? PlayerPresenter.DarkTheme : PlayerPresenter.LightTheme);
+        tryCompare(testCase.contract, "darkTheme", data.dark);
+        tryCompare(shell.contentItem, "width", data.width);
+        tryCompare(shell.contentItem, "height", data.height);
+        if (data.scene === "library-empty") {
+            source = [];
+            records.clear();
+            catalog.count = 0;
+            catalog.visibleCount = 0;
+        } else {
+            fillCaptureLibrary();
+            loadPlayingQueue();
+            catalog.playingRecordId = "1";
+        }
+        const panel = openLibrary();
+        verify(waitForPolish(shell));
+        const audio = [driver.localPlayCount(), driver.localPauseCount(), driver.localUnloadCount()];
+        if (data.scene === "library-list") {
+            // The confirmation with "Ver fila", then a row under the pointer with its three actions.
+            const first = row(panel, "2");
+            showRowActions(first);
+            mouseClick(findChild(first, "track-row-enqueue"));
+            tryVerify(() => findChild(panel, "library-see-queue").visible);
+            const hovered = row(panel, data.width > 720 ? "5" : "2");
+            showRowActions(hovered);
+            tryVerify(() => findChild(hovered, "track-row-play").visible);
+            verify(findChild(row(panel, "3"), "track-row-locate").visible);
+        } else if (data.scene === "library-menu") {
+            const menu = openRowMenu(panel, data.width > 720 ? "5" : "4");
+            const entry = menu.itemAt(2);
+            mouseClick(entry);
+            tryCompare(entry.subMenu, "opened", true);
+            verify(findChild(shell, "library-playlist-choice-7"));
+        } else if (data.scene === "library-covers") {
+            mouseClick(findChild(panel, "library-view-1"));
+            tryVerify(() => findChild(panel, "library-grid").visible);
+            const hovered = card(panel, "2");
+            hover(hovered);
+            tryVerify(() => findChild(hovered, "shelf-card-play").visible);
+            card(panel, "3");
+        } else {
+            const primary = findChild(panel, "library-empty-primary");
+            tryVerify(() => primary.visible);
+            // The pointer that opened the page leaves the navigation, and with it the tooltip.
+            mouseMove(shell.contentItem, data.width / 2, 120);
+            primary.forceActiveFocus(Qt.TabFocusReason);
+        }
+        wait(300);
+        verify(waitForPolish(shell));
+        shell.update();
+        verify(waitForRendering(shell.contentItem));
+        const image = grabImage(shell.contentItem);
+        compare(image.width, data.width);
+        compare(image.height, data.height);
+        const artifact = driver.artifactPath("aurora-biblioteca-" + data.scene.replace("library-", "") + "-" + data.width + "-" + (data.dark ? "dark" : "light") + ".png");
+        if (artifact.length > 0)
+            image.save(artifact);
+        compare([driver.localPlayCount(), driver.localPauseCount(), driver.localUnloadCount()], audio, "the captures never start or stop the audio");
+    }
 }
