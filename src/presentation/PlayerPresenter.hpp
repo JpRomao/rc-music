@@ -458,6 +458,12 @@ class PlayerPresenter final : public QObject {
     // without selection, decoding, autoplay or a download receipt.
     [[nodiscard]] LocalFileQueueSnapshot playlistQueueSnapshot() const;
     [[nodiscard]] bool appendPlaylistSources(std::vector<std::filesystem::path> source_paths);
+    // "Play now": inserts the files right after the current track (at the end when there is none) and starts
+    // the first of them. A trusted C++ call, not a QML entry point. False, with the queue untouched, when
+    // refused; false with the file kept in the queue as unavailable when the player rejects it.
+    [[nodiscard]] bool playSourcesNow(const std::vector<std::filesystem::path>& source_paths);
+    // The source of the current local occurrence; empty on the fixture, while following a room and with no track.
+    [[nodiscard]] std::optional<std::filesystem::path> currentLocalSource() const;
     [[nodiscard]] QString queuedLyricsSource(const QString& occurrence_id) const;
     // Listening room (C++ composition only, never QML). While the room play order is on, the queue
     // order is the play order, as RoomHostPlayer requires: shuffle never picks the next track at
@@ -630,6 +636,10 @@ class PlayerPresenter final : public QObject {
     void rejectSourceImport(std::uint64_t issue_count);
     void finishSourceImport(SourceImportState terminal_state);
     [[nodiscard]] bool applySourceImportBatch(LocalSourceDiscoveryBatch batch);
+    // Inserts accepted sources into the local queue and its model (no reset) and refreshes the navigation order.
+    [[nodiscard]] bool insertLocalOccurrences(std::vector<std::filesystem::path> source_paths, std::size_t index);
+    // Loads the occurrence at index with autoplay; a rejected opening leaves it in the queue as unavailable.
+    [[nodiscard]] PlaybackCommandResult loadInsertedOccurrence(std::size_t index);
     [[nodiscard]] std::size_t sourceImportInsertionIndex() const noexcept;
     [[nodiscard]] std::optional<std::size_t> localOccurrenceIndex(LocalQueueOccurrenceId occurrence_id) const noexcept;
     [[nodiscard]] static DiscoveryGeneration nextDiscoveryGeneration(DiscoveryGeneration current) noexcept;

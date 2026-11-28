@@ -2183,18 +2183,55 @@ QString PlayerPresenter::queuedLyricsSource(const QString& occurrence_id) const 
         return {};
     return displayPath(local_queue_.items()[*index].source_path);
 }
-bool PlayerPresenter::appendPlaylistSources(std::vector<std::filesystem::path> paths) {
-    if (QThread::currentThread() != thread() || download_import_call_in_progress_)
-        return false;
-    for (const auto& path : paths) {
+namespace {
+[[nodiscard]] bool allAbsoluteSourcePaths(const std::vector<std::filesystem::path>& paths) {
+    return std::ranges::all_of(paths, [](const std::filesystem::path& path) {
 #ifdef Q_OS_WIN
         const auto text = QString::fromStdWString(path.native());
 #else
         const auto text = QString::fromUtf8(path.native().data(), static_cast<qsizetype>(path.native().size()));
 #endif
-        if (!isAbsoluteFilesystemSourcePath(text))
-            return false;
-    }
+        return isAbsoluteFilesystemSourcePath(text);
+    });
+}
+} // namespace
+
+bool PlayerPresenter::playSourcesNow(const std::vector<std::filesystem::path>& source_paths) {
+    if (QThread::currentThread() != thread() || uses_frozen_fixture_ || exiting_ || download_append_in_progress_ ||
+        localSourcesBlocked() || file_dialog_cancellation_active_ || sourceImportActive() || selectingAudioFiles() ||
+        file_location_request_.has_value() || source_paths.empty() || !allAbsoluteSourcePaths(source_paths))
+        return false;
+    // After the current track, whatever its state; at the end when the queue has no current track.
+    const auto current = local_queue_.currentIndex();
+    const std::size_t index = current.has_value() ? *current + 1 : local_queue_.size();
+    if (!insertLocalOccurrences(source_paths, index))
+        return false;
+    const PlaybackCommandResult result = loadInsertedOccurrence(index);
+    const QPointer<PlayerPresenter> guard{this};
+    sessionStructureDidChange();
+    notifyLocalAdmission(source_paths);
+    if (!guard)
+        return result == PlaybackCommandResult::Accepted;
+    emit stateChanged();
+    if (guard)
+        emit playbackChanged();
+    return result == PlaybackCommandResult::Accepted;
+}
+
+std::optional<std::filesystem::path> PlayerPresenter::currentLocalSource() const {
+    if (uses_frozen_fixture_ || showsRoomPlayback())
+        return std::nullopt;
+    const auto current = local_queue_.currentIndex();
+    if (!current.has_value())
+        return std::nullopt;
+    return local_queue_.items()[*current].source_path;
+}
+
+bool PlayerPresenter::appendPlaylistSources(std::vector<std::filesystem::path> paths) {
+    if (QThread::currentThread() != thread() || download_import_call_in_progress_)
+        return false;
+    if (!allAbsoluteSourcePaths(paths))
+        return false;
     bool committed{};
     try {
         const auto admitted = paths;
@@ -3023,17 +3060,14 @@ bool PlayerPresenter::applySourceImportBatch(LocalSourceDiscoveryBatch batch) {
     const std::size_t insertion_index = sourceImportInsertionIndex();
     const std::size_t insertion_count = batch.accepted_paths.size();
     const auto admitted = batch.accepted_paths;
-    if (!local_queue_.insert(std::move(batch.accepted_paths), insertion_index))
+    if (!insertLocalOccurrences(std::move(batch.accepted_paths), insertion_index))
         return false;
-    if (!local_queue_model_.insert(local_queue_.items().subspan(insertion_index, insertion_count), insertion_index))
-        throw std::logic_error{"accepted source discovery batch could not be projected"};
 
     source_import_occurrences_.reserve(source_import_occurrences_.size() + insertion_count);
     for (const auto& item : local_queue_.items().subspan(insertion_index, insertion_count))
         source_import_occurrences_.push_back(item.occurrence_id);
     source_import_last_inserted_occurrence_ = local_queue_.items()[insertion_index + insertion_count - 1].occurrence_id;
     addSaturated(source_import_accepted_count_, static_cast<std::uint64_t>(insertion_count));
-    navigation_items_ = navigationItems(local_queue_);
 
     if (source_import_needs_autoplay_) {
         const auto current = local_queue_.currentIndex();
@@ -3043,26 +3077,15 @@ bool PlayerPresenter::applySourceImportBatch(LocalSourceDiscoveryBatch batch) {
             source_import_needs_autoplay_ = false;
         } else {
             for (std::size_t index = insertion_index; index < insertion_index + insertion_count; ++index) {
-                const PlaybackCommandResult load_result =
-                    loadLocalOccurrenceWithResult(index, LocalTrackStartIntent::Autoplay);
+                const PlaybackCommandResult load_result = loadInsertedOccurrence(index);
                 if (load_result == PlaybackCommandResult::Accepted) {
                     source_import_needs_autoplay_ = false;
-                    controller_.applyBackendSnapshot(backend_.snapshot());
-                    reconcileTimer();
                     break;
                 }
-                if (load_result != PlaybackCommandResult::InvalidArgument) {
-                    if (load_result == PlaybackCommandResult::Shutdown)
-                        break;
-                    continue;
-                }
-                const LocalQueueOccurrenceId occurrence_id = local_queue_.items()[index].occurrence_id;
-                if (!local_queue_.markUnavailable(index) ||
-                    !local_queue_model_.markUnavailable(occurrence_id, QStringLiteral("open_rejected"))) {
-                    throw std::logic_error{"rejected discovered occurrence could not be isolated"};
-                }
-                navigation_items_[index].available = false;
-                static_cast<void>(recordSourceImportOccurrenceIssue(occurrence_id));
+                if (load_result == PlaybackCommandResult::Shutdown)
+                    break;
+                if (load_result == PlaybackCommandResult::InvalidArgument)
+                    static_cast<void>(recordSourceImportOccurrenceIssue(local_queue_.items()[index].occurrence_id));
             }
         }
     }
@@ -3072,6 +3095,32 @@ bool PlayerPresenter::applySourceImportBatch(LocalSourceDiscoveryBatch batch) {
     emit stateChanged();
     emit playbackChanged();
     return true;
+}
+
+bool PlayerPresenter::insertLocalOccurrences(std::vector<std::filesystem::path> source_paths, const std::size_t index) {
+    const std::size_t count = source_paths.size();
+    if (!local_queue_.insert(std::move(source_paths), index))
+        return false;
+    if (!local_queue_model_.insert(local_queue_.items().subspan(index, count), index))
+        throw std::logic_error{"accepted local sources could not be projected"};
+    navigation_items_ = navigationItems(local_queue_);
+    return true;
+}
+
+PlaybackCommandResult PlayerPresenter::loadInsertedOccurrence(const std::size_t index) {
+    const PlaybackCommandResult result = loadLocalOccurrenceWithResult(index, LocalTrackStartIntent::Autoplay);
+    if (result == PlaybackCommandResult::Accepted) {
+        controller_.applyBackendSnapshot(backend_.snapshot());
+        reconcileTimer();
+    } else if (result == PlaybackCommandResult::InvalidArgument) {
+        const LocalQueueOccurrenceId occurrence_id = local_queue_.items()[index].occurrence_id;
+        if (!local_queue_.markUnavailable(index) ||
+            !local_queue_model_.markUnavailable(occurrence_id, QStringLiteral("open_rejected"))) {
+            throw std::logic_error{"rejected inserted occurrence could not be isolated"};
+        }
+        navigation_items_[index].available = false;
+    }
+    return result;
 }
 
 bool PlayerPresenter::recordSourceImportOccurrenceIssue(const LocalQueueOccurrenceId occurrence_id) {

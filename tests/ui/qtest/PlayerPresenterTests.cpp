@@ -556,6 +556,15 @@ class PlayerPresenterTests final : public QObject {
     void localOpenPublishesOrderedQueueWithDistinctDuplicateOccurrences();
     void playlistBatchAppendsWithoutSelectionOrPlaybackAndCopiesTheQueue();
     void acceptedLocalIngressIsReportedToTheLibraryObserver();
+    void playSourcesNowInsertsAfterTheCurrentTrackAndStartsIt();
+    void playSourcesNowWithoutACurrentTrackAppendsAndStarts();
+    void playSourcesNowInsertsAfterAFailedOrLoadingCurrentTrack();
+    void playSourcesNowWithShuffleStartsTheInsertedTrack();
+    void playSourcesNowMarksARejectedFileUnavailable();
+    void playSourcesNowRefusesInvalidInputAndGuestRooms();
+    void playSourcesNowFollowsTheRoomPlayOrderForTheHost();
+    void playSourcesNowAdmitsTheFilesToTheLibrary();
+    void currentLocalSourceFollowsTheCurrentOccurrence();
     void playlistAppendPreservesActivePlaybackAndRejectsAnInvalidBatch();
     void playlistAppendAcknowledgesItsCommitWhenALaterObserverThrows();
     void openingAdditionalFilesPreservesTheQueueAndPlaysTheFirstNewOccurrence();
@@ -1010,6 +1019,244 @@ void PlayerPresenterTests::acceptedLocalIngressIsReportedToTheLibraryObserver() 
     QCOMPARE(admitted[2], std::vector<std::filesystem::path>{b});
     QCOMPARE(admitted[3], std::vector<std::filesystem::path>{c});
     QCOMPARE(presenter.playlistQueueSnapshot().items.size(), std::size_t{4});
+}
+
+namespace {
+[[nodiscard]] std::vector<std::filesystem::path> queuePaths(const PlayerPresenter& presenter) {
+    std::vector<std::filesystem::path> paths;
+    for (const auto& item : presenter.playlistQueueSnapshot().items)
+        paths.push_back(item.source_path);
+    return paths;
+}
+} // namespace
+
+void PlayerPresenterTests::playSourcesNowInsertsAfterTheCurrentTrackAndStartsIt() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto a = localTestPath(u8"A.mp3"), b = localTestPath(u8"B.mp3"), c = localTestPath(u8"C.mp3"),
+               x = localTestPath(u8"X.mp3");
+    PlayerPresenter presenter(platform, backend, metadata, [=] { return std::vector<std::filesystem::path>{a, b, c}; });
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    QSignalSpy resets(model, &QAbstractItemModel::modelReset);
+    QSignalSpy inserted(model, &QAbstractItemModel::rowsInserted);
+
+    QVERIFY(presenter.playSourcesNow({x}));
+
+    QCOMPARE(queuePaths(presenter), (std::vector<std::filesystem::path>{a, x, b, c}));
+    QCOMPARE(backend.loaded_paths.back(), x);
+    QCOMPARE(resets.size(), 0);
+    QCOMPARE(inserted.size(), 1);
+    QCOMPARE(inserted.front().at(1).toInt(), 1);
+    QCOMPARE(inserted.front().at(2).toInt(), 1);
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+    QCOMPARE(presenter.currentOccurrenceId(),
+             model->data(model->index(1, 0), QueueListModel::OccurrenceIdRole).toString());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2});
+    QTRY_COMPARE(backend.play_calls, 2);
+}
+
+void PlayerPresenterTests::playSourcesNowWithoutACurrentTrackAppendsAndStarts() {
+    AvailableTrayPlatform platform;
+    PresenterMetadataReader metadata;
+    const auto a = localTestPath(u8"A.mp3"), b = localTestPath(u8"B.mp3"), x = localTestPath(u8"X.mp3");
+    {
+        PresenterPlaybackBackend backend;
+        PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
+        QVERIFY(!presenter.currentLocalSource().has_value());
+        QVERIFY(presenter.playSourcesNow({x}));
+        QCOMPARE(queuePaths(presenter), std::vector<std::filesystem::path>{x});
+        QCOMPARE(backend.loaded_paths.back(), x);
+        QCOMPARE(presenter.currentQueueIndex(), 0);
+    }
+    PresenterPlaybackBackend backend;
+    PlayerPresenter presenter(platform, backend, metadata, [=] { return std::vector<std::filesystem::path>{a, b}; });
+    QVERIFY(presenter.setQueueEndPreference(PlayerPresenter::QueueEndPreference::StopClearSelection));
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    QVERIFY(presenter.nextTrack());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 2});
+    backend.publishEvent(PlaybackEventType::Ended, {.status = PlaybackStatus::Paused,
+                                                    .position_ms = 2'000,
+                                                    .duration_ms = 2'000,
+                                                    .seekable = true,
+                                                    .generation = 2});
+    QTRY_VERIFY(!presenter.hasCurrentOccurrence());
+    const auto loads = backend.loaded_paths.size();
+
+    QVERIFY(presenter.playSourcesNow({x}));
+
+    QCOMPARE(queuePaths(presenter), (std::vector<std::filesystem::path>{a, b, x}));
+    QCOMPARE(backend.loaded_paths.size(), loads + 1);
+    QCOMPARE(backend.loaded_paths.back(), x);
+    QCOMPARE(presenter.currentQueueIndex(), 2);
+}
+
+void PlayerPresenterTests::playSourcesNowInsertsAfterAFailedOrLoadingCurrentTrack() {
+    AvailableTrayPlatform platform;
+    PresenterMetadataReader metadata;
+    const auto a = localTestPath(u8"A.mp3"), b = localTestPath(u8"B.mp3"), x = localTestPath(u8"X.mp3");
+    for (const bool failed : {true, false}) {
+        PresenterPlaybackBackend backend;
+        PlayerPresenter presenter(platform, backend, metadata,
+                                  [=] { return std::vector<std::filesystem::path>{a, b}; });
+        if (failed) {
+            backend.accepted_load_status = PlaybackStatus::Error;
+            backend.accepted_load_error = PlaybackErrorCode::SourceUnavailable;
+        }
+        QVERIFY(presenter.openAudio());
+        if (failed)
+            QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Error);
+        else
+            QCOMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Loading);
+        backend.accepted_load_status.reset();
+
+        QVERIFY(presenter.playSourcesNow({x}));
+
+        QCOMPARE(queuePaths(presenter), (std::vector<std::filesystem::path>{a, x, b}));
+        QCOMPARE(backend.loaded_paths.back(), x);
+        QCOMPARE(presenter.currentQueueIndex(), 1);
+    }
+}
+
+void PlayerPresenterTests::playSourcesNowWithShuffleStartsTheInsertedTrack() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto a = localTestPath(u8"A.mp3"), b = localTestPath(u8"B.mp3"), c = localTestPath(u8"C.mp3"),
+               x = localTestPath(u8"X.mp3");
+    PlayerPresenter presenter(platform, backend, metadata, [=] { return std::vector<std::filesystem::path>{a, b, c}; });
+    QVERIFY(presenter.openAudio());
+    QVERIFY(presenter.toggleShuffleQueue());
+    QVERIFY(presenter.shuffleQueueEnabled());
+
+    QVERIFY(presenter.playSourcesNow({x}));
+
+    QCOMPARE(backend.loaded_paths.back(), x);
+    QCOMPARE(presenter.currentLocalSource(), std::optional{x});
+    QCOMPARE(queuePaths(presenter).size(), std::size_t{4});
+    backend.publish({.status = PlaybackStatus::Ready,
+                     .duration_ms = 2'000,
+                     .seekable = true,
+                     .generation = backend.snapshot().generation});
+    QTRY_COMPARE(backend.play_calls, 1);
+}
+
+void PlayerPresenterTests::playSourcesNowMarksARejectedFileUnavailable() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto a = localTestPath(u8"A.mp3"), x = localTestPath(u8"X.mp3");
+    PlayerPresenter presenter(platform, backend, metadata, [=] { return std::vector<std::filesystem::path>{a}; });
+    QAbstractItemModel* const model = presenter.queueModelObject();
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    const auto before = presenter.currentOccurrenceId();
+    backend.load_results = {PlaybackCommandResult::InvalidArgument};
+
+    QVERIFY(!presenter.playSourcesNow({x}));
+
+    QCOMPARE(queuePaths(presenter), (std::vector<std::filesystem::path>{a, x}));
+    QVERIFY(!model->data(model->index(1, 0), QueueListModel::AvailableRole).toBool());
+    QVERIFY(model->data(model->index(0, 0), QueueListModel::AvailableRole).toBool());
+    QCOMPARE(presenter.currentOccurrenceId(), before);
+    QCOMPARE(presenter.currentLocalSource(), std::optional{a});
+    QCOMPARE(backend.play_calls, 1);
+}
+
+void PlayerPresenterTests::playSourcesNowRefusesInvalidInputAndGuestRooms() {
+    AvailableTrayPlatform platform;
+    PresenterMetadataReader metadata;
+    const auto a = localTestPath(u8"A.mp3"), x = localTestPath(u8"X.mp3");
+    {
+        PresenterPlaybackBackend backend;
+        PlayerPresenter presenter(platform, backend, metadata, [=] { return std::vector<std::filesystem::path>{a}; });
+        QVERIFY(presenter.openAudio());
+        const auto queue = queuePaths(presenter);
+        const auto loads = backend.loaded_paths.size();
+        QVERIFY(!presenter.playSourcesNow({}));
+        QVERIFY(!presenter.playSourcesNow({std::filesystem::path{"relative.mp3"}}));
+        QVERIFY(!presenter.playSourcesNow({x, std::filesystem::path{"relative.mp3"}}));
+        presenter.setRoomSessionGate({.blocks_local_sources = [] { return true; }});
+        QVERIFY(!presenter.playSourcesNow({x}));
+        QCOMPARE(queuePaths(presenter), queue);
+        QCOMPARE(backend.loaded_paths.size(), loads);
+        QCOMPARE(backend.play_calls, 0);
+    }
+    {
+        PresenterPlaybackBackend backend;
+        PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
+        QVERIFY(presenter.requestExit());
+        QVERIFY(presenter.exiting());
+        QVERIFY(!presenter.playSourcesNow({x}));
+        QVERIFY(presenter.playlistQueueSnapshot().items.empty());
+        QVERIFY(backend.loaded_paths.empty());
+    }
+    {
+        PlayerPresenter presenter(frozenBundle(), platform);
+        QVERIFY(presenter.usesFrozenFixture());
+        QVERIFY(!presenter.playSourcesNow({x}));
+        QVERIFY(!presenter.currentLocalSource().has_value());
+    }
+}
+
+void PlayerPresenterTests::playSourcesNowFollowsTheRoomPlayOrderForTheHost() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector<std::filesystem::path> sources{localTestPath(u8"Sala A.wav"), localTestPath(u8"Sala B.wav"),
+                                                     localTestPath(u8"Sala C.wav")};
+    const auto x = localTestPath(u8"X.mp3");
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    backend.publish({.status = PlaybackStatus::Ready, .duration_ms = 2'000, .seekable = true, .generation = 1});
+    QTRY_COMPARE(backend.play_calls, 1);
+    presenter.setRoomPlayOrder(true);
+
+    QVERIFY(presenter.playSourcesNow({x}));
+
+    QCOMPARE(queuePaths(presenter), (std::vector<std::filesystem::path>{sources[0], x, sources[1], sources[2]}));
+    QCOMPARE(backend.loaded_paths.back(), x);
+    QCOMPARE(presenter.currentQueueIndex(), 1);
+}
+
+void PlayerPresenterTests::playSourcesNowAdmitsTheFilesToTheLibrary() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto x = localTestPath(u8"X.mp3"), y = localTestPath(u8"Y.mp3");
+    PlayerPresenter presenter(platform, backend, metadata, [] { return std::vector<std::filesystem::path>{}; });
+    std::vector<std::vector<std::filesystem::path>> admitted;
+    presenter.setLocalAdmissionObserver(
+        [&](const std::vector<std::filesystem::path>& paths) { admitted.push_back(paths); });
+
+    QVERIFY(presenter.playSourcesNow({x, y}));
+
+    QCOMPARE(admitted.size(), std::size_t{1});
+    QCOMPARE(admitted.front(), (std::vector<std::filesystem::path>{x, y}));
+    QCOMPARE(queuePaths(presenter), (std::vector<std::filesystem::path>{x, y}));
+    QCOMPARE(backend.loaded_paths.back(), x);
+}
+
+void PlayerPresenterTests::currentLocalSourceFollowsTheCurrentOccurrence() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const auto a = localTestPath(u8"A.mp3"), x = localTestPath(u8"X.mp3");
+    PlayerPresenter presenter(platform, backend, metadata, [=] { return std::vector<std::filesystem::path>{a}; });
+    QVERIFY(!presenter.currentLocalSource().has_value());
+    QVERIFY(presenter.openAudio());
+    QCOMPARE(presenter.currentLocalSource(), std::optional{a});
+    QVERIFY(presenter.playSourcesNow({x}));
+    QCOMPARE(presenter.currentLocalSource(), std::optional{x});
+
+    PlayerPresenter fixture(frozenBundle(), platform);
+    QVERIFY(!fixture.currentLocalSource().has_value());
 }
 
 void PlayerPresenterTests::playlistAppendPreservesActivePlaybackAndRejectsAnInvalidBatch() {
