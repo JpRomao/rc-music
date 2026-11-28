@@ -101,10 +101,15 @@ TestCase {
         property bool canRetrySave: false
         property string statusText: ""
         property string filterText: ""
+        property string playingRecordId: ""
+        property bool statusProblem: false
         property var model: fakeRecords
         property var recentModel: fakeRecent
         property bool canLocate: false
         property string artworkBase: ""
+        function playNow(id) {
+            return false;
+        }
         function retryLoad() {
             return true;
         }

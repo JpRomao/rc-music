@@ -61,6 +61,8 @@ ApplicationWindow {
     readonly property bool queueShortcutEnabled: (inlinePages ? windowContextFree : windowShortcutsEnabled) && (inlinePages ? ((presenter.queueLoaded || roomGuest || queueOpen) && !presenter.exiting) : queueButton.enabled) && !preferencesPanel.visible
     // The item focused when the Aurora drawer opened; the fixture keeps returning to the sidebar button.
     property Item queueReturnFocusItem: null
+    // Set while a page opens the drawer from the player's own button: the page closing must not take the focus.
+    property Item queueOpener: null
     // Who opened Settings from outside the Settings button; null means the button.
     property Item preferencesReturnFocusItem: null
     property alias queueButton: sideNavigation.queueButton
@@ -342,8 +344,9 @@ ApplicationWindow {
         }
         const opener = queueReturnFocusItem;
         if (window.inlinePages && open && !queueOpen)
-            queueReturnFocusItem = opensFromReader ? readerReturn : window.activeFocusItem;
+            queueReturnFocusItem = opensFromReader ? readerReturn : (queueOpener !== null ? queueOpener : window.activeFocusItem);
         queueOpen = open;
+        queueOpener = null;
         Qt.callLater(function () {
             if (!window.active || !window.windowShortcutsEnabled || preferencesPanel.visible)
                 return;
@@ -352,6 +355,12 @@ ApplicationWindow {
             else
                 window.restoreQueueFocus(opener);
         });
+    }
+    // The drawer opens with the given item (the player's queue button) as the one that gets the focus back.
+    function openQueueFrom(opener) {
+        queueOpener = opener;
+        setQueueOpen(true);
+        queueOpener = null;
     }
     // The lyrics drawer takes the place of the queue drawer and the focus with it.
     function closeQueueForLyrics() {
@@ -663,9 +672,14 @@ ApplicationWindow {
         contract: window.uiContract
         library: window.library
         playlists: window.playlists
+        compact: window.width <= window.uiContract.compactWidth
+        playbackPlaying: window.presenter.playbackState === PlayerPresenter.Playing
+        openingEnabled: !window.presenter.exiting && !window.presenter.selectingAudioFiles && window.presenter.locatingOccurrenceId.length === 0
         enabled: !window.presenter.exiting
+        onQueueRequested: opener => window.openQueueFrom(transport.queueControl)
+        onOpenAudioRequested: opener => window.openAudio(opener)
         onClosed: {
-            if (window.active && !window.presenter.exiting && !searchPanel.visible && !roomPanel.visible && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && libraryButton.visible)
+            if (window.queueOpener === null && window.active && !window.presenter.exiting && !searchPanel.visible && !roomPanel.visible && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && libraryButton.visible)
                 libraryButton.forceActiveFocus(Qt.TabFocusReason);
         }
     }

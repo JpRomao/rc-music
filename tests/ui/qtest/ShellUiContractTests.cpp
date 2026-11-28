@@ -102,7 +102,7 @@ class PrefixTranslator final : public QTranslator {
 
 [[nodiscard]] bool isTechnicalQmlContext(const QString& line) {
     static const QRegularExpression technical_property{QStringLiteral(
-        R"(\b(?:objectName|[a-z]+ObjectName|controlId|Accessible\.id|sequences?|property|color|source|iconName|trailingIconName)\s*:)")};
+        R"(\b(?:objectName|[a-z]+ObjectName|controlId|Accessible\.id|sequences?|property|color|source|iconName|leadingIconName|trailingIconName)\s*:)")};
     static const QRegularExpression boolean_selector{
         QStringLiteral(R"(^\s*(?:readonly\s+)?property\s+bool\s+[A-Za-z_][A-Za-z0-9_]*\s*:)")};
     const QString trimmed = line.trimmed();
@@ -792,6 +792,8 @@ void ShellUiContractTests::distinguishesTechnicalDataFromVisibleText_data() {
                                << QStringLiteral("previous") << true;
     QTest::newRow("trailing-icon-name") << QStringLiteral("trailingIconName: \"external\"")
                                         << QStringLiteral("external") << true;
+    QTest::newRow("leading-icon-name") << QStringLiteral("leadingIconName: \"search\"")
+                                       << QStringLiteral("search") << true;
     QTest::newRow("icon-name-beside-text")
         << QStringLiteral("text: \"Tema escuro\"") << QStringLiteral("Tema escuro") << false;
     QTest::newRow("model-value-role") << QStringLiteral("valueRole: \"value\"") << QStringLiteral("value") << true;

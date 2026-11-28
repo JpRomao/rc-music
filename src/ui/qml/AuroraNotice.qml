@@ -20,6 +20,7 @@ Control {
     property string text
     property string primaryActionText
     property string secondaryActionText
+    property alias primaryButton: primary
 
     signal primaryTriggered
     signal secondaryTriggered

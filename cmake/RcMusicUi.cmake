@@ -158,6 +158,7 @@ function(rc_music_add_ui target support qml_output)
             PlaylistsText.qml
             PlaylistsPanel.qml
             LibraryText.qml
+            LibraryTrackMenu.qml
             LibraryPanel.qml
             SearchText.qml
             SearchPanel.qml

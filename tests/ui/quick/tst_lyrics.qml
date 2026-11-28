@@ -114,10 +114,15 @@ TestCase {
         property bool canRetrySave: false
         property string statusText: ""
         property string filterText: ""
+        property string playingRecordId: ""
+        property bool statusProblem: false
         property var model: records
         property var recentModel: recentRecords
         property bool canLocate: false
         property string artworkBase: ""
+        function playNow(id) {
+            return false;
+        }
         function enqueue(id) {
             return false;
         }

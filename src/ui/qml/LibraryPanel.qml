@@ -5,8 +5,9 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import MusicPlayer.M0
 
-// ADR-0019: the permanent library page, opening in List view. Only confirmed
-// records appear; removing touches the catalog alone.
+// ADR-0019: the permanent library page, opening in List view. Only confirmed records appear; removing touches
+// the catalog alone. The header, the bar and the feedback line stay fixed: the list (or the grid) fills the rest
+// of the page and is the only thing that scrolls.
 PageSurface {
     id: root
     NavigationText {
@@ -19,43 +20,112 @@ PageSurface {
     required property ShellUiContract contract
     property var library: null
     property var playlists: null
+    // The narrow window: a title-only header, no columns header, no album column and rows of 52.
+    property bool compact: false
+    // Whether the player is playing now: the wave and the badge of the current track need it.
+    property bool playbackPlaying: false
+    // False while a file chooser or a locate is open, or the app is leaving.
+    property bool openingEnabled: true
+    signal queueRequested(Item opener)
+    signal openAudioRequested(Item opener)
     readonly property var playlistChoices: playlists !== null && playlists.ready ? playlists.playlists : []
     property string removeId: ""
     property string removeTitle: ""
+    // The last confirmation or failure of an action, and whether it was a failure.
     property string notice: ""
+    property bool noticeProblem: false
+    // The see-queue button shows only after a track was added to the queue.
+    property bool seeQueueShown: false
     // After a locate request, the binding's own outcome is shown.
     property bool showStatus: false
     // ADR-0019: the library opens in List; Covers is the alternative.
     property bool showCovers: false
+    // The menu closes before the removal dialog opens, so the focus goes back to the page first.
+    property bool removePending: false
     readonly property bool ready: library !== null && library.ready
     readonly property int total: library !== null ? library.count : 0
     readonly property int visibleTotal: library !== null ? library.visibleCount : 0
+    readonly property bool filtered: library !== null && library.filterText.trim().length > 0
     readonly property string artworkBase: library !== null ? library.artworkBase : ""
+    readonly property string playingId: library !== null ? library.playingRecordId : ""
+    readonly property bool retryNeeded: library !== null && library.statusProblem && library.statusText.length > 0 && (!ready || library.canRetrySave)
+    readonly property bool loadingShown: library !== null && !ready && !retryNeeded && library.statusText.length > 0
+    readonly property bool statusFeedback: showStatus && !retryNeeded && library !== null && library.statusText.length > 0
+    readonly property string feedbackText: statusFeedback ? library.statusText : notice
+    readonly property bool feedbackProblem: statusFeedback ? library.statusProblem : noticeProblem
+    readonly property Item activeView: showCovers ? grid : list
     embedded: true
     padding: 0
     focus: true
-    blockingUiOpen: removeConfirmation.visible
+    blockingUiOpen: removeConfirmation.visible || trackMenu.visible || trackMenu.submenuOpen
     onSurfaceOpened: {
         if (ready && total > 0)
-            filterField.forceActiveFocus(Qt.TabFocusReason);
-        else if (retryLoadButton.visible)
-            retryLoadButton.forceActiveFocus(Qt.TabFocusReason);
+            filterField.input.forceActiveFocus(Qt.TabFocusReason);
+        else if (retryNotice.visible)
+            retryNotice.primaryButton.forceActiveFocus(Qt.TabFocusReason);
     }
     onClosed: {
         removeConfirmation.close();
-        playlistMenu.close();
+        trackMenu.close();
+        notice = "";
+        seeQueueShown = false;
         if (library !== null)
             library.cancelLocate();
     }
 
+    function selectItem(view, index) {
+        view.currentIndex = index;
+        view.forceActiveFocus(Qt.MouseFocusReason);
+    }
+    function playNow(recordId) {
+        if (!openingEnabled)
+            return;
+        showStatus = false;
+        seeQueueShown = false;
+        const played = library.playNow(recordId);
+        notice = played ? "" : libraryText.playNowFailed;
+        noticeProblem = !played;
+    }
+    function enqueue(recordId, title) {
+        showStatus = false;
+        const added = library.enqueue(recordId);
+        notice = added ? libraryText.enqueued.arg(title) : libraryText.enqueueFailed;
+        noticeProblem = !added;
+        seeQueueShown = added;
+    }
     function addToPlaylist(recordId, title, playlistId, playlistName) {
         showStatus = false;
-        notice = library.addToPlaylist(recordId, playlistId) ? libraryText.addedToPlaylist.arg(title).arg(playlistName) : libraryText.addToPlaylistFailed;
+        seeQueueShown = false;
+        const added = library.addToPlaylist(recordId, playlistId);
+        notice = added ? navigationLabels.fillTwo(libraryText.addedToPlaylist, title, playlistName) : libraryText.addToPlaylistFailed;
+        noticeProblem = !added;
     }
-    function requestRemove(recordId, title) {
-        removeId = recordId;
-        removeTitle = title;
-        removeConfirmation.open();
+    function locate(recordId) {
+        notice = "";
+        seeQueueShown = false;
+        showStatus = library.locate(recordId);
+    }
+    function showTrackMenu(view, index, recordId, title, available, opener, x, y) {
+        view.currentIndex = index;
+        trackMenu.recordId = recordId;
+        trackMenu.recordTitle = title;
+        trackMenu.available = available;
+        trackMenu.popup(opener, x, y);
+    }
+    // A menu opened from a button hangs from the button's right edge, so it stays inside the window.
+    function showMenuFromButton(view, index, recordId, title, available, opener) {
+        showTrackMenu(view, index, recordId, title, available, opener, opener.width - trackMenu.implicitWidth, opener.height);
+    }
+    function requestRemove() {
+        removeId = trackMenu.recordId;
+        removeTitle = trackMenu.recordTitle;
+        removePending = true;
+    }
+    function retryFromNotice() {
+        if (library.canRetrySave)
+            library.retrySave();
+        else
+            library.retryLoad();
     }
 
     background: Rectangle {
@@ -70,256 +140,192 @@ PageSurface {
             Layout.fillWidth: true
             contract: root.contract
             editorial: true
+            titleOnly: root.compact
             eyebrow: navigationLabels.libraryEyebrow
             title: navigationLabels.library
             description: navigationLabels.libraryDescription
             legacyTitleSize: root.contract.typeSection
         }
-        RowLayout {
+        Text {
+            objectName: "library-status"
             Layout.fillWidth: true
-            visible: root.library !== null && root.library.statusText.length > 0 && (!root.ready || root.library.canRetrySave || root.showStatus)
-            Text {
-                objectName: "library-status"
-                Layout.fillWidth: true
-                text: root.library !== null ? root.library.statusText : ""
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-                color: root.contract.textSecondaryColor
-                font.family: root.contract.bodyFontFamily
-                font.pixelSize: root.contract.typeBody
-            }
-            AccessibleTransportButton {
-                id: retryLoadButton
-                objectName: "library-retry-load"
-                contract: root.contract
-                visible: root.library !== null && !root.ready && !root.library.busy
-                text: libraryText.retryLoad
-                onClicked: root.library.retryLoad()
-            }
-            AccessibleTransportButton {
-                objectName: "library-retry-save"
-                contract: root.contract
-                visible: root.library !== null && root.library.canRetrySave
-                text: libraryText.retrySave
-                onClicked: root.library.retrySave()
-            }
-        }
-        TextField {
-            id: filterField
-            objectName: "library-filter"
-            Layout.fillWidth: true
-            visible: root.ready && root.total > 0
-            placeholderText: libraryText.filterPlaceholder
-            text: root.library !== null ? root.library.filterText : ""
+            visible: root.loadingShown
+            text: root.library !== null ? root.library.statusText : ""
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: root.contract.textSecondaryColor
             font.family: root.contract.bodyFontFamily
             font.pixelSize: root.contract.typeBody
-            Accessible.name: libraryText.filterName
-            onTextEdited: root.library.filterText = text
         }
         RowLayout {
             Layout.fillWidth: true
             visible: root.ready && root.total > 0
+            spacing: root.contract.spacingUnit * 2
+            AuroraTextField {
+                id: filterField
+                Layout.fillWidth: true
+                Layout.maximumWidth: 420
+                Layout.alignment: Qt.AlignVCenter
+                contract: root.contract
+                controlId: "library-filter"
+                label: libraryText.filterName
+                leadingIconName: "search"
+                placeholderText: libraryText.filterPlaceholder
+                text: root.library !== null ? root.library.filterText : ""
+                Connections {
+                    target: filterField.input
+                    function onTextEdited() {
+                        root.library.filterText = filterField.text;
+                    }
+                }
+            }
             Text {
                 objectName: "library-count"
                 Layout.fillWidth: true
-                text: libraryText.countText.arg(root.visibleTotal).arg(root.total)
+                Layout.alignment: Qt.AlignVCenter
+                text: libraryText.countLine(root.visibleTotal, root.total, root.filtered)
                 textFormat: Text.PlainText
-                color: root.contract.textPrimaryColor
+                elide: Text.ElideRight
+                color: root.contract.textSecondaryColor
                 font.family: root.contract.bodyFontFamily
                 font.pixelSize: root.contract.typeCaption
             }
-            RowLayout {
-                spacing: root.contract.spacingUnit
-                Accessible.role: Accessible.Grouping
-                Accessible.name: libraryText.viewChoice
-                AccessibleTransportButton {
-                    objectName: "library-view-covers"
-                    contract: root.contract
-                    flat: true
-                    checkable: true
-                    checked: root.showCovers
-                    iconName: "library"
-                    iconWithText: true
-                    text: libraryText.coversView
-                    onClicked: root.showCovers = true
-                }
-                AccessibleTransportButton {
-                    objectName: "library-view-list"
-                    contract: root.contract
-                    flat: true
-                    checkable: true
-                    checked: !root.showCovers
-                    iconName: "queue"
-                    iconWithText: true
-                    text: libraryText.listView
-                    onClicked: root.showCovers = false
+            AuroraSegmented {
+                id: viewChoice
+                Layout.alignment: Qt.AlignVCenter
+                contract: root.contract
+                controlId: "library-view"
+                label: libraryText.viewChoice
+                options: [libraryText.listView, libraryText.coversView]
+                onActivated: index => root.showCovers = index === 1
+                Binding {
+                    target: viewChoice
+                    property: "currentIndex"
+                    value: root.showCovers ? 1 : 0
                 }
             }
-        }
-        Text {
-            objectName: "library-notice"
-            visible: root.notice.length > 0
-            Layout.fillWidth: true
-            text: root.notice
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-            color: root.contract.textSecondaryColor
-            font.family: root.contract.bodyFontFamily
-            font.pixelSize: root.contract.typeCaption
-        }
-        ColumnLayout {
-            objectName: "library-empty"
-            visible: root.ready && root.total === 0
-            Layout.fillWidth: true
-            spacing: root.contract.spacingUnit
-            Text {
-                text: libraryText.emptyTitle
-                textFormat: Text.PlainText
-                color: root.contract.textPrimaryColor
-                font.family: root.contract.headingFontFamily
-                font.pixelSize: root.contract.typeSubtitle
-            }
-            Text {
-                Layout.fillWidth: true
-                text: libraryText.emptyAdvice
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-                color: root.contract.textSecondaryColor
-                font.family: root.contract.bodyFontFamily
-                font.pixelSize: root.contract.typeBody
-            }
-        }
-        Text {
-            objectName: "library-no-matches"
-            visible: root.ready && root.total > 0 && root.visibleTotal === 0
-            Layout.fillWidth: true
-            text: libraryText.noMatches.arg(root.library !== null ? root.library.filterText.trim() : "")
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-            color: root.contract.textSecondaryColor
-            font.family: root.contract.bodyFontFamily
-            font.pixelSize: root.contract.typeBody
         }
         RowLayout {
-            objectName: "library-columns"
-            visible: root.ready && root.visibleTotal > 0 && !root.showCovers
             Layout.fillWidth: true
+            visible: root.feedbackText.length > 0 || root.seeQueueShown
             spacing: root.contract.spacingUnit * 2
-            Repeater {
-                model: [libraryText.numberHeader, libraryText.trackHeader, libraryText.albumHeader, libraryText.timeHeader]
-                delegate: Text {
-                    required property string modelData
-                    required property int index
-                    Layout.preferredWidth: index === 0 ? 32 : (index === 3 ? 56 : -1)
-                    Layout.fillWidth: index === 1 || index === 2
-                    text: modelData
-                    textFormat: Text.PlainText
-                    color: root.contract.textSecondaryColor
-                    font.family: root.contract.bodyFontFamily
-                    font.pixelSize: root.contract.typeEyebrow
-                    font.letterSpacing: 1.2
-                    Accessible.ignored: true
-                }
+            AuroraFeedback {
+                objectName: "library-feedback"
+                Layout.alignment: Qt.AlignVCenter
+                contract: root.contract
+                text: root.feedbackText
+                tone: root.feedbackProblem ? AuroraFeedback.Error : AuroraFeedback.Success
+            }
+            AuroraButton {
+                id: seeQueue
+                Layout.alignment: Qt.AlignVCenter
+                visible: root.seeQueueShown
+                contract: root.contract
+                controlId: "library-see-queue"
+                kind: AuroraButton.Quiet
+                compact: true
+                text: navigationLabels.seeQueue
+                onClicked: root.queueRequested(seeQueue)
             }
             Item {
-                Layout.preferredWidth: 80
+                Layout.fillWidth: true
             }
         }
-        GridView {
-            id: grid
-            objectName: "library-grid"
-            visible: root.ready && root.visibleTotal > 0 && root.showCovers
+        AuroraNotice {
+            id: retryNotice
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(contentHeight, 640)
-            clip: true
-            reuseItems: true
-            activeFocusOnTab: true
-            keyNavigationEnabled: true
-            cellWidth: Math.max(160, Math.floor(width / Math.max(1, Math.floor(width / 184))))
-            cellHeight: cellWidth + 64
-            model: visible && root.library !== null ? root.library.model : null
-            Accessible.role: Accessible.List
-            Accessible.name: navigationLabels.library
-            delegate: Item {
-                id: card
-                required property int index
-                required property string recordId
-                required property string title
-                required property string artist
-                required property string album
-                required property bool available
-                objectName: "library-card-" + recordId
-                width: grid.cellWidth
-                height: grid.cellHeight
-                Accessible.role: Accessible.ListItem
-                Accessible.name: title + (artist.length > 0 ? ", " + artist : "") + (available ? "" : ", " + libraryText.unavailable)
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: root.contract.spacingUnit
-                    spacing: root.contract.spacingUnit / 2
-                    Rectangle {
-                        // Placeholder cover in theme tones until artwork is cached.
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: width
-                        radius: root.contract.radiusMedium
-                        color: Qt.alpha(root.contract.accentColor, 0.10 + (card.index % 4) * 0.06)
-                        opacity: card.available ? 1 : 0.55
-                        Text {
-                            anchors.centerIn: parent
-                            text: (card.album.length > 0 ? card.album : card.title).charAt(0).toUpperCase()
-                            textFormat: Text.PlainText
-                            color: root.contract.accentColor
-                            font.family: root.contract.headingFontFamily
-                            font.pixelSize: root.contract.typeDisplay
-                            Accessible.ignored: true
-                        }
-                        Image {
-                            // Embedded art from the cover reader; a file without art
-                            // yields a transparent pixel, so the placeholder shows.
-                            objectName: "library-card-art"
-                            anchors.fill: parent
-                            source: root.artworkBase.length > 0 ? root.artworkBase + card.recordId : ""
-                            asynchronous: true
-                            cache: false
-                            fillMode: Image.PreserveAspectCrop
-                            Accessible.ignored: true
-                        }
-                        AccessibleTransportButton {
-                            objectName: "library-card-enqueue"
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            anchors.margins: root.contract.spacingUnit
-                            contract: root.contract
-                            iconName: "plus"
-                            enabled: card.available
-                            accessibleName: libraryText.enqueue.arg(card.title)
-                            onClicked: {
-                                root.showStatus = false;
-                                root.notice = root.library.enqueue(card.recordId) ? libraryText.enqueued.arg(card.title) : libraryText.enqueueFailed;
-                            }
-                        }
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: card.title
-                        textFormat: Text.PlainText
-                        elide: Text.ElideRight
-                        color: root.contract.textPrimaryColor
-                        font.family: root.contract.bodyFontFamily
-                        font.pixelSize: root.contract.typeBody
-                        Accessible.ignored: true
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: card.available ? (card.artist.length > 0 ? card.artist : libraryText.unknownArtist) : libraryText.unavailable
-                        textFormat: Text.PlainText
-                        elide: Text.ElideRight
-                        color: root.contract.textSecondaryColor
-                        font.family: root.contract.bodyFontFamily
-                        font.pixelSize: root.contract.typeCaption
-                        Accessible.ignored: true
-                    }
+            visible: root.retryNeeded
+            contract: root.contract
+            controlId: "library-status-notice"
+            tone: AuroraNotice.Error
+            text: root.library !== null ? root.library.statusText : ""
+            primaryActionText: root.library !== null && root.library.canRetrySave ? libraryText.retrySave : (root.library !== null && !root.library.busy ? libraryText.retryLoad : "")
+            onPrimaryTriggered: root.retryFromNotice()
+        }
+        // The empty states exist only with a library: the frozen fixture shows its own and shares the ids inside.
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.preferredHeight: libraryEmpty.implicitHeight
+            visible: root.ready && root.total === 0
+            Loader {
+                id: libraryEmpty
+                anchors.centerIn: parent
+                width: Math.min(parent.width, 480)
+                active: root.library !== null
+                sourceComponent: AuroraEmptyState {
+                    contract: root.contract
+                    controlId: "library-empty"
+                    iconName: "library"
+                    title: libraryText.emptyTitle
+                    hint: libraryText.emptyAdvice
+                    primaryActionText: root.contract.openAudioText
+                    primaryButton.enabled: root.openingEnabled
+                    onPrimaryTriggered: root.openAudioRequested(primaryButton)
                 }
+            }
+        }
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.preferredHeight: noMatches.implicitHeight
+            visible: root.ready && root.total > 0 && root.visibleTotal === 0
+            Loader {
+                id: noMatches
+                anchors.centerIn: parent
+                width: Math.min(parent.width, 480)
+                active: root.library !== null
+                sourceComponent: AuroraEmptyState {
+                    contract: root.contract
+                    controlId: "library-no-matches"
+                    iconName: "search"
+                    title: libraryText.noMatches.arg(root.library !== null ? root.library.filterText.trim() : "")
+                }
+            }
+        }
+        // The header of the columns, laid out with the same widths as AuroraTrackRow: side padding 10, number 44,
+        // title 1.4 fr, album 1 fr (none when compact), duration 56 and the 96 of the actions, 12 apart.
+        Item {
+            id: columns
+            objectName: "library-columns"
+            readonly property int sidePadding: 10
+            readonly property int spacing: 12
+            readonly property real flexibleWidth: width - 2 * sidePadding - 44 - 56 - 96 - spacing * (root.compact ? 3 : 4)
+            readonly property real titleWidth: root.compact ? flexibleWidth : flexibleWidth * 1.4 / 2.4
+            readonly property real albumWidth: root.compact ? 0 : flexibleWidth / 2.4
+            readonly property real titleX: sidePadding + 44 + spacing
+            readonly property real albumX: titleX + titleWidth + spacing
+            readonly property real durationX: root.compact ? albumX : albumX + albumWidth + spacing
+            Layout.fillWidth: true
+            Layout.preferredHeight: numberHeader.implicitHeight
+            visible: root.ready && root.visibleTotal > 0 && !root.showCovers && !root.compact
+            HeaderText {
+                id: numberHeader
+                objectName: "library-column-0"
+                x: columns.sidePadding
+                width: 44
+                horizontalAlignment: Text.AlignHCenter
+                text: libraryText.numberHeader
+            }
+            HeaderText {
+                objectName: "library-column-1"
+                x: columns.titleX
+                width: columns.titleWidth
+                text: libraryText.trackHeader
+            }
+            HeaderText {
+                objectName: "library-column-2"
+                x: columns.albumX
+                width: columns.albumWidth
+                visible: !root.compact
+                text: libraryText.albumHeader
+            }
+            HeaderText {
+                objectName: "library-column-3"
+                x: columns.durationX
+                width: 56
+                horizontalAlignment: Text.AlignRight
+                text: libraryText.timeHeader
             }
         }
         ListView {
@@ -327,181 +333,160 @@ PageSurface {
             objectName: "library-list"
             visible: root.ready && root.visibleTotal > 0 && !root.showCovers
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(contentHeight, 640)
+            Layout.fillHeight: true
+            // One row is all the page asks for: the list takes the rest of the height and is the only scroller.
+            Layout.preferredHeight: root.compact ? 52 : 56
             clip: true
             reuseItems: true
+            cacheBuffer: 0
+            boundsBehavior: Flickable.StopAtBounds
             activeFocusOnTab: true
             keyNavigationEnabled: true
             model: root.library !== null ? root.library.model : null
+            ScrollBar.vertical: AccessibleScrollBar {
+                contract: root.contract
+            }
             Accessible.role: Accessible.List
             Accessible.name: navigationLabels.library
-            delegate: Rectangle {
+            delegate: AuroraTrackRow {
                 id: row
                 required property int index
-                required property string recordId
-                required property string title
-                required property string artist
-                required property string album
-                required property string durationText
-                required property bool available
-                objectName: "library-row-" + recordId
+                required property var model
+                readonly property bool isPlayingRecord: root.playingId.length > 0 && model.recordId === root.playingId
+                objectName: "library-row-" + model.recordId
                 width: list.width
-                height: 60
-                color: hover.hovered || ListView.isCurrentItem ? root.contract.hoverColor : "transparent"
-                Accessible.role: Accessible.ListItem
-                Accessible.name: title + (artist.length > 0 ? ", " + artist : "") + (available ? "" : ", " + libraryText.unavailable)
-                HoverHandler {
-                    id: hover
+                contract: root.contract
+                number: index + 1
+                title: model.title
+                subtitle: model.artist.length > 0 ? model.artist : libraryText.unknownArtist
+                album: model.album
+                durationText: model.durationText
+                artworkSource: root.artworkBase.length > 0 ? root.artworkBase + model.recordId : ""
+                available: model.available
+                compact: root.compact
+                current: isPlayingRecord
+                playing: isPlayingRecord && root.playbackPlaying
+                highlighted: ListView.isCurrentItem && list.activeFocus
+                locateEnabled: root.library !== null && root.library.canLocate
+                accessibleName: libraryText.rowName(model.title, model.artist, model.available)
+                description: libraryText.rowDescription(model.available)
+                onClicked: root.selectItem(list, index)
+                onActivated: {
+                    if (model.available)
+                        root.playNow(model.recordId);
                 }
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    width: parent.width
-                    height: 1
-                    color: root.contract.highContrast ? root.contract.borderColor : root.contract.dividerColor
-                }
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: root.contract.spacingUnit
-                    anchors.rightMargin: root.contract.spacingUnit
-                    spacing: root.contract.spacingUnit * 2
-                    Text {
-                        Layout.preferredWidth: 32
-                        text: String(row.index + 1).padStart(2, "0")
-                        textFormat: Text.PlainText
-                        color: root.contract.textSecondaryColor
-                        font.family: root.contract.bodyFontFamily
-                        font.pixelSize: root.contract.typeCaption
-                        Accessible.ignored: true
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-                        Text {
-                            objectName: "library-row-title"
-                            Layout.fillWidth: true
-                            text: row.title
-                            textFormat: Text.PlainText
-                            elide: Text.ElideRight
-                            color: row.available ? root.contract.textPrimaryColor : root.contract.textSecondaryColor
-                            font.family: root.contract.bodyFontFamily
-                            font.pixelSize: root.contract.typeBody
-                            Accessible.ignored: true
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            text: row.available ? (row.artist.length > 0 ? row.artist : libraryText.unknownArtist) : libraryText.unavailable
-                            textFormat: Text.PlainText
-                            elide: Text.ElideRight
-                            color: root.contract.textSecondaryColor
-                            font.family: root.contract.bodyFontFamily
-                            font.pixelSize: root.contract.typeCaption
-                            Accessible.ignored: true
-                        }
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: row.album
-                        textFormat: Text.PlainText
-                        elide: Text.ElideRight
-                        color: root.contract.textSecondaryColor
-                        font.family: root.contract.bodyFontFamily
-                        font.pixelSize: root.contract.typeCaption
-                        Accessible.ignored: true
-                    }
-                    Text {
-                        Layout.preferredWidth: 56
-                        horizontalAlignment: Text.AlignRight
-                        text: row.durationText
-                        textFormat: Text.PlainText
-                        color: root.contract.textSecondaryColor
-                        font.family: root.contract.bodyFontFamily
-                        font.pixelSize: root.contract.typeCaption
-                        Accessible.ignored: true
-                    }
-                    AccessibleTransportButton {
-                        objectName: "library-locate"
-                        contract: root.contract
-                        flat: true
-                        visible: !row.available
-                        enabled: root.library !== null && root.library.canLocate
-                        text: libraryText.locateShort
-                        accessibleName: libraryText.locate.arg(row.title)
-                        onClicked: {
-                            root.notice = "";
-                            root.showStatus = root.library.locate(row.recordId);
-                        }
-                    }
-                    AccessibleTransportButton {
-                        objectName: "library-enqueue"
-                        contract: root.contract
-                        flat: true
-                        iconName: "plus"
-                        enabled: row.available
-                        accessibleName: libraryText.enqueue.arg(row.title)
-                        onClicked: {
-                            root.showStatus = false;
-                            root.notice = root.library.enqueue(row.recordId) ? libraryText.enqueued.arg(row.title) : libraryText.enqueueFailed;
-                        }
-                    }
-                    AccessibleTransportButton {
-                        id: playlistButton
-                        objectName: "library-add-to-playlist"
-                        contract: root.contract
-                        flat: true
-                        iconName: "playlist"
-                        enabled: root.playlistChoices.length > 0
-                        accessibleName: libraryText.addToPlaylist.arg(row.title)
-                        onClicked: {
-                            playlistMenu.recordId = row.recordId;
-                            playlistMenu.recordTitle = row.title;
-                            playlistMenu.popup(playlistButton, 0, playlistButton.height);
-                        }
-                    }
-                    AccessibleTransportButton {
-                        objectName: "library-remove"
-                        contract: root.contract
-                        flat: true
-                        iconName: "minus"
-                        accessibleName: libraryText.remove.arg(row.title)
-                        onClicked: root.requestRemove(row.recordId, row.title)
-                    }
-                }
+                onPlayRequested: root.playNow(model.recordId)
+                onEnqueueRequested: root.enqueue(model.recordId, model.title)
+                onLocateRequested: root.locate(model.recordId)
+                onMoreRequested: opener => root.showMenuFromButton(list, index, model.recordId, model.title, model.available, opener)
+                onContextMenuRequested: opener => root.showTrackMenu(list, index, model.recordId, model.title, model.available, opener, row.actionsColumnX + row.actionsWidth - trackMenu.implicitWidth, row.height)
             }
         }
-        Item {
+        GridView {
+            id: grid
+            objectName: "library-grid"
+            readonly property real ringBleed: 2 + root.contract.focusRingWidth
+            readonly property int gap: 24
+            visible: root.ready && root.visibleTotal > 0 && root.showCovers
+            Layout.fillWidth: true
             Layout.fillHeight: true
-        }
-    }
-    Menu {
-        id: playlistMenu
-        objectName: "library-playlist-menu"
-        property string recordId: ""
-        property string recordTitle: ""
-        Repeater {
-            model: root.playlistChoices
-            delegate: MenuItem {
-                required property var modelData
-                objectName: "library-playlist-choice-" + modelData.id
-                text: modelData.name
-                onTriggered: root.addToPlaylist(playlistMenu.recordId, playlistMenu.recordTitle, modelData.id, modelData.name)
+            Layout.preferredHeight: cellHeight
+            clip: true
+            reuseItems: true
+            cacheBuffer: 0
+            boundsBehavior: Flickable.StopAtBounds
+            activeFocusOnTab: true
+            keyNavigationEnabled: true
+            leftMargin: ringBleed
+            topMargin: ringBleed
+            cellWidth: 150 + gap
+            // Room for the cover, two title lines and the subtitle, as the card itself measures them.
+            cellHeight: 150 + 10 + Math.ceil(titleMetrics.height * 2) + 4 + Math.ceil(captionMetrics.height) + gap
+            model: root.library !== null ? root.library.model : null
+            ScrollBar.vertical: AccessibleScrollBar {
+                contract: root.contract
+            }
+            Accessible.role: Accessible.List
+            Accessible.name: navigationLabels.library
+            FontMetrics {
+                id: titleMetrics
+                font.family: root.contract.bodyFontFamily
+                font.pixelSize: root.contract.typeBody
+                font.weight: Font.DemiBold
+            }
+            FontMetrics {
+                id: captionMetrics
+                font.family: root.contract.bodyFontFamily
+                font.pixelSize: root.contract.typeCaption
+            }
+            delegate: Item {
+                id: cell
+                required property int index
+                required property var model
+                readonly property bool isPlayingRecord: root.playingId.length > 0 && model.recordId === root.playingId
+                width: grid.cellWidth
+                height: grid.cellHeight
+                AuroraTrackCard {
+                    id: card
+                    objectName: "library-card-" + cell.model.recordId
+                    contract: root.contract
+                    title: cell.model.title
+                    subtitle: cell.model.available ? (cell.model.artist.length > 0 ? cell.model.artist : libraryText.unknownArtist) : libraryText.unavailable
+                    subtitleWarning: !cell.model.available
+                    artworkSource: root.artworkBase.length > 0 ? root.artworkBase + cell.model.recordId : ""
+                    playing: cell.isPlayingRecord && root.playbackPlaying
+                    unavailableBadge: !cell.model.available
+                    activateOnClick: false
+                    // The grid keeps the focus: a click only makes the card the current one.
+                    focusPolicy: Qt.NoFocus
+                    highlighted: cell.GridView.isCurrentItem && grid.activeFocus
+                    accessibleName: libraryText.rowName(cell.model.title, cell.model.artist, cell.model.available)
+                    onSelected: root.selectItem(grid, cell.index)
+                    onActivated: root.playNow(cell.model.recordId)
+                    onPlayRequested: root.playNow(cell.model.recordId)
+                    onEnqueueRequested: root.enqueue(cell.model.recordId, cell.model.title)
+                    onMoreRequested: opener => root.showMenuFromButton(grid, cell.index, cell.model.recordId, cell.model.title, cell.model.available, opener)
+                }
             }
         }
     }
-    DownloadConfirmation {
-        id: removeConfirmation
-        objectName: "library-remove-confirmation"
+    component HeaderText: Text {
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        color: root.contract.textSecondaryColor
+        font.family: root.contract.bodyFontFamily
+        font.pixelSize: root.contract.typeEyebrow
+        font.letterSpacing: 1.2
+        Accessible.ignored: true
+    }
+    LibraryTrackMenu {
+        id: trackMenu
+        objectName: "library-track-menu"
         contract: root.contract
-        host: root
-        title: libraryText.removeTitle.arg(root.removeTitle)
-        advice: libraryText.removeAdvice
-        cancelText: libraryText.cancel
-        confirmText: libraryText.removeConfirm
-        cancelObjectName: "library-remove-cancel"
-        confirmObjectName: "library-remove-confirm"
-        onCancelRequested: close()
-        onConfirmRequested: {
-            root.library.remove(root.removeId);
-            close();
+        playlists: root.playlistChoices
+        canLocate: root.library !== null && root.library.canLocate
+        onPlayRequested: root.playNow(recordId)
+        onEnqueueRequested: root.enqueue(recordId, recordTitle)
+        onPlaylistChosen: (id, name) => root.addToPlaylist(recordId, recordTitle, id, name)
+        onLocateRequested: root.locate(recordId)
+        onRemoveRequested: root.requestRemove()
+        onClosed: {
+            if (root.visible)
+                root.activeView.forceActiveFocus(Qt.OtherFocusReason);
+            if (root.removePending) {
+                root.removePending = false;
+                removeConfirmation.open();
+            }
         }
+    }
+    AuroraConfirmDialog {
+        id: removeConfirmation
+        contract: root.contract
+        controlId: "library-remove-confirmation"
+        destructive: true
+        question: libraryText.removeTitle.arg(root.removeTitle)
+        consequence: libraryText.removeAdvice
+        confirmText: libraryText.removeConfirm
+        onConfirmed: root.library.remove(root.removeId)
     }
 }

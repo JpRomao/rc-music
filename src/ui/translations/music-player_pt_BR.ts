@@ -43,6 +43,17 @@
         </message>
     </context>
     <context>
+        <name>LibraryText</name>
+        <message numerus="yes">
+            <source>%1 de %n faixa</source>
+            <comment>Contagem da Biblioteca com filtro</comment>
+            <translation>
+                <numerusform>%1 de %n faixa</numerusform>
+                <numerusform>%1 de %n faixas</numerusform>
+            </translation>
+        </message>
+    </context>
+    <context>
         <name>DownloadText</name>
         <message>
             <location filename="../qml/DownloadText.qml" line="4"/>
