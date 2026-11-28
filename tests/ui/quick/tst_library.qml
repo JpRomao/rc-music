@@ -82,8 +82,18 @@ TestCase {
             played = played.concat([id]);
             return playResult;
         }
+        // As the binding does: the call is accepted now and the catalog changes once the save is done.
+        property bool removeLands: true
         function remove(id) {
             removed = removed.concat([id]);
+            hasPendingChange = true;
+            Qt.callLater(commitRemoval, id);
+            return true;
+        }
+        function commitRemoval(id) {
+            hasPendingChange = false;
+            if (!removeLands)
+                return;
             testCase.source = testCase.source.filter(entry => entry.recordId !== id);
             for (let i = 0; i < records.count; ++i) {
                 if (records.get(i).recordId === id) {
@@ -95,7 +105,6 @@ TestCase {
             visibleCount = records.count;
             if (playingRecordId === id)
                 playingRecordId = "";
-            return true;
         }
         function locate(id) {
             located = located.concat([id]);
@@ -178,6 +187,8 @@ TestCase {
         catalog.saveRetries = 0;
         catalog.playResult = true;
         catalog.canRetrySave = false;
+        catalog.hasPendingChange = false;
+        catalog.removeLands = true;
         catalog.statusProblem = false;
         catalog.statusText = "Sua biblioteca está pronta.";
         lists.playlists = [
@@ -823,8 +834,15 @@ TestCase {
         keyClick(Qt.Key_Home);
         compare(list.currentIndex, 0);
         tryVerify(() => wholeRowShown(list) && list.contentY === 0);
+        // One screen is as many whole rows as the list shows.
+        const screen = Math.floor(list.height / list.currentItem.height);
+        verify(screen > 1 && screen < list.count);
         keyClick(Qt.Key_PageDown);
-        verify(list.currentIndex > 3, "PageDown moved to " + list.currentIndex);
+        compare(list.currentIndex, screen);
+        keyClick(Qt.Key_PageDown);
+        compare(list.currentIndex, 2 * screen);
+        keyClick(Qt.Key_PageUp);
+        compare(list.currentIndex, screen);
         keyClick(Qt.Key_PageUp);
         compare(list.currentIndex, 0);
         keyClick(Qt.Key_Enter);
@@ -904,16 +922,18 @@ TestCase {
         keyClick(Qt.Key_Down);
         removeCurrentFromTheKeyboard(panel);
         compare(catalog.removed, ["5"]);
+        tryCompare(list, "count", 4);
         tryCompare(list, "activeFocus", true);
-        compare(list.currentIndex, 2);
-        compare(list.currentItem.objectName, "library-row-100");
+        tryCompare(list, "currentIndex", 2);
+        tryVerify(() => list.currentItem !== null && list.currentItem.objectName === "library-row-100");
         // The last: the previous row becomes the current one.
         keyClick(Qt.Key_End);
         compare(list.currentItem.objectName, "library-row-101");
         removeCurrentFromTheKeyboard(panel);
         compare(catalog.removed, ["5", "101"]);
+        tryCompare(list, "count", 3);
         tryCompare(list, "activeFocus", true);
-        compare(list.currentItem.objectName, "library-row-100");
+        tryVerify(() => list.currentItem !== null && list.currentItem.objectName === "library-row-100");
         // The filtered list empties while the catalog still has tracks: the focus goes to the filter.
         const field = findChild(panel, "library-filter");
         field.forceActiveFocus();
@@ -936,7 +956,7 @@ TestCase {
         tryVerify(() => list.currentItem !== null && list.currentItem.objectName === "library-row-4");
         list.forceActiveFocus(Qt.TabFocusReason);
         removeCurrentFromTheKeyboard(panel);
-        compare(catalog.count, 0);
+        tryCompare(catalog, "count", 0);
         verify(!field.visible);
         tryCompare(findChild(panel, "library-empty-primary"), "activeFocus", true);
     }
@@ -955,7 +975,7 @@ TestCase {
         mouseClick(findChild(menu, "library-menu-remove"));
         confirmRemoval();
         compare(catalog.removed, ["3"]);
-        compare(catalog.playingRecordId, "");
+        tryCompare(catalog, "playingRecordId", "");
         compare(presenter.playbackState, PlayerPresenter.Playing);
         compare(presenter.currentTitle, playing);
         compare(presenter.queueModel.count, queued);
@@ -1008,6 +1028,37 @@ TestCase {
         compare(grid.currentIndex, grid.count - 1);
         keyClick(Qt.Key_Home);
         compare(grid.currentIndex, 0);
+        // One screen is the whole rows the grid shows, times the cards of a row.
+        const screen = columns * Math.max(1, Math.floor(grid.height / grid.cellHeight));
+        verify(screen < grid.count);
+        keyClick(Qt.Key_PageDown);
+        compare(grid.currentIndex, screen);
+        keyClick(Qt.Key_PageUp);
+        compare(grid.currentIndex, 0);
+        keyClick(Qt.Key_F10, Qt.ShiftModifier);
+        tryCompare(menu, "opened", true);
+        compare(menu.recordId, "3");
+        tryCompare(findChild(menu, "library-menu-play"), "activeFocus", true);
+        keyClick(Qt.Key_Escape);
+        tryCompare(menu, "visible", false);
+        tryCompare(grid, "activeFocus", true);
+    }
+    function test_aRemovalThatDoesNotLandDoesNotClaimTheFocusLater() {
+        const panel = openLibrary();
+        const list = focusList(panel);
+        catalog.removeLands = false;
+        removeCurrentFromTheKeyboard(panel);
+        compare(catalog.removed, ["3"]);
+        // The save ended and the catalog kept the record: the pending move of the focus is dropped.
+        tryCompare(catalog, "hasPendingChange", false);
+        tryVerify(() => !panel.removeFocusArmed);
+        const field = findChild(panel, "library-filter");
+        field.forceActiveFocus();
+        tryCompare(field, "activeFocus", true);
+        addRecords(1);
+        tryCompare(list, "count", 4);
+        waitForPolish(shell);
+        verify(field.activeFocus, "the focus moved to " + focusName());
     }
     function test_filterKeepsTheCurrentRowWhenItStillMatches() {
         const panel = openLibrary();

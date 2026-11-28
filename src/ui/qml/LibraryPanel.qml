@@ -176,6 +176,12 @@ PageSurface {
         else
             event.accepted = false;
     }
+    // A removal that the binding finished without changing the catalog (the save failed) must not claim the focus
+    // at some later, unrelated change of the count.
+    function disarmWhenNothingLanded() {
+        if (removeFocusArmed && library !== null && !library.hasPendingChange && total === removeFocusTotal)
+            removeFocusArmed = false;
+    }
     // Where the focus goes once the confirmation closes: the row that took the removed row's place, the filter when
     // the filtered list emptied, or the empty state's action when the catalog did.
     function settleFocusAfterRemove() {
@@ -201,6 +207,13 @@ PageSurface {
             library.retrySave();
         else
             library.retryLoad();
+    }
+
+    Connections {
+        target: root.library
+        function onHasPendingChangeChanged() {
+            Qt.callLater(root.disarmWhenNothingLanded);
+        }
     }
 
     background: Rectangle {
@@ -250,6 +263,7 @@ PageSurface {
                 Connections {
                     target: filterField.input
                     function onTextEdited() {
+                        root.removeFocusArmed = false;
                         root.library.filterText = filterField.text;
                     }
                 }
@@ -570,6 +584,9 @@ PageSurface {
             root.removeFocusTotal = root.total;
             root.removeFocusArmed = root.library.remove(root.removeId);
         }
-        onClosed: root.settleFocusAfterRemove()
+        onClosed: {
+            root.settleFocusAfterRemove();
+            root.disarmWhenNothingLanded();
+        }
     }
 }

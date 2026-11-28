@@ -694,6 +694,14 @@ TestCase {
                 stops: ["library-filter", "library-view-0", "library-list"]
             },
             {
+                tag: "library-empty",
+                button: "library",
+                page: "library-panel",
+                // An empty catalog has no bar and no list: the empty state's action is the page's only stop.
+                emptyLibrary: true,
+                stops: ["library-empty-primary"]
+            },
+            {
                 tag: "playlists",
                 button: "playlists",
                 page: "playlists-panel"
@@ -727,7 +735,9 @@ TestCase {
         fakeProfile.needsSetup = false;
         shell.profile = fakeProfile;
         mountNavigationBackends();
-        if (data.stops !== undefined) {
+        if (data.emptyLibrary)
+            fakeLibrary.count = 0;
+        if (data.stops !== undefined && !data.emptyLibrary) {
             // The library page needs rows to have a list stop.
             fakeRecords.append({
                 recordId: "1",
