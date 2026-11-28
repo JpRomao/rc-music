@@ -573,6 +573,7 @@ class PlayerPresenterTests final : public QObject {
     void queueTotalDurationIsUnknownWhenAnyTrackHasNoDuration();
     void queueTotalDurationIsUnknownForAnEmptyQueue();
     void nextQueueTitleNamesTheFollowingOccurrence();
+    void nextQueueTitleSkipsUnavailableOccurrences();
     void nextQueueTitleIsEmptyWithShuffleOrAtTheEnd();
     void shuffleQueueWithNoCurrentShufflesAllRemainingOccurrences();
     void repeatQueueTogglePublishesAndPersistsWithoutTransport();
@@ -1590,6 +1591,39 @@ void PlayerPresenterTests::nextQueueTitleNamesTheFollowingOccurrence() {
     QVERIFY(presenter.playQueueOccurrence(queueOccurrenceIds(*model)[1]));
     QCOMPARE(presenter.currentQueueIndex(), 1);
     QCOMPARE(presenter.nextQueueTitle(), QStringLiteral("Terceira"));
+}
+
+void PlayerPresenterTests::nextQueueTitleSkipsUnavailableOccurrences() {
+    AvailableTrayPlatform platform;
+    PresenterPlaybackBackend backend;
+    PresenterMetadataReader metadata;
+    const std::vector sources{localTestPath(u8"A.wav"), localTestPath(u8"B.wav"), localTestPath(u8"C.wav")};
+    PlayerPresenter presenter(platform, backend, metadata, [sources] { return sources; });
+    QVERIFY(presenter.openAudio());
+    auto* const model = presenter.queueModelObject();
+    const auto ids = queueOccurrenceIds(*model);
+
+    // B fails to load, so playback moves on to C: from A, the next track to play is C, not B.
+    QVERIFY(presenter.playQueueOccurrence(ids[1]));
+    backend.publish({.status = PlaybackStatus::Error,
+                     .generation = backend.snapshot().generation,
+                     .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_COMPARE(presenter.currentOccurrenceId(), ids[2]);
+    QVERIFY(!model->data(model->index(1, 0), LocalQueueListModel::AvailableRole).toBool());
+    QVERIFY(presenter.playQueueOccurrence(ids[0]));
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+    QCOMPARE(presenter.nextQueueTitle(), QStringLiteral("C"));
+
+    // C fails too: nothing after A will play, so no title is promised.
+    QVERIFY(presenter.playQueueOccurrence(ids[2]));
+    backend.publish({.status = PlaybackStatus::Error,
+                     .generation = backend.snapshot().generation,
+                     .error = PlaybackErrorCode::SourceUnavailable});
+    QTRY_COMPARE(presenter.playbackState(), PlayerPresenter::PlaybackState::Error);
+    QVERIFY(!model->data(model->index(2, 0), LocalQueueListModel::AvailableRole).toBool());
+    QVERIFY(presenter.playQueueOccurrence(ids[0]));
+    QCOMPARE(presenter.currentQueueIndex(), 0);
+    QVERIFY(presenter.nextQueueTitle().isEmpty());
 }
 
 void PlayerPresenterTests::nextQueueTitleIsEmptyWithShuffleOrAtTheEnd() {

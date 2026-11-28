@@ -902,10 +902,14 @@ QString PlayerPresenter::nextQueueTitle() const {
     const auto current = local_queue_.currentIndex();
     if (!current.has_value())
         return {};
-    const int next = static_cast<int>(*current) + 1;
-    if (next >= local_queue_model_.rowCount())
-        return {};
-    return local_queue_model_.index(next, 0).data(LocalQueueListModel::TitleRole).toString();
+    // The first occurrence after the current one that can play, without wrapping: Next skips the unavailable ones.
+    const auto items = local_queue_.items();
+    const int rows = std::min(local_queue_model_.rowCount(), static_cast<int>(items.size()));
+    for (int next = static_cast<int>(*current) + 1; next < rows; ++next) {
+        if (items[static_cast<std::size_t>(next)].available)
+            return local_queue_model_.index(next, 0).data(LocalQueueListModel::TitleRole).toString();
+    }
+    return {};
 }
 bool PlayerPresenter::hasCurrentOccurrence() const noexcept {
 #ifdef RC_MUSIC_ENABLE_FIXTURE_SCENARIOS
