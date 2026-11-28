@@ -110,7 +110,7 @@ ColumnLayout {
             subtitle: available ? (model.artist.length > 0 ? model.artist : navigationText.localAudio) : queueText.sourceUnavailable
             subtitleWarning: !available
             artworkSource: current && root.presenter.currentArtworkSource.toString().length > 0 ? root.presenter.currentArtworkSource : (model.artworkSource ?? "")
-            playing: current
+            playing: current && root.presenter.playbackState === PlayerPresenter.Playing
             enabled: root.openingEnabled && available
             accessibleName: navigationText.playTrack.arg(displayTitle)
             onActivated: root.playRequested(occurrenceId)

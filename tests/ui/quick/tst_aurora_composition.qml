@@ -358,6 +358,25 @@ TestCase {
         see.Accessible.pressAction();
         tryCompare(shell, "currentPage", "queue");
     }
+    // The chip says what the hero says: only a track that is playing is "playing".
+    function test_playingChipFollowsThePlaybackState() {
+        loadQueue();
+        const list = findChild(shell, "home-queue-list");
+        tryCompare(list, "count", 3);
+        const chip = findChild(shelfCard(list, 0), "shelf-card-playing");
+        verify(chip.visible);
+        driver.publishLocalPaused();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Paused);
+        tryCompare(chip, "visible", false);
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
+        tryCompare(chip, "visible", true);
+        // An output error keeps the same occurrence current instead of moving on to the next one.
+        driver.publishLocalOutputError(false);
+        tryCompare(presenter, "playbackState", PlayerPresenter.Error);
+        compare(presenter.currentQueueIndex, 0);
+        tryCompare(chip, "visible", false);
+    }
     function test_queueSubtitleNamesTheNextOnlyWhenKnown() {
         loadEightTracks(true);
         const subtitle = findChild(findChild(shell, "home-queue-shelf"), "shelf-subtitle");

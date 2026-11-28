@@ -494,6 +494,9 @@ TestCase {
     }
     function test_playingBadgeContrast(data) {
         openAurora(data.dark);
+        // The chip shows only while the track plays.
+        driver.publishLocalPlaying();
+        tryCompare(presenter, "playbackState", PlayerPresenter.Playing);
         const list = findChild(shell, "home-queue-list");
         tryCompare(list, "count", 3);
         tryVerify(() => list.itemAtIndex(1) !== null);
