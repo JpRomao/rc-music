@@ -182,6 +182,9 @@ set_target_properties(rc_music_library_store_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_library_binding_tests rc_music.library.binding
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/LibraryBindingTests.cpp" rc_music_library)
 set_target_properties(rc_music_library_binding_tests PROPERTIES AUTOMOC ON)
+add_ui_test(rc_music_library_list_model_tests rc_music.library.list-model
+    "${RC_MUSIC_SOURCE_ROOT}/tests/qt/LibraryListModelTests.cpp" rc_music_library)
+set_target_properties(rc_music_library_list_model_tests PROPERTIES AUTOMOC ON)
 add_ui_test(rc_music_library_artwork_tests rc_music.library.artwork
     "${RC_MUSIC_SOURCE_ROOT}/tests/qt/LibraryArtworkTests.cpp" rc_music_library_artwork)
 set_target_properties(rc_music_library_artwork_tests PROPERTIES AUTOMOC ON)

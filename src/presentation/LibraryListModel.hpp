@@ -6,12 +6,15 @@
 #include <QString>
 #include <QStringList>
 
+#include <memory>
 #include <vector>
 
 namespace music_player::m0 {
 
 // Read-only projection of the confirmed library for the List view, with a local
 // filter that ignores case and accents across title, artist, album and file name.
+// Changes arrive as row removals, insertions and dataChanged, so views keep their
+// place; a reset happens only when the records both lists share change order.
 // Never touches files or the network.
 class LibraryListModel final : public QAbstractListModel {
     Q_OBJECT
@@ -42,10 +45,13 @@ class LibraryListModel final : public QAbstractListModel {
     struct Row final {
         QString id, title, artist, album, duration, file_name, key;
         bool available{true};
+        [[nodiscard]] bool sameContent(const Row& other) const;
     };
-    void refilter();
-    std::vector<Row> rows_;
-    std::vector<int> visible_;
+    using RowPtr = std::shared_ptr<const Row>;
+    [[nodiscard]] std::vector<RowPtr> filtered() const;
+    void applyVisible(std::vector<RowPtr> next);
+    std::vector<RowPtr> rows_;
+    std::vector<RowPtr> visible_;
     QStringList terms_;
 };
 

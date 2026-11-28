@@ -1,5 +1,7 @@
 #include "LibraryListModel.hpp"
 
+#include <QHash>
+
 #include <algorithm>
 
 namespace music_player::m0 {
@@ -46,8 +48,13 @@ QString LibraryListModel::searchKey(const QString& value) {
     return result.toCaseFolded().simplified();
 }
 
+bool LibraryListModel::Row::sameContent(const Row& other) const {
+    return id == other.id && title == other.title && artist == other.artist && album == other.album &&
+           duration == other.duration && file_name == other.file_name && available == other.available;
+}
+
 void LibraryListModel::setRecords(const std::vector<LibraryRecord>& records) {
-    std::vector<Row> rows;
+    std::vector<RowPtr> rows;
     rows.reserve(records.size());
     for (const auto& record : records) {
         Row row;
@@ -59,33 +66,100 @@ void LibraryListModel::setRecords(const std::vector<LibraryRecord>& records) {
         row.file_name = fileName(record.source_path);
         row.available = record.available;
         row.key = searchKey(row.title + u'\n' + row.artist + u'\n' + row.album + u'\n' + row.file_name);
-        rows.push_back(std::move(row));
+        rows.push_back(std::make_shared<const Row>(std::move(row)));
     }
-    beginResetModel();
     rows_ = std::move(rows);
-    refilter();
-    endResetModel();
-    emit countChanged();
+    applyVisible(filtered());
 }
 
 void LibraryListModel::setFilter(const QString& value) {
     auto terms = searchKey(value).split(u' ', Qt::SkipEmptyParts);
     if (terms == terms_)
         return;
-    beginResetModel();
     terms_ = std::move(terms);
-    refilter();
-    endResetModel();
-    emit countChanged();
+    applyVisible(filtered());
 }
 
-void LibraryListModel::refilter() {
-    visible_.clear();
-    for (int index = 0; index < static_cast<int>(rows_.size()); ++index) {
-        const auto& key = rows_[static_cast<std::size_t>(index)].key;
+std::vector<LibraryListModel::RowPtr> LibraryListModel::filtered() const {
+    std::vector<RowPtr> result;
+    for (const auto& row : rows_) {
+        const auto& key = row->key;
         if (std::all_of(terms_.begin(), terms_.end(), [&key](const QString& term) { return key.contains(term); }))
-            visible_.push_back(index);
+            result.push_back(row);
     }
+    return result;
+}
+
+// Turns the current visible list into `next` with row signals. The ids both lists
+// share must keep their order; otherwise the model resets. Every step leaves
+// visible_ self-consistent, because views read it between the signals.
+void LibraryListModel::applyVisible(std::vector<RowPtr> next) {
+    const auto before = count();
+    QHash<QString, int> oldPosition;
+    oldPosition.reserve(static_cast<qsizetype>(visible_.size()));
+    for (int index = 0; index < before; ++index)
+        oldPosition.insert(visible_[static_cast<std::size_t>(index)]->id, index);
+
+    // For each new row: its old position, or -1 when it is new.
+    std::vector<int> origin(next.size(), -1);
+    std::vector<bool> kept(visible_.size(), false);
+    int last = -1;
+    bool ordered = true;
+    for (std::size_t index = 0; index < next.size() && ordered; ++index) {
+        const auto found = oldPosition.constFind(next[index]->id);
+        if (found == oldPosition.constEnd())
+            continue;
+        if (*found <= last) {
+            ordered = false;
+            break;
+        }
+        last = *found;
+        origin[index] = *found;
+        kept[static_cast<std::size_t>(*found)] = true;
+    }
+
+    if (!ordered) {
+        beginResetModel();
+        visible_ = std::move(next);
+        endResetModel();
+    } else {
+        // Removals from the back, in contiguous blocks, keep earlier rows in place.
+        for (int end = before - 1; end >= 0; --end) {
+            if (kept[static_cast<std::size_t>(end)])
+                continue;
+            int first = end;
+            while (first > 0 && !kept[static_cast<std::size_t>(first - 1)])
+                --first;
+            beginRemoveRows({}, first, end);
+            visible_.erase(visible_.begin() + first, visible_.begin() + end + 1);
+            endRemoveRows();
+            end = first;
+        }
+        // Insertions in ascending order: each run lands at its final position.
+        const int total = static_cast<int>(next.size());
+        for (int first = 0; first < total; ++first) {
+            if (origin[static_cast<std::size_t>(first)] >= 0)
+                continue;
+            int end = first;
+            while (end + 1 < total && origin[static_cast<std::size_t>(end + 1)] < 0)
+                ++end;
+            beginInsertRows({}, first, end);
+            visible_.insert(visible_.begin() + first, next.begin() + first, next.begin() + end + 1);
+            endInsertRows();
+            first = end;
+        }
+        // Rows both lists share keep their pointer unless their content changed.
+        for (int row = 0; row < total; ++row) {
+            const auto position = static_cast<std::size_t>(row);
+            if (origin[position] < 0 || visible_[position]->sameContent(*next[position]))
+                continue;
+            visible_[position] = next[position];
+            const auto changed = index(row, 0);
+            emit dataChanged(changed, changed);
+        }
+    }
+    if (count() != before)
+        emit countChanged();
 }
 
 int LibraryListModel::count() const { return static_cast<int>(visible_.size()); }
@@ -94,7 +168,7 @@ int LibraryListModel::rowCount(const QModelIndex& parent) const { return parent.
 QVariant LibraryListModel::data(const QModelIndex& index, const int role) const {
     if (!index.isValid() || index.row() < 0 || index.row() >= count())
         return {};
-    const auto& row = rows_[static_cast<std::size_t>(visible_[static_cast<std::size_t>(index.row())])];
+    const auto& row = *visible_[static_cast<std::size_t>(index.row())];
     switch (role) {
     case RecordIdRole:
         return row.id;

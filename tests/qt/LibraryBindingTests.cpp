@@ -356,6 +356,52 @@ class LibraryBindingTests final : public QObject {
         QTRY_COMPARE(h.binding.count(), 13);
         QCOMPARE(recent->data(recent->index(0, 0), LibraryListModel::TitleRole).toString(), QStringLiteral("13"));
     }
+    void aSecondSaveThatAddsARecordInsertsRowsWithoutAReset() {
+        Harness h;
+        h.startAndWait();
+        h.binding.admit(numberedTracks(14));
+        QTRY_COMPARE(h.binding.count(), 14);
+        auto* model = qobject_cast<LibraryListModel*>(h.binding.model());
+        auto* recent = qobject_cast<LibraryListModel*>(h.binding.recentModel());
+        QVERIFY(model);
+        QVERIFY(recent);
+        QSignalSpy modelReset(model, &QAbstractItemModel::modelAboutToBeReset);
+        QSignalSpy modelInserted(model, &QAbstractItemModel::rowsInserted);
+        QSignalSpy recentReset(recent, &QAbstractItemModel::modelAboutToBeReset);
+        QSignalSpy recentRemoved(recent, &QAbstractItemModel::rowsRemoved);
+        QSignalSpy recentInserted(recent, &QAbstractItemModel::rowsInserted);
+        h.binding.admit({track(100)});
+        QTRY_COMPARE(h.binding.count(), 15);
+        QCOMPARE(modelReset.count(), 0);
+        QCOMPARE(modelInserted.count(), 1);
+        QCOMPARE(recentReset.count(), 0);
+        QCOMPARE(recentRemoved.count(), 1);
+        QCOMPARE(recentRemoved.first().at(1).toInt(), 11);
+        QCOMPARE(recentRemoved.first().at(2).toInt(), 11);
+        QCOMPARE(recentInserted.count(), 1);
+        QCOMPARE(recentInserted.first().at(1).toInt(), 0);
+        QCOMPARE(recentInserted.first().at(2).toInt(), 0);
+    }
+    void aRetryAfterAFailedLoadFillsTheModelsWithoutAReset() {
+        Harness h;
+        h.store->setLoaded({.status = LibraryLoadStatus::Unavailable});
+        h.startAndWait();
+        QVERIFY(!h.binding.ready());
+        auto* model = qobject_cast<LibraryListModel*>(h.binding.model());
+        auto* recent = qobject_cast<LibraryListModel*>(h.binding.recentModel());
+        QVERIFY(model);
+        QVERIFY(recent);
+        QSignalSpy modelReset(model, &QAbstractItemModel::modelAboutToBeReset);
+        QSignalSpy recentReset(recent, &QAbstractItemModel::modelAboutToBeReset);
+        QSignalSpy recentInserted(recent, &QAbstractItemModel::rowsInserted);
+        h.store->setLoaded(twoRecords());
+        QVERIFY(h.binding.retryLoad());
+        QTRY_COMPARE(h.binding.count(), 2);
+        QCOMPARE(modelReset.count(), 0);
+        QCOMPARE(recentReset.count(), 0);
+        QCOMPARE(recentInserted.count(), 1);
+        QCOMPARE(recent->rowCount(), 2);
+    }
     void recentModelIsEmptyBeforeLoading() {
         Harness h;
         auto* recent = qobject_cast<LibraryListModel*>(h.binding.recentModel());
