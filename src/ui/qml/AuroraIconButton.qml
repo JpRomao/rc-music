@@ -9,34 +9,47 @@ AbstractButton {
     required property string controlId
     required property string iconName
     property bool tonal: false
+    // Acento: círculo ou quadrado cheio em accentColor, com o ícone em accentTextColor.
+    property bool accent: false
+    // Elevado: fundo de superfície elevada com sombra, para sobrepor a uma capa.
+    property bool raised: false
+    property bool round: false
+    // Tamanho desenhado; a área de toque continua com o mínimo do contrato.
+    property int drawnSize: 40
     property int iconSize: 20
     // Motivo do desabilitado ou atalho: vai para o leitor de tela e para a dica.
     property string description
 
     // Desabilitado em alto contraste: troca de cor em vez de esmaecer.
     readonly property bool hcDisabled: contract.highContrast && interaction.inactive
-    readonly property bool outlined: contract.highContrast && tonal && !checked
+    readonly property bool outlined: contract.highContrast && (tonal || raised) && !checked && !accent
     readonly property bool hasFill: {
         if (hcDisabled)
             return false;
         if (contract.highContrast)
-            return checked || outlined;
-        return tonal || checked || hovered || down;
+            return checked || outlined || accent;
+        return tonal || accent || raised || checked || hovered || down;
     }
     // Só vale com hasFill; sem preenchimento o fundo fica sem cor.
     readonly property color fillColor: {
         if (contract.highContrast)
-            return checked ? contract.accentColor : contract.canvasColor;
-        const rest = tonal || checked ? contract.selectionColor : contract.hoverColor;
-        if (down || (hovered && (tonal || checked)))
+            return checked || accent ? contract.accentColor : contract.canvasColor;
+        let rest = tonal || checked ? contract.selectionColor : contract.hoverColor;
+        if (accent)
+            rest = contract.accentColor;
+        else if (raised)
+            rest = contract.surfaceRaisedColor;
+        if (down || (hovered && (tonal || checked || accent || raised)))
             return interaction.tint(rest);
         return rest;
     }
     readonly property color foregroundColor: {
         if (hcDisabled)
             return contract.disabledTextColor;
+        if (accent || (checked && contract.highContrast))
+            return contract.accentTextColor;
         if (checked)
-            return contract.highContrast ? contract.accentTextColor : contract.accentColor;
+            return contract.accentColor;
         return contract.textPrimaryColor;
     }
 
@@ -88,10 +101,21 @@ AbstractButton {
 
     background: Rectangle {
         objectName: "icon-button-background"
-        radius: control.contract.radiusControl
+        x: (control.width - width) / 2
+        y: (control.height - height) / 2
+        width: control.drawnSize
+        height: control.drawnSize
+        radius: control.round ? width / 2 : control.contract.radiusControl
         color: control.hasFill ? control.fillColor : "transparent"
-        border.width: control.hcDisabled || control.outlined || (control.contract.highContrast && control.hovered && !control.checked) ? 2 : 0
-        border.color: control.hcDisabled ? control.contract.disabledTextColor : (control.contract.highContrast && control.hovered ? control.contract.accentColor : control.contract.textPrimaryColor)
+        // Em alto contraste a variante de acento cheia leva sempre o contorno, mesmo sem hover.
+        border.width: control.hcDisabled || control.outlined || (control.contract.highContrast && (control.accent || (control.hovered && !control.checked))) ? 2 : 0
+        border.color: control.hcDisabled ? control.contract.disabledTextColor : (control.contract.highContrast && control.hovered && !control.accent ? control.contract.accentColor : control.contract.textPrimaryColor)
+
+        AuroraShadow {
+            contract: control.contract
+            radius: parent.radius
+            visible: control.raised && !control.contract.highContrast
+        }
     }
 
     contentItem: Item {
@@ -126,6 +150,10 @@ AbstractButton {
     AuroraFocusRing {
         target: control
         contract: control.contract
-        targetRadius: control.contract.radiusControl
+        targetRadius: control.round ? control.drawnSize / 2 : control.contract.radiusControl
+        areaX: (control.width - control.drawnSize) / 2
+        areaY: (control.height - control.drawnSize) / 2
+        areaWidth: control.drawnSize
+        areaHeight: control.drawnSize
     }
 }

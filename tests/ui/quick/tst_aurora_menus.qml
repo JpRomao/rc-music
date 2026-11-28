@@ -257,4 +257,57 @@ TestCase {
         const fadeOut = m.exit.animations;
         compare(fadeOut[0].duration, 0);
     }
+    Component {
+        id: submenuHostComponent
+        Window {
+            property alias menu: parentMenu
+            property alias opener: button
+            width: 480
+            height: 320
+            visible: true
+            color: testCase.contract.canvasColor
+            AuroraButton {
+                id: button
+                contract: testCase.contract
+                controlId: "open-submenu-menu"
+                text: "Abrir"
+                x: 20
+                y: 20
+            }
+            AuroraMenu {
+                id: parentMenu
+                contract: testCase.contract
+                AuroraMenuItem {
+                    contract: testCase.contract
+                    controlId: "sibling"
+                    text: "Tocar agora"
+                    iconName: "play"
+                }
+                AuroraMenu {
+                    objectName: "menu-playlists"
+                    contract: testCase.contract
+                    title: "Adicionar à playlist"
+                    iconName: "playlist"
+                }
+            }
+        }
+    }
+    function test_submenuItemShowsItsIcon() {
+        const h = createTemporaryObject(submenuHostComponent, testCase);
+        verify(h);
+        verify(waitForRendering(h.contentItem));
+        h.menu.popup(h.opener, 0, h.opener.height);
+        tryVerify(() => h.menu.opened);
+        const sibling = h.menu.itemAt(0);
+        const entry = h.menu.itemAt(1);
+        compare(entry.objectName, "menu-playlists");
+        const icon = child(entry, "menu-item-icon");
+        verify(icon.visible);
+        compare(icon.iconName, "playlist");
+        verify(child(entry, "menu-item-caret").visible);
+        compare(child(entry, "menu-item-caret").iconName, "caret-right");
+        const siblingLabel = child(sibling, "menu-item-label");
+        const label = child(entry, "menu-item-label");
+        compare(label.mapToItem(null, 0, 0).x, siblingLabel.mapToItem(null, 0, 0).x);
+    }
 }

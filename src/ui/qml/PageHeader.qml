@@ -13,13 +13,15 @@ ColumnLayout {
     property string description: ""
     // Legacy (dialog) hosts keep their historical bold title.
     property bool editorial: true
+    // Só o título: janelas compactas dispensam a chamada e a descrição.
+    property bool titleOnly: false
     property int legacyTitleSize: contract.typeTitle
     default property alias actions: actionRow.data
     spacing: 6
     Text {
         objectName: "page-eyebrow"
         Layout.fillWidth: true
-        visible: text.length > 0
+        visible: text.length > 0 && !root.titleOnly
         text: root.eyebrow
         textFormat: Text.PlainText
         font.family: root.contract.bodyFontFamily
@@ -52,7 +54,7 @@ ColumnLayout {
     Text {
         objectName: "page-description"
         Layout.fillWidth: true
-        visible: text.length > 0
+        visible: text.length > 0 && !root.titleOnly
         text: root.description
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap

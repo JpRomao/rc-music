@@ -14,6 +14,8 @@ QtObject {
     readonly property string timeHeader: qsTr("TEMPO")
     readonly property string unknownArtist: qsTr("Artista desconhecido")
     readonly property string unavailable: qsTr("Indisponível")
+    readonly property string subtitleSeparator: qsTr("·")
+    readonly property string playNowName: qsTr("Tocar %1 agora")
     readonly property string enqueue: qsTr("Adicionar %1 à fila")
     readonly property string enqueued: qsTr("“%1” foi para o fim da fila.")
     readonly property string enqueueFailed: qsTr("Não foi possível adicionar à fila agora. Tente de novo.")

@@ -15,7 +15,16 @@ ItemDelegate {
     property bool playing: false
     property bool interactive: true
     property string accessibleName
+    // Hover or focus decided by the host: shows the play, enqueue and more actions over the cover.
+    property bool actionsShown: false
+    property bool unavailableBadge: false
+    // A click plays at once (shelves); otherwise it only selects and the double click plays (grid).
+    property bool activateOnClick: true
     signal activated
+    signal selected
+    signal playRequested
+    signal enqueueRequested
+    signal moreRequested(Item opener)
 
     readonly property int coverSize: 150
     readonly property int titleGap: 10
@@ -40,7 +49,16 @@ ItemDelegate {
             root.activated();
     }
 
-    onClicked: activate()
+    onClicked: {
+        if (root.activateOnClick)
+            activate();
+        else if (root.interactive && root.enabled)
+            root.selected();
+    }
+    onDoubleClicked: {
+        if (!root.activateOnClick)
+            activate();
+    }
     Keys.onReturnPressed: event => {
         root.activate();
         event.accepted = true;
@@ -90,9 +108,76 @@ ItemDelegate {
             visible: root.playing
             contract: root.contract
             tone: AuroraChip.Accent
-            iconName: "play"
+            iconName: "waveform"
             text: labels.playingBadge
             Accessible.ignored: true
+        }
+        AuroraChip {
+            objectName: "shelf-card-unavailable"
+            x: 8
+            y: artwork.height - height - 8
+            visible: root.unavailableBadge
+            contract: root.contract
+            tone: AuroraChip.Warning
+            iconName: "warning"
+            text: libraryLabels.unavailable
+            Accessible.ignored: true
+        }
+        Rectangle {
+            objectName: "shelf-card-highlight"
+            width: artwork.width
+            height: artwork.height
+            radius: root.contract.radiusMedium
+            color: "transparent"
+            border.width: 2
+            border.color: root.contract.accentColor
+            visible: root.highlighted
+        }
+        AuroraIconButton {
+            id: playButton
+            objectName: "shelf-card-play"
+            x: artwork.width - 8 - drawnSize - (width - drawnSize) / 2
+            y: artwork.height - 8 - drawnSize - (height - drawnSize) / 2
+            visible: root.actionsShown
+            enabled: !root.unavailableBadge
+            contract: root.contract
+            controlId: "shelf-card-play"
+            iconName: "play"
+            accent: true
+            round: true
+            activeFocusOnTab: false
+            text: libraryLabels.playNowName.arg(root.title)
+            onClicked: root.playRequested()
+        }
+        AuroraIconButton {
+            objectName: "shelf-card-enqueue"
+            x: artwork.width - 54 - drawnSize - (width - drawnSize) / 2
+            y: playButton.y
+            visible: root.actionsShown && !root.unavailableBadge
+            contract: root.contract
+            controlId: "shelf-card-enqueue"
+            iconName: "plus"
+            raised: true
+            round: true
+            activeFocusOnTab: false
+            text: libraryLabels.enqueue.arg(root.title)
+            onClicked: root.enqueueRequested()
+        }
+        AuroraIconButton {
+            id: moreButton
+            objectName: "shelf-card-more"
+            x: artwork.width - 8 - drawnSize - (width - drawnSize) / 2
+            y: 8 - (height - drawnSize) / 2
+            visible: root.actionsShown && !root.unavailableBadge
+            contract: root.contract
+            controlId: "shelf-card-more"
+            iconName: "more"
+            raised: true
+            round: true
+            drawnSize: 32
+            activeFocusOnTab: false
+            text: controlsLabels.moreActionsFor.arg(root.title)
+            onClicked: root.moreRequested(moreButton)
         }
         AuroraFocusRing {
             target: root
@@ -134,5 +219,11 @@ ItemDelegate {
 
     NavigationText {
         id: labels
+    }
+    LibraryText {
+        id: libraryLabels
+    }
+    ControlsText {
+        id: controlsLabels
     }
 }

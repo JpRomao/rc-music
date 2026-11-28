@@ -7,6 +7,8 @@ Menu {
     id: menu
 
     required property ShellUiContract contract
+    // Ícone do item que abre este menu, quando ele é um submenu.
+    property string iconName
     // Largura do item mais largo; cada item tem no mínimo 200.
     readonly property real widestItem: {
         let widest = 200;
@@ -26,8 +28,9 @@ Menu {
     delegate: AuroraMenuItem {
         // Dentro do delegate o id aponta para o tipo base do Menu.
         contract: menu.contract // qmllint disable missing-property
-        // Item criado de uma Action leva o objectName dela como controlId.
-        controlId: action ? action.objectName : ""
+        // Item criado de uma Action leva o objectName dela como controlId; o de um submenu, o do submenu.
+        controlId: action ? action.objectName : (subMenu ? subMenu.objectName : "") // qmllint disable missing-property
+        iconName: subMenu ? subMenu.iconName : "" // qmllint disable missing-property
     }
 
     enter: Transition {
