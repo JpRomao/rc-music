@@ -621,11 +621,12 @@ class ScenarioDriver final : public QObject {
     Q_INVOKABLE void publishArtworkLocalMetadata() { publishLocalMetadata(true); }
     // The queue rows read `<base><occurrence value>`; the test provider answers with a transparent pixel.
     Q_INVOKABLE void setLocalQueueArtworkBase(const QString& base) { local_presenter_.setQueueArtwork({}, base); }
-    // Tags with only the given fields: an empty artist or album stays absent.
-    // A positive duration also fills the audio properties, which is how the queue rows learn their length.
+    // The metadata results published but not yet read by the presenter.
     Q_INVOKABLE int localMetadataPollsPending() const noexcept {
         return static_cast<int>(local_metadata_reader_.poll_results.size());
     }
+    // Tags with only the given fields: an empty artist or album stays absent.
+    // A positive duration also fills the audio properties, which is how the queue rows learn their length.
     Q_INVOKABLE void publishNamedLocalMetadata(const QString& title, const QString& artist, const QString& album,
                                                const qlonglong duration_ms = 0) {
         if (local_metadata_reader_.requests.empty())
