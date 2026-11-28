@@ -917,6 +917,8 @@ int main(int argc, char* argv[]) {
         QObject::connect(&presenter, &PlayerPresenter::stateChanged, library_binding.get(), sync_library_now_playing);
         QObject::connect(&presenter, &PlayerPresenter::playbackChanged, library_binding.get(),
                          sync_library_now_playing);
+        // A track restored with the session is already current: no signal will announce it.
+        sync_library_now_playing();
         static_cast<void>(library_binding->start());
         presenter.setPlaylistExitPreparationProbe([&] {
             if (!playlists_binding->hasPendingChange())
