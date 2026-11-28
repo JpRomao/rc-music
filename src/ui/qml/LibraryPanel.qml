@@ -26,7 +26,7 @@ PageSurface {
     property bool playbackPlaying: false
     // False while a file chooser or a locate is open, or the app is leaving.
     property bool openingEnabled: true
-    signal queueRequested(Item opener)
+    signal queueRequested
     signal openAudioRequested(Item opener)
     readonly property var playlistChoices: playlists !== null && playlists.ready ? playlists.playlists : []
     property string removeId: ""
@@ -314,7 +314,7 @@ PageSurface {
                 kind: AuroraButton.Quiet
                 compact: true
                 text: navigationLabels.seeQueue
-                onClicked: root.queueRequested(seeQueue)
+                onClicked: root.queueRequested()
             }
             Item {
                 Layout.fillWidth: true

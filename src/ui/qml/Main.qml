@@ -55,6 +55,8 @@ ApplicationWindow {
     readonly property bool lineEntryAvailable: lyricsPanel.lineEntryItem !== null && lyricsPanel.visible && lyricsPanel.enabled && lyricsPanel.lineEntryItem.visible && lyricsPanel.lineEntryItem.enabled
     // A guest's queue is the room queue, there even when no local queue is loaded.
     readonly property bool roomGuest: room !== null && room.available && room.role === 2
+    // False while a file chooser or a locate is open, or the app is leaving: nothing new can be opened.
+    readonly property bool openingEnabled: !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
     // The Aurora drawer stays open when its queue empties; it is only never opened empty.
     readonly property bool queuePageActive: queueOpen && (presenter.queueLoaded || roomGuest || inlinePages)
     // Aurora has no sidebar queue item: the shortcut depends on the queue itself, the fixture on the button.
@@ -98,7 +100,7 @@ ApplicationWindow {
     // Everything that silences the window shortcuts, except the lyrics reader holding the focus: the Aurora
     // drawer still lets Ctrl+L swap it for the queue.
     readonly property bool windowShortcutsEnabled: windowContextFree && !lyricsPanel.readerFocused
-    readonly property bool windowContextFree: !profileSetupDialog.visible && (!playlistsPanel.visible || (inlinePages && !isInside(activeFocusItem, playlistsPanel.contentItem))) && (!libraryPanel.visible || !isInside(activeFocusItem, libraryPanel.contentItem)) && (!searchPanel.visible || !isInside(activeFocusItem, searchPanel.contentItem)) && (!roomPanel.visible || !isInside(activeFocusItem, roomPanel.contentItem)) && !libraryPanel.blockingUiOpen && !roomPanel.blockingUiOpen && !lyricsPanel.dialogOpen && (!downloadsPanel.visible || (inlinePages && !isInside(activeFocusItem, downloadsPanel.contentItem))) && !playlistsPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && !presenter.exiting && !presenter.selectingAudioFiles && presenter.locatingOccurrenceId.length === 0
+    readonly property bool windowContextFree: !profileSetupDialog.visible && (!playlistsPanel.visible || (inlinePages && !isInside(activeFocusItem, playlistsPanel.contentItem))) && (!libraryPanel.visible || !isInside(activeFocusItem, libraryPanel.contentItem)) && (!searchPanel.visible || !isInside(activeFocusItem, searchPanel.contentItem)) && (!roomPanel.visible || !isInside(activeFocusItem, roomPanel.contentItem)) && !libraryPanel.blockingUiOpen && !roomPanel.blockingUiOpen && !lyricsPanel.dialogOpen && (!downloadsPanel.visible || (inlinePages && !isInside(activeFocusItem, downloadsPanel.contentItem))) && !playlistsPanel.blockingUiOpen && !downloadsPanel.blockingUiOpen && !preferencesPanel.blockingUiOpen && !browserError.visible && !windowNotice.visible && !queuePanel.clearConfirmationOpen && !queuePanel.contextMenuOpen && !trackDetailsPanel.visible && !preferencePersistenceNotice.replacementConfirmationOpen && openingEnabled
     readonly property bool navigationShortcutsEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && transport.enabled
     readonly property bool transportShortcutsEnabled: navigationShortcutsEnabled && transport.playbackEnabled
     readonly property bool primaryKeysEnabled: windowShortcutsEnabled && (!preferencesPanel.visible || (inlinePages && !isInside(activeFocusItem, preferencesPanel.contentItem))) && !focusOwnsTextInput()
@@ -674,9 +676,9 @@ ApplicationWindow {
         playlists: window.playlists
         compact: window.width <= window.uiContract.compactWidth
         playbackPlaying: window.presenter.playbackState === PlayerPresenter.Playing
-        openingEnabled: !window.presenter.exiting && !window.presenter.selectingAudioFiles && window.presenter.locatingOccurrenceId.length === 0
+        openingEnabled: window.openingEnabled
         enabled: !window.presenter.exiting
-        onQueueRequested: opener => window.openQueueFrom(transport.queueControl)
+        onQueueRequested: window.openQueueFrom(transport.queueControl)
         onOpenAudioRequested: opener => window.openAudio(opener)
         onClosed: {
             if (window.queueOpener === null && window.active && !window.presenter.exiting && !searchPanel.visible && !roomPanel.visible && !playlistsPanel.visible && !downloadsPanel.visible && !preferencesPanel.visible && libraryButton.visible)
@@ -792,7 +794,7 @@ ApplicationWindow {
                         library: window.library
                         compact: window.width <= window.uiContract.compactWidth
                         lyricsAvailable: lyricsPanel.readerAvailable
-                        openingEnabled: !window.presenter.exiting && !window.presenter.selectingAudioFiles && window.presenter.locatingOccurrenceId.length === 0
+                        openingEnabled: window.openingEnabled
                         locationFocusRestoreAllowed: window.active && window.windowShortcutsEnabled && !preferencesPanel.visible
                         onOpenAudioRequested: opener => window.openAudio(opener)
                         onDetailsRequested: opener => window.openTrackDetails(opener)
@@ -830,7 +832,7 @@ ApplicationWindow {
                             compact: stateLayer.height < 400
                             visible: window.presenter.playbackState === PlayerPresenter.Unloaded
                             contract: window.uiContract
-                            openingEnabled: !window.presenter.exiting && !window.presenter.selectingAudioFiles && window.presenter.locatingOccurrenceId.length === 0
+                            openingEnabled: window.openingEnabled
                             onOpenAudioRequested: opener => window.openAudio(opener)
                         }
                         NowPlayingState {
