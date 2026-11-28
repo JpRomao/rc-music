@@ -158,6 +158,9 @@ ApplicationWindow {
         if (!window.inlinePages || window.currentPage !== "home" || !item || !window.isInside(item, stateLayer))
             return;
         const point = item.mapToItem(stateLayer.contentItem, 0, 0);
+        // A target already in full view keeps the page where it is: a click never makes it jump.
+        if (point.y >= stateLayer.contentY && point.y + item.height <= stateLayer.contentY + stateLayer.height)
+            return;
         // A target that fits the first screen shows the page from its top, so the title never scrolls away for it.
         if (point.y + item.height <= stateLayer.height) {
             stateLayer.contentY = 0;

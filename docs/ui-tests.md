@@ -187,7 +187,7 @@ Ordem de Tab, a 1440×900 e a 720×520: `theme-toggle`, `open-audio`, os control
 
 Foco principal por estado: sem faixa e tocando, `open-audio`; com erro, o botão primário do `ErrorState`. Com a gaveta da Fila aberta, a Início fica `enabled: false`.
 
-Regra de rolagem: a página rola dentro de `state-layer`. Um alvo de foco que cabe na primeira tela mostra a página pelo topo (`contentY` 0), para o título nunca sair de vista; um alvo mais abaixo rola só o necessário. Abrir o áudio deixa o foco em `open-audio`, no topo, e a 720×520 o título da página continua inteiro.
+Regra de rolagem: a página rola dentro de `state-layer`. Um alvo de foco já inteiro na vista não move a página, nem num clique. Fora da vista, um alvo que cabe na primeira tela mostra a página pelo topo (`contentY` 0), para o título nunca sair de vista; um alvo mais abaixo rola só o necessário. Abrir o áudio deixa o foco em `open-audio`, no topo, e a 720×520 o título da página continua inteiro.
 
 Capas da fila: o `LibraryArtworkProvider` ganhou uma segunda instância, `image://queueart/<valor da ocorrência>`, registrada em `src/app/main.cpp`; o cartão da faixa tocando usa a capa atual. A biblioteca expõe até 12 registros recentes em `LibraryBinding.recentModel`. No harness, `driver.setLocalQueueArtworkBase("image://queueart/")` liga a base e o provider de teste responde com um pixel transparente, então as capas aparecem vazias nas capturas (o ícone de disco é o que se vê): as capturas não provam pixels de capa.
 

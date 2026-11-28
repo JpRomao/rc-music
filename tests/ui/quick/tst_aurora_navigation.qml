@@ -607,6 +607,31 @@ TestCase {
         tryCompare(home, "contentY", 0);
     }
 
+    // A click that focuses a target already in view must not move the page back to its top.
+    function test_revealLeavesAFullyVisibleTargetInPlace() {
+        loadSyntheticQueue();
+        mountNavigationBackends();
+        shell.width = 1440;
+        shell.height = 900;
+        tryCompare(shell.contentItem, "height", 900);
+        const home = findChild(shell, "state-layer");
+        tryVerify(() => home.contentHeight > home.height + 24, 5000, "the home has to scroll at 1440×900");
+        verify(waitForPolish(shell));
+        home.contentY = 24;
+        const list = findChild(shell, "home-queue-list");
+        tryVerify(() => list.itemAtIndex(0) !== null);
+        const card = list.itemAtIndex(0);
+        const p = card.mapToItem(home, 0, 0);
+        verify(p.y >= 0 && p.y + card.height <= home.height, "the card is already fully visible");
+        card.forceActiveFocus(Qt.MouseFocusReason);
+        tryCompare(card, "activeFocus", true);
+        // The reveal runs after the next frame.
+        shell.update();
+        verify(waitForRendering(shell.contentItem));
+        verify(waitForPolish(shell));
+        compare(home.contentY, 24);
+    }
+
     function test_homeTabOrder() {
         loadSyntheticQueue();
         mountNavigationBackends();
