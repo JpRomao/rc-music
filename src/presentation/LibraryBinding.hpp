@@ -85,6 +85,8 @@ class LibraryBinding final : public QObject {
     [[nodiscard]] QString statusText() const;
     [[nodiscard]] bool statusProblem() const;
     [[nodiscard]] QString playingRecordId() const;
+    // How many times the playing record was looked up (a test seam for the no-op path).
+    [[nodiscard]] int playingRecordLookups() const;
     [[nodiscard]] LibrarySnapshot confirmedSnapshot() const;
     // List view projection of the confirmed catalog (a LibraryListModel).
     [[nodiscard]] QObject* model() const;

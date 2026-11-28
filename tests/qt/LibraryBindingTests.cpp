@@ -478,6 +478,23 @@ class LibraryBindingTests final : public QObject {
         QTRY_COMPARE(h.binding.count(), 1);
         QCOMPARE(h.binding.playingRecordId(), QString{});
     }
+    void repeatingTheSameNowPlayingFileDoesNothing() {
+        Harness h;
+        h.store->setLoaded(twoRecords());
+        h.startAndWait();
+        QSignalSpy spy(&h.binding, &LibraryBinding::playingRecordIdChanged);
+        h.binding.setNowPlaying(track(2));
+        const auto lookups = h.binding.playingRecordLookups();
+        QCOMPARE(spy.count(), 1);
+        for (int index = 0; index < 5; ++index)
+            h.binding.setNowPlaying(track(2));
+        QCOMPARE(h.binding.playingRecordLookups(), lookups);
+        QCOMPARE(spy.count(), 1);
+        // A catalog change still recomputes.
+        QVERIFY(h.binding.remove(QStringLiteral("2")));
+        QTRY_COMPARE(h.binding.playingRecordId(), QString{});
+        QCOMPARE(spy.count(), 2);
+    }
     void nowPlayingFollowsTheLibraryWhenTheFileIsAdmittedLater() {
         Harness h;
         h.startAndWait();

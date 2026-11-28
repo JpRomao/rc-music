@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <atomic>
 #include <functional>
+#include <map>
 #include <optional>
 #include <unordered_set>
 #include <utility>
@@ -116,6 +117,9 @@ struct LibraryBinding::Impl final {
     QueuePlayer queue_player;
     std::optional<std::filesystem::path> now_playing;
     QString playing_id;
+    // Confirmed record IDs by exact native path, rebuilt when the catalog changes.
+    std::map<std::filesystem::path::string_type, std::uint64_t> id_by_path;
+    int playing_lookups{};
     bool busy{}, ready{}, seed_allowed{}, save_failed{}, stopping{};
     std::shared_ptr<const MetadataExtractor> extractor;
     QFutureWatcher<std::vector<MetadataUpdate>> metadata_watcher;
@@ -186,13 +190,11 @@ struct LibraryBinding::Impl final {
     }
     // The record of the file now playing, by exact native path (confirmed catalog only).
     void refreshPlaying() {
+        ++playing_lookups;
         QString id;
         if (now_playing)
-            for (const auto& record : confirmed.snapshot().records)
-                if (record.source_path.native() == now_playing->native()) {
-                    id = QString::number(record.id);
-                    break;
-                }
+            if (const auto found = id_by_path.find(now_playing->native()); found != id_by_path.end())
+                id = QString::number(found->second);
         if (id == playing_id)
             return;
         playing_id = std::move(id);
@@ -283,6 +285,9 @@ struct LibraryBinding::Impl final {
         if (newest.size() > static_cast<std::size_t>(LibraryBinding::recentLimit))
             newest.resize(static_cast<std::size_t>(LibraryBinding::recentLimit));
         recent.setRecords(newest);
+        id_by_path.clear();
+        for (const auto& record : confirmed.snapshot().records)
+            id_by_path.emplace(record.source_path.native(), record.id);
         refreshPlaying();
         if (artwork_index)
             artwork_index->update(confirmed.snapshot());
@@ -498,9 +503,13 @@ bool LibraryBinding::playNow(const QString& record_id) {
 }
 void LibraryBinding::setQueuePlayer(QueuePlayer player) { impl_->queue_player = std::move(player); }
 void LibraryBinding::setNowPlaying(std::optional<std::filesystem::path> path) {
+    // The presenter reports on every state and position change: an unchanged file costs nothing.
+    if (path == impl_->now_playing)
+        return;
     impl_->now_playing = std::move(path);
     impl_->refreshPlaying();
 }
+int LibraryBinding::playingRecordLookups() const { return impl_->playing_lookups; }
 QString LibraryBinding::playingRecordId() const { return impl_->playing_id; }
 bool LibraryBinding::statusProblem() const { return impl_->notice_problem; }
 bool LibraryBinding::enqueue(const QString& record_id) {
