@@ -45,8 +45,17 @@ ItemDelegate {
     readonly property real albumColumnX: columns.albumX
     readonly property real durationColumnX: columns.durationX
     readonly property real actionsColumnX: columns.actionsX
-    readonly property color secondaryInk: actionsShown ? contract.textPrimaryColor : contract.textSecondaryColor
+    // In high contrast the current row of a focused list wears the system selection: its ground and its ink.
+    // A row whose file is gone keeps the window ground: its disabled play button has no ground of its own.
+    readonly property bool selected: contract.highContrast && highlighted && available
+    readonly property color secondaryInk: {
+        if (selected)
+            return contract.accentTextColor;
+        return actionsShown ? contract.textPrimaryColor : contract.textSecondaryColor;
+    }
     readonly property color titleInk: {
+        if (selected)
+            return contract.accentTextColor;
         if (current)
             return contract.accentColor;
         return available ? contract.textPrimaryColor : secondaryInk;
@@ -82,7 +91,7 @@ ItemDelegate {
     background: Rectangle {
         objectName: "track-row-background"
         radius: root.contract.radiusControl
-        color: root.actionsShown ? root.contract.hoverColor : "transparent"
+        color: root.selected ? root.contract.selectionColor : (root.actionsShown ? root.contract.hoverColor : "transparent")
         border.width: root.contract.highContrast && root.actionsShown ? 2 : 0
         border.color: root.contract.textPrimaryColor
     }
@@ -248,6 +257,7 @@ ItemDelegate {
                 controlId: "track-row-enqueue"
                 iconName: "plus"
                 drawnSize: 36
+                tonal: root.selected
                 activeFocusOnTab: false
                 focusPolicy: Qt.NoFocus
                 text: labels.enqueue.arg(root.title)

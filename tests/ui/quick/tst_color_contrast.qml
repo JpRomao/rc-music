@@ -821,4 +821,76 @@ TestCase {
         verifyContrast(Qt.color(text.color), canvas, 4.5, "error feedback, " + data.tag);
         verifyContrast(Qt.color(findChild(feedback, "feedback-icon").color), canvas, 3, "error icon, " + data.tag);
     }
+
+    function test_libraryHighContrastRowContrast_data() {
+        return [
+            {
+                tag: "dark",
+                light: false
+            },
+            {
+                tag: "light",
+                light: true
+            }
+        ];
+    }
+    function test_libraryHighContrastRowContrast(data) {
+        const panel = openLibraryPage(false, true);
+        driver.setHighContrast(true, data.light);
+        const hc = shell.uiContract;
+        tryVerify(() => hc.highContrast);
+        verify(waitForPolish(shell));
+        const canvas = Qt.darker(hc.canvasColor, 1);
+        const list = findChild(panel, "library-list");
+        restRows();
+        list.forceActiveFocus(Qt.TabFocusReason);
+        // The current row, playing or gone or plain: the selection ground carries every text and icon.
+        for (const entry of [
+            {
+                at: 0,
+                id: "3"
+            },
+            {
+                at: 1,
+                id: "4"
+            },
+            {
+                at: 2,
+                id: "5"
+            }
+        ]) {
+            list.currentIndex = entry.at;
+            const current = libraryRow(panel, entry.id);
+            tryVerify(() => current.highlighted);
+            const ground = rowGround(current, canvas);
+            // A missing file keeps the window ground: its disabled play button has none of its own.
+            const expected = current.available ? Qt.darker(hc.selectionColor, 1) : Qt.darker(hc.hoverColor, 1);
+            verify(Math.abs(ground.r - expected.r) + Math.abs(ground.g - expected.g) + Math.abs(ground.b - expected.b) < 0.01, "row " + entry.id + " ground, " + data.tag + ": " + ground + " vs " + expected);
+            const names = ["track-row-title", "track-row-subtitle", "track-row-album", "track-row-duration"];
+            if (!current.available)
+                names.push("track-row-unavailable");
+            for (const name of names) {
+                const text = findChild(current, name);
+                verify(text && text.visible, name);
+                if (text.text.length > 0)
+                    verifyContrast(Qt.color(text.color), ground, 4.5, name + " on the current row " + entry.id + ", " + data.tag);
+            }
+            const buttons = ["track-row-play", "track-row-enqueue", "track-row-more"];
+            for (const name of buttons) {
+                const button = findChild(current, name);
+                if (!button.visible)
+                    continue;
+                const circle = findChild(button, "icon-button-background");
+                const fill = circle.color.a > 0 ? composite(Qt.color(circle.color), ground, 1) : ground;
+                verifyContrast(Qt.color(button.contentItem.children[0].color), fill, 3, name + " icon on the current row " + entry.id + ", " + data.tag);
+            }
+        }
+        // The wave of the playing row, when the row is not current, sits on the canvas.
+        const playingRow = libraryRow(panel, "3");
+        tryVerify(() => !playingRow.highlighted);
+        const wave = findChild(playingRow, "track-row-wave");
+        verify(wave.visible);
+        verifyContrast(Qt.color(wave.color), rowGround(playingRow, canvas), 3, "wave on the canvas, " + data.tag);
+        verifyContrast(Qt.color(findChild(playingRow, "track-row-title").color), rowGround(playingRow, canvas), 4.5, "playing title on the canvas, " + data.tag);
+    }
 }

@@ -515,7 +515,7 @@ TestCase {
         let menu = openRowMenu(panel, "3");
         mouseClick(findChild(menu, "library-menu-remove"));
         const confirmation = findChild(shell, "library-remove-confirmation");
-        tryCompare(confirmation, "visible", true);
+        tryCompare(confirmation, "opened", true);
         verify(findChild(confirmation, "confirm-consequence").text.indexOf("A faixa sai só da biblioteca.") === 0);
         verify(confirmation.title.indexOf("Canção do Mar") >= 0);
         mouseClick(findChild(confirmation, "library-remove-confirmation-cancel"));
@@ -523,7 +523,7 @@ TestCase {
         compare(catalog.removed, []);
         menu = openRowMenu(panel, "3");
         mouseClick(findChild(menu, "library-menu-remove"));
-        tryCompare(confirmation, "visible", true);
+        tryCompare(confirmation, "opened", true);
         mouseClick(findChild(confirmation, "library-remove-confirmation-confirm"));
         tryCompare(confirmation, "visible", false);
         compare(catalog.removed, ["3"]);
@@ -779,7 +779,7 @@ TestCase {
     }
     function confirmRemoval() {
         const confirmation = findChild(shell, "library-remove-confirmation");
-        tryCompare(confirmation, "visible", true);
+        tryCompare(confirmation, "opened", true);
         mouseClick(findChild(confirmation, "library-remove-confirmation-confirm"));
         tryCompare(confirmation, "visible", false);
     }
@@ -1076,88 +1076,102 @@ TestCase {
         tryCompare(list, "currentIndex", 1);
         compare(list.currentItem.objectName, "library-row-5");
     }
-    function test_libraryHighContrast() {
-        // The dark palette first (yellow on black), then the light one: the same rules in both.
-        for (const light of [false, true]) {
-            driver.setHighContrast(true, light);
-            tryVerify(() => testCase.contract.highContrast);
-            loadPlayingQueue();
-            catalog.playingRecordId = "3";
-            const panel = openLibrary();
-            const hc = testCase.contract;
-            const list = findChild(panel, "library-list");
-            const playing = row(panel, "3");
-            const other = row(panel, "5");
-            // The playing row wears the system highlight on the title and the wave.
-            verify(Qt.colorEqual(findChild(playing, "track-row-title").color, hc.accentColor));
-            verify(Qt.colorEqual(findChild(playing, "track-row-wave").color, hc.accentColor));
-            // The current row of a focused list: the system ground, the 2 px outline in the text color, the focus ring on top.
-            list.currentIndex = 2;
-            list.forceActiveFocus(Qt.TabFocusReason);
-            tryVerify(() => other.highlighted);
-            const background = findChild(other, "track-row-background");
-            verify(Qt.colorEqual(background.color, hc.hoverColor));
-            compare(background.border.width, 2);
-            verify(Qt.colorEqual(background.border.color, hc.textPrimaryColor));
-            const ring = other.children.find(child => child.objectName === "focus-ring");
-            verify(ring && ring.visible);
-            verify(Qt.colorEqual(ring.border.color, hc.focusColor));
-            // The row buttons are outlined and flat: ▶ and ⋯ always, + under the pointer.
-            hover(other);
-            tryVerify(() => findChild(other, "track-row-more").visible);
-            const play = findChild(other, "track-row-play");
-            const more = findChild(other, "track-row-more");
-            const enqueue = findChild(other, "track-row-enqueue");
-            mouseMove(enqueue, enqueue.width / 2, enqueue.height / 2);
-            tryVerify(() => enqueue.hovered);
-            for (const button of [play, more, enqueue]) {
-                compare(findChild(button, "icon-button-background").border.width, 2, button.objectName);
-                verify(!findChild(button, "surface-shadow").visible, button.objectName);
+    function test_libraryHighContrast_data() {
+        return [
+            {
+                tag: "dark",
+                light: false
+            },
+            {
+                tag: "light",
+                light: true
             }
-            // The menu: a 2 px outline in the text color; the destructive item keeps its icon and its place after the separator.
-            const menu = openRowMenu(panel, "5");
-            compare(menu.background.border.width, 2);
-            verify(Qt.colorEqual(menu.background.border.color, hc.textPrimaryColor));
-            verify(Qt.colorEqual(menu.background.color, hc.canvasColor));
-            const remove = findChild(menu, "library-menu-remove");
-            verify(remove.danger);
-            compare(remove.iconName, "trash");
-            compare(menu.itemAt(menu.count - 2).objectName, "");
-            verify(Qt.colorEqual(findChild(remove, "menu-item-label").color, hc.textPrimaryColor));
-            menu.close();
-            tryCompare(menu, "visible", false);
-            // The cover cards: raised buttons outlined without a shadow, badges outlined in system colors.
-            mouseClick(findChild(panel, "library-view-1"));
-            tryVerify(() => findChild(panel, "library-grid").visible);
-            const first = card(panel, "3");
-            const gone = card(panel, "4");
-            hover(first);
-            tryVerify(() => findChild(first, "shelf-card-play").visible);
-            for (const name of ["shelf-card-play", "shelf-card-enqueue", "shelf-card-more"]) {
-                const button = findChild(first, name);
-                compare(findChild(button, "icon-button-background").border.width, 2, name);
-                verify(!findChild(button, "surface-shadow").visible, name);
-            }
-            const badges = [[findChild(first, "shelf-card-playing"), hc.accentColor], [findChild(gone, "shelf-card-unavailable"), hc.warningColor]];
-            for (const entry of badges) {
-                const badge = entry[0];
-                verify(badge.visible, badge.objectName);
-                const chip = findChild(badge, "chip-background");
-                verify(chip.border.width >= 1, badge.objectName);
-                verify(Qt.colorEqual(chip.border.color, hc.textPrimaryColor), badge.objectName);
-                verify(Qt.colorEqual(chip.color, hc.canvasColor), badge.objectName);
-                verify(Qt.colorEqual(findChild(badge, "chip-label").color, entry[1]), badge.objectName);
-            }
-            // Back to the list and the next palette with a fresh shell.
-            shell.destroy();
-            shell = null;
-            driver.resetLocalScenario();
-            shell = createTemporaryObject(shellComponent, null);
-            verify(shell);
-            shell.width = 1440;
-            shell.height = 900;
-            shell.requestActivate();
-            tryCompare(shell, "active", true);
+        ];
+    }
+    function test_libraryHighContrast(data) {
+        const light = data.light;
+        driver.setHighContrast(true, light);
+        tryVerify(() => testCase.contract.highContrast);
+        loadPlayingQueue();
+        catalog.playingRecordId = "3";
+        const panel = openLibrary();
+        const hc = testCase.contract;
+        const list = findChild(panel, "library-list");
+        const playing = row(panel, "3");
+        const other = row(panel, "5");
+        // The playing row wears the system highlight on the title and the wave.
+        verify(Qt.colorEqual(findChild(playing, "track-row-title").color, hc.accentColor));
+        verify(Qt.colorEqual(findChild(playing, "track-row-wave").color, hc.accentColor));
+        // The current row of a focused list: the system ground, the 2 px outline in the text color, the focus ring on top.
+        list.currentIndex = 2;
+        list.forceActiveFocus(Qt.TabFocusReason);
+        tryVerify(() => other.highlighted);
+        const background = findChild(other, "track-row-background");
+        // The current row wears the system selection: its ground is the selection color, its texts the selected-text color.
+        verify(Qt.colorEqual(background.color, hc.selectionColor), "current row ground, " + data.tag);
+        for (const name of ["track-row-title", "track-row-subtitle", "track-row-album", "track-row-duration"])
+            verify(Qt.colorEqual(findChild(other, name).color, hc.accentTextColor), name + " on the current row, " + data.tag);
+        // The 2 px row outline stays in the text color; the focus ring on top keeps the contract's width.
+        compare(background.border.width, 2);
+        verify(Qt.colorEqual(background.border.color, hc.textPrimaryColor));
+        const ring = other.children.find(child => child.objectName === "focus-ring");
+        verify(ring && ring.visible);
+        verify(Qt.colorEqual(ring.border.color, hc.focusColor));
+        compare(ring.border.width, hc.focusRingWidth);
+        // The row buttons are outlined and flat: ▶ and ⋯ always, + under the pointer.
+        hover(other);
+        tryVerify(() => findChild(other, "track-row-more").visible);
+        const play = findChild(other, "track-row-play");
+        const more = findChild(other, "track-row-more");
+        const enqueue = findChild(other, "track-row-enqueue");
+        mouseMove(enqueue, enqueue.width / 2, enqueue.height / 2);
+        tryVerify(() => enqueue.hovered);
+        for (const button of [play, more, enqueue]) {
+            compare(findChild(button, "icon-button-background").border.width, 2, button.objectName);
+            verify(!findChild(button, "surface-shadow").visible, button.objectName);
+        }
+        // The menu: a 2 px outline in the text color; the destructive item keeps its icon and its place after the separator.
+        const menu = openRowMenu(panel, "5");
+        compare(menu.background.border.width, 2);
+        verify(Qt.colorEqual(menu.background.border.color, hc.textPrimaryColor));
+        verify(Qt.colorEqual(menu.background.color, hc.canvasColor));
+        const remove = findChild(menu, "library-menu-remove");
+        verify(remove.danger);
+        compare(remove.iconName, "trash");
+        // The separator is the item right before it, and it is not a menu item.
+        let at = -1;
+        for (let i = 0; i < menu.count; ++i) {
+            if (menu.itemAt(i) === remove)
+                at = i;
+        }
+        verify(at > 0);
+        const separator = menu.itemAt(at - 1);
+        verify(!(separator instanceof AuroraMenuItem));
+        verify(separator instanceof AuroraMenuSeparator);
+        verify(Qt.colorEqual(findChild(remove, "menu-item-label").color, hc.textPrimaryColor));
+        menu.close();
+        tryCompare(menu, "visible", false);
+        // The cover cards: raised buttons outlined without a shadow, badges outlined in system colors.
+        mouseClick(findChild(panel, "library-view-1"));
+        tryVerify(() => findChild(panel, "library-grid").visible);
+        const first = card(panel, "3");
+        const gone = card(panel, "4");
+        hover(first);
+        tryVerify(() => findChild(first, "shelf-card-play").visible);
+        for (const name of ["shelf-card-play", "shelf-card-enqueue", "shelf-card-more"]) {
+            const button = findChild(first, name);
+            compare(findChild(button, "icon-button-background").border.width, 2, name);
+            verify(!findChild(button, "surface-shadow").visible, name);
+        }
+        const badges = [[findChild(first, "shelf-card-playing"), hc.accentColor], [findChild(gone, "shelf-card-unavailable"), hc.warningColor]];
+        for (const entry of badges) {
+            const badge = entry[0];
+            verify(badge.visible, badge.objectName);
+            const chip = findChild(badge, "chip-background");
+            verify(chip.border.width >= 1, badge.objectName);
+            verify(Qt.colorEqual(chip.border.color, hc.textPrimaryColor), badge.objectName);
+            verify(Qt.colorEqual(chip.color, hc.canvasColor), badge.objectName);
+            verify(Qt.colorEqual(findChild(badge, "chip-label").color, entry[1]), badge.objectName);
         }
     }
 }
