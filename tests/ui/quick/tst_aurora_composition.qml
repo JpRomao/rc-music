@@ -651,15 +651,40 @@ TestCase {
         compare(hero.border.width, 0);
         compare(hero.radius, 16);
     }
+    Component {
+        id: floatingCardComponent
+        AuroraFloatingCard {
+            contract: testCase.contract
+        }
+    }
+    // How many AuroraShadow items under the root are visible: the shadow hides itself in high contrast.
+    function visibleShadows(root) {
+        let count = 0;
+        const stack = [root];
+        while (stack.length > 0) {
+            const item = stack.pop();
+            if (item.objectName === "surface-shadow" && item.visible)
+                ++count;
+            for (const child of item.children)
+                stack.push(child);
+        }
+        return count;
+    }
     function test_homeHighContrast() {
+        // The control: the same search sees the shadow of a real Aurora surface, and sees it leave in high contrast.
+        const card = createTemporaryObject(floatingCardComponent, shell.contentItem);
+        verify(card);
+        compare(visibleShadows(card), 1, "the search finds the shadow of a floating card");
         driver.setHighContrast(true, false);
         tryVerify(() => contract.highContrast);
+        compare(visibleShadows(card), 0, "the search sees the card shadow go away in high contrast");
         loadEightTracks(true);
         verify(waitForPolish(shell));
         const hero = findChild(shell, "home-hero");
         compare(hero.border.width, 2);
         verify(Qt.colorEqual(hero.border.color, contract.textPrimaryColor), "the hero outline is the system text color");
-        compare(findChild(hero, "surface-shadow"), null, "no shadow under the hero");
+        compare(visibleShadows(hero), 0, "no shadow inside the hero");
+        compare(visibleShadows(hero.parent), 0, "no shadow beside the hero");
         for (const id of ["track-details-playing", "home-lyrics"]) {
             const button = findChild(hero, id);
             verify(button && button.visible, id);
