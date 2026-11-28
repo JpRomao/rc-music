@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import MusicPlayer.M0
@@ -33,9 +35,11 @@ ColumnLayout {
     Accessible.role: Accessible.AlertMessage
     Accessible.name: titleText + (bodyText.length > 0 ? ". " + bodyText : "")
 
+    // The Loader's item, untyped: both Components expose `recovery` and `locate`.
+    readonly property var actionButtons: actions.item
     function focusPrimary() {
-        if (actions.item)
-            actions.item.recovery.forceActiveFocus(Qt.TabFocusReason);
+        if (actionButtons)
+            actionButtons.recovery.forceActiveFocus(Qt.TabFocusReason);
     }
 
     // What the recovery button does, shared by the fixture and the Aurora buttons.
@@ -273,7 +277,7 @@ ColumnLayout {
             Qt.callLater(function () {
                 if (!root.visible || !root.locationFocusRestoreAllowed || root.presenter.exiting || root.presenter.locatingOccurrenceId.length > 0 || root.presenter.currentOccurrenceId !== occurrenceId)
                     return;
-                const locate = actions.item ? actions.item.locate : null;
+                const locate = root.actionButtons ? root.actionButtons.locate : null;
                 if (locate && locate.visible && locate.enabled)
                     locate.forceActiveFocus(Qt.TabFocusReason);
                 if (locationFeedback.visible)
